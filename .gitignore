@@ -1,0 +1,38 @@
+# 환경 변수 (절대 커밋 금지)
+.env
+
+# 데이터 볼륨
+pg_data/
+redis_data/
+
+# 영상 임시 저장
+files/
+
+# Google 서비스 어카운트 키
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Node
+node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

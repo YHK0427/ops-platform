@@ -1,0 +1,112 @@
+version: "3.9"
+
+networks:
+  frontend-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24   # Tier1 ↔ Tier2
+  backend-net:
+    driver: bridge
+    internal: true                # 외부 라우팅 완전 차단 (Tier2 ↔ Tier3)
+    ipam:
+      config:
+        - subnet: 172.20.1.0/24
+
+services:
+
+  # ── TIER 1: Presentation ─────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: ""           # 같은 origin → "" (nginx가 /api/* 프록시)
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"        # 호스트의 localhost:3000만 바인딩
+                                   # 외부 직접 접근 차단 → Cloudflare Tunnel이 유일한 진입점
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - frontend-net
+
+  # ── TIER 2: Application ──────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./files:/app/files         # 영상 임시 저장
+    env_file: .env
+    expose:
+      - "8000"                     # 호스트 포트 바인딩 없음 — frontend-net 안에서만 접근
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - frontend-net               # frontend와 통신
+      - backend-net                # db/redis와 통신
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: arq app.worker.WorkerSettings
+    restart: unless-stopped
+    volumes:
+      - ./files:/app/files
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - backend-net                # worker는 frontend와 통신 불필요 → backend-net만
+
+  # ── TIER 3: Data ─────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - ./pg_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # ports: 절대 노출하지 않음 (backend-net 내부에서만 접근)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - backend-net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    volumes:
+      - ./redis_data:/data
+    # ports: 절대 노출하지 않음
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - backend-net

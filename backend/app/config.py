@@ -1,0 +1,47 @@
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+
+class Settings(BaseSettings):
+    # Database
+    POSTGRES_DB: str = "univpt_ops"
+    POSTGRES_USER: str = "univpt"
+    POSTGRES_PASSWORD: str = ""
+    DATABASE_URL: str
+
+    # Redis
+    REDIS_PASSWORD: str = ""
+    REDIS_URL: str
+
+    # Auth
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD_HASH: str
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 1440
+
+    # Naver
+    NAVER_CAFE_ID: str = "31668555"
+    NAVER_CAFE_MENU_VIDEO: int = 1
+    NAVER_CAFE_MENU_REVIEW: int = 2
+    NAVER_CAFE_MENU_HOMEWORK: int = 3
+
+    # Google Drive
+    GOOGLE_DRIVE_FOLDER_ID: str = ""
+    GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
+
+    # App
+    GENERATION: int = 33
+    CORS_ORIGINS: str = "http://localhost:3000"
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()
