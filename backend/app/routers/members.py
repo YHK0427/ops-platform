@@ -103,6 +103,9 @@ async def update_member(
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(member, field, value)
+    # 재활성화 시 deactivated_at 초기화
+    if update_data.get("is_active") is True:
+        member.deactivated_at = None
     await db.commit()
     await db.refresh(member)
     return member

@@ -4,11 +4,12 @@ import {
     ArrowLeft,
     CreditCard,
     History,
+    Loader2,
     ShieldAlert,
     Trophy,
     Pencil
 } from "lucide-react";
-import { useMember, useLedger, useDeactivateMember, useCreateTransaction } from "@/hooks";
+import { useMember, useLedger, useDeactivateMember, useReactivateMember, useCreateTransaction } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
@@ -50,6 +51,7 @@ export default function MemberDetail() {
     const { data: member, isLoading: isLoadingMember } = useMember(memberId);
     const { data: ledger, isLoading: isLoadingLedger } = useLedger({ member_id: memberId });
     const deactivateMutation = useDeactivateMember();
+    const reactivateMutation = useReactivateMember();
     const { mutate: createTransaction, isPending: isCreatingTx } = useCreateTransaction();
 
     if (isLoadingMember || isLoadingLedger) {
@@ -114,9 +116,19 @@ export default function MemberDetail() {
                                 </DialogContent>
                             </Dialog>
                         ) : (
-                            <div className="px-3 py-1 bg-red-500/10 text-red-500 text-sm rounded cursor-not-allowed">
-                                Inactive
-                            </div>
+                            <Button
+                                size="sm"
+                                onClick={() => {
+                                    if (confirm(`${member?.name}을(를) 재활성화하시겠습니까?`)) {
+                                        reactivateMutation.mutate(memberId);
+                                    }
+                                }}
+                                disabled={reactivateMutation.isPending}
+                                className="bg-green-900/50 hover:bg-green-800 border-green-700 text-green-200"
+                            >
+                                {reactivateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                                재활성화
+                            </Button>
                         )}
 
                         <MemberEditSheet

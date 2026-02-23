@@ -123,3 +123,21 @@ export function useDeactivateMember() {
         },
     });
 }
+
+export function useReactivateMember() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            const { data } = await api.patch<Member>(`/members/${id}`, { is_active: true });
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: membersKeys.lists() });
+            queryClient.invalidateQueries({ queryKey: membersKeys.detail(data.id) });
+            toast.success("멤버가 재활성화되었습니다.");
+        },
+        onError: (err: any) => {
+            toast.error("재활성화 실패: " + (err?.response?.data?.detail ?? "알 수 없는 오류"));
+        },
+    });
+}

@@ -23,6 +23,7 @@ class MemberUpdate(BaseModel):
     name_initial: Optional[str] = Field(None, max_length=10)
     email: Optional[str] = Field(None, max_length=200)
     tags: Optional[list[str]] = None
+    is_active: Optional[bool] = None  # 재활성화용
 
 
 class MemberResponse(BaseModel):
