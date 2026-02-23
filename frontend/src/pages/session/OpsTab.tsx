@@ -145,7 +145,7 @@ export default function OpsTab() {
                                         : "Unknown";
                                     const currentTargetId = assignment.target_member_ids?.[0]
                                         ? String(assignment.target_member_ids[0])
-                                        : "";
+                                        : "none";
                                     return (
                                         <TableRow key={assignment.id} className="hover:bg-white/5">
                                             <TableCell className="font-medium text-gray-300">{writerName}</TableCell>
@@ -158,7 +158,7 @@ export default function OpsTab() {
                                                         setFeedbackTargets({
                                                             sessionId: session.id,
                                                             memberId: writerId,
-                                                            targetMemberIds: val ? [parseInt(val)] : [],
+                                                            targetMemberIds: val !== "none" ? [parseInt(val)] : [],
                                                         });
                                                     }}
                                                 >
@@ -166,7 +166,7 @@ export default function OpsTab() {
                                                         <SelectValue placeholder="대상 선택..." />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="">미지정</SelectItem>
+                                                        <SelectItem value="none">미지정</SelectItem>
                                                         {sessionMemberIds
                                                             .filter((id) => id !== writerId)
                                                             .map((id) => (
