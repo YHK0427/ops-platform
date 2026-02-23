@@ -1,6 +1,6 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown } from "lucide-react";
+import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
 import { useCrawlerTask, useUploadVideos, useSetFeedbackTargets } from "@/hooks";
@@ -25,13 +25,9 @@ export default function OpsTab() {
     // D+1 Warning Logic
     const sessionDate = new Date(session.date);
     const today = new Date();
-
     const d1 = new Date(sessionDate.getFullYear(), sessionDate.getMonth(), sessionDate.getDate());
     const d2 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-    const diffTime = d2.getTime() - d1.getTime();
-    const diffDays = diffTime / (1000 * 60 * 60 * 24);
-
+    const diffDays = (d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24);
     const isNextDay = diffDays === 1;
 
     // Build memberId → name map
@@ -39,9 +35,7 @@ export default function OpsTab() {
         const map = new Map<number, string>();
         allMembers?.forEach(m => map.set(m.id, m.name));
         session.teams?.forEach((t) => {
-            t.members?.forEach((tm) => {
-                map.set(tm.id, tm.name);
-            });
+            t.members?.forEach((tm) => map.set(tm.id, tm.name));
         });
         return map;
     }, [allMembers, session.teams]);
@@ -77,7 +71,6 @@ export default function OpsTab() {
                 Task status will appear here...
             </div>
         );
-
         return (
             <div className="bg-[var(--color-base)] rounded-lg p-4 border border-[var(--color-border)] min-h-[100px] flex flex-col items-center justify-center text-sm gap-2">
                 {taskStatus.status === "in_progress" || taskStatus.status === "queued" ? (
@@ -118,7 +111,6 @@ export default function OpsTab() {
                         {isUploading ? "Starting..." : "Start Upload Process"}
                     </Button>
                 </div>
-
                 {renderTaskStatus()}
             </div>
 
@@ -132,7 +124,7 @@ export default function OpsTab() {
                                 피드백 대상 지정
                             </h3>
                             <p className="text-sm text-[var(--color-text-secondary)]">
-                                각 멤버가 영상 피드백을 작성할 대상을 지정합니다. (보통 1명)
+                                각 멤버가 피드백을 작성할 대상을 지정합니다. 본인 영상은 크롤러에서 기본 포함됩니다.
                             </p>
                         </div>
                     </div>
@@ -143,8 +135,8 @@ export default function OpsTab() {
                             <Table>
                                 <TableHeader>
                                     <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
-                                        <TableHead>피드백 작성자</TableHead>
-                                        <TableHead>피드백 대상</TableHead>
+                                        <TableHead className="w-[140px]">피드백 작성자</TableHead>
+                                        <TableHead>피드백 대상 (추가 지정)</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -153,23 +145,23 @@ export default function OpsTab() {
                                         const writerName = writerId != null
                                             ? (memberNameMap.get(writerId) ?? `ID:${writerId}`)
                                             : "Unknown";
-                                        const currentTargetId = assignment.target_member_ids?.[0] ?? null;
+                                        const currentTargetIds = assignment.target_member_ids ?? [];
 
                                         return (
                                             <FeedbackTargetRow
                                                 key={assignment.id}
                                                 writerName={writerName}
                                                 writerId={writerId}
-                                                currentTargetId={currentTargetId}
+                                                currentTargetIds={currentTargetIds}
                                                 sessionMemberIds={sessionMemberIds}
                                                 memberNameMap={memberNameMap}
                                                 disabled={isSettingTarget}
-                                                onSelect={(targetId) => {
+                                                onSetTargets={(targetIds) => {
                                                     if (writerId == null) return;
                                                     setFeedbackTargets({
                                                         sessionId: session.id,
                                                         memberId: writerId,
-                                                        targetMemberIds: targetId != null ? [targetId] : [],
+                                                        targetMemberIds: targetIds,
                                                     });
                                                 }}
                                             />
@@ -215,87 +207,104 @@ export default function OpsTab() {
 interface FeedbackTargetRowProps {
     writerName: string;
     writerId: number | null;
-    currentTargetId: number | null;
+    currentTargetIds: number[];
     sessionMemberIds: number[];
     memberNameMap: Map<number, string>;
     disabled: boolean;
-    onSelect: (targetId: number | null) => void;
+    onSetTargets: (targetIds: number[]) => void;
 }
 
 function FeedbackTargetRow({
     writerName,
     writerId,
-    currentTargetId,
+    currentTargetIds,
     sessionMemberIds,
     memberNameMap,
     disabled,
-    onSelect,
+    onSetTargets,
 }: FeedbackTargetRowProps) {
     const [open, setOpen] = useState(false);
 
-    const options = sessionMemberIds
-        .filter((id) => id !== writerId)
+    // Options exclude self and already-selected targets
+    const addableOptions = sessionMemberIds
+        .filter((id) => id !== writerId && !currentTargetIds.includes(id))
         .map((id) => ({ id, name: memberNameMap.get(id) ?? `ID:${id}` }));
 
-    const selectedName = currentTargetId != null
-        ? (memberNameMap.get(currentTargetId) ?? `ID:${currentTargetId}`)
-        : null;
+    const handleAdd = (id: number) => {
+        onSetTargets([...currentTargetIds, id]);
+        setOpen(false);
+    };
+
+    const handleRemove = (id: number) => {
+        onSetTargets(currentTargetIds.filter((t) => t !== id));
+    };
 
     return (
-        <TableRow className="hover:bg-white/5">
-            <TableCell className="font-medium text-gray-300">{writerName}</TableCell>
+        <TableRow className="hover:bg-white/5 align-top">
+            <TableCell className="font-medium text-gray-300 pt-3">{writerName}</TableCell>
             <TableCell>
-                <Popover open={open} onOpenChange={setOpen}>
-                    <PopoverTrigger asChild>
-                        <Button
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={open}
-                            disabled={disabled}
-                            className="w-[180px] justify-between text-sm font-normal bg-transparent border-[var(--color-border)] hover:bg-white/5"
+                <div className="flex flex-wrap items-center gap-1.5 min-h-[32px]">
+                    {/* Current target badges */}
+                    {currentTargetIds.map((tid) => (
+                        <span
+                            key={tid}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
                         >
-                            <span className={selectedName ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]"}>
-                                {selectedName ?? "대상 선택..."}
-                            </span>
-                            <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[200px] p-0 bg-[var(--color-elevated)] border-[var(--color-border)]">
-                        <Command className="bg-transparent">
-                            <CommandInput placeholder="이름 검색..." className="h-8 text-sm" />
-                            <CommandList>
-                                <CommandEmpty className="text-[var(--color-text-muted)]">검색 결과 없음</CommandEmpty>
-                                <CommandGroup>
-                                    <CommandItem
-                                        value="__none__"
-                                        onSelect={() => {
-                                            onSelect(null);
-                                            setOpen(false);
-                                        }}
-                                        className="text-[var(--color-text-muted)] text-sm"
-                                    >
-                                        <Check className={cn("mr-2 h-3 w-3", currentTargetId == null ? "opacity-100" : "opacity-0")} />
-                                        미지정
-                                    </CommandItem>
-                                    {options.map((opt) => (
-                                        <CommandItem
-                                            key={opt.id}
-                                            value={opt.name}
-                                            onSelect={() => {
-                                                onSelect(opt.id);
-                                                setOpen(false);
-                                            }}
-                                            className="text-sm"
-                                        >
-                                            <Check className={cn("mr-2 h-3 w-3", currentTargetId === opt.id ? "opacity-100" : "opacity-0")} />
-                                            {opt.name}
-                                        </CommandItem>
-                                    ))}
-                                </CommandGroup>
-                            </CommandList>
-                        </Command>
-                    </PopoverContent>
-                </Popover>
+                            {memberNameMap.get(tid) ?? `ID:${tid}`}
+                            <button
+                                type="button"
+                                onClick={() => handleRemove(tid)}
+                                disabled={disabled}
+                                className="ml-0.5 hover:text-white disabled:opacity-50 transition-colors"
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
+                        </span>
+                    ))}
+
+                    {/* Add button combobox */}
+                    {addableOptions.length > 0 && (
+                        <Popover open={open} onOpenChange={setOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={disabled}
+                                    className="h-6 px-2 text-xs border-dashed border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-white/5 hover:border-[var(--color-border)]"
+                                >
+                                    <Plus className="w-3 h-3 mr-1" />
+                                    추가
+                                    <ChevronsUpDown className="w-3 h-3 ml-1 opacity-50" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[200px] p-0 bg-[var(--color-elevated)] border-[var(--color-border)]">
+                                <Command className="bg-transparent">
+                                    <CommandInput placeholder="이름 검색..." className="h-8 text-sm" />
+                                    <CommandList>
+                                        <CommandEmpty className="text-[var(--color-text-muted)]">검색 결과 없음</CommandEmpty>
+                                        <CommandGroup>
+                                            {addableOptions.map((opt) => (
+                                                <CommandItem
+                                                    key={opt.id}
+                                                    value={opt.name}
+                                                    onSelect={() => handleAdd(opt.id)}
+                                                    className="text-sm"
+                                                >
+                                                    <Check className={cn("mr-2 h-3 w-3 opacity-0")} />
+                                                    {opt.name}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                    )}
+
+                    {currentTargetIds.length === 0 && addableOptions.length === 0 && (
+                        <span className="text-xs text-[var(--color-text-muted)]">미지정</span>
+                    )}
+                </div>
             </TableCell>
         </TableRow>
     );

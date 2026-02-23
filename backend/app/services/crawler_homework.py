@@ -96,8 +96,13 @@ async def scan_feedback_comments(
 ) -> int:
     """
     영상 게시판에서 week_num 주차 영상들의 댓글을 스캔하여
-    댓글 작성자를 멤버 매칭 후 FEEDBACK assignment 업데이트.
-    댓글 있으면 PASS, 없으면 MISSING.
+    target_member_ids 기반으로 FEEDBACK assignment 업데이트.
+
+    규칙:
+    - effective_targets = {본인} ∪ {target_member_ids} (본인 영상은 기본 포함)
+    - effective_targets 내 모든 멤버의 영상에 댓글을 달았으면 PASS, 아니면 MISSING
+    - target_member_ids 미설정 시 본인 영상만 체크
+    - 영상이 없는 멤버의 경우 체크 불가 → PASS 처리 (스캔 대상 아님)
     """
     req_session = await get_valid_requests_session(db)
     if req_session is None:
@@ -121,12 +126,26 @@ async def scan_feedback_comments(
 
     logger.info(f"Found {len(video_articles)} video articles for week {week_num}")
 
-    # 2. 각 게시글의 댓글 작성자 수집
-    commenters: set[int] = set()  # member_ids who left a comment
+    # 2. 각 게시글의 저자 매핑 및 댓글 수집
+    # member_id → set[article_id]: 이 멤버가 올린 영상들
+    member_to_articles: dict[int, set[int]] = {}
+    # article_id → set[member_id]: 이 영상에 댓글을 단 멤버들
+    article_commenters: dict[int, set[int]] = {}
+
     for article in video_articles:
         article_id = article.get("articleId") or article.get("article_id")
         if not article_id:
             continue
+        article_id = int(article_id)
+
+        # 영상 저자 매칭 (영상 제목 형식 우선, fallback으로 일반 형식)
+        title = article.get("subject", "")
+        extracted = extract_name_from_title(title, doc_type="VIDEO") or extract_name_from_title(title)
+        owner = match_member_by_name(extracted, members) if extracted else None
+        if owner:
+            member_to_articles.setdefault(owner.id, set()).add(article_id)
+
+        # 댓글 작성자 수집
         try:
             detail = fetch_article_detail(req_session, article_id)
             comments = (
@@ -134,18 +153,53 @@ async def scan_feedback_comments(
                       .get("result", {})
                       .get("commentList", [])
             )
+            commenters_for_article: set[int] = set()
             for comment in comments:
                 nick = comment.get("writer", {}).get("nick", "")
-                member = match_member_by_name(nick, members)
-                if member:
-                    commenters.add(member.id)
+                commenter = match_member_by_name(nick, members)
+                if commenter:
+                    commenters_for_article.add(commenter.id)
+            article_commenters[article_id] = commenters_for_article
         except Exception as e:
             logger.warning(f"Failed to fetch article {article_id}: {e}")
+            article_commenters[article_id] = set()
 
-    # 3. 각 멤버별 FEEDBACK 상태 업데이트
+    # 3. FEEDBACK Assignment에서 target_member_ids 로드
+    stmt = select(Assignment).where(
+        Assignment.session_id == session_id,
+        Assignment.type == "FEEDBACK",
+    )
+    result = await db.execute(stmt)
+    feedback_assignments = {a.member_id: a for a in result.scalars().all()}
+
+    # 4. 각 멤버별 FEEDBACK 상태 업데이트
     count = 0
     for member in members:
-        status = "PASS" if member.id in commenters else "MISSING"
+        assignment = feedback_assignments.get(member.id)
+        explicit_targets: list[int] = (assignment.target_member_ids or []) if assignment else []
+
+        # 본인 영상은 기본 포함
+        effective_targets = list({member.id} | set(explicit_targets))
+
+        # 영상이 있는 대상만 체크 (영상 없는 대상은 확인 불가이므로 skip)
+        targets_with_videos = [t for t in effective_targets if t in member_to_articles]
+
+        if not targets_with_videos:
+            # 체크 가능한 영상이 없음 → PASS (확인 불가)
+            logger.warning(
+                f"Member {member.id}: no video articles for any effective target "
+                f"({effective_targets}) — marking PASS"
+            )
+            status = "PASS"
+        else:
+            # 모든 target의 영상에 댓글을 달았는지 확인
+            all_covered = all(
+                member.id in article_commenters.get(article_id, set())
+                for target_id in targets_with_videos
+                for article_id in member_to_articles.get(target_id, set())
+            )
+            status = "PASS" if all_covered else "MISSING"
+
         await upsert_assignment(db, session_id, member.id, "FEEDBACK", status)
         count += 1
 
