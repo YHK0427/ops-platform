@@ -79,7 +79,7 @@ export function PostTab() {
 
     const handleToggleStatus = async (assignment: any) => {
         if (!assignment) {
-            toast.error("스캔된 과제 데이터가 없습니다. 먼저 스캔해주세요.");
+            toast.error("과제 데이터가 없습니다. (세션 상태 확인 필요)");
             return;
         }
 
@@ -132,7 +132,7 @@ export function PostTab() {
             <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                 <CardHeader>
                     <CardTitle className="text-lg">Assignment Status</CardTitle>
-                    <CardDescription>Click to toggle: PASS → LATE → MISSING → PASS (PENDING = 미스캔)</CardDescription>
+                    <CardDescription>배지를 클릭해 수동 변경: PENDING → PASS → LATE → MISSING (스캔 없이도 수동 설정 가능)</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
@@ -168,11 +168,12 @@ export function PostTab() {
                                                 <TableCell key={type} className="text-center">
                                                     <Badge
                                                         variant="outline"
+                                                        title={assignment ? "클릭해서 상태 변경" : "과제 데이터 없음"}
                                                         className={`cursor-pointer hover:opacity-80 transition-opacity select-none ${
                                                             status === "PASS" ? "bg-green-500/10 text-green-500 border-green-500/50" :
                                                             status === "MISSING" ? "bg-red-500/10 text-red-500 border-red-500/50" :
                                                             status === "LATE" ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/50" :
-                                                            status === "PENDING" ? "bg-gray-800 text-gray-400 border-gray-700" :
+                                                            status === "PENDING" ? "bg-blue-900/30 text-blue-400 border-blue-700 hover:bg-blue-800/30" :
                                                             "bg-gray-800 text-gray-500 border-gray-800"
                                                         }`}
                                                         onClick={() => handleToggleStatus(assignment)}
