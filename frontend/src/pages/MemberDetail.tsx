@@ -8,13 +8,17 @@ import {
     Trophy,
     Pencil
 } from "lucide-react";
-import { useMember, useLedger, useDeactivateMember } from "@/hooks";
+import { useMember, useLedger, useDeactivateMember, useCreateTransaction } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
 import { StatusBadge } from "@/components/StatusBadge";
 import { MemberEditSheet } from "@/components/MemberEditSheet";
+import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     Table,
     TableBody,
@@ -38,10 +42,15 @@ export default function MemberDetail() {
     const navigate = useNavigate();
     const memberId = Number(id);
     const [isEditOpen, setIsEditOpen] = useState(false);
+    const [isDepositOpen, setIsDepositOpen] = useState(false);
+    const [txType, setTxType] = useState("DEPOSIT_RECHARGE");
+    const [txAmount, setTxAmount] = useState(0);
+    const [txDesc, setTxDesc] = useState("");
 
     const { data: member, isLoading: isLoadingMember } = useMember(memberId);
-    const { data: ledger, isLoading: isLoadingLedger } = useLedger(memberId);
+    const { data: ledger, isLoading: isLoadingLedger } = useLedger({ member_id: memberId });
     const deactivateMutation = useDeactivateMember();
+    const { mutate: createTransaction, isPending: isCreatingTx } = useCreateTransaction();
 
     if (isLoadingMember || isLoadingLedger) {
         return (
@@ -129,7 +138,7 @@ export default function MemberDetail() {
                                 <CreditCard className="w-5 h-5" />
                                 <span className="text-sm font-medium">Deposit Balance</span>
                             </div>
-                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsEditOpen(true)}>Manage</Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsDepositOpen(true)}>Manage</Button>
                         </div>
                         <div>
                             <span className={`text-3xl font-mono font-bold ${(member.current_deposit || 0) < 10000 ? "text-rose-400" : "text-white"}`}>
@@ -148,9 +157,14 @@ export default function MemberDetail() {
                                 <Trophy className="w-5 h-5" />
                                 <span className="text-sm font-medium">Total Score</span>
                             </div>
-                            <Button size="sm" variant="outline" className="h-7 text-xs bg-[var(--color-accent)]/10 text-[var(--color-accent)] border-[var(--color-accent)]/20 hover:bg-[var(--color-accent)]/20">
-                                Grant Merit
-                            </Button>
+                            <GrantMeritDialog
+                                preselectedMemberId={member.id}
+                                trigger={
+                                    <Button size="sm" variant="outline" className="h-7 text-xs bg-[var(--color-accent)]/10 text-[var(--color-accent)] border-[var(--color-accent)]/20 hover:bg-[var(--color-accent)]/20">
+                                        Grant Merit
+                                    </Button>
+                                }
+                            />
                         </div>
                         <div className="flex items-center gap-6">
                             <ScoreDisplay
@@ -220,6 +234,60 @@ export default function MemberDetail() {
                     </div>
                 </div>
             </div>
+
+            {/* Deposit Management Dialog */}
+            <Dialog open={isDepositOpen} onOpenChange={setIsDepositOpen}>
+                <DialogContent className="sm:max-w-[400px] bg-[var(--color-elevated)] border-[var(--color-border)] text-[var(--color-text-primary)]">
+                    <DialogHeader>
+                        <DialogTitle>보증금 관리 — {member.name}</DialogTitle>
+                        <DialogDescription>현재 잔액: ₩{(member.current_deposit || 0).toLocaleString()}</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right">유형</Label>
+                            <Select value={txType} onValueChange={setTxType}>
+                                <SelectTrigger className="col-span-3">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="DEPOSIT_RECHARGE">DEPOSIT_RECHARGE (충전)</SelectItem>
+                                    <SelectItem value="DEPOSIT_ADJUST">DEPOSIT_ADJUST (조정)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right">금액 (KRW)</Label>
+                            <Input
+                                type="number"
+                                className="col-span-3"
+                                value={txAmount}
+                                onChange={(e) => setTxAmount(parseInt(e.target.value) || 0)}
+                                placeholder="양수=충전, 음수=차감"
+                            />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right">사유</Label>
+                            <Input
+                                className="col-span-3"
+                                value={txDesc}
+                                onChange={(e) => setTxDesc(e.target.value)}
+                                placeholder="예: 신규 등록 보증금"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            disabled={isCreatingTx || !txDesc}
+                            onClick={() => createTransaction(
+                                { member_id: member.id, type: txType, amount_krw: txAmount, score_delta: 0, description: txDesc },
+                                { onSuccess: () => { setIsDepositOpen(false); setTxAmount(0); setTxDesc(""); } }
+                            )}
+                        >
+                            {isCreatingTx ? "처리 중..." : "적용"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

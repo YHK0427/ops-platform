@@ -71,17 +71,6 @@ export default function SessionLayout() {
         }
     };
 
-    // 세션 상태별 허용 탭
-    const allowedTabMap: Record<Session["status"], string[]> = {
-        SETUP:      ["prep"],
-        PREP:       ["prep"],
-        OPS:        ["ops"],
-        POST:       ["post"],
-        SETTLEMENT: ["settlement"],
-        FINALIZED:  ["settlement"],
-    };
-    const allowedTabs = allowedTabMap[typedSession.status] ?? ["prep"];
-
     const tabs = [
         { id: "prep",       label: "Prep (준비)" },
         { id: "ops",        label: "Ops (운영)" },
@@ -115,26 +104,22 @@ export default function SessionLayout() {
             <div className="border-b border-[var(--color-border)] bg-[var(--color-surface)] sticky top-[60px] z-10 backdrop-blur-md">
                 <div className="container mx-auto px-4">
                     <div className="flex space-x-1">
-                        {tabs.map((tab) => {
-                            const isAllowed = allowedTabs.includes(tab.id);
-                            return (
-                                <NavLink
-                                    key={tab.id}
-                                    to={tab.id}
-                                    className={({ isActive }) =>
-                                        cn(
-                                            "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
-                                            !isAllowed && "opacity-30 pointer-events-none",
-                                            isActive && isAllowed
-                                                ? "border-[var(--color-accent)] text-[var(--color-accent)]"
-                                                : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-border-highlight)]"
-                                        )
-                                    }
-                                >
-                                    {tab.label}
-                                </NavLink>
-                            );
-                        })}
+                        {tabs.map((tab) => (
+                            <NavLink
+                                key={tab.id}
+                                to={tab.id}
+                                className={({ isActive }) =>
+                                    cn(
+                                        "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                                        isActive
+                                            ? "border-[var(--color-accent)] text-[var(--color-accent)]"
+                                            : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-border-highlight)]"
+                                    )
+                                }
+                            >
+                                {tab.label}
+                            </NavLink>
+                        ))}
                     </div>
                 </div>
             </div>

@@ -69,7 +69,11 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                         <h3 className="font-bold text-white">Naver Session Status</h3>
                         <p className="text-sm text-[var(--color-text-secondary)]">
                             {naverStatus?.is_valid
-                                ? `Valid (Expires: ${naverStatus.expires_hint ? new Date(naverStatus.expires_hint).toLocaleDateString() : 'Unknown'})`
+                                ? (() => {
+                                    const d = naverStatus.expires_hint ? new Date(naverStatus.expires_hint) : null;
+                                    const valid = d && d.getFullYear() > 2000;
+                                    return `Valid (Expires: ${valid ? d!.toLocaleDateString() : 'N/A'})`;
+                                })()
                                 : "Invalid / Expired"}
                         </p>
                     </div>

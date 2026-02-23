@@ -17,9 +17,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 interface GrantMeritDialogProps {
     trigger?: React.ReactNode;
+    preselectedMemberId?: number;
 }
 
-export function GrantMeritDialog({ trigger }: GrantMeritDialogProps) {
+export function GrantMeritDialog({ trigger, preselectedMemberId }: GrantMeritDialogProps) {
     const [open, setOpen] = useState(false);
     const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
     const [reason, setReason] = useState("");
@@ -28,11 +29,13 @@ export function GrantMeritDialog({ trigger }: GrantMeritDialogProps) {
     const { data: members } = useMembers(true); // Active members
     const { mutate: giveMerit, isPending } = useGiveMerit();
 
+    const effectiveMembers = preselectedMemberId ? [preselectedMemberId] : selectedMembers;
+
     const handleSubmit = () => {
-        if (selectedMembers.length === 0) return;
+        if (effectiveMembers.length === 0) return;
 
         giveMerit({
-            member_ids: selectedMembers,
+            member_ids: effectiveMembers,
             score_delta: score,
             reason,
         }, {
@@ -93,20 +96,22 @@ export function GrantMeritDialog({ trigger }: GrantMeritDialogProps) {
                             className="col-span-3"
                         />
                     </div>
-                    <div className="space-y-2">
-                        <Label>Select Members ({selectedMembers.length})</Label>
-                        <div className="h-[200px] overflow-y-auto border rounded-md p-2 space-y-1">
-                            {members?.map(member => (
-                                <div key={member.id} className="flex items-center space-x-2 p-1 hover:bg-accent rounded cursor-pointer" onClick={() => toggleMember(member.id)}>
-                                    <Checkbox checked={selectedMembers.includes(member.id)} />
-                                    <span className="text-sm">{member.name}</span>
-                                </div>
-                            ))}
+                    {!preselectedMemberId && (
+                        <div className="space-y-2">
+                            <Label>Select Members ({selectedMembers.length})</Label>
+                            <div className="h-[200px] overflow-y-auto border rounded-md p-2 space-y-1">
+                                {members?.map(member => (
+                                    <div key={member.id} className="flex items-center space-x-2 p-1 hover:bg-accent rounded cursor-pointer" onClick={() => toggleMember(member.id)}>
+                                        <Checkbox checked={selectedMembers.includes(member.id)} />
+                                        <span className="text-sm">{member.name}</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
                 <DialogFooter>
-                    <Button onClick={handleSubmit} disabled={isPending || selectedMembers.length === 0}>
+                    <Button onClick={handleSubmit} disabled={isPending || effectiveMembers.length === 0}>
                         {isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                         Grant
                     </Button>
