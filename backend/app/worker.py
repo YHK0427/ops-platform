@@ -1,4 +1,5 @@
 from arq.connections import RedisSettings
+from arq import cron
 
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -6,9 +7,11 @@ from app.services.crawler_ppt import scan_ppt
 from app.services.crawler_video import upload_all_videos
 
 from sqlalchemy import select
-from app.models import Member, Session
+from app.models import Member, Session, CafePost
 from app.services.crawler_homework import scan_homework_all, scan_feedback_comments
 from app.services.crawler_naver_login import login_with_credentials
+from app.services.crawler_cafe import sync_board_to_db
+from app.services.naver_session import get_valid_requests_session
 
 # 태스크 함수들
 async def task_scan_ppt(ctx, session_id: int, mode: str):
@@ -51,6 +54,31 @@ async def task_naver_login(ctx, username: str, password: str):
         return await login_with_credentials(db, username, password)
 
 
+async def task_sync_cafe_boards(ctx):
+    """게시판 cron 동기화 — 30분마다 실행"""
+    async with AsyncSessionLocal() as db:
+        req_session = await get_valid_requests_session(db)
+        if not req_session:
+            return {"status": "skipped", "reason": "No valid Naver session"}
+
+        members_result = await db.execute(select(Member).where(Member.is_active == True))
+        members = members_result.scalars().all()
+
+        results = []
+        for board_type, menu_id in [
+            ("REVIEW",   settings.NAVER_CAFE_MENU_REVIEW),
+            ("HOMEWORK", settings.NAVER_CAFE_MENU_HOMEWORK),
+            ("VIDEO",    settings.NAVER_CAFE_MENU_VIDEO),
+        ]:
+            r = await sync_board_to_db(board_type, menu_id, req_session, members, db)
+            results.append(r)
+
+        return {"status": "complete", "boards": results}
+
+
 class WorkerSettings:
-    functions = [task_scan_ppt, task_scan_homework, task_upload_videos, task_naver_login]
+    functions = [task_scan_ppt, task_scan_homework, task_upload_videos, task_naver_login, task_sync_cafe_boards]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    cron_jobs = [
+        cron(task_sync_cafe_boards, minute={0, 30}),  # 매 30분마다 실행
+    ]
