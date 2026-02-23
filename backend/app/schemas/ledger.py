@@ -1,5 +1,6 @@
 from enum import Enum
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 class LedgerType(str, Enum):
@@ -40,5 +41,8 @@ class TransactionRequest(BaseModel):
     amount_krw: int
     description: str
 
-class LedgerDescriptionUpdate(BaseModel):
-    description: str = Field(min_length=1, max_length=500)
+class LedgerUpdate(BaseModel):
+    type: Optional[LedgerType] = None
+    amount_krw: Optional[int] = None
+    score_delta: Optional[int] = None
+    description: Optional[str] = Field(None, min_length=1, max_length=500)

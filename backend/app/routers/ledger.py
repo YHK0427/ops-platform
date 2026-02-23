@@ -7,7 +7,7 @@ from typing import Optional
 from app.database import AsyncSessionLocal
 from app.deps import get_db, get_current_user
 from app.models import Ledger, Member
-from app.schemas.ledger import LedgerResponse, LedgerType, MeritRequest, TransactionRequest, LedgerDescriptionUpdate
+from app.schemas.ledger import LedgerResponse, LedgerType, MeritRequest, TransactionRequest, LedgerUpdate
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 
@@ -122,17 +122,60 @@ async def create_transaction(
     return entry
 
 @router.patch("/{ledger_id}", response_model=LedgerResponse)
-async def update_ledger_description(
+async def update_ledger_entry(
     ledger_id: int,
-    req: LedgerDescriptionUpdate,
+    req: LedgerUpdate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
 ):
-    """원장 항목 설명(description) 수정 — 금액/타입/점수는 변경 불가"""
+    """
+    원장 항목 수정 (type, amount_krw, score_delta, description 모두 수정 가능)
+    - amount_krw 변경 시: 멤버의 current_deposit에 delta 적용
+    - score_delta 변경 시: 멤버의 total_plus_score/total_minus_score에 delta 적용
+    """
     entry = await db.get(Ledger, ledger_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Ledger entry not found")
-    entry.description = req.description
+
+    member = await db.get(Member, entry.member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    # amount_krw 변경
+    if req.amount_krw is not None and req.amount_krw != entry.amount_krw:
+        delta = req.amount_krw - entry.amount_krw
+        member.current_deposit += delta
+        entry.deposit_after = member.current_deposit
+        entry.amount_krw = req.amount_krw
+
+    # score_delta 변경
+    if req.score_delta is not None and req.score_delta != entry.score_delta:
+        old_score = entry.score_delta
+        new_score = req.score_delta
+
+        # 기존 점수 효과 제거
+        if old_score > 0:
+            member.total_plus_score = max(0, member.total_plus_score - old_score)
+        elif old_score < 0:
+            member.total_minus_score = min(0, member.total_minus_score - old_score)
+
+        # 새 점수 효과 추가
+        if new_score > 0:
+            member.total_plus_score += new_score
+        elif new_score < 0:
+            member.total_minus_score += new_score
+
+        member.net_score = member.total_plus_score + member.total_minus_score
+        entry.score_delta = new_score
+
+    # type 변경
+    if req.type is not None:
+        entry.type = req.type
+
+    # description 변경
+    if req.description is not None:
+        entry.description = req.description
+
     await db.commit()
     await db.refresh(entry)
     return entry
