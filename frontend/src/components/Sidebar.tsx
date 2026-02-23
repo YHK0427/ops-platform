@@ -4,7 +4,6 @@ import {
     LayoutDashboard,
     Users,
     BookOpen,
-    Settings,
     LogOut,
     Plus,
     CalendarDays,
@@ -100,20 +99,6 @@ export function Sidebar() {
 
             {/* Footer */}
             <div className="px-3 py-4 border-t border-[var(--color-border-subtle)] space-y-1">
-                <NavLink
-                    to="/settings"
-                    className={({ isActive }) =>
-                        cn(
-                            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                            isActive
-                                ? "text-white bg-[var(--color-hover)]"
-                                : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-hover)]"
-                        )
-                    }
-                >
-                    <Settings className="w-4 h-4" />
-                    Settings
-                </NavLink>
                 {user && (
                     <button
                         onClick={logout}

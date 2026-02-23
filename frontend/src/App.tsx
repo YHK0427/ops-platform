@@ -64,7 +64,6 @@ export default function App() {
                   <Route path="settlement" element={<SettlementTab />} />
                 </Route>
                 <Route path="/ledger" element={<Ledger />} />
-                <Route path="/settings" element={<Navigate to="/dashboard" replace />} />
               </Route>
             </Route>
 
