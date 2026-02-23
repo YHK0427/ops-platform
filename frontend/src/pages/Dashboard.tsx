@@ -1,0 +1,367 @@
+import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import {
+    CalendarDays,
+    Clock,
+    Plus,
+    Users,
+    Lock,
+    CheckCircle2,
+} from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/PageHeader";
+import { WarningBanner } from "@/components/WarningBanner";
+import { StatusBadge } from "@/components/StatusBadge";
+import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, useStreakCandidates, useImportNaverSession, useNaverLogin, useCrawlerTask, crawlerKeys } from "@/hooks";
+import { toast } from "sonner";
+
+function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
+    const { mutate: importSession, isPending: isImporting } = useImportNaverSession();
+    const { mutateAsync: naverLogin } = useNaverLogin();
+    const queryClient = useQueryClient();
+
+    const [mode, setMode] = useState<"none" | "login" | "manual">("none");
+    const [jsonInput, setJsonInput] = useState("");
+    const [credentials, setCredentials] = useState({ username: "", password: "" });
+    const [loginTaskId, setLoginTaskId] = useState<string | null>(null);
+    const { data: loginTaskData } = useCrawlerTask(loginTaskId);
+
+    useEffect(() => {
+        if (!loginTaskData) return;
+        if (loginTaskData.status === "complete") {
+            setLoginTaskId(null);
+            queryClient.invalidateQueries({ queryKey: crawlerKeys.naverSession() });
+            toast.success("네이버 로그인 성공!");
+        } else if (loginTaskData.status === "failed") {
+            setLoginTaskId(null);
+            toast.error(`네이버 로그인 실패: ${loginTaskData.result?.reason ?? "알 수 없는 오류"}`);
+        }
+    }, [loginTaskData, queryClient]);
+
+    const handleImport = () => {
+        if (!jsonInput) return;
+        importSession(jsonInput, {
+            onSuccess: () => {
+                setJsonInput("");
+                setMode("none");
+            }
+        });
+    };
+
+    const handleLogin = async () => {
+        try {
+            const result = await naverLogin(credentials);
+            setLoginTaskId(result.task_id);
+            setMode("none");
+        } catch (e) {
+            toast.error("로그인 요청 실패");
+        }
+    };
+
+    return (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 transition-all duration-300">
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${naverStatus?.is_valid ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                        <Lock className="w-5 h-5" />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-white">Naver Session Status</h3>
+                        <p className="text-sm text-[var(--color-text-secondary)]">
+                            {naverStatus?.is_valid
+                                ? `Valid (Expires: ${naverStatus.expires_hint ? new Date(naverStatus.expires_hint).toLocaleDateString() : 'Unknown'})`
+                                : "Invalid / Expired"}
+                        </p>
+                    </div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                    {loginTaskId && (
+                        <div className="flex items-center gap-2 mt-2 text-xs text-blue-400">
+                            <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                            <span>네이버 로그인 진행 중...</span>
+                        </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                        {mode === "none" ? (
+                            <>
+                                <button
+                                    onClick={() => setMode("login")}
+                                    disabled={!!loginTaskId}
+                                    className="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-white text-xs font-bold hover:bg-[var(--color-primary-hover)] transition-colors shadow-lg shadow-[var(--color-primary)]/20 disabled:opacity-50"
+                                >
+                                    Naver Login
+                                </button>
+                                <button
+                                    onClick={() => setMode("manual")}
+                                    disabled={!!loginTaskId}
+                                    className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:underline disabled:opacity-50"
+                                >
+                                    Manual Import
+                                </button>
+                            </>
+                        ) : (
+                            <button
+                                onClick={() => setMode("none")}
+                                className="text-sm text-[var(--color-text-muted)] hover:text-white"
+                            >
+                                Cancel
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {mode === "login" && (
+                <div className="space-y-3 animate-in fade-in slide-in-from-top-2 bg-black/20 p-4 rounded-lg border border-[var(--color-border)]">
+                    <div className="grid gap-3">
+                        <input
+                            type="text"
+                            placeholder="Naver ID"
+                            value={credentials.username}
+                            onChange={e => setCredentials({ ...credentials, username: e.target.value })}
+                            className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-sm text-white focus:outline-none focus:border-[var(--color-accent)]"
+                        />
+                        <input
+                            type="password"
+                            placeholder="Password"
+                            value={credentials.password}
+                            onChange={e => setCredentials({ ...credentials, password: e.target.value })}
+                            className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-sm text-white focus:outline-none focus:border-[var(--color-accent)]"
+                        />
+                    </div>
+                    <div className="flex justify-end pt-2">
+                        <button
+                            onClick={handleLogin}
+                            disabled={!credentials.username || !credentials.password}
+                            className="px-4 py-2 bg-[var(--color-success)] hover:bg-green-600 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-colors flex items-center gap-2"
+                        >
+                            Auto Login
+                        </button>
+                    </div>
+                    <p className="text-[10px] text-[var(--color-text-muted)] text-center">
+                        * Credentials are processed securely by the server and never stored.
+                    </p>
+                </div>
+            )}
+
+            {mode === "manual" && (
+                <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                    <textarea
+                        className="w-full h-32 px-3 py-2 bg-black/20 border border-[var(--color-border)] rounded-md text-xs font-mono text-gray-300 focus:outline-none focus:border-[var(--color-accent)]"
+                        placeholder='Paste storageState.json content here...'
+                        value={jsonInput}
+                        onChange={(e) => setJsonInput(e.target.value)}
+                    />
+                    <div className="flex justify-end">
+                        <button
+                            onClick={handleImport}
+                            disabled={isImporting || !jsonInput}
+                            className="px-4 py-2 bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] text-white text-sm font-medium rounded-md disabled:opacity-50 transition-colors"
+                        >
+                            {isImporting ? "Importing..." : "Import JSON"}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+
+
+export default function Dashboard() {
+    const navigate = useNavigate();
+    const { data: sessionData, isLoading: isSessionLoading } = useCurrentSession();
+    const { data: sortedMembers, isLoading: isLoadingMembers } = useMembers(true); // Active only
+    const { data: naverStatus, isLoading: isNaverLoading } = useNaverSessionStatus();
+    const session = sessionData; // Alias for cleaner code
+
+    // Additional data for dashboard
+    const { data: stats } = useSessionStats(session?.id || 0);
+    const { data: streakCandidates } = useStreakCandidates();
+
+    // Derived values
+    const isNaverExpired = !isNaverLoading && naverStatus ? !naverStatus.is_valid : false;
+
+    // 1. Identify Risks
+    // Low Deposit: < 10,000 KRW
+    const lowDepositMembers = sortedMembers?.filter((m) => (m.current_deposit || 0) < 10000) || [];
+    // Eviction Risk: net_score <= -12 (Eviction) or <= -8 (Warning)
+    const riskScoreMembers = sortedMembers?.filter((m) => (m.net_score || 0) <= -8) || [];
+
+    const isLoading = isLoadingMembers || isSessionLoading || isNaverLoading;
+
+    if (isLoading) {
+        return (
+            <div className="flex h-full items-center justify-center">
+                <span className="inline-block w-8 h-8 border-2 border-[var(--color-border)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-col h-full">
+            <PageHeader
+                title="Dashboard"
+                subtitle="전체 운영 현황 및 리스크 모니터링"
+            />
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {/* 1. Naver Session Card */}
+                <NaverSessionCard naverStatus={naverStatus} />
+
+                {/* 2. Warning Stack */}
+                <div className="space-y-4">
+                    <h2 className="text-sm font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                        Required Actions
+                    </h2>
+
+                    <div className="space-y-2">
+                        {isNaverExpired && (
+                            <WarningBanner
+                                level="error"
+                                title="Naver Login Expired"
+                                message="네이버 카페 자동화 기능이 제한됩니다. 상단 Naver Session 카드에서 재로그인해주세요."
+                            />
+                        )}
+
+                        {lowDepositMembers.map((m) => (
+                            <WarningBanner
+                                key={`deposit-${m.id}`}
+                                level="warning"
+                                message={`[디파짓 부족] ${m.name}님의 잔액이 ${(m.current_deposit || 0).toLocaleString()}원입니다. (최저 10,000원)`}
+                            />
+                        ))}
+
+                        {riskScoreMembers.length > 0 && (
+                            <>
+                                {riskScoreMembers.map(member => (
+                                    <WarningBanner
+                                        key={`score-${member.id}`}
+                                        level={(member.net_score || 0) <= -12 ? "error" : "warning"}
+                                        title={(member.net_score || 0) <= -12 ? "Eviction Risk" : "Score Warning"}
+                                        message={`[점수 경고] ${member.name}님의 점수가 ${member.net_score || 0}점입니다. ${(member.net_score || 0) <= -12 ? "(퇴출 대상)" : "(경고 단계)"}`}
+                                    />
+                                ))}
+                            </>
+                        )}
+
+                        {streakCandidates && streakCandidates.length > 0 && (
+                            <WarningBanner
+                                level="info"
+                                title="Streak Candidates"
+                                message={`${streakCandidates.length}명의 멤버가 4회 연속 출석을 달성했습니다. (상점 부여 필요)`}
+                                action={{ label: "View Members", onClick: () => navigate("/members") }}
+                            />
+                        )}
+
+                        {!isNaverExpired && lowDepositMembers.length === 0 && riskScoreMembers.length === 0 && (!streakCandidates || streakCandidates.length === 0) && (
+                            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-green-500/20 bg-green-500/5 text-green-400 text-sm">
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>현재 조치 필요한 경고 사항이 없습니다.</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* 2. Current Session Card */}
+                <div className="space-y-4">
+                    <h2 className="text-sm font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                        Current Session
+                    </h2>
+
+                    {session ? (
+                        <div className="relative overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] backdrop-blur-md p-6 group transition-all hover:border-[var(--color-border-highlight)]">
+                            <div className="absolute top-0 right-0 p-6 opacity-30 group-hover:opacity-100 transition-opacity">
+                                <StatusBadge status={session.status} className="text-sm px-3 py-1" />
+                            </div>
+
+                            <div className="mb-6">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <span className="px-2 py-0.5 rounded text-xs font-bold bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20">
+                                        {session.week_num}주차
+                                    </span>
+                                    {(() => {
+                                        const today = new Date().toISOString().split("T")[0];
+                                        const isToday = session.date === today;
+                                        const isPast = session.date < today;
+                                        const isClosed = isPast || (isToday && new Date().getHours() >= 22);
+                                        if (!isToday && !isPast) return null;
+                                        return isClosed ? (
+                                            <div className="flex items-center gap-1.5 text-xs text-orange-400">
+                                                <Lock className="w-3 h-3" />
+                                                <span>Entrance Closed</span>
+                                            </div>
+                                        ) : null;
+                                    })()}
+                                </div>
+                                <h3 className="text-2xl font-bold text-white mb-1">
+                                    {session.title}
+                                </h3>
+                                <p className="text-sm text-[var(--color-text-secondary)]">
+                                    {session.type} SESSION
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 border-t border-[var(--color-border)]">
+                                <StatBox
+                                    label="출석률"
+                                    value={stats ? `${stats.attendance_rate}%` : "-"}
+                                    icon={Users}
+                                />
+                                <StatBox
+                                    label="PPT 제출"
+                                    value={stats ? `${stats.ppt_submitted}/${stats.ppt_total}` : "-"}
+                                    icon={Clock}
+                                />
+                                <StatBox
+                                    label="과제 제출"
+                                    value={stats ? `${stats.homework_submitted}/${stats.homework_total}` : "-"}
+                                    icon={CalendarDays}
+                                />
+                                <button
+                                    onClick={() => {
+                                        const tabMap: Record<string, string> = {
+                                            SETUP: "prep", PREP: "prep", OPS: "ops",
+                                            POST: "post", SETTLEMENT: "settlement", FINALIZED: "settlement",
+                                        };
+                                        const tab = tabMap[session.status] ?? "prep";
+                                        navigate(`/sessions/${session.id}/${tab}`);
+                                    }}
+                                    className="flex items-center justify-center gap-2 rounded-lg bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] hover:text-white transition-colors text-sm font-medium"
+                                >
+                                    Manage Session
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-12 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]">
+                            <p className="text-sm mb-4">예정된 세션이 없습니다.</p>
+                            <button
+                                onClick={() => navigate("/sessions/new")}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm font-bold hover:bg-[var(--color-accent-hover)] transition-colors shadow-[0_0_15px_var(--color-accent-dim)]"
+                            >
+                                <Plus className="w-4 h-4" />
+                                세션 생성하기
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function StatBox({ label, value, icon: Icon }: { label: string; value: string; icon: React.ElementType }) {
+    return (
+        <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-white/5 text-[var(--color-text-secondary)]">
+                <Icon className="w-4 h-4" />
+            </div>
+            <div>
+                <p className="text-xs text-[var(--color-text-muted)]">{label}</p>
+                <p className="font-mono font-bold text-lg text-[var(--color-text-primary)]">{value}</p>
+            </div>
+        </div>
+    );
+}
