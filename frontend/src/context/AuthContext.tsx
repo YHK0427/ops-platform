@@ -36,7 +36,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Token exists in localStorage: verify with backend
         api.get<AuthUser>("/members/me")
             .then(({ data }) => setUser(data))
-            .catch(() => setToken(null)) // invalid/expired token → clear it
+            .catch((err) => {
+                // 401만 토큰 무효로 처리 (서버 오류/네트워크 오류는 토큰 유지)
+                if (err?.response?.status === 401) setToken(null);
+            })
             .finally(() => setIsLoading(false));
     }, []);
 
