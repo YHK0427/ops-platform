@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { Plus, ArrowRight, Calendar, Users, Briefcase } from "lucide-react";
+import { Plus, ArrowRight, Calendar, Users, Briefcase, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
-import { useSessions } from "@/hooks";
+import { useSessions, useDeleteSession } from "@/hooks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function SessionList() {
     const navigate = useNavigate();
     const { data: sessions, isLoading, error } = useSessions();
+    const { mutate: deleteSession } = useDeleteSession();
 
     const sortedSessions = sessions?.sort((a, b) =>
         new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -66,7 +67,20 @@ export default function SessionList() {
                                             </span>
                                             <StatusBadge status={session.status} className="px-1.5 py-0 text-[10px]" />
                                         </div>
-                                        {session.status === 'SCHEDULED' && (
+                                        {session.status === 'SETUP' ? (
+                                            <button
+                                                className="p-1 rounded text-red-400/60 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
+                                                title="세션 삭제"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm(`"${session.title}" 세션을 삭제하시겠습니까?`)) {
+                                                        deleteSession(session.id);
+                                                    }
+                                                }}
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        ) : (
                                             <ArrowRight className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-[var(--color-accent)] transition-colors opacity-0 group-hover:opacity-100 transform -translate-x-2 group-hover:translate-x-0" />
                                         )}
                                     </div>

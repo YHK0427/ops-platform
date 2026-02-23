@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { toast } from "sonner";
 
@@ -189,6 +190,25 @@ export function useFinalizeSession() {
             queryClient.invalidateQueries({ queryKey: sessionsKeys.details() });
             queryClient.invalidateQueries({ queryKey: sessionsKeys.lists() });
             toast.success("세션이 마감되었습니다.");
+        },
+    });
+}
+
+export function useDeleteSession() {
+    const queryClient = useQueryClient();
+    const navigate = useNavigate();
+    return useMutation({
+        mutationFn: async (sessionId: number) => {
+            await api.delete(`/sessions/${sessionId}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: sessionsKeys.lists() });
+            queryClient.invalidateQueries({ queryKey: sessionsKeys.current() });
+            toast.success("세션이 삭제되었습니다.");
+            navigate("/sessions");
+        },
+        onError: (err: any) => {
+            toast.error("삭제 실패: " + (err?.response?.data?.detail ?? "알 수 없는 오류"));
         },
     });
 }

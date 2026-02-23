@@ -1,16 +1,17 @@
-import { NavLink, Outlet, useParams } from "react-router-dom";
+import { NavLink, Outlet, useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useSession, useUpdateSessionStatus } from "@/hooks";
+import { useSession, useUpdateSessionStatus, useDeleteSession } from "@/hooks";
 import { type Session } from "@/hooks/useSessions";
-import { Lock } from "lucide-react";
+import { Lock, Trash2 } from "lucide-react";
 
 export default function SessionLayout() {
     const { id } = useParams<{ id: string }>();
     const sessionId = Number(id);
     const { mutate: updateStatus } = useUpdateSessionStatus();
+    const { mutate: deleteSession, isPending: isDeleting } = useDeleteSession();
     const { data: session, isLoading } = useSession(sessionId);
 
     if (isLoading) return <div>Loading...</div>;
@@ -28,13 +29,29 @@ export default function SessionLayout() {
         switch (typedSession.status) {
             case "SETUP":
                 return (
-                    <Button
-                        size="sm"
-                        onClick={() => handleStatusChange("PREP")}
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                        {typedSession.type === "INDIVIDUAL" ? "세션 준비 완료 (PREP)" : "팀 확정 (PREP 시작)"}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                                if (confirm("세션을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
+                                    deleteSession(sessionId);
+                                }
+                            }}
+                            disabled={isDeleting}
+                            className="bg-red-900/50 hover:bg-red-800 border-red-700 text-red-200"
+                        >
+                            <Trash2 className="w-3.5 h-3.5 mr-1" />
+                            {isDeleting ? "삭제 중..." : "세션 삭제"}
+                        </Button>
+                        <Button
+                            size="sm"
+                            onClick={() => handleStatusChange("PREP")}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                            {typedSession.type === "INDIVIDUAL" ? "세션 준비 완료 (PREP)" : "팀 확정 (PREP 시작)"}
+                        </Button>
+                    </div>
                 );
             case "PREP":
                 return (
