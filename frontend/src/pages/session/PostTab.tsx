@@ -12,6 +12,14 @@ import { useScanHomework, useCrawlerTask } from "@/hooks/useCrawler";
 import type { Session } from "@/hooks/useSessions";
 import { useMembers } from "@/hooks/useMembers";
 
+const STATUS_CYCLE: Record<string, string> = {
+    PENDING: "PASS",
+    PASS:    "LATE",
+    LATE:    "MISSING",
+    MISSING: "PASS",
+    FAIL:    "PASS",
+};
+
 export function PostTab() {
     const { session } = useOutletContext<{ session: Session }>();
     const sessionId = session.id;
@@ -69,14 +77,7 @@ export function PostTab() {
         return session.assignments?.find((a: any) => a.team_id === teamId && a.type === "PPT");
     };
 
-    const STATUS_CYCLE: Record<string, string> = {
-        PENDING: "PASS",
-        PASS: "LATE",
-        LATE: "MISSING",
-        MISSING: "PASS",
-    };
-
-    const handleToggleStatus = async (assignment: any, memberId: number, type: string) => {
+    const handleToggleStatus = async (assignment: any) => {
         if (!assignment) {
             toast.error("스캔된 과제 데이터가 없습니다. 먼저 스캔해주세요.");
             return;
@@ -131,7 +132,7 @@ export function PostTab() {
             <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                 <CardHeader>
                     <CardTitle className="text-lg">Assignment Status</CardTitle>
-                    <CardDescription>Click badges to cycle status: PENDING → PASS → LATE → MISSING → PASS</CardDescription>
+                    <CardDescription>Click to toggle: PASS → LATE → MISSING → PASS (PENDING = 미스캔)</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
@@ -174,7 +175,7 @@ export function PostTab() {
                                                             status === "PENDING" ? "bg-gray-800 text-gray-400 border-gray-700" :
                                                             "bg-gray-800 text-gray-500 border-gray-800"
                                                         }`}
-                                                        onClick={() => handleToggleStatus(assignment, m.id, type)}
+                                                        onClick={() => handleToggleStatus(assignment)}
                                                     >
                                                         {status}
                                                     </Badge>
