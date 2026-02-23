@@ -34,6 +34,7 @@ class MeritRequest(BaseModel):
     member_ids: list[int]
     reason: str
     score_delta: int = Field(gt=0, description="부여할 상점 (양수)")
+    session_id: Optional[int] = None
 
 class TransactionRequest(BaseModel):
     member_id: int

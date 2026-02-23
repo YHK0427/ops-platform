@@ -1,17 +1,17 @@
-import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, Trophy, AlertTriangle, Users } from "lucide-react";
+import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
-import api from "@/lib/api";
 import { toast } from "sonner";
 import { useCrawlerTask, useUploadVideos, useSetFeedbackTargets } from "@/hooks";
 import { useMembers } from "@/hooks/useMembers";
 import { useState, useMemo } from "react";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import type { Session } from "@/hooks/useSessions";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 export default function OpsTab() {
     const { session } = useOutletContext<{ session: Session }>();
@@ -26,11 +26,9 @@ export default function OpsTab() {
     const sessionDate = new Date(session.date);
     const today = new Date();
 
-    // Reset hours to compare dates only
     const d1 = new Date(sessionDate.getFullYear(), sessionDate.getMonth(), sessionDate.getDate());
     const d2 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-    // Calculate difference in days
     const diffTime = d2.getTime() - d1.getTime();
     const diffDays = diffTime / (1000 * 60 * 60 * 24);
 
@@ -39,9 +37,7 @@ export default function OpsTab() {
     // Build memberId → name map
     const memberNameMap = useMemo(() => {
         const map = new Map<number, string>();
-        // From members list
         allMembers?.forEach(m => map.set(m.id, m.name));
-        // Also from session teams (team session members with direct id/name shape)
         session.teams?.forEach((t) => {
             t.members?.forEach((tm) => {
                 map.set(tm.id, tm.name);
@@ -52,6 +48,18 @@ export default function OpsTab() {
 
     const feedbackAssignments = session.assignments?.filter((a) => a.type === "FEEDBACK") ?? [];
     const sessionMemberIds = session.attendances?.map((a) => a.member_id) ?? [];
+
+    // Receiver map: memberId → number of writers pointing to them
+    const receiverCountMap = useMemo(() => {
+        const map = new Map<number, number>();
+        sessionMemberIds.forEach(id => map.set(id, 0));
+        feedbackAssignments.forEach((a) => {
+            a.target_member_ids?.forEach((tid) => {
+                map.set(tid, (map.get(tid) ?? 0) + 1);
+            });
+        });
+        return map;
+    }, [feedbackAssignments, sessionMemberIds]);
 
     const handleCafeUpload = () => {
         uploadVideos({ sessionId: session.id }, {
@@ -128,84 +136,167 @@ export default function OpsTab() {
                             </p>
                         </div>
                     </div>
-                    <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
-                                    <TableHead>피드백 작성자</TableHead>
-                                    <TableHead>피드백 대상</TableHead>
-                                    <TableHead className="w-[80px] text-center">지정 수</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {feedbackAssignments.map((assignment) => {
-                                    const writerId = assignment.member_id;
-                                    const writerName = writerId != null
-                                        ? (memberNameMap.get(writerId) ?? `ID:${writerId}`)
-                                        : "Unknown";
-                                    const currentTargetId = assignment.target_member_ids?.[0]
-                                        ? String(assignment.target_member_ids[0])
-                                        : "none";
+
+                    <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-4">
+                        {/* Left: Assignment table */}
+                        <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
+                                        <TableHead>피드백 작성자</TableHead>
+                                        <TableHead>피드백 대상</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {feedbackAssignments.map((assignment) => {
+                                        const writerId = assignment.member_id;
+                                        const writerName = writerId != null
+                                            ? (memberNameMap.get(writerId) ?? `ID:${writerId}`)
+                                            : "Unknown";
+                                        const currentTargetId = assignment.target_member_ids?.[0] ?? null;
+
+                                        return (
+                                            <FeedbackTargetRow
+                                                key={assignment.id}
+                                                writerName={writerName}
+                                                writerId={writerId}
+                                                currentTargetId={currentTargetId}
+                                                sessionMemberIds={sessionMemberIds}
+                                                memberNameMap={memberNameMap}
+                                                disabled={isSettingTarget}
+                                                onSelect={(targetId) => {
+                                                    if (writerId == null) return;
+                                                    setFeedbackTargets({
+                                                        sessionId: session.id,
+                                                        memberId: writerId,
+                                                        targetMemberIds: targetId != null ? [targetId] : [],
+                                                    });
+                                                }}
+                                            />
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </div>
+
+                        {/* Right: Receiver status panel */}
+                        <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
+                            <div className="bg-gray-900/50 px-3 py-2 text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider border-b border-[var(--color-border)]">
+                                피드백 수신 현황
+                            </div>
+                            <div className="divide-y divide-[var(--color-border)]">
+                                {sessionMemberIds.map((id) => {
+                                    const count = receiverCountMap.get(id) ?? 0;
+                                    const name = memberNameMap.get(id) ?? `ID:${id}`;
+                                    const isUnassigned = count === 0;
                                     return (
-                                        <TableRow key={assignment.id} className="hover:bg-white/5">
-                                            <TableCell className="font-medium text-gray-300">{writerName}</TableCell>
-                                            <TableCell>
-                                                <Select
-                                                    value={currentTargetId}
-                                                    disabled={isSettingTarget}
-                                                    onValueChange={(val) => {
-                                                        if (writerId == null) return;
-                                                        setFeedbackTargets({
-                                                            sessionId: session.id,
-                                                            memberId: writerId,
-                                                            targetMemberIds: val !== "none" ? [parseInt(val)] : [],
-                                                        });
-                                                    }}
-                                                >
-                                                    <SelectTrigger className="w-[180px]">
-                                                        <SelectValue placeholder="대상 선택..." />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="none">미지정</SelectItem>
-                                                        {sessionMemberIds
-                                                            .filter((id) => id !== writerId)
-                                                            .map((id) => (
-                                                                <SelectItem key={id} value={String(id)}>
-                                                                    {memberNameMap.get(id) ?? `ID:${id}`}
-                                                                </SelectItem>
-                                                            ))
-                                                        }
-                                                    </SelectContent>
-                                                </Select>
-                                            </TableCell>
-                                            <TableCell className="text-center text-sm text-[var(--color-text-muted)]">
-                                                {assignment.target_member_ids?.length ?? 0}명
-                                            </TableCell>
-                                        </TableRow>
+                                        <div key={id} className={`flex items-center justify-between px-3 py-2 text-sm ${isUnassigned ? "bg-rose-500/5" : ""}`}>
+                                            <span className={isUnassigned ? "text-rose-400" : "text-[var(--color-text-primary)]"}>
+                                                {name}
+                                            </span>
+                                            <span className={`text-xs font-mono px-1.5 py-0.5 rounded border ${isUnassigned
+                                                ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                                : "bg-green-500/10 text-green-400 border-green-500/20"
+                                            }`}>
+                                                {count}명
+                                            </span>
+                                        </div>
                                     );
                                 })}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </div>
-            )}
-
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 gap-4">
-                <GrantMeritDialog trigger={
-                    <div className="bg-[var(--color-surface)] p-6 rounded-xl border border-[var(--color-border)] flex items-center justify-between cursor-pointer hover:border-[var(--color-accent)]/50 transition-colors">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-full bg-yellow-500/10 flex items-center justify-center text-yellow-500">
-                                <Trophy className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <h4 className="font-bold">Grant Merits</h4>
-                                <p className="text-xs text-[var(--color-text-secondary)]">우수 발표자/질문자 상점 부여</p>
                             </div>
                         </div>
                     </div>
-                } />
-            </div>
+                </div>
+            )}
         </div>
+    );
+}
+
+interface FeedbackTargetRowProps {
+    writerName: string;
+    writerId: number | null;
+    currentTargetId: number | null;
+    sessionMemberIds: number[];
+    memberNameMap: Map<number, string>;
+    disabled: boolean;
+    onSelect: (targetId: number | null) => void;
+}
+
+function FeedbackTargetRow({
+    writerName,
+    writerId,
+    currentTargetId,
+    sessionMemberIds,
+    memberNameMap,
+    disabled,
+    onSelect,
+}: FeedbackTargetRowProps) {
+    const [open, setOpen] = useState(false);
+
+    const options = sessionMemberIds
+        .filter((id) => id !== writerId)
+        .map((id) => ({ id, name: memberNameMap.get(id) ?? `ID:${id}` }));
+
+    const selectedName = currentTargetId != null
+        ? (memberNameMap.get(currentTargetId) ?? `ID:${currentTargetId}`)
+        : null;
+
+    return (
+        <TableRow className="hover:bg-white/5">
+            <TableCell className="font-medium text-gray-300">{writerName}</TableCell>
+            <TableCell>
+                <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={open}
+                            disabled={disabled}
+                            className="w-[180px] justify-between text-sm font-normal bg-transparent border-[var(--color-border)] hover:bg-white/5"
+                        >
+                            <span className={selectedName ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]"}>
+                                {selectedName ?? "대상 선택..."}
+                            </span>
+                            <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[200px] p-0 bg-[var(--color-elevated)] border-[var(--color-border)]">
+                        <Command className="bg-transparent">
+                            <CommandInput placeholder="이름 검색..." className="h-8 text-sm" />
+                            <CommandList>
+                                <CommandEmpty className="text-[var(--color-text-muted)]">검색 결과 없음</CommandEmpty>
+                                <CommandGroup>
+                                    <CommandItem
+                                        value="__none__"
+                                        onSelect={() => {
+                                            onSelect(null);
+                                            setOpen(false);
+                                        }}
+                                        className="text-[var(--color-text-muted)] text-sm"
+                                    >
+                                        <Check className={cn("mr-2 h-3 w-3", currentTargetId == null ? "opacity-100" : "opacity-0")} />
+                                        미지정
+                                    </CommandItem>
+                                    {options.map((opt) => (
+                                        <CommandItem
+                                            key={opt.id}
+                                            value={opt.name}
+                                            onSelect={() => {
+                                                onSelect(opt.id);
+                                                setOpen(false);
+                                            }}
+                                            className="text-sm"
+                                        >
+                                            <Check className={cn("mr-2 h-3 w-3", currentTargetId === opt.id ? "opacity-100" : "opacity-0")} />
+                                            {opt.name}
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            </CommandList>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
+            </TableCell>
+        </TableRow>
     );
 }

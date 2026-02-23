@@ -23,7 +23,7 @@ const LEDGER_TYPES = [
 
 function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberName: string }) {
     const [open, setOpen] = useState(false);
-    const [type, setType] = useState(entry.type);
+    const [type, setType] = useState<string>(entry.type);
     const [amount, setAmount] = useState(entry.amount_krw);
     const [score, setScore] = useState(entry.score_delta);
     const [description, setDescription] = useState(entry.description);

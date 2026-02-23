@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useParams, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";

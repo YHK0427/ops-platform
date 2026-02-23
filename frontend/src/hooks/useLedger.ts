@@ -5,6 +5,7 @@ import { toast } from "sonner";
 export interface LedgerEntry {
     id: number;
     member_id: number;
+    session_id?: number | null;
     type: "DEPOSIT" | "WITHDRAW" | "PENALTY" | "MERIT" | "ADJUSTMENT" | "FINE" | "MILESTONE_FINE" | "DEPOSIT_RECHARGE" | "DEPOSIT_ADJUST" | "DEPOSIT_REFUND";
     amount_krw: number;
     score_delta: number;
@@ -19,6 +20,7 @@ export interface MeritRequest {
     member_ids: number[];
     score_delta: number;
     reason: string;
+    session_id?: number;
 }
 
 export interface TransactionRequest {
@@ -36,7 +38,7 @@ export const ledgerKeys = {
 };
 
 // Hooks
-export function useLedger(filters: { member_id?: number | "all"; type?: string; start_date?: string; end_date?: string; page?: number; limit?: number }) {
+export function useLedger(filters: { member_id?: number | "all"; type?: string; session_id?: number; start_date?: string; end_date?: string; page?: number; limit?: number }) {
     const { page = 1, limit = 20, ...rest } = filters;
     return useQuery({
         queryKey: ledgerKeys.list({ ...rest, page, limit }),
@@ -47,6 +49,7 @@ export function useLedger(filters: { member_id?: number | "all"; type?: string; 
             });
             if (rest.member_id && rest.member_id !== "all") params.append("member_id", rest.member_id.toString());
             if (rest.type && rest.type !== "all") params.append("type", rest.type);
+            if (rest.session_id) params.append("session_id", rest.session_id.toString());
             if (rest.start_date) params.append("start_date", rest.start_date);
             if (rest.end_date) params.append("end_date", rest.end_date);
 

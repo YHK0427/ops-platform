@@ -18,9 +18,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 interface GrantMeritDialogProps {
     trigger?: React.ReactNode;
     preselectedMemberId?: number;
+    sessionId?: number;
 }
 
-export function GrantMeritDialog({ trigger, preselectedMemberId }: GrantMeritDialogProps) {
+export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId }: GrantMeritDialogProps) {
     const [open, setOpen] = useState(false);
     const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
     const [reason, setReason] = useState("");
@@ -38,6 +39,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId }: GrantMeritDia
             member_ids: effectiveMembers,
             score_delta: score,
             reason,
+            ...(sessionId != null ? { session_id: sessionId } : {}),
         }, {
             onSuccess: () => {
                 setOpen(false);

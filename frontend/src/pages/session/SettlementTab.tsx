@@ -1,14 +1,17 @@
 import { useState, useMemo } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
 import { useSettlementPreview, useFinalizeSession } from "@/hooks";
+import { useLedger } from "@/hooks/useLedger";
+import { useMembers } from "@/hooks/useMembers";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Trophy } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "sonner";
+import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import type { Session } from "@/hooks/useSessions";
 
 const PENALTY_TYPE_LABEL: Record<string, string> = {
@@ -23,6 +26,14 @@ export default function SettlementTab() {
     const navigate = useNavigate();
     const { data: previewData, isLoading } = useSettlementPreview(session.id);
     const { mutate: finalizeSession, isPending: isFinalizing } = useFinalizeSession();
+    const { data: sessionMerits } = useLedger({ session_id: session.id, type: "MERIT", limit: 50 });
+    const { data: allMembers } = useMembers();
+
+    const memberNameMap = useMemo(() => {
+        const map = new Map<number, string>();
+        allMembers?.forEach(m => map.set(m.id, m.name));
+        return map;
+    }, [allMembers]);
 
     // Set of indices that are SKIPPED (unchecked)
     const [skippedIndices, setSkippedIndices] = useState<Set<number>>(new Set());
@@ -93,22 +104,25 @@ export default function SettlementTab() {
 
     if (session.status === "FINALIZED") {
         return (
-            <div className="flex flex-col items-center justify-center p-12 text-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl animate-in fade-in zoom-in-95 duration-500">
-                <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
-                    <CheckCircle2 className="w-8 h-8 text-green-500" />
+            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
+                <div className="flex flex-col items-center justify-center p-12 text-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+                    <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
+                        <CheckCircle2 className="w-8 h-8 text-green-500" />
+                    </div>
+                    <h2 className="text-xl font-bold mb-2 text-white">Session Finalized</h2>
+                    <p className="text-[var(--color-text-muted)] mb-6">
+                        이 세션은 {new Date(session.finalized_at || "").toLocaleString()}에 마감되었습니다.<br />
+                        정산 내역은 <span className="text-[var(--color-accent)]">Ledger</span> 메뉴에서 확인할 수 있습니다.
+                    </p>
+                    <Button
+                        onClick={() => navigate("/ledger")}
+                        className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white"
+                    >
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        Ledger에서 확인
+                    </Button>
                 </div>
-                <h2 className="text-xl font-bold mb-2 text-white">Session Finalized</h2>
-                <p className="text-[var(--color-text-muted)] mb-6">
-                    이 세션은 {new Date(session.finalized_at || "").toLocaleString()}에 마감되었습니다.<br />
-                    정산 내역은 <span className="text-[var(--color-accent)]">Ledger</span> 메뉴에서 확인할 수 있습니다.
-                </p>
-                <Button
-                    onClick={() => navigate("/ledger")}
-                    className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white"
-                >
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    Ledger에서 확인
-                </Button>
+                <MeritPanel sessionId={session.id} merits={sessionMerits ?? []} memberNameMap={memberNameMap} />
             </div>
         );
     }
@@ -232,6 +246,87 @@ export default function SettlementTab() {
                     이 작업은 되돌릴 수 없습니다.
                 </p>
             </div>
+
+            <MeritPanel sessionId={session.id} merits={sessionMerits ?? []} memberNameMap={memberNameMap} />
+        </div>
+    );
+}
+
+interface MeritEntry {
+    id: number;
+    member_id: number;
+    score_delta: number;
+    description: string;
+    created_at: string;
+}
+
+function MeritPanel({
+    sessionId,
+    merits,
+    memberNameMap,
+}: {
+    sessionId: number;
+    merits: MeritEntry[];
+    memberNameMap: Map<number, string>;
+}) {
+    return (
+        <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+                <div className="flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-yellow-500" />
+                    <h3 className="font-semibold text-sm">이 세션 상점 내역</h3>
+                    {merits.length > 0 && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                            {merits.length}건
+                        </span>
+                    )}
+                </div>
+                <GrantMeritDialog
+                    sessionId={sessionId}
+                    trigger={
+                        <Button size="sm" variant="outline" className="h-7 text-xs bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20">
+                            <Trophy className="w-3 h-3 mr-1" />
+                            상점 부여
+                        </Button>
+                    }
+                />
+            </div>
+            <Table>
+                <TableHeader>
+                    <TableRow className="bg-gray-900/30 hover:bg-gray-900/30">
+                        <TableHead>멤버</TableHead>
+                        <TableHead>사유</TableHead>
+                        <TableHead className="text-right w-[80px]">점수</TableHead>
+                        <TableHead className="text-right w-[120px] text-[var(--color-text-muted)] font-normal text-xs">일시</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {merits.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={4} className="text-center py-8 text-[var(--color-text-muted)] text-sm">
+                                이 세션에 부여된 상점이 없습니다.
+                            </TableCell>
+                        </TableRow>
+                    ) : (
+                        merits.map((entry) => (
+                            <TableRow key={entry.id} className="hover:bg-white/5">
+                                <TableCell className="font-medium text-gray-300">
+                                    {memberNameMap.get(entry.member_id) ?? `ID:${entry.member_id}`}
+                                </TableCell>
+                                <TableCell className="text-sm text-[var(--color-text-secondary)]">
+                                    {entry.description}
+                                </TableCell>
+                                <TableCell className="text-right font-mono text-green-400">
+                                    +{entry.score_delta}
+                                </TableCell>
+                                <TableCell className="text-right text-xs font-mono text-[var(--color-text-muted)]">
+                                    {new Date(entry.created_at).toLocaleDateString()}
+                                </TableCell>
+                            </TableRow>
+                        ))
+                    )}
+                </TableBody>
+            </Table>
         </div>
     );
 }

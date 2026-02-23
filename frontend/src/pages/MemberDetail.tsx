@@ -13,7 +13,6 @@ import { useMember, useLedger, useDeactivateMember, useReactivateMember, useCrea
 import type { LedgerEntry } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
-import { StatusBadge } from "@/components/StatusBadge";
 import { MemberEditSheet } from "@/components/MemberEditSheet";
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import { Button } from "@/components/ui/button";
@@ -75,7 +74,7 @@ export default function MemberDetail() {
         <div className="flex flex-col h-full">
             <PageHeader
                 title={member.name}
-                subtitle={member.email}
+                subtitle={member.email ?? undefined}
                 actions={
                     <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" onClick={() => navigate("/members")}>

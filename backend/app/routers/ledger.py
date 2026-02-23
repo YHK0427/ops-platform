@@ -15,6 +15,7 @@ router = APIRouter(prefix="/ledger", tags=["ledger"])
 async def get_ledger_entries(
     member_id: Optional[int] = None,
     type: Optional[LedgerType] = None,
+    session_id: Optional[int] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -24,11 +25,13 @@ async def get_ledger_entries(
     원장(Ledger) 조회
     """
     stmt = select(Ledger).order_by(desc(Ledger.created_at))
-    
+
     if member_id:
         stmt = stmt.where(Ledger.member_id == member_id)
     if type:
         stmt = stmt.where(Ledger.type == type)
+    if session_id:
+        stmt = stmt.where(Ledger.session_id == session_id)
         
     stmt = stmt.offset((page - 1) * limit).limit(limit)
     result = await db.execute(stmt)
@@ -70,6 +73,7 @@ async def give_merit(
             description=req.reason,
             deposit_after=member.current_deposit,
             created_by=created_by,
+            session_id=req.session_id,
         )
         db.add(entry)
         created_entries.append(entry)

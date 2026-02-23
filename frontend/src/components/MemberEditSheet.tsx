@@ -23,7 +23,7 @@ const SUGGESTED_TAGS = ["leader", "backend", "frontend", "designer", "planner"];
 
 export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetProps) {
     const [name, setName] = useState(member.name);
-    const [email, setEmail] = useState(member.email);
+    const [email, setEmail] = useState(member.email ?? "");
     const [tags, setTags] = useState<string[]>(member.tags || []);
     const [customTag, setCustomTag] = useState("");
 
@@ -33,7 +33,7 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
     useEffect(() => {
         if (open) {
             setName(member.name);
-            setEmail(member.email);
+            setEmail(member.email ?? "");
             setTags(member.tags || []);
         }
     }, [member, open]);
