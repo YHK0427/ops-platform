@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.schemas.attendance import AttendanceForceUpdate, AttendanceUpdate
 from app.schemas.session import (
+    FeedbackTargetUpdate,
     SessionCreate,
     SessionFinalizeRequest,
     SessionFinalizeResponse,
@@ -581,11 +582,28 @@ async def confirm_teams(
 async def set_feedback_targets(
     session_id: int,
     member_id: int,
-    target_member_ids: list[int] = Body(...),
+    body: FeedbackTargetUpdate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
 ):
     """피드백 대상 멤버 지정 (보통 1명, 결석 시 2명)"""
+    session = await _get_session_or_404(session_id, db)
+    if session.status == "FINALIZED":
+        raise HTTPException(status_code=400, detail="FINALIZED 세션은 수정 불가합니다")
+
+    # Validate target_member_ids exist as active members
+    if body.target_member_ids:
+        valid_ids_result = await db.execute(
+            select(Member.id).where(
+                Member.id.in_(body.target_member_ids),
+                Member.is_active == True,
+            )
+        )
+        valid_ids = {row[0] for row in valid_ids_result.fetchall()}
+        invalid = set(body.target_member_ids) - valid_ids
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"존재하지 않는 멤버 ID: {sorted(invalid)}")
+
     stmt = select(Assignment).where(
         Assignment.session_id == session_id,
         Assignment.member_id == member_id,
@@ -596,10 +614,10 @@ async def set_feedback_targets(
     if not assignment:
         raise HTTPException(status_code=404, detail="FEEDBACK assignment not found")
 
-    assignment.target_member_ids = target_member_ids
-    assignment.target_count = len(target_member_ids)
+    assignment.target_member_ids = body.target_member_ids
+    assignment.target_count = len(body.target_member_ids)
     await db.commit()
-    return {"member_id": member_id, "target_member_ids": target_member_ids}
+    return {"member_id": member_id, "target_member_ids": body.target_member_ids}
 
 
 # ── Settlement & Finalize ─────────────────────────────────────────────────────
