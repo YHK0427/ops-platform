@@ -5,16 +5,121 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { useLedger, useMembers, useGiveMerit, useCreateTransaction, useUpdateLedgerDescription } from "@/hooks";
+import { useLedger, useMembers, useGiveMerit, useCreateTransaction, useUpdateLedger } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { formatNumber } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, PlusCircle, ArrowRightLeft, Pencil, Check, X } from "lucide-react";
+import { Loader2, PlusCircle, ArrowRightLeft, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 // --- Dialogs ---
+
+const LEDGER_TYPES = [
+    "FINE", "MILESTONE_FINE", "DEPOSIT_RECHARGE", "DEPOSIT_ADJUST",
+    "DEPOSIT_REFUND", "MERIT", "ADJUSTMENT"
+];
+
+function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberName: string }) {
+    const [open, setOpen] = useState(false);
+    const [type, setType] = useState(entry.type);
+    const [amount, setAmount] = useState(entry.amount_krw);
+    const [score, setScore] = useState(entry.score_delta);
+    const [description, setDescription] = useState(entry.description);
+    const { mutate: updateLedger, isPending } = useUpdateLedger();
+
+    const handleOpen = (isOpen: boolean) => {
+        if (isOpen) {
+            setType(entry.type);
+            setAmount(entry.amount_krw);
+            setScore(entry.score_delta);
+            setDescription(entry.description);
+        }
+        setOpen(isOpen);
+    };
+
+    const handleSubmit = () => {
+        updateLedger({
+            id: entry.id,
+            data: { type, amount_krw: amount, score_delta: score, description },
+        }, {
+            onSuccess: () => setOpen(false),
+        });
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={handleOpen}>
+            <DialogTrigger asChild>
+                <button
+                    className="p-0.5 text-gray-600 hover:text-gray-300 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <Pencil className="w-3 h-3" />
+                </button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[450px]">
+                <DialogHeader>
+                    <DialogTitle>원장 항목 수정</DialogTitle>
+                    <DialogDescription>
+                        <span className="font-medium">{memberName}</span>의 원장 항목을 수정합니다.
+                        amount/score 변경 시 멤버 잔액이 즉시 반영됩니다.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right">Type</Label>
+                        <Select value={type} onValueChange={setType}>
+                            <SelectTrigger className="col-span-3">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {LEDGER_TYPES.map(t => (
+                                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right">Amount</Label>
+                        <Input
+                            type="number"
+                            value={amount}
+                            onChange={(e) => setAmount(parseInt(e.target.value) || 0)}
+                            className="col-span-3"
+                            placeholder="KRW (음수 가능)"
+                        />
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right">Score</Label>
+                        <Input
+                            type="number"
+                            value={score}
+                            onChange={(e) => setScore(parseInt(e.target.value) || 0)}
+                            className="col-span-3"
+                            placeholder="점수 (음수 가능)"
+                        />
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right">Description</Label>
+                        <Input
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            className="col-span-3"
+                        />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => setOpen(false)}>취소</Button>
+                    <Button onClick={handleSubmit} disabled={isPending || !description}>
+                        {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        저장
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
 
 function GrantMeritDialog() {
     const { mutate: giveMerit, isPending } = useGiveMerit();
@@ -188,9 +293,6 @@ export default function Ledger() {
     const [memberFilter, setMemberFilter] = useState("all");
     const [typeFilter, setTypeFilter] = useState("all");
     const [page] = useState(1);
-    const [editingId, setEditingId] = useState<number | null>(null);
-    const [editingDesc, setEditingDesc] = useState("");
-    const { mutate: updateDescription, isPending: isUpdating } = useUpdateLedgerDescription();
 
     // Include inactive members so deactivated member names resolve correctly in the ledger
     const { data: members } = useMembers(false);
@@ -280,7 +382,7 @@ export default function Ledger() {
                                 ))
                             ) : ledgerEntries && ledgerEntries.length > 0 ? (
                                 ledgerEntries.map((entry) => (
-                                    <TableRow key={entry.id} className="hover:bg-white/5 transition-colors">
+                                    <TableRow key={entry.id} className="group/row hover:bg-white/5 transition-colors">
                                         <TableCell className="text-gray-400 text-xs whitespace-nowrap">
                                             {new Date(entry.created_at).toLocaleDateString()}
                                         </TableCell>
@@ -298,46 +400,13 @@ export default function Ledger() {
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="text-gray-300 text-sm max-w-[300px]">
-                                            {editingId === entry.id ? (
-                                                <div className="flex items-center gap-1">
-                                                    <Input
-                                                        value={editingDesc}
-                                                        onChange={(e) => setEditingDesc(e.target.value)}
-                                                        className="h-7 text-xs py-1 px-2"
-                                                        autoFocus
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === "Enter") {
-                                                                updateDescription({ id: entry.id, description: editingDesc }, {
-                                                                    onSuccess: () => setEditingId(null),
-                                                                });
-                                                            }
-                                                            if (e.key === "Escape") setEditingId(null);
-                                                        }}
-                                                    />
-                                                    <button
-                                                        className="p-1 text-green-400 hover:text-green-300"
-                                                        disabled={isUpdating}
-                                                        onClick={() => updateDescription({ id: entry.id, description: editingDesc }, {
-                                                            onSuccess: () => setEditingId(null),
-                                                        })}
-                                                    >
-                                                        <Check className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <button className="p-1 text-gray-500 hover:text-gray-300" onClick={() => setEditingId(null)}>
-                                                        <X className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-1 group/desc">
-                                                    <span className="truncate" title={entry.description}>{entry.description}</span>
-                                                    <button
-                                                        className="p-0.5 text-gray-600 hover:text-gray-300 opacity-0 group-hover/desc:opacity-100 transition-opacity shrink-0"
-                                                        onClick={() => { setEditingId(entry.id); setEditingDesc(entry.description); }}
-                                                    >
-                                                        <Pencil className="w-3 h-3" />
-                                                    </button>
-                                                </div>
-                                            )}
+                                            <div className="flex items-center gap-1">
+                                                <span className="truncate" title={entry.description}>{entry.description}</span>
+                                                <EditLedgerDialog
+                                                    entry={entry}
+                                                    memberName={entry.member_name || memberMap.get(entry.member_id) || String(entry.member_id)}
+                                                />
+                                            </div>
                                         </TableCell>
                                         <TableCell className={`text-right font-mono text-sm ${entry.amount_krw < 0 ? 'text-rose-400' : 'text-gray-300'}`}>
                                             {entry.amount_krw !== 0 ? formatNumber(entry.amount_krw) : '-'}

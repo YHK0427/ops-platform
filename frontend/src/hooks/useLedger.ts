@@ -92,16 +92,20 @@ export function useCreateTransaction() {
     });
 }
 
-export function useUpdateLedgerDescription() {
+export function useUpdateLedger() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, description }: { id: number; description: string }) => {
-            const { data } = await api.patch(`/ledger/${id}`, { description });
-            return data;
+        mutationFn: async ({ id, data }: {
+            id: number;
+            data: { type?: string; amount_krw?: number; score_delta?: number; description?: string };
+        }) => {
+            const { data: updated } = await api.patch(`/ledger/${id}`, data);
+            return updated;
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["ledger"] });
-            toast.success("설명이 수정되었습니다.");
+            queryClient.invalidateQueries({ queryKey: ["members"] }); // member balance refresh
+            toast.success("항목이 수정되었습니다.");
         },
         onError: () => {
             toast.error("수정 실패");
