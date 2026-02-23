@@ -23,9 +23,17 @@ async def _get_member_or_404(member_id: int, db: AsyncSession) -> Member:
 
 # ── 엔드포인트 ────────────────────────────────────────────────────────────────
 
+@router.get("/me")
+async def get_me(current_user: str = Depends(get_current_user)):
+    """현재 로그인 사용자 정보 (단일 어드민 시스템)"""
+    return {"username": current_user, "role": "admin"}
+
+
 @router.get("", response_model=list[MemberResponse])
 async def list_members(
     include_inactive: bool = Query(False),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
 ):
@@ -33,7 +41,7 @@ async def list_members(
     stmt = select(Member)
     if not include_inactive:
         stmt = stmt.where(Member.is_active == True)
-    stmt = stmt.order_by(Member.id)
+    stmt = stmt.order_by(Member.id).offset((page - 1) * limit).limit(limit)
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -62,14 +70,15 @@ async def streak_candidates(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
 ):
-    """4회 연속 출석 조건 충족 대상자 (서비스 레이어에서 계산, 여기선 placeholder)"""
-    # Phase 03에서는 기본 구조만 — 실제 로직은 services/streak_checker.py에서
-    result = await db.execute(
-        select(Member).where(Member.is_active == True).order_by(Member.id)
-    )
-    members = result.scalars().all()
-    # TODO: streak_checker 서비스 연동 (Phase 이후)
-    return []
+    """4회 연속 출석 조건 충족 대상자"""
+    from app.services.streak_checker import check_attendance_streaks
+    
+    candidates = await check_attendance_streaks(db)
+    # candidates는 dict list이므로 MemberResponse로 변환 필요하지만
+    # MemberResponse는 ORM/Dict 모두 호환 가능 (from_attributes=True)
+    # 하지만 check_attendance_streaks가 dict를 리턴하므로,
+    # Pydantic이 dict를 받아서 처리.
+    return candidates
 
 
 @router.get("/{member_id}", response_model=MemberResponse)

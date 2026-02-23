@@ -1,6 +1,7 @@
 from typing import AsyncGenerator
 
 import bcrypt
+import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -10,6 +11,27 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+# Redis 기반 토큰 블랙리스트 (재시작 후에도 유효)
+_redis_client: aioredis.Redis | None = None
+
+
+def _get_redis_client() -> aioredis.Redis:
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    return _redis_client
+
+
+async def blacklist_token(token: str, ttl_seconds: int) -> None:
+    """토큰을 블랙리스트에 추가 (TTL = 토큰 잔여 만료 시간)"""
+    redis = _get_redis_client()
+    await redis.setex(f"blacklist:{token}", ttl_seconds, "1")
+
+
+async def is_token_blacklisted(token: str) -> bool:
+    redis = _get_redis_client()
+    return await redis.exists(f"blacklist:{token}") > 0
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -29,6 +51,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        if await is_token_blacklisted(token):
+            raise credentials_exception
+
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,

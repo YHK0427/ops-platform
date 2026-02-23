@@ -6,7 +6,7 @@ from jose import jwt
 from pydantic import BaseModel
 
 from app.config import settings
-from app.deps import get_current_user, verify_password
+from app.deps import blacklist_token, get_current_user, oauth2_scheme, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -46,6 +46,13 @@ async def refresh(current_user: str = Depends(get_current_user)):
 
 
 @router.delete("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(current_user: str = Depends(get_current_user)):
-    """로그아웃 (클라이언트 토큰 삭제 안내용)"""
+async def logout(
+    current_user: str = Depends(get_current_user),
+    token: str = Depends(oauth2_scheme),
+):
+    """로그아웃 (Redis 블랙리스트에 토큰 추가, TTL = JWT 잔여 만료 시간)"""
+    payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    exp: int = payload.get("exp", 0)
+    ttl = max(1, exp - int(datetime.now(timezone.utc).timestamp()))
+    await blacklist_token(token, ttl)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,5 +1,6 @@
 # 환경 변수 (절대 커밋 금지)
 .env
+docker-compose.override.yml   # 개발 전용 override
 
 # 데이터 볼륨
 pg_data/
@@ -36,3 +37,25 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# 로그
+*.log
+
+# 테스트/디버그 파일
+test_results*/
+test_results_from_docker*/
+backend/test_results/
+backend/test_naver_login.py
+test_naver_login.py
+backend/cleanup_session.py
+backend/update_score.py
+login_helper.py
+
+# Playwright 세션 데이터
+.playwright-mcp/
+
+# 경로 앨리어스 아티팩트
+frontend/@/
+
+# 문서 파일 (PDF 등)
+*.pdf

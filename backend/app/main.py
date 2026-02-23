@@ -1,9 +1,21 @@
+from contextlib import asynccontextmanager
+
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth
-from app.routers import members, sessions
+from app.routers import assignments, auth, crawler, members, sessions, ledger
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ARQ Redis Pool 생성
+    app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+    yield
+    await app.state.arq_pool.close()
+
 
 app = FastAPI(
     title="UnivPT Ops API",
@@ -11,6 +23,7 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
+    lifespan=lifespan,
 )
 
 # CORS
@@ -26,6 +39,9 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(members.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(crawler.router, prefix="/api/v1")
+app.include_router(assignments.router, prefix="/api/v1")
+app.include_router(ledger.router, prefix="/api/v1")
 
 
 @app.get("/health")

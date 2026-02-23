@@ -1,0 +1,97 @@
+/* ── Fonts ────────────────────────────────────── */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css");
+@import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300..700&display=swap");
+
+@import "tailwindcss";
+
+/* ── Theme tokens ─────────────────────────────── */
+@theme {
+  /* Background */
+  --color-base: #050505;
+  --color-surface: rgb(20 20 25 / 0.6);
+  --color-elevated: rgb(30 30 35 / 0.8);
+  --color-hover: rgb(255 255 255 / 0.05);
+
+  /* Border */
+  --color-border-subtle: rgb(255 255 255 / 0.08);
+  --color-border: rgb(255 255 255 / 0.12);
+  --color-border-highlight: rgb(255 255 255 / 0.20);
+
+  /* Accent — Rose-500 (UnivPT brand) */
+  --color-accent: #F43F5E;
+  --color-accent-hover: #E11D48;
+  --color-accent-dim: rgb(244 63 94 / 0.10);
+
+  /* Text */
+  --color-text-primary: #E8E8F0;
+  --color-text-secondary: #9090A8;
+  --color-text-muted: #55556A;
+
+  /* Semantic */
+  --color-green: #22C55E;
+  --color-yellow: #F59E0B;
+  --color-danger: #F43F5E;
+
+  /* Font families */
+  --font-sans: "Pretendard Variable", Pretendard, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "SF Mono", monospace;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+/* ── Base styles ──────────────────────────────── */
+@layer base {
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-feature-settings: "tnum";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    min-height: 100vh;
+
+    /* Ambient spotlight */
+    background-image:
+      radial-gradient(circle at 50% 0%, rgb(244 63 94 / 0.08) 0%, transparent 40%),
+      radial-gradient(circle at 80% 10%, rgb(255 255 255 / 0.03) 0%, transparent 20%);
+    background-attachment: fixed;
+  }
+
+  #root {
+    height: 100vh;
+  }
+}
+
+/* ── Scrollbar ────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-highlight);
+}

@@ -39,7 +39,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     volumes:
-      - ./files:/app/files         # 영상 임시 저장
+      - ./backend:/app         # Source code (Live Reload)
+      - ./files:/app/files     # 영상 임시 저장
     env_file: .env
     expose:
       - "8000"                     # 호스트 포트 바인딩 없음 — frontend-net 안에서만 접근
@@ -65,6 +66,7 @@ services:
     command: arq app.worker.WorkerSettings
     restart: unless-stopped
     volumes:
+      - ./backend:/app
       - ./files:/app/files
     env_file: .env
     depends_on:
@@ -73,7 +75,8 @@ services:
       redis:
         condition: service_started
     networks:
-      - backend-net                # worker는 frontend와 통신 불필요 → backend-net만
+      - frontend-net               # 외부 인터넷 접속용
+      - backend-net                # db/redis와 통신
 
   # ── TIER 3: Data ─────────────────────────────────
   db:
