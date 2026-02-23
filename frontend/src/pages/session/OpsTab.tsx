@@ -1,14 +1,17 @@
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, Trophy, AlertTriangle } from "lucide-react";
+import { UploadCloud, Trophy, AlertTriangle, Users } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { useCrawlerTask, useUploadVideos } from "@/hooks";
-import { useState } from "react";
+import { useCrawlerTask, useUploadVideos, useSetFeedbackTargets } from "@/hooks";
+import { useMembers } from "@/hooks/useMembers";
+import { useState, useMemo } from "react";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import type { Session } from "@/hooks/useSessions";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function OpsTab() {
     const { session } = useOutletContext<{ session: Session }>();
@@ -16,6 +19,8 @@ export default function OpsTab() {
     const [uploadTaskId, setUploadTaskId] = useState<string | null>(null);
     const { mutate: uploadVideos, isPending: isUploading } = useUploadVideos();
     const { data: taskStatus } = useCrawlerTask(uploadTaskId);
+    const { mutate: setFeedbackTargets, isPending: isSettingTarget } = useSetFeedbackTargets();
+    const { data: allMembers } = useMembers();
 
     // D+1 Warning Logic
     const sessionDate = new Date(session.date);
@@ -30,6 +35,23 @@ export default function OpsTab() {
     const diffDays = diffTime / (1000 * 60 * 60 * 24);
 
     const isNextDay = diffDays === 1;
+
+    // Build memberId → name map
+    const memberNameMap = useMemo(() => {
+        const map = new Map<number, string>();
+        // From members list
+        allMembers?.forEach(m => map.set(m.id, m.name));
+        // Also from session teams (team session members with direct id/name shape)
+        session.teams?.forEach((t) => {
+            t.members?.forEach((tm) => {
+                map.set(tm.id, tm.name);
+            });
+        });
+        return map;
+    }, [allMembers, session.teams]);
+
+    const feedbackAssignments = session.assignments?.filter((a) => a.type === "FEEDBACK") ?? [];
+    const sessionMemberIds = session.attendances?.map((a) => a.member_id) ?? [];
 
     const handleCafeUpload = () => {
         uploadVideos({ sessionId: session.id }, {
@@ -91,6 +113,82 @@ export default function OpsTab() {
 
                 {renderTaskStatus()}
             </div>
+
+            {/* Feedback Target Designation Panel */}
+            {session.config?.has_feedback !== false && feedbackAssignments.length > 0 && (
+                <div className="bg-[var(--color-surface)] p-6 rounded-xl border border-[var(--color-border)]">
+                    <div className="flex items-start justify-between mb-6">
+                        <div>
+                            <h3 className="font-bold text-lg mb-1 flex items-center gap-2">
+                                <Users className="w-5 h-5 text-[var(--color-accent)]" />
+                                피드백 대상 지정
+                            </h3>
+                            <p className="text-sm text-[var(--color-text-secondary)]">
+                                각 멤버가 영상 피드백을 작성할 대상을 지정합니다. (보통 1명)
+                            </p>
+                        </div>
+                    </div>
+                    <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
+                                    <TableHead>피드백 작성자</TableHead>
+                                    <TableHead>피드백 대상</TableHead>
+                                    <TableHead className="w-[80px] text-center">지정 수</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {feedbackAssignments.map((assignment) => {
+                                    const writerId = assignment.member_id;
+                                    const writerName = writerId != null
+                                        ? (memberNameMap.get(writerId) ?? `ID:${writerId}`)
+                                        : "Unknown";
+                                    const currentTargetId = assignment.target_member_ids?.[0]
+                                        ? String(assignment.target_member_ids[0])
+                                        : "";
+                                    return (
+                                        <TableRow key={assignment.id} className="hover:bg-white/5">
+                                            <TableCell className="font-medium text-gray-300">{writerName}</TableCell>
+                                            <TableCell>
+                                                <Select
+                                                    value={currentTargetId}
+                                                    disabled={isSettingTarget}
+                                                    onValueChange={(val) => {
+                                                        if (writerId == null) return;
+                                                        setFeedbackTargets({
+                                                            sessionId: session.id,
+                                                            memberId: writerId,
+                                                            targetMemberIds: val ? [parseInt(val)] : [],
+                                                        });
+                                                    }}
+                                                >
+                                                    <SelectTrigger className="w-[180px]">
+                                                        <SelectValue placeholder="대상 선택..." />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="">미지정</SelectItem>
+                                                        {sessionMemberIds
+                                                            .filter((id) => id !== writerId)
+                                                            .map((id) => (
+                                                                <SelectItem key={id} value={String(id)}>
+                                                                    {memberNameMap.get(id) ?? `ID:${id}`}
+                                                                </SelectItem>
+                                                            ))
+                                                        }
+                                                    </SelectContent>
+                                                </Select>
+                                            </TableCell>
+                                            <TableCell className="text-center text-sm text-[var(--color-text-muted)]">
+                                                {assignment.target_member_ids?.length ?? 0}명
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </div>
+            )}
 
             {/* Quick Actions */}
             <div className="grid grid-cols-2 gap-4">
