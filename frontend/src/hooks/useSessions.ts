@@ -207,6 +207,10 @@ export function useSetFeedbackTargets() {
         },
         onSuccess: (_, vars) => {
             queryClient.invalidateQueries({ queryKey: sessionsKeys.detail(vars.sessionId) });
+            toast.success("피드백 대상이 지정되었습니다.");
+        },
+        onError: () => {
+            toast.error("피드백 대상 지정 실패");
         },
     });
 }
