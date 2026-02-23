@@ -97,7 +97,6 @@ class TeamMember(Base):
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"))
     member_id = Column(Integer, ForeignKey("members.id"))
-    is_leader = Column(Boolean, default=False)
 
     __table_args__ = (
         UniqueConstraint("team_id", "member_id", name="uq_team_members"),
@@ -138,6 +137,8 @@ class Assignment(Base):
     status = Column(String(20), server_default="PENDING")
     scanned_at = Column(TIMESTAMP(timezone=True))
     raw_data = Column(JSONB, server_default=text("'{}'"))
+    target_member_ids = Column(ARRAY(Integer), nullable=True)
+    # 피드백 대상 member_id 목록. 기본 1명, 결석 시 2명. FEEDBACK 타입에서 사용.
 
     __table_args__ = (
         CheckConstraint(
@@ -210,3 +211,27 @@ class Ledger(Base):
     # Relationships
     session = relationship("Session", back_populates="ledger_entries")
     member = relationship("Member", back_populates="ledger_entries")
+
+
+class CafePost(Base):
+    """네이버 카페 게시판 미러 캐시 (cron 동기화)"""
+    __tablename__ = "cafe_posts"
+
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, unique=True, nullable=False)
+    board_type = Column(String(20), nullable=False)
+    title = Column(String(500))
+    author_nick = Column(String(100))
+    member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
+    week_num = Column(Integer, nullable=True)
+    posted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    is_deleted = Column(Boolean, default=False)
+    first_seen_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    last_synced_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "board_type IN ('REVIEW','HOMEWORK','VIDEO')",
+            name="ck_cafe_posts_board_type",
+        ),
+    )
