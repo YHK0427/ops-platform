@@ -29,29 +29,13 @@ export default function SessionLayout() {
         switch (typedSession.status) {
             case "SETUP":
                 return (
-                    <div className="flex items-center gap-2">
-                        <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => {
-                                if (confirm("세션을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
-                                    deleteSession(sessionId);
-                                }
-                            }}
-                            disabled={isDeleting}
-                            className="bg-red-900/50 hover:bg-red-800 border-red-700 text-red-200"
-                        >
-                            <Trash2 className="w-3.5 h-3.5 mr-1" />
-                            {isDeleting ? "삭제 중..." : "세션 삭제"}
-                        </Button>
-                        <Button
-                            size="sm"
-                            onClick={() => handleStatusChange("PREP")}
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                            {typedSession.type === "INDIVIDUAL" ? "세션 준비 완료 (PREP)" : "팀 확정 (PREP 시작)"}
-                        </Button>
-                    </div>
+                    <Button
+                        size="sm"
+                        onClick={() => handleStatusChange("PREP")}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                        {typedSession.type === "INDIVIDUAL" ? "세션 준비 완료 (PREP)" : "팀 확정 (PREP 시작)"}
+                    </Button>
                 );
             case "PREP":
                 return (
@@ -105,6 +89,22 @@ export default function SessionLayout() {
                 backTo="/sessions"
                 actions={
                     <div className="flex items-center gap-2">
+                        {typedSession.status !== "FINALIZED" && (
+                            <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => {
+                                    if (confirm("세션을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
+                                        deleteSession(sessionId);
+                                    }
+                                }}
+                                disabled={isDeleting}
+                                className="bg-red-900/50 hover:bg-red-800 border-red-700 text-red-200"
+                            >
+                                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                                {isDeleting ? "삭제 중..." : "세션 삭제"}
+                            </Button>
+                        )}
                         {renderStatusAction()}
                         <div className="h-6 w-px bg-white/10 mx-2" />
                         {typedSession.status === "FINALIZED" && (

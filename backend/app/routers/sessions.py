@@ -151,12 +151,22 @@ async def delete_session(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
 ):
-    """세션 삭제 — SETUP 상태에서만 허용"""
+    """세션 삭제 — FINALIZED가 아니고 원장 항목이 없을 때만 허용"""
     session = await _get_session_or_404(session_id, db)
-    if session.status != "SETUP":
+    if session.status == "FINALIZED":
         raise HTTPException(
             status_code=400,
-            detail=f"SETUP 상태에서만 삭제 가능합니다 (현재: {session.status})",
+            detail="정산이 완료된 세션은 삭제할 수 없습니다",
+        )
+    # 원장 항목이 있으면 삭제 불가 (디파짓/페널티가 이미 적용됨)
+    ledger_count_result = await db.execute(
+        select(func.count(Ledger.id)).where(Ledger.session_id == session_id)
+    )
+    ledger_count = ledger_count_result.scalar() or 0
+    if ledger_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"이미 원장 항목이 존재하는 세션은 삭제할 수 없습니다 ({ledger_count}건)",
         )
     await db.delete(session)
     await db.commit()

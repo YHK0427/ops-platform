@@ -67,7 +67,7 @@ export default function SessionList() {
                                             </span>
                                             <StatusBadge status={session.status} className="px-1.5 py-0 text-[10px]" />
                                         </div>
-                                        {session.status === 'SETUP' ? (
+                                        {session.status !== 'FINALIZED' ? (
                                             <button
                                                 className="p-1 rounded text-red-400/60 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
                                                 title="세션 삭제"
