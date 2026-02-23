@@ -91,3 +91,20 @@ export function useCreateTransaction() {
         }
     });
 }
+
+export function useUpdateLedgerDescription() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, description }: { id: number; description: string }) => {
+            const { data } = await api.patch(`/ledger/${id}`, { description });
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["ledger"] });
+            toast.success("설명이 수정되었습니다.");
+        },
+        onError: () => {
+            toast.error("수정 실패");
+        },
+    });
+}

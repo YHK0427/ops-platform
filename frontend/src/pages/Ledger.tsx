@@ -5,13 +5,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { useLedger, useMembers, useGiveMerit, useCreateTransaction } from "@/hooks";
+import { useLedger, useMembers, useGiveMerit, useCreateTransaction, useUpdateLedgerDescription } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { formatNumber } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, PlusCircle, ArrowRightLeft } from "lucide-react";
+import { Loader2, PlusCircle, ArrowRightLeft, Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 // --- Dialogs ---
@@ -188,6 +188,9 @@ export default function Ledger() {
     const [memberFilter, setMemberFilter] = useState("all");
     const [typeFilter, setTypeFilter] = useState("all");
     const [page] = useState(1);
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editingDesc, setEditingDesc] = useState("");
+    const { mutate: updateDescription, isPending: isUpdating } = useUpdateLedgerDescription();
 
     // Include inactive members so deactivated member names resolve correctly in the ledger
     const { data: members } = useMembers(false);
@@ -294,8 +297,47 @@ export default function Ledger() {
                                                 {entry.type}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-gray-300 text-sm max-w-[300px] truncate" title={entry.description}>
-                                            {entry.description}
+                                        <TableCell className="text-gray-300 text-sm max-w-[300px]">
+                                            {editingId === entry.id ? (
+                                                <div className="flex items-center gap-1">
+                                                    <Input
+                                                        value={editingDesc}
+                                                        onChange={(e) => setEditingDesc(e.target.value)}
+                                                        className="h-7 text-xs py-1 px-2"
+                                                        autoFocus
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") {
+                                                                updateDescription({ id: entry.id, description: editingDesc }, {
+                                                                    onSuccess: () => setEditingId(null),
+                                                                });
+                                                            }
+                                                            if (e.key === "Escape") setEditingId(null);
+                                                        }}
+                                                    />
+                                                    <button
+                                                        className="p-1 text-green-400 hover:text-green-300"
+                                                        disabled={isUpdating}
+                                                        onClick={() => updateDescription({ id: entry.id, description: editingDesc }, {
+                                                            onSuccess: () => setEditingId(null),
+                                                        })}
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button className="p-1 text-gray-500 hover:text-gray-300" onClick={() => setEditingId(null)}>
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-1 group/desc">
+                                                    <span className="truncate" title={entry.description}>{entry.description}</span>
+                                                    <button
+                                                        className="p-0.5 text-gray-600 hover:text-gray-300 opacity-0 group-hover/desc:opacity-100 transition-opacity shrink-0"
+                                                        onClick={() => { setEditingId(entry.id); setEditingDesc(entry.description); }}
+                                                    >
+                                                        <Pencil className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </TableCell>
                                         <TableCell className={`text-right font-mono text-sm ${entry.amount_krw < 0 ? 'text-rose-400' : 'text-gray-300'}`}>
                                             {entry.amount_krw !== 0 ? formatNumber(entry.amount_krw) : '-'}

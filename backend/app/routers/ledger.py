@@ -7,7 +7,7 @@ from typing import Optional
 from app.database import AsyncSessionLocal
 from app.deps import get_db, get_current_user
 from app.models import Ledger, Member
-from app.schemas.ledger import LedgerResponse, LedgerType, MeritRequest, TransactionRequest
+from app.schemas.ledger import LedgerResponse, LedgerType, MeritRequest, TransactionRequest, LedgerDescriptionUpdate
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 
@@ -118,5 +118,21 @@ async def create_transaction(
     db.add(entry)
     await db.commit()
     await db.refresh(entry)
-    
+
+    return entry
+
+@router.patch("/{ledger_id}", response_model=LedgerResponse)
+async def update_ledger_description(
+    ledger_id: int,
+    req: LedgerDescriptionUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """원장 항목 설명(description) 수정 — 금액/타입/점수는 변경 불가"""
+    entry = await db.get(Ledger, ledger_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Ledger entry not found")
+    entry.description = req.description
+    await db.commit()
+    await db.refresh(entry)
     return entry

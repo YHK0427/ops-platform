@@ -39,3 +39,6 @@ class TransactionRequest(BaseModel):
     type: LedgerType
     amount_krw: int
     description: str
+
+class LedgerDescriptionUpdate(BaseModel):
+    description: str = Field(min_length=1, max_length=500)
