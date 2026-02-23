@@ -45,7 +45,7 @@ export function useMembers(activeOnly = true) {
         queryKey: membersKeys.list(activeOnly ? "active" : "all"),
         queryFn: async () => {
             const { data } = await api.get<Member[]>("/members", {
-                params: { active_only: activeOnly },
+                params: { include_inactive: !activeOnly },
             });
             return data;
         },

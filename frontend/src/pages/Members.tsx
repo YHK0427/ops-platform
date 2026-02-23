@@ -32,7 +32,7 @@ export default function Members() {
         if (!search) return true;
         return (
             m.name.toLowerCase().includes(search.toLowerCase()) ||
-            m.email.toLowerCase().includes(search.toLowerCase())
+            (m.email?.toLowerCase() ?? "").includes(search.toLowerCase())
         );
     });
 

@@ -189,11 +189,8 @@ export default function Ledger() {
     const [typeFilter, setTypeFilter] = useState("all");
     const [page] = useState(1);
 
-    // Member data for name mapping (if needed, but we can assume backend joins member name? 
-    // Checking api_spec_current.md: LedgerResponse schemas does not explicitly include member_name. 
-    // And useLedger interface has optional member_name.
-    // If backend doesn't send it, we need to map member_id -> name using `members` list.
-    const { data: members } = useMembers();
+    // Include inactive members so deactivated member names resolve correctly in the ledger
+    const { data: members } = useMembers(false);
     const memberMap = new Map();
     if (members) members.forEach((m: any) => memberMap.set(m.id, m.name));
 
