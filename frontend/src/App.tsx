@@ -17,6 +17,7 @@ import PrepTab from "@/pages/session/PrepTab";
 import OpsTab from "@/pages/session/OpsTab";
 import { PostTab } from "@/pages/session/PostTab";
 import SettlementTab from "@/pages/session/SettlementTab";
+import TeamEditPage from "@/pages/session/TeamEditPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -62,6 +63,7 @@ export default function App() {
                   <Route path="ops" element={<OpsTab />} />
                   <Route path="post" element={<PostTab />} />
                   <Route path="settlement" element={<SettlementTab />} />
+                  <Route path="team-edit" element={<TeamEditPage />} />
                 </Route>
                 <Route path="/ledger" element={<Ledger />} />
               </Route>
