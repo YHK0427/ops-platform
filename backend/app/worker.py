@@ -5,6 +5,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.services.crawler_ppt import scan_ppt
 from app.services.crawler_video import upload_all_videos
+from app.services.crawler_excuse import scan_excuses
 
 from sqlalchemy import select
 from app.models import Member, Session, CafePost
@@ -43,6 +44,19 @@ async def task_scan_homework(ctx, session_id: int):
 
         return {"status": "complete", "homework_count": hw_count, "feedback_count": fb_count}
 
+async def task_scan_excuses(ctx, session_id: int, mode: str):
+    """사유서 스캔 태스크 (PRE or POST 모드)"""
+    async with AsyncSessionLocal() as db:
+        session = await db.get(Session, session_id)
+        if not session:
+            return {"status": "failed", "reason": "Session not found"}
+
+        result = await db.execute(select(Member).where(Member.is_active == True))
+        members = result.scalars().all()
+
+        count = await scan_excuses(session.id, session.week_num, members, mode, db)
+        return {"status": "complete", "excuse_count": count, "mode": mode}
+
 async def task_upload_videos(ctx, session_id: int):
     """영상 업로드 태스크"""
     async with AsyncSessionLocal() as db:
@@ -77,7 +91,7 @@ async def task_sync_cafe_boards(ctx):
 
 
 class WorkerSettings:
-    functions = [task_scan_ppt, task_scan_homework, task_upload_videos, task_naver_login, task_sync_cafe_boards]
+    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, task_upload_videos, task_naver_login, task_sync_cafe_boards]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     cron_jobs = [
         cron(task_sync_cafe_boards, minute={0, 30}),  # 매 30분마다 실행

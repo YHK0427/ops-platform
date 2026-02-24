@@ -20,6 +20,7 @@ from app.schemas.crawler import (
     CrawlerTaskStartRequest,
     DriveVideoListResponse,
     DriveVideoItem,
+    ScanExcusesRequest,
 )
 from app.services.naver_session import import_session
 from app.services.crawler_video import list_drive_videos, parse_presenter_name
@@ -94,6 +95,25 @@ async def start_scan_homework(
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
     job = await pool.enqueue_job("task_scan_homework", session_id=body.session_id)
+    return CrawlerTaskResponse(task_id=job.job_id, status="queued")
+
+
+@router.post("/scan-excuses", response_model=CrawlerTaskResponse)
+async def start_scan_excuses(
+    request: Request,
+    body: ScanExcusesRequest,
+    _: str = Depends(get_current_user),
+):
+    """사유서 게시판 스캔 태스크 시작 (PRE/POST 모드)"""
+    pool = getattr(request.app.state, "arq_pool", None)
+    if not pool:
+        raise HTTPException(status_code=503, detail="ARQ pool not initialized")
+
+    job = await pool.enqueue_job(
+        "task_scan_excuses",
+        session_id=body.session_id,
+        mode=body.mode,
+    )
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 

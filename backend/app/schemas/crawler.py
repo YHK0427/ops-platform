@@ -42,3 +42,7 @@ class DriveVideoItem(BaseModel):
 
 class DriveVideoListResponse(BaseModel):
     videos: list[DriveVideoItem]
+
+class ScanExcusesRequest(BaseModel):
+    session_id: int
+    mode: str  # "PRE" or "POST"
