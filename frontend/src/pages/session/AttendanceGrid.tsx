@@ -23,24 +23,12 @@ import { Button } from "@/components/ui/button";
 
 interface AttendanceGridProps {
     sessionId: number;
-    sessionDate: string; // YYYY-MM-DD
     teams: any[];
 }
 
-export function AttendanceGrid({ sessionId, sessionDate, teams }: AttendanceGridProps) {
+export function AttendanceGrid({ sessionId, teams }: AttendanceGridProps) {
     const queryClient = useQueryClient();
     const [updating, setUpdating] = useState<Record<number, boolean>>({});
-
-    // Deadline logic (KST = UTC+9)
-    // PRE deadline : (sessionDate - 1 day) at 21:59:59 KST
-    // POST deadline: (sessionDate + 1 day) at 21:59:59 KST
-    const now = new Date();
-    const parts = sessionDate?.split("-").map(Number);
-    const [y, m, d] = parts?.length === 3 ? parts : [0, 0, 0];
-    const preDeadline  = y ? new Date(Date.UTC(y, m - 1, d - 1, 12, 59, 59)) : new Date(0);
-    const postDeadline = y ? new Date(Date.UTC(y, m - 1, d + 1, 12, 59, 59)) : new Date(0);
-    const isPreExpired  = now > preDeadline;
-    const isPostExpired = now > postDeadline;
 
     const handleStatusChange = async (memberId: number, status: string) => {
         setUpdating(prev => ({ ...prev, [memberId]: true }));
@@ -59,15 +47,6 @@ export function AttendanceGrid({ sessionId, sessionDate, teams }: AttendanceGrid
     };
 
     const handleExcuseChange = async (memberId: number, excuseType: string) => {
-        if (excuseType === "PRE" && isPreExpired) {
-            toast.error("사전사유서 마감 시간이 지났습니다 (세션 전날 22:00)");
-            return;
-        }
-        if (excuseType !== "NONE" && isPostExpired) {
-            toast.error("사후사유서 마감 시간이 지났습니다 (세션 다음날 22:00)");
-            return;
-        }
-
         setUpdating(prev => ({ ...prev, [memberId]: true }));
         try {
             await api.patch(`/sessions/${sessionId}/attendance/${memberId}`, {
@@ -75,9 +54,9 @@ export function AttendanceGrid({ sessionId, sessionDate, teams }: AttendanceGrid
             });
             await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
             toast.success("사유서가 업데이트되었습니다.");
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            toast.error("사유서 업데이트 실패");
+            toast.error(error?.response?.data?.detail ?? "사유서 업데이트 실패");
         } finally {
             setUpdating(prev => ({ ...prev, [memberId]: false }));
         }
@@ -198,14 +177,14 @@ export function AttendanceGrid({ sessionId, sessionDate, teams }: AttendanceGrid
                                             <Select
                                                 value={member.attendance?.excuse_type || "NONE"}
                                                 onValueChange={(val) => handleExcuseChange(member.member_id, val)}
-                                                disabled={updating[member.member_id] || isPostExpired}
+                                                disabled={updating[member.member_id]}
                                             >
                                                 <SelectTrigger className="h-8 w-[100px] text-xs text-white border-gray-600 bg-gray-800">
                                                     <SelectValue placeholder="유형" />
                                                 </SelectTrigger>
                                                 <SelectContent className="bg-gray-800 text-white border-gray-700">
                                                     <SelectItem value="NONE">-</SelectItem>
-                                                    <SelectItem value="PRE" disabled={isPreExpired}>사전 통보</SelectItem>
+                                                    <SelectItem value="PRE">사전 통보</SelectItem>
                                                     <SelectItem value="POST">사후 제출</SelectItem>
                                                 </SelectContent>
                                             </Select>

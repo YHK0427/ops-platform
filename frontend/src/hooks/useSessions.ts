@@ -26,6 +26,7 @@ export interface Session {
         status: string;
         excuse_type?: string | null;
         excuse_text?: string | null;
+        updated_at?: string | null;
     }[];
     assignments?: {
         id: number;

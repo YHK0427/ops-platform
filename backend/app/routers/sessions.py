@@ -360,23 +360,31 @@ async def update_attendance(
 ):
     """출결 정보 수정 (마감 가드 포함)"""
     session = await _get_session_or_404(session_id, db)
-    
-    # 마감 체크: session.date(토) + 1일(일) 21:59:59 UTC
-    # session.date는 date 객체이므로 datetime으로 변환 필요
-    deadline = datetime.combine(
-        session.date + timedelta(days=1),
-        time(21, 59, 59),
-        tzinfo=timezone.utc
-    )
 
-    now_utc = datetime.now(timezone.utc)
-
-    # 사후사유서(excuse_type) 변경 시 마감 체크
+    # 마감 검증 (KST 21:59:59 = UTC 12:59:59)
+    # PRE 마감: 세션 전날 21:59:59 KST
+    # POST 마감: 세션 다음날 21:59:59 KST
     if body.excuse_type is not None:
-        if now_utc > deadline and session.status != "FINALIZED":
+        now_utc = datetime.now(timezone.utc)
+        pre_deadline = datetime.combine(
+            session.date - timedelta(days=1),
+            time(12, 59, 59),
+            tzinfo=timezone.utc,
+        )
+        post_deadline = datetime.combine(
+            session.date + timedelta(days=1),
+            time(12, 59, 59),
+            tzinfo=timezone.utc,
+        )
+        if body.excuse_type == "PRE" and now_utc > pre_deadline:
             raise HTTPException(
                 status_code=422,
-                detail=f"사후사유서 제출 마감 시간이 지났습니다 (마감: {deadline})",
+                detail="사전사유서 마감 시간이 지났습니다 (세션 전날 21:59)",
+            )
+        if body.excuse_type == "POST" and now_utc > post_deadline:
+            raise HTTPException(
+                status_code=422,
+                detail="사후사유서 마감 시간이 지났습니다 (세션 다음날 21:59)",
             )
 
     result = await db.execute(
