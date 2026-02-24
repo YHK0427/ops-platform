@@ -1,9 +1,9 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus } from "lucide-react";
+import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
-import { useCrawlerTask, useUploadVideos, useSetFeedbackTargets } from "@/hooks";
+import { useCrawlerTask, useUploadVideos, useSetFeedbackTargets, useDriveVideos, type DriveVideoItem } from "@/hooks";
 import { useMembers } from "@/hooks/useMembers";
 import { useState, useMemo } from "react";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
@@ -18,6 +18,7 @@ export default function OpsTab() {
 
     const [uploadTaskId, setUploadTaskId] = useState<string | null>(null);
     const { mutate: uploadVideos, isPending: isUploading } = useUploadVideos();
+    const { mutate: fetchDriveVideos, isPending: isLoadingDrive, data: driveVideos } = useDriveVideos();
     const { data: taskStatus } = useCrawlerTask(uploadTaskId);
     const { mutate: setFeedbackTargets, isPending: isSettingTarget } = useSetFeedbackTargets();
     const { data: allMembers } = useMembers();
@@ -99,18 +100,75 @@ export default function OpsTab() {
 
             {/* Video Upload Panel */}
             <div className="bg-[var(--color-surface)] p-6 rounded-xl border border-[var(--color-border)]">
-                <div className="flex items-start justify-between mb-6">
+                <div className="flex items-start justify-between mb-4">
                     <div>
                         <h3 className="font-bold text-lg mb-1">Video Upload</h3>
                         <p className="text-sm text-[var(--color-text-secondary)]">
                             구글 드라이브 영상을 다운로드하여 네이버 카페에 업로드합니다.
                         </p>
                     </div>
-                    <Button onClick={handleCafeUpload} disabled={isUploading} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]">
-                        <UploadCloud className="w-4 h-4 mr-2" />
-                        {isUploading ? "Starting..." : "Start Upload Process"}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => fetchDriveVideos(session.id)}
+                            disabled={isLoadingDrive}
+                            className="border-[var(--color-border)] hover:bg-white/5"
+                        >
+                            {isLoadingDrive
+                                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                : <Film className="w-4 h-4 mr-2" />}
+                            드라이브 확인
+                        </Button>
+                        <Button onClick={handleCafeUpload} disabled={isUploading} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]">
+                            <UploadCloud className="w-4 h-4 mr-2" />
+                            {isUploading ? "Starting..." : "업로드 시작"}
+                        </Button>
+                    </div>
                 </div>
+
+                {/* Drive Video List */}
+                {driveVideos !== undefined && (
+                    <div className="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 py-2 bg-gray-900/40 border-b border-[var(--color-border)]">
+                            <Film className="w-4 h-4 text-[var(--color-accent)]" />
+                            <span className="text-sm font-medium">드라이브 영상 목록</span>
+                            <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20">
+                                총 {driveVideos.length}개
+                            </span>
+                        </div>
+                        {driveVideos.length === 0 ? (
+                            <div className="py-8 text-center text-sm text-[var(--color-text-muted)]">
+                                드라이브에 영상이 없습니다.
+                            </div>
+                        ) : (
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">
+                                        <th className="text-left px-4 py-2 w-[60px]">순서</th>
+                                        <th className="text-left px-4 py-2">파일명</th>
+                                        <th className="text-left px-4 py-2 w-[120px]">발표자</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[var(--color-border)]">
+                                    {[...driveVideos]
+                                        .sort((a, b) => a.order - b.order)
+                                        .map((v) => (
+                                            <tr key={v.id} className="hover:bg-white/5">
+                                                <td className="px-4 py-2 font-mono text-[var(--color-text-muted)] text-xs">
+                                                    {v.order === 9999 ? "-" : `${v.order}번째`}
+                                                </td>
+                                                <td className="px-4 py-2 text-gray-300 font-mono text-xs truncate max-w-[300px]" title={v.name}>
+                                                    {v.name}
+                                                </td>
+                                                <td className="px-4 py-2 font-medium text-gray-200">{v.presenter}</td>
+                                            </tr>
+                                        ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                )}
+
                 {renderTaskStatus()}
             </div>
 
