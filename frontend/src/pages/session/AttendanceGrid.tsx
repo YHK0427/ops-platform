@@ -17,24 +17,18 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { RefreshCw, AlertCircle, CheckCircle2 } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
+import { RefreshCw, CheckCircle2, FileText } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 
 interface AttendanceGridProps {
     sessionId: number;
-    sessionDate: string; // YYYY-MM-DD
     teams: any[];
 }
 
-export function AttendanceGrid({ sessionId, sessionDate, teams }: AttendanceGridProps) {
+export function AttendanceGrid({ sessionId, teams }: AttendanceGridProps) {
     const queryClient = useQueryClient();
     const [updating, setUpdating] = useState<Record<number, boolean>>({});
-
-    // Deadline Logic: Session Date 22:00 KST
-    // sessionDate is YYYY-MM-DD string
-    const deadline = new Date(`${sessionDate}T22:00:00+09:00`); // Assuming KST
-    const now = new Date();
-    const isPastDeadline = now > deadline;
 
     const handleStatusChange = async (memberId: number, status: string) => {
         setUpdating(prev => ({ ...prev, [memberId]: true }));
@@ -53,11 +47,6 @@ export function AttendanceGrid({ sessionId, sessionDate, teams }: AttendanceGrid
     };
 
     const handleExcuseChange = async (memberId: number, excuseType: string) => {
-        if (isPastDeadline) {
-            toast.error("사후사유서 제출 마감 시간이 지났습니다 (22:00)");
-            return;
-        }
-
         setUpdating(prev => ({ ...prev, [memberId]: true }));
         try {
             await api.patch(`/sessions/${sessionId}/attendance/${memberId}`, {
@@ -188,7 +177,7 @@ export function AttendanceGrid({ sessionId, sessionDate, teams }: AttendanceGrid
                                             <Select
                                                 value={member.attendance?.excuse_type || "NONE"}
                                                 onValueChange={(val) => handleExcuseChange(member.member_id, val)}
-                                                disabled={updating[member.member_id] || isPastDeadline}
+                                                disabled={updating[member.member_id]}
                                             >
                                                 <SelectTrigger className="h-8 w-[100px] text-xs text-white border-gray-600 bg-gray-800">
                                                     <SelectValue placeholder="유형" />
@@ -200,24 +189,21 @@ export function AttendanceGrid({ sessionId, sessionDate, teams }: AttendanceGrid
                                                 </SelectContent>
                                             </Select>
 
-                                            {/* (Optional) Excuse Text Display - backend currently doesn't expose easy update for text here without modal, 
-                                                but we strictly follow backend enum first. 
-                                                Frontend previously had specific reasons. 
-                                                If users want 'Health', 'Family' etc, they should be entered in 'excuse_text', 
-                                                but for now matching backend enum PRE/POST is priority.
-                                            */}
-
-                                            {isPastDeadline && (
-                                                <TooltipProvider>
-                                                    <Tooltip>
-                                                        <TooltipTrigger>
-                                                            <AlertCircle className="w-4 h-4 text-[var(--color-text-muted)]" />
-                                                        </TooltipTrigger>
-                                                        <TooltipContent>
-                                                            <p>마감 시간(22:00)이 지났습니다.</p>
-                                                        </TooltipContent>
-                                                    </Tooltip>
-                                                </TooltipProvider>
+                                            {/* Excuse Text Popover */}
+                                            {member.attendance?.excuse_text && (
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-400 hover:text-blue-300 hover:bg-blue-400/10">
+                                                            <FileText className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-80 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm" align="end">
+                                                        <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase mb-2">사유서 내용</p>
+                                                        <p className="text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed text-xs">
+                                                            {member.attendance.excuse_text}
+                                                        </p>
+                                                    </PopoverContent>
+                                                </Popover>
                                             )}
                                         </div>
                                     </TableCell>
