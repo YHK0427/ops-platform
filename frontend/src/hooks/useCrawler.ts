@@ -42,11 +42,9 @@ export function useCrawlerTask(taskId: string | null) {
         },
         enabled: !!taskId,
         refetchInterval: (query) => {
-            const data = query.state.data;
-            if (data?.status === "complete" || data?.status === "failed") {
-                return false;
-            }
-            return 2000; // Poll every 2s
+            const status = query.state.data?.status;
+            const stillWorking = status === "queued" || status === "in_progress";
+            return stillWorking ? 2000 : false;
         },
     });
 }

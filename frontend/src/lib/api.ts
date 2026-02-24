@@ -17,6 +17,7 @@ export const getToken = () => _accessToken;
 const api = axios.create({
     baseURL: "/api/v1",
     headers: { "Content-Type": "application/json" },
+    timeout: 15000,
 });
 
 // Attach bearer token on every request
