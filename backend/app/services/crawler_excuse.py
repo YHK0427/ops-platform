@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import date as date_type, datetime, time, timedelta, timezone
 from html.parser import HTMLParser
 from typing import Literal
 
@@ -48,12 +49,26 @@ async def scan_excuses(
     members: list[Member],
     mode: Literal["PRE", "POST"],
     db: AsyncSession,
+    session_date: date_type | None = None,
 ) -> int:
     """
     사유서 게시판(NAVER_CAFE_MENU_EXCUSE)을 스캔하여 Attendance 레코드 업데이트.
-    - PRE 모드: 해당 주차 글을 찾아 매칭된 멤버의 excuse_type="PRE", excuse_text=본문 저장
-    - POST 모드: 결석/지각 중 excuse_type 미설정 멤버의 글만 처리, excuse_type="POST" 저장
+    - PRE 모드: 해당 주차 글을 찾아 매칭된 멤버의 excuse_type 자동 판별 후 저장
+    - POST 모드: 결석/지각 중 excuse_type 미설정 멤버의 글만 처리
+    - excuse_type은 mode 인자가 아닌 게시글의 writeDateTimestamp로 자동 판별:
+      PRE 마감(세션 전날 21:59:59 KST = UTC 12:59:59) 이전 작성 → "PRE", 이후 → "POST"
     """
+    # PRE 마감 기준 계산 (ms 단위)
+    # session_date가 없으면 timestamp 판별 불가 → mode 폴백
+    pre_deadline_ms: int | None = None
+    if session_date is not None:
+        pre_deadline_ms = int(
+            datetime.combine(
+                session_date - timedelta(days=1),
+                time(12, 59, 59),
+                tzinfo=timezone.utc,
+            ).timestamp() * 1000
+        )
     req_session = await get_valid_requests_session(db)
     if req_session is None:
         logger.error("No valid Naver session — skipping excuse scan")
@@ -132,6 +147,14 @@ async def scan_excuses(
             except Exception as e:
                 logger.warning(f"Failed to fetch article detail {article_id}: {e}")
 
+        # writeDateTimestamp 기반으로 PRE/POST 자동 판별
+        write_ts_ms = article.get("writeDateTimestamp", 0)
+        if pre_deadline_ms is not None and write_ts_ms:
+            detected_type = "PRE" if write_ts_ms <= pre_deadline_ms else "POST"
+        else:
+            # session_date 없거나 timestamp 없으면 mode 폴백
+            detected_type = mode
+
         # Attendance 업데이트
         stmt = select(Attendance).where(
             Attendance.session_id == session_id,
@@ -140,9 +163,13 @@ async def scan_excuses(
         result = await db.execute(stmt)
         attendance = result.scalar_one_or_none()
         if attendance:
-            attendance.excuse_type = mode
+            attendance.excuse_type = detected_type
             attendance.excuse_text = excuse_text
             count += 1
+            logger.info(
+                f"Excuse set: member={member.name}, type={detected_type}, "
+                f"write_ts={write_ts_ms}, pre_deadline={pre_deadline_ms}"
+            )
         else:
             logger.warning(f"No attendance record for member {member.id} in session {session_id}")
 

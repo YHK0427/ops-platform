@@ -54,7 +54,7 @@ async def task_scan_excuses(ctx, session_id: int, mode: str):
         result = await db.execute(select(Member).where(Member.is_active == True))
         members = result.scalars().all()
 
-        count = await scan_excuses(session.id, session.week_num, members, mode, db)
+        count = await scan_excuses(session.id, session.week_num, members, mode, db, session_date=session.date)
         return {"status": "complete", "excuse_count": count, "mode": mode}
 
 async def task_upload_videos(ctx, session_id: int):
