@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
     ArrowLeft,
@@ -7,9 +7,10 @@ import {
     Loader2,
     ShieldAlert,
     Trophy,
-    Pencil
+    Pencil,
+    Trash2
 } from "lucide-react";
-import { useMember, useLedger, useDeactivateMember, useReactivateMember, useCreateTransaction } from "@/hooks";
+import { useMember, useLedger, useDeactivateMember, useReactivateMember, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
@@ -36,6 +37,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export default function MemberDetail() {
     const { id } = useParams<{ id: string }>();
@@ -52,6 +54,8 @@ export default function MemberDetail() {
     const deactivateMutation = useDeactivateMember();
     const reactivateMutation = useReactivateMember();
     const { mutate: createTransaction, isPending: isCreatingTx } = useCreateTransaction();
+    const { mutate: updateEntry, isPending: isUpdating } = useUpdateLedger();
+    const { mutate: deleteEntry, isPending: isDeleting } = useDeleteLedgerEntry();
 
     if (isLoadingMember || isLoadingLedger) {
         return (
@@ -210,34 +214,26 @@ export default function MemberDetail() {
                                     <TableHead className="text-[var(--color-text-muted)]">Description</TableHead>
                                     <TableHead className="text-right text-[var(--color-text-muted)]">Amount</TableHead>
                                     <TableHead className="text-right text-[var(--color-text-muted)]">Balance</TableHead>
+                                    <TableHead className="w-[72px]" />
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {ledger?.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={5} className="h-24 text-center text-[var(--color-text-muted)]">
+                                        <TableCell colSpan={6} className="h-24 text-center text-[var(--color-text-muted)]">
                                             내역이 없습니다.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
                                     ledger?.map((entry) => (
-                                        <TableRow key={entry.id} className="border-b-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
-                                            <TableCell className="text-xs font-mono text-[var(--color-text-muted)]">
-                                                {new Date(entry.created_at).toLocaleDateString()}
-                                            </TableCell>
-                                            <TableCell>
-                                                <LedgerTypeBadge type={entry.type} />
-                                            </TableCell>
-                                            <TableCell className="text-sm text-[var(--color-text-secondary)]">
-                                                {entry.description}
-                                            </TableCell>
-                                            <TableCell className={`text-right font-mono text-sm ${entry.amount_krw > 0 ? "text-green-400" : "text-rose-400"}`}>
-                                                {entry.amount_krw > 0 ? "+" : ""}{entry.amount_krw.toLocaleString()}
-                                            </TableCell>
-                                            <TableCell className="text-right font-mono text-sm text-[var(--color-text-muted)]">
-                                                {entry.deposit_after.toLocaleString()}
-                                            </TableCell>
-                                        </TableRow>
+                                        <LedgerRow
+                                            key={entry.id}
+                                            entry={entry}
+                                            onDelete={() => deleteEntry(entry.id)}
+                                            onUpdate={(data) => updateEntry({ id: entry.id, data })}
+                                            isDeleting={isDeleting}
+                                            isUpdating={isUpdating}
+                                        />
                                     ))
                                 )}
                             </TableBody>
@@ -300,6 +296,113 @@ export default function MemberDetail() {
                 </DialogContent>
             </Dialog>
         </div>
+    );
+}
+
+function LedgerRow({
+    entry,
+    onDelete,
+    onUpdate,
+    isDeleting,
+    isUpdating,
+}: {
+    entry: LedgerEntry;
+    onDelete: () => void;
+    onUpdate: (data: { amount_krw?: number; description?: string }) => void;
+    isDeleting: boolean;
+    isUpdating: boolean;
+}) {
+    const [editOpen, setEditOpen] = useState(false);
+    const [editAmount, setEditAmount] = useState(entry.amount_krw);
+    const [editDesc, setEditDesc] = useState(entry.description);
+
+    useEffect(() => {
+        setEditAmount(entry.amount_krw);
+        setEditDesc(entry.description);
+    }, [entry.amount_krw, entry.description]);
+
+    const handleSave = () => {
+        onUpdate({ amount_krw: editAmount, description: editDesc });
+        setEditOpen(false);
+    };
+
+    return (
+        <TableRow className="group/row border-b-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
+            <TableCell className="text-xs font-mono text-[var(--color-text-muted)]">
+                {new Date(entry.created_at).toLocaleDateString()}
+            </TableCell>
+            <TableCell>
+                <LedgerTypeBadge type={entry.type} />
+            </TableCell>
+            <TableCell className="text-sm text-[var(--color-text-secondary)]">
+                {entry.description}
+            </TableCell>
+            <TableCell className={`text-right font-mono text-sm ${entry.amount_krw > 0 ? "text-green-400" : "text-rose-400"}`}>
+                {entry.amount_krw > 0 ? "+" : ""}{entry.amount_krw.toLocaleString()}
+            </TableCell>
+            <TableCell className="text-right font-mono text-sm text-[var(--color-text-muted)]">
+                {entry.deposit_after.toLocaleString()}
+            </TableCell>
+            <TableCell>
+                <div className="flex items-center justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                    <Popover open={editOpen} onOpenChange={setEditOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 hover:bg-white/10"
+                                disabled={isUpdating}
+                            >
+                                <Pencil className="w-3 h-3" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                            className="w-64 bg-[var(--color-elevated)] border-[var(--color-border)] p-3"
+                            align="end"
+                        >
+                            <div className="space-y-3">
+                                <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase">원장 수정</p>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-[var(--color-text-muted)]">금액 (KRW)</label>
+                                    <Input
+                                        type="number"
+                                        value={editAmount}
+                                        onChange={(e) => setEditAmount(Number(e.target.value))}
+                                        className="h-7 text-sm bg-transparent border-[var(--color-border)]"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-[var(--color-text-muted)]">사유</label>
+                                    <Input
+                                        value={editDesc}
+                                        onChange={(e) => setEditDesc(e.target.value)}
+                                        className="h-7 text-sm bg-transparent border-[var(--color-border)]"
+                                    />
+                                </div>
+                                <Button
+                                    size="sm"
+                                    onClick={handleSave}
+                                    disabled={isUpdating || !editDesc}
+                                    className="w-full h-7 text-xs bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
+                                >
+                                    저장
+                                </Button>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 hover:bg-rose-500/10 hover:text-rose-400"
+                        onClick={onDelete}
+                        disabled={isDeleting}
+                    >
+                        <Trash2 className="w-3 h-3" />
+                    </Button>
+                </div>
+            </TableCell>
+        </TableRow>
     );
 }
 
