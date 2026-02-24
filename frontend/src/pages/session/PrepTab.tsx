@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useNavigate } from "react-router-dom";
 import { AttendanceGrid } from "./AttendanceGrid";
 import { Button } from "@/components/ui/button";
 import { FileSearch, Loader2, CheckCircle2, XCircle } from "lucide-react";
@@ -9,6 +9,7 @@ import type { Session } from "@/hooks/useSessions";
 
 export default function PrepTab() {
     const { session } = useOutletContext<{ session: Session }>();
+    const navigate = useNavigate();
     const { data: members } = useMembers(); // Fetch members to map names for Individual sessions
 
     const [scanTaskId, setScanTaskId] = useState<string | null>(null);
@@ -143,6 +144,16 @@ export default function PrepTab() {
             <section>
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold text-lg">Attendance Check</h3>
+                    {session.type === "TEAM" && session.status === "PREP" && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/sessions/${session.id}/team-edit`)}
+                            className="border-[var(--color-border)] hover:bg-white/5"
+                        >
+                            팀 수정
+                        </Button>
+                    )}
                 </div>
                 <AttendanceGrid sessionId={session.id} sessionDate={session.date} teams={displayTeams} />
             </section>
