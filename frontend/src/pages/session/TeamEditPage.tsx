@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMembers } from "@/hooks/useMembers";
@@ -11,20 +12,7 @@ export default function TeamEditPage() {
     const { session } = useOutletContext<{ session: Session }>();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const { data: allMembers } = useMembers();
-
-    // Convert session.teams → Record<string, number[]>
-    // Include all active members that are NOT in any team in "unassigned"
-    const initialTeams: Record<string, number[]> = { unassigned: [] };
-    const assignedIds = new Set<number>();
-    (session.teams ?? []).forEach((team) => {
-        initialTeams[team.name] = team.members.map((m) => m.id);
-        team.members.forEach((m) => assignedIds.add(m.id));
-    });
-    // Put active members not in any team into unassigned
-    (allMembers ?? [])
-        .filter((m) => m.is_active && !assignedIds.has(m.id))
-        .forEach((m) => initialTeams["unassigned"].push(m.id));
+    const { data: allMembers, isLoading: membersLoading } = useMembers();
 
     const { mutate: saveTeams, isPending } = useMutation({
         mutationFn: async (teams: Record<string, number[]>) => {
@@ -45,6 +33,24 @@ export default function TeamEditPage() {
             toast.error("팀 저장 실패");
         },
     });
+
+    // Convert session.teams → Record<string, number[]>
+    // Include all active members that are NOT in any team in "unassigned"
+    const initialTeams = useMemo(() => {
+        const result: Record<string, number[]> = { unassigned: [] };
+        const assignedIds = new Set<number>();
+        (session.teams ?? []).forEach((team) => {
+            result[team.name] = team.members.map((m) => m.id);
+            team.members.forEach((m) => assignedIds.add(m.id));
+        });
+        // Put active members not in any team into unassigned
+        (allMembers ?? [])
+            .filter((m) => m.is_active && !assignedIds.has(m.id))
+            .forEach((m) => result["unassigned"].push(m.id));
+        return result;
+    }, [session.teams, allMembers]);
+
+    if (membersLoading) return <div className="p-6 text-[var(--color-text-secondary)]">멤버 목록 로딩 중...</div>;
 
     return (
         <div className="p-6 h-full flex flex-col">
