@@ -24,7 +24,8 @@ export interface Session {
     attendances?: {
         member_id: number;
         status: string;
-        excuse_type?: string;
+        excuse_type?: string | null;
+        excuse_text?: string | null;
     }[];
     assignments?: {
         id: number;

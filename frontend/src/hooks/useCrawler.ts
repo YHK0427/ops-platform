@@ -140,3 +140,15 @@ export function useDriveVideos() {
         },
     });
 }
+
+export function useScanExcuses() {
+    return useMutation({
+        mutationFn: async ({ sessionId, mode }: { sessionId: number; mode: "PRE" | "POST" }) => {
+            const { data } = await api.post<CrawlerTaskResponse>("/crawler/scan-excuses", {
+                session_id: sessionId,
+                mode,
+            });
+            return data;
+        },
+    });
+}
