@@ -33,3 +33,12 @@ class VideoUploadRequest(BaseModel):
 class NaverLoginRequest(BaseModel):
     username: str
     password: str
+
+class DriveVideoItem(BaseModel):
+    id: str
+    name: str
+    presenter: str
+    order: int  # parsed from (N번째), 9999 if absent
+
+class DriveVideoListResponse(BaseModel):
+    videos: list[DriveVideoItem]

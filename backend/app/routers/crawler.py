@@ -1,3 +1,6 @@
+import asyncio
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,6 +8,7 @@ from starlette.requests import Request
 
 from app.deps import get_current_user, get_db
 from app.models import NaverSession
+from app.models import Session as SessionModel
 from app.schemas.crawler import (
     CrawlerTaskResponse,
     NaverSessionStatus,
@@ -13,7 +17,8 @@ from app.schemas.crawler import (
     ScanHomeworkRequest,
     VideoUploadRequest,
     NaverLoginRequest,
-    CrawlerTaskStartRequest
+    CrawlerTaskStartRequest,
+    DriveVideoListResponse,
 )
 from app.services.naver_session import import_session
 
@@ -142,6 +147,43 @@ async def trigger_board_sync(
 
     job = await pool.enqueue_job("task_sync_cafe_boards")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
+
+
+@router.get("/drive-videos", response_model=DriveVideoListResponse)
+async def list_drive_videos_api(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """드라이브 영상 목록 조회 (Google Drive API, 동기 → thread offload)"""
+    from app.services.crawler_video import list_drive_videos, parse_presenter_name
+    from app.schemas.crawler import DriveVideoItem
+
+    session = await db.get(SessionModel, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    try:
+        files = await asyncio.to_thread(list_drive_videos, session.week_num)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Drive API 오류: {e}")
+
+    def parse_order(name: str) -> int:
+        m = re.search(r'\((\d+)번째\)', name)
+        return int(m.group(1)) if m else 9999
+
+    videos = [
+        DriveVideoItem(
+            id=f["id"],
+            name=f["name"],
+            presenter=parse_presenter_name(f["name"]),
+            order=parse_order(f["name"]),
+        )
+        for f in files
+    ]
+    return DriveVideoListResponse(videos=videos)
 
 
 @router.post("/naver/login", response_model=CrawlerTaskResponse)
