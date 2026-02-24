@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
 import { AttendanceGrid } from "./AttendanceGrid";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { FileSearch, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { useScanPPT, useScanHomework, useCrawlerTask, useMembers } from "@/hooks";
+import { useScanPPT, useScanExcuses, useCrawlerTask, useMembers } from "@/hooks";
 import type { Session } from "@/hooks/useSessions";
 
 export default function PrepTab() {
@@ -14,10 +15,12 @@ export default function PrepTab() {
 
     const [scanTaskId, setScanTaskId] = useState<string | null>(null);
     const { mutate: scanPPT, isPending: isScanningPPT } = useScanPPT();
-    const { mutate: scanHomework, isPending: isScanningHomework } = useScanHomework();
+    const { mutate: scanExcuses, isPending: isScanningExcuses } = useScanExcuses();
+    const [excuseTaskId, setExcuseTaskId] = useState<string | null>(null);
 
     // Polling
     const { data: taskStatus } = useCrawlerTask(scanTaskId);
+    const { data: excuseTaskStatus } = useCrawlerTask(excuseTaskId);
 
     const handleScanPPT = (mode: "REGULAR" | "LATE") => {
         scanPPT({ sessionId: session.id, mode }, {
@@ -29,11 +32,11 @@ export default function PrepTab() {
         });
     };
 
-    const handleScanHomework = () => {
-        scanHomework({ sessionId: session.id }, {
+    const handleScanExcuses = (mode: "PRE" | "POST") => {
+        scanExcuses({ sessionId: session.id, mode }, {
             onSuccess: (data) => {
-                toast.success("과제 스캔이 시작되었습니다.");
-                setScanTaskId(data.task_id);
+                toast.success(`${mode === "PRE" ? "사전" : "사후"}사유서 스캔이 시작되었습니다.`);
+                setExcuseTaskId(data.task_id);
             },
             onError: () => toast.error("스캔 요청 실패"),
         });
@@ -130,13 +133,49 @@ export default function PrepTab() {
 
                 <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)]">
                     <div className="mb-4">
-                        <h3 className="font-bold text-lg">Homework Scan</h3>
-                        <p className="text-sm text-[var(--color-text-secondary)]">과제 제출 여부 확인</p>
+                        <h3 className="font-bold text-lg">사유서 스캔</h3>
+                        <p className="text-sm text-[var(--color-text-secondary)]">네이버 카페 사유서 게시판 스캔</p>
                     </div>
-                    <Button variant="outline" onClick={handleScanHomework} disabled={isScanningHomework}>
-                        <FileSearch className="w-4 h-4 mr-2" />
-                        Scan Homework
-                    </Button>
+                    <div className="flex flex-col gap-2">
+                        <div className="flex gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => handleScanExcuses("PRE")}
+                                disabled={isScanningExcuses}
+                            >
+                                <FileSearch className="w-4 h-4 mr-2" />
+                                사전사유서 받아오기
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="text-orange-400 border-orange-400/20 hover:bg-orange-400/10"
+                                onClick={() => handleScanExcuses("POST")}
+                                disabled={isScanningExcuses}
+                            >
+                                <FileSearch className="w-4 h-4 mr-2" />
+                                사후사유서 받아오기
+                            </Button>
+                        </div>
+                        {excuseTaskId && excuseTaskStatus && (
+                            <div className="mt-2 p-3 bg-black/20 rounded-lg flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2">
+                                    {excuseTaskStatus.status === "in_progress" || excuseTaskStatus.status === "queued" ? (
+                                        <Loader2 className="w-4 h-4 animate-spin text-[var(--color-accent)]" />
+                                    ) : excuseTaskStatus.status === "complete" ? (
+                                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                    ) : (
+                                        <XCircle className="w-4 h-4 text-red-500" />
+                                    )}
+                                    <span className="font-mono">Task: {excuseTaskId.slice(0, 8)}...</span>
+                                </div>
+                                <span className={`font-bold ${excuseTaskStatus.status === "complete" ? "text-green-500" :
+                                    excuseTaskStatus.status === "failed" ? "text-red-500" : "text-[var(--color-accent)]"
+                                    }`}>
+                                    {excuseTaskStatus.status.toUpperCase()}
+                                </span>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -157,6 +196,58 @@ export default function PrepTab() {
                 </div>
                 <AttendanceGrid sessionId={session.id} sessionDate={session.date} teams={displayTeams} />
             </section>
+
+            {/* Excuse Summary */}
+            {(() => {
+                const excusedAttendances = (session.attendances || []).filter(
+                    (att) => att.excuse_type === "PRE" || att.excuse_type === "POST"
+                );
+                if (excusedAttendances.length === 0) return null;
+                return (
+                    <section>
+                        <h3 className="font-bold text-lg mb-3">사유서 제출 현황</h3>
+                        <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                            {excusedAttendances.map((att) => {
+                                const member = members?.find((m) => m.id === att.member_id);
+                                return (
+                                    <div key={att.member_id} className="flex items-center justify-between px-4 py-3">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-sm font-medium">
+                                                {member?.name ?? `ID:${att.member_id}`}
+                                            </span>
+                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                                                att.excuse_type === "PRE"
+                                                    ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                                                    : "bg-orange-500/10 text-orange-400 border-orange-500/20"
+                                            }`}>
+                                                {att.excuse_type === "PRE" ? "사전 통보" : "사후 제출"}
+                                            </span>
+                                        </div>
+                                        {att.excuse_text && (
+                                            <Popover>
+                                                <PopoverTrigger asChild>
+                                                    <Button variant="ghost" size="sm" className="h-7 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
+                                                        내용 보기
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent
+                                                    className="w-80 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm"
+                                                    align="end"
+                                                >
+                                                    <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase mb-2">사유서 내용</p>
+                                                    <p className="text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed">
+                                                        {att.excuse_text}
+                                                    </p>
+                                                </PopoverContent>
+                                            </Popover>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+                );
+            })()}
 
             {/* Feedback Target Assignment (INDIVIDUAL sessions with has_feedback) */}
             {session.type === "INDIVIDUAL" && cfg.has_feedback !== false && (
