@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class AssignmentUpdate(BaseModel):
-    status: Optional[str] = Field(None, pattern="^(PENDING|PASS|FAIL|LATE|MISSING)$")
+    status: Optional[str] = Field(None, pattern="^(PENDING|PASS|LATE|MISSING|EXEMPT)$")
     # PPT의 경우 PASS/LATE/MISSING (FAIL은 보통 안 씀? spec에는 PASS/FAIL/LATE/MISSING 등 명시 없으나 ENUM 확인 필요)
     # models.py Assignment status default="PENDING"
     # Business Logic: PPT 미제출 -> MISSING or FAIL?

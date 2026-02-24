@@ -235,6 +235,27 @@ async def update_session_status(
 
     # POST→SETTLEMENT 전환 시: 크롤러 스캔 후에도 PENDING 상태로 남은 과제 = 미제출 → MISSING 처리
     if target == "SETTLEMENT":
+        # 결석 멤버의 REVIEW는 면제(EXEMPT) 처리
+        absent_stmt = select(Attendance.member_id).where(
+            Attendance.session_id == session_id,
+            Attendance.status == "ABSENT",
+        )
+        absent_result = await db.execute(absent_stmt)
+        absent_ids = {row[0] for row in absent_result.all()}
+
+        if absent_ids:
+            await db.execute(
+                update(Assignment)
+                .where(
+                    Assignment.session_id == session_id,
+                    Assignment.status == "PENDING",
+                    Assignment.type == "REVIEW",
+                    Assignment.member_id.in_(absent_ids),
+                )
+                .values(status="EXEMPT")
+            )
+
+        # 나머지 PENDING → MISSING
         await db.execute(
             update(Assignment)
             .where(Assignment.session_id == session_id, Assignment.status == "PENDING")

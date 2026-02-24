@@ -146,7 +146,7 @@ class Assignment(Base):
             name="ck_assignments_type",
         ),
         CheckConstraint(
-            "status IN ('PENDING','PASS','LATE','MISSING')",
+            "status IN ('PENDING','PASS','LATE','MISSING','EXEMPT')",
             name="ck_assignments_status",
         ),
         UniqueConstraint("session_id", "member_id", "type", name="uq_assignments"),

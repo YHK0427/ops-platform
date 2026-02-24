@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,7 +16,8 @@ const STATUS_CYCLE: Record<string, string> = {
     PENDING: "PASS",
     PASS:    "LATE",
     LATE:    "MISSING",
-    MISSING: "PASS",
+    MISSING: "EXEMPT",
+    EXEMPT:  "PASS",
     FAIL:    "PASS",
 };
 
@@ -31,6 +32,15 @@ export function PostTab() {
     const { data: members } = useMembers();
 
     const isPolling = taskStatus?.status === "queued" || taskStatus?.status === "in_progress";
+
+    // Auto-refresh session data when scan task completes
+    const prevTaskStatus = useRef<string | undefined>(undefined);
+    useEffect(() => {
+        if (prevTaskStatus.current !== "complete" && taskStatus?.status === "complete") {
+            queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
+        }
+        prevTaskStatus.current = taskStatus?.status;
+    }, [taskStatus?.status]);
 
     // Build row list: TEAM uses teams.members, INDIVIDUAL uses attendances
     const rows: { id: number; name: string; teamName: string; teamId: number | null }[] =
@@ -173,6 +183,7 @@ export function PostTab() {
                                                             status === "PASS" ? "bg-green-500/10 text-green-500 border-green-500/50" :
                                                             status === "MISSING" ? "bg-red-500/10 text-red-500 border-red-500/50" :
                                                             status === "LATE" ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/50" :
+                                                            status === "EXEMPT" ? "bg-gray-500/10 text-gray-400 border-gray-500/50" :
                                                             status === "PENDING" ? "bg-blue-900/30 text-blue-400 border-blue-700 hover:bg-blue-800/30" :
                                                             "bg-gray-800 text-gray-500 border-gray-800"
                                                         }`}

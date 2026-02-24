@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Assignment, Member, Session
+from app.models import Assignment, Attendance, Member, Session
 from app.services.crawler_cafe import (
     extract_name_from_title,
     fetch_article_detail,
@@ -84,6 +84,19 @@ async def scan_homework_all(
                 total_processed += 1
             else:
                 logger.warning(f"Member not found for article: {title} (writer: {writer_name})")
+
+    # 결석 멤버의 REVIEW는 면제(EXEMPT) 처리
+    absent_stmt = select(Attendance.member_id).where(
+        Attendance.session_id == session_id,
+        Attendance.status == "ABSENT",
+    )
+    absent_result = await db.execute(absent_stmt)
+    absent_ids = {row[0] for row in absent_result.all()}
+
+    if absent_ids:
+        for mid in absent_ids:
+            await upsert_assignment(db, session_id, mid, "REVIEW", "EXEMPT")
+            logger.info(f"REVIEW EXEMPT for absent member_id={mid}")
 
     await db.commit()
     return total_processed
