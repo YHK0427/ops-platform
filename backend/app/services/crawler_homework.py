@@ -88,7 +88,7 @@ async def scan_homework_all(
     # 결석 멤버의 REVIEW는 면제(EXEMPT) 처리
     absent_stmt = select(Attendance.member_id).where(
         Attendance.session_id == session_id,
-        Attendance.status == "ABSENT",
+        Attendance.status.in_(("ABSENT", "EXCUSED")),
     )
     absent_result = await db.execute(absent_stmt)
     absent_ids = {row[0] for row in absent_result.all()}
