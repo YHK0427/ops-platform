@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import Optional, Any, Literal
 from datetime import datetime
 
 class NaverSessionStatus(BaseModel):
@@ -45,4 +45,4 @@ class DriveVideoListResponse(BaseModel):
 
 class ScanExcusesRequest(BaseModel):
     session_id: int
-    mode: str  # "PRE" or "POST"
+    mode: Literal["PRE", "POST"]
