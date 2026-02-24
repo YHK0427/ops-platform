@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
 import { useSettlementPreview, useFinalizeSession } from "@/hooks";
 import { useLedger } from "@/hooks/useLedger";
@@ -6,12 +6,15 @@ import { useMembers } from "@/hooks/useMembers";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, CheckCircle2, ExternalLink, Trophy } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Trophy, Pencil, Trash2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "sonner";
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
+import { useDeleteLedgerEntry, useUpdateLedger } from "@/hooks/useLedger";
 import type { Session } from "@/hooks/useSessions";
 
 const PENALTY_TYPE_LABEL: Record<string, string> = {
@@ -269,6 +272,9 @@ function MeritPanel({
     merits: MeritEntry[];
     memberNameMap: Map<number, string>;
 }) {
+    const { mutate: deleteMerit, isPending: isDeleting } = useDeleteLedgerEntry();
+    const { mutate: updateMerit, isPending: isUpdating } = useUpdateLedger();
+
     return (
         <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
@@ -298,35 +304,129 @@ function MeritPanel({
                         <TableHead>사유</TableHead>
                         <TableHead className="text-right w-[80px]">점수</TableHead>
                         <TableHead className="text-right w-[120px] text-[var(--color-text-muted)] font-normal text-xs">일시</TableHead>
+                        <TableHead className="w-[72px]" />
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {merits.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={4} className="text-center py-8 text-[var(--color-text-muted)] text-sm">
+                            <TableCell colSpan={5} className="text-center py-8 text-[var(--color-text-muted)] text-sm">
                                 이 세션에 부여된 상점이 없습니다.
                             </TableCell>
                         </TableRow>
                     ) : (
                         merits.map((entry) => (
-                            <TableRow key={entry.id} className="hover:bg-white/5">
-                                <TableCell className="font-medium text-gray-300">
-                                    {memberNameMap.get(entry.member_id) ?? `ID:${entry.member_id}`}
-                                </TableCell>
-                                <TableCell className="text-sm text-[var(--color-text-secondary)]">
-                                    {entry.description}
-                                </TableCell>
-                                <TableCell className="text-right font-mono text-green-400">
-                                    +{entry.score_delta}
-                                </TableCell>
-                                <TableCell className="text-right text-xs font-mono text-[var(--color-text-muted)]">
-                                    {new Date(entry.created_at).toLocaleDateString()}
-                                </TableCell>
-                            </TableRow>
+                            <MeritRow
+                                key={entry.id}
+                                entry={entry}
+                                memberName={memberNameMap.get(entry.member_id) ?? `ID:${entry.member_id}`}
+                                onDelete={() => deleteMerit(entry.id)}
+                                onUpdate={(data) => updateMerit({ id: entry.id, data })}
+                                isDeleting={isDeleting}
+                                isUpdating={isUpdating}
+                            />
                         ))
                     )}
                 </TableBody>
             </Table>
         </div>
+    );
+}
+
+function MeritRow({
+    entry,
+    memberName,
+    onDelete,
+    onUpdate,
+    isDeleting,
+    isUpdating,
+}: {
+    entry: MeritEntry;
+    memberName: string;
+    onDelete: () => void;
+    onUpdate: (data: { score_delta?: number; description?: string }) => void;
+    isDeleting: boolean;
+    isUpdating: boolean;
+}) {
+    const [editOpen, setEditOpen] = useState(false);
+    const [editScore, setEditScore] = useState(entry.score_delta);
+    const [editReason, setEditReason] = useState(entry.description);
+
+    React.useEffect(() => {
+        setEditScore(entry.score_delta);
+        setEditReason(entry.description);
+    }, [entry.score_delta, entry.description]);
+
+    const handleSave = () => {
+        onUpdate({ score_delta: editScore, description: editReason });
+        setEditOpen(false);
+    };
+
+    return (
+        <TableRow className="group/row hover:bg-white/5">
+            <TableCell className="font-medium text-gray-300">{memberName}</TableCell>
+            <TableCell className="text-sm text-[var(--color-text-secondary)]">{entry.description}</TableCell>
+            <TableCell className="text-right font-mono text-green-400">+{entry.score_delta}</TableCell>
+            <TableCell className="text-right text-xs font-mono text-[var(--color-text-muted)]">
+                {new Date(entry.created_at).toLocaleDateString()}
+            </TableCell>
+            <TableCell>
+                <div className="flex items-center justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                    <Popover open={editOpen} onOpenChange={setEditOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 hover:bg-white/10"
+                                disabled={isUpdating}
+                            >
+                                <Pencil className="w-3 h-3" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 bg-[var(--color-elevated)] border-[var(--color-border)] p-3" align="end">
+                            <div className="space-y-3">
+                                <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase">상점 수정</p>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-[var(--color-text-muted)]">점수</label>
+                                    <Input
+                                        type="number"
+                                        value={editScore}
+                                        onChange={(e) => setEditScore(Number(e.target.value))}
+                                        className="h-7 text-sm bg-transparent border-[var(--color-border)]"
+                                        min={1}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-[var(--color-text-muted)]">사유</label>
+                                    <Input
+                                        value={editReason}
+                                        onChange={(e) => setEditReason(e.target.value)}
+                                        className="h-7 text-sm bg-transparent border-[var(--color-border)]"
+                                    />
+                                </div>
+                                <Button
+                                    size="sm"
+                                    onClick={handleSave}
+                                    disabled={isUpdating || !editReason}
+                                    className="w-full h-7 text-xs bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
+                                >
+                                    저장
+                                </Button>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 hover:bg-rose-500/10 hover:text-rose-400"
+                        onClick={onDelete}
+                        disabled={isDeleting}
+                    >
+                        <Trash2 className="w-3 h-3" />
+                    </Button>
+                </div>
+            </TableCell>
+        </TableRow>
     );
 }
