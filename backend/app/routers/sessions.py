@@ -509,17 +509,28 @@ async def confirm_teams(
 ):
     """팀 확정 (DB 저장) + Assignments 자동 생성 + PREP 전환"""
     session = await _get_session_or_404(session_id, db)
-    if session.status != "SETUP":
-        raise HTTPException(status_code=400, detail="SETUP 상태에서만 팀 확정 가능")
+    if session.status not in ("SETUP", "PREP"):
+        raise HTTPException(status_code=400, detail="SETUP 또는 PREP 상태에서만 팀 수정 가능")
+
+    is_reconfirm = session.status == "PREP"
     if session.type == "INDIVIDUAL":
         raise HTTPException(status_code=400, detail="INDIVIDUAL 세션에는 팀빌딩 불가")
 
-    # 기존 팀/과제 삭제 후 재생성 (SETUP 상태이므로 데이터 없을 것이나 안전하게 삭제)
     # 주의: 출결 레코드는 삭제하지 않음
-    from sqlalchemy import delete
-    await db.execute(delete(Assignment).where(Assignment.session_id == session_id))
-    
-    # 2. Teams 삭제 (session_id 기준, cascade로 team_members도 삭제됨)
+    from sqlalchemy import delete, select as sa_select
+    if is_reconfirm:
+        # PREP 재편집: PPT 과제(팀 단위)만 삭제, 개인 과제는 유지
+        await db.execute(
+            delete(Assignment).where(
+                Assignment.session_id == session_id,
+                Assignment.team_id.isnot(None),
+            )
+        )
+    else:
+        # SETUP 최초 확정: 모든 과제 삭제
+        await db.execute(delete(Assignment).where(Assignment.session_id == session_id))
+
+    # 기존 팀 삭제 (cascade로 team_members도 삭제됨)
     await db.execute(delete(Team).where(Team.session_id == session_id))
     
     # 3. 새 팀 생성
@@ -557,34 +568,32 @@ async def confirm_teams(
         for m in t.members:
             all_assigned_member_ids.add(m.member_id)
             
-    for mid in all_assigned_member_ids:
-        # REVIEW
-        if session.config.get("has_review", True):
-            db.add(Assignment(
-                session_id=session_id,
-                member_id=mid,
-                type="REVIEW",
-                status="PENDING"
-            ))
-        # FEEDBACK
-        if session.config.get("has_feedback", True):
-            db.add(Assignment(
-                session_id=session_id,
-                member_id=mid,
-                type="FEEDBACK",
-                status="PENDING",
-                target_count=1 # 기본 1개
-            ))
-        # HOMEWORK (예: 질문/답변 등) -> has_homework? config에는 없음.
-        # spec_infra.md 의 example .env에는 없음.
-        # models.py JSONB default에는 'is_holiday' 등이 있음.
-        # 여기선 config 키를 확인. 
-        # (models.py: '{"has_ppt":true,"has_review":true,"has_feedback":true,"is_holiday":false}')
-        # HOMEWORK는 명시되어 있지 않으나 Assignment type ENUM에는 있음.
-        # 일단 REVIEW, FEEDBACK만 생성.
+    if is_reconfirm:
+        # PREP 재편집: 이미 존재하는 개인 과제는 유지, 새 멤버만 생성
+        existing_result = await db.execute(
+            sa_select(Assignment.member_id, Assignment.type).where(
+                Assignment.session_id == session_id,
+                Assignment.member_id.isnot(None),
+            )
+        )
+        existing_pairs = {(row.member_id, row.type) for row in existing_result}
 
-    # 5. 상태 전환
-    session.status = "PREP"
+        for mid in all_assigned_member_ids:
+            if session.config.get("has_review", True) and (mid, "REVIEW") not in existing_pairs:
+                db.add(Assignment(session_id=session_id, member_id=mid, type="REVIEW", status="PENDING"))
+            if session.config.get("has_feedback", True) and (mid, "FEEDBACK") not in existing_pairs:
+                db.add(Assignment(session_id=session_id, member_id=mid, type="FEEDBACK", status="PENDING", target_count=1))
+    else:
+        # SETUP 최초 확정: 전원 개인 과제 생성
+        for mid in all_assigned_member_ids:
+            if session.config.get("has_review", True):
+                db.add(Assignment(session_id=session_id, member_id=mid, type="REVIEW", status="PENDING"))
+            if session.config.get("has_feedback", True):
+                db.add(Assignment(session_id=session_id, member_id=mid, type="FEEDBACK", status="PENDING", target_count=1))
+
+        # SETUP에서만 상태 전환
+        session.status = "PREP"
+
     await db.commit()
 
 
