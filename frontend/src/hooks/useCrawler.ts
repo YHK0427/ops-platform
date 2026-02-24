@@ -25,6 +25,7 @@ export const crawlerKeys = {
 // Hooks
 export function useNaverLogin() {
     return useMutation({
+        networkMode: "always",
         mutationFn: async (credentials: { username: string, password: string }) => {
             const { data } = await api.post<CrawlerTaskResponse>("/crawler/naver/login", credentials);
             return data;
@@ -86,6 +87,7 @@ export function useImportNaverSession() {
 
 export function useScanPPT() {
     return useMutation({
+        networkMode: "always",
         mutationFn: async ({ sessionId, mode }: { sessionId: number; mode: "REGULAR" | "LATE" }) => {
             const { data } = await api.post<CrawlerTaskResponse>("/crawler/scan-ppt", {
                 session_id: sessionId,
@@ -98,6 +100,7 @@ export function useScanPPT() {
 
 export function useScanHomework() {
     return useMutation({
+        networkMode: "always",
         mutationFn: async ({ sessionId }: { sessionId: number }) => {
             const { data } = await api.post<CrawlerTaskResponse>("/crawler/scan-homework", {
                 session_id: sessionId
@@ -109,6 +112,7 @@ export function useScanHomework() {
 
 export function useUploadVideos() {
     return useMutation({
+        networkMode: "always",
         mutationFn: async ({ sessionId }: { sessionId: number }) => {
             const { data } = await api.post<CrawlerTaskResponse>("/crawler/upload-videos", {
                 session_id: sessionId
@@ -141,6 +145,7 @@ export function useDriveVideos() {
 
 export function useScanExcuses() {
     return useMutation({
+        networkMode: "always",
         mutationFn: async ({ sessionId, mode }: { sessionId: number; mode: "PRE" | "POST" }) => {
             const { data } = await api.post<CrawlerTaskResponse>("/crawler/scan-excuses", {
                 session_id: sessionId,

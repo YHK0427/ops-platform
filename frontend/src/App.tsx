@@ -25,6 +25,9 @@ const queryClient = new QueryClient({
       retry: 1,
       staleTime: 1000 * 60, // 1 min
     },
+    mutations: {
+      networkMode: "always", // Don't pause mutations on offline detection (Tailscale VPN can confuse navigator.onLine)
+    },
   },
 });
 
