@@ -36,6 +36,7 @@ export function useNaverLogin() {
 export function useCrawlerTask(taskId: string | null) {
     return useQuery({
         queryKey: crawlerKeys.task(taskId || ""),
+        networkMode: "always",
         queryFn: async () => {
             if (!taskId) return null;
             const { data } = await api.get<CrawlerTaskResponse>(`/crawler/task/${taskId}`);
