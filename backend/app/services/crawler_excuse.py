@@ -1,6 +1,7 @@
 import logging
 import re
 from html.parser import HTMLParser
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,7 +46,7 @@ async def scan_excuses(
     session_id: int,
     week_num: int,
     members: list[Member],
-    mode: str,  # "PRE" or "POST"
+    mode: Literal["PRE", "POST"],
     db: AsyncSession,
 ) -> int:
     """
@@ -61,6 +62,10 @@ async def scan_excuses(
     menu_id = settings.NAVER_CAFE_MENU_EXCUSE
     if not menu_id:
         logger.error("NAVER_CAFE_MENU_EXCUSE not configured")
+        return 0
+
+    if mode not in ("PRE", "POST"):
+        logger.error(f"Invalid mode '{mode}' — expected PRE or POST")
         return 0
 
     # POST 모드: 대상 멤버 사전 필터링 (PRESENT 아니고 excuse_type 미설정)
@@ -80,7 +85,11 @@ async def scan_excuses(
     # 게시판 스캔 (최대 3페이지)
     articles = []
     for page in range(1, 4):
-        data = fetch_board_articles(req_session, menu_id, page=page)
+        try:
+            data = fetch_board_articles(req_session, menu_id, page=page)
+        except Exception as e:
+            logger.error(f"Failed to fetch excuse board page {page}: {e}")
+            break
         items = data.get("message", {}).get("result", {}).get("articleList", [])
         if not items:
             break
