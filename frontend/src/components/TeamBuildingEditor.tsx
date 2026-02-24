@@ -251,7 +251,7 @@ export function TeamBuildingEditor({
     const handleRemoveTeam = (teamId: string) => {
         setTeams((prev) => {
             const unassigned = [...(prev["unassigned"] ?? []), ...prev[teamId]];
-            const next = { ...prev, unassigned };
+            const next: Record<string, number[]> = { ...prev, unassigned };
             delete next[teamId];
             return next;
         });

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
-import { useCrawlerTask, useUploadVideos, useSetFeedbackTargets, useDriveVideos, type DriveVideoItem } from "@/hooks";
+import { useCrawlerTask, useUploadVideos, useSetFeedbackTargets, useDriveVideos } from "@/hooks";
 import { useMembers } from "@/hooks/useMembers";
 import { useState, useMemo } from "react";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";

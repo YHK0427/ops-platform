@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { AttendanceGrid } from "./AttendanceGrid";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -18,9 +19,29 @@ export default function PrepTab() {
     const { mutate: scanExcuses, isPending: isScanningExcuses } = useScanExcuses();
     const [excuseTaskId, setExcuseTaskId] = useState<string | null>(null);
 
+    const queryClient = useQueryClient();
+
     // Polling
     const { data: taskStatus } = useCrawlerTask(scanTaskId);
     const { data: excuseTaskStatus } = useCrawlerTask(excuseTaskId);
+
+    // Auto-refresh session data when any task completes
+    const prevScanStatus = useRef<string | undefined>(undefined);
+    const prevExcuseStatus = useRef<string | undefined>(undefined);
+
+    useEffect(() => {
+        if (prevScanStatus.current !== "complete" && taskStatus?.status === "complete") {
+            queryClient.invalidateQueries({ queryKey: ["sessions", "detail", session.id] });
+        }
+        prevScanStatus.current = taskStatus?.status;
+    }, [taskStatus?.status]);
+
+    useEffect(() => {
+        if (prevExcuseStatus.current !== "complete" && excuseTaskStatus?.status === "complete") {
+            queryClient.invalidateQueries({ queryKey: ["sessions", "detail", session.id] });
+        }
+        prevExcuseStatus.current = excuseTaskStatus?.status;
+    }, [excuseTaskStatus?.status]);
 
     const handleScanPPT = (mode: "REGULAR" | "LATE") => {
         scanPPT({ sessionId: session.id, mode }, {
