@@ -46,7 +46,7 @@ async def scan_homework_all(
         # 게시글 목록 조회 (최근 50개 정도? 주차가 안 보이면 더 조회해야 할 수도 있음)
         # 여기서는 1페이지(20개) ~ 2페이지 정도 조회
         articles = []
-        for page in range(1, 4):  # 최대 3페이지 (60개)
+        for page in range(1, 11):  # 최대 10페이지 (200개)
             data = fetch_board_articles(req_session, menu_id, page=page)
             # data 구조 분석 필요 (네이버 카페 API 응답 구조)
             # 보통 data['message']['result']['articleList'] 형태
@@ -112,7 +112,7 @@ async def scan_feedback_comments(
 
     # 1. 영상 게시판에서 해당 주차 게시글 수집
     video_articles = []
-    for page in range(1, 4):
+    for page in range(1, 11):  # 최대 10페이지 (200개)
         data = fetch_board_articles(req_session, settings.NAVER_CAFE_MENU_VIDEO, page=page)
         items = data.get("result", {}).get("articleList", [])
         if not items:

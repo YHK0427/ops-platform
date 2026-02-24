@@ -1,7 +1,7 @@
 import logging
 import re
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 import requests
@@ -167,8 +167,9 @@ async def sync_board_to_db(
     from app.models import CafePost
 
     fetched_ids: set[int] = set()
+    cutoff_ms = (datetime.now(timezone.utc) - timedelta(days=90)).timestamp() * 1000  # 3개월 이전 기준
 
-    for page in range(1, 6):  # 최대 5페이지 (100개)
+    for page in range(1, 11):  # 최대 10페이지 (200개)
         try:
             data = fetch_board_articles(req_session, menu_id, page=page)
         except Exception as e:
@@ -179,11 +180,19 @@ async def sync_board_to_db(
         if not items:
             break
 
+        stop_paging = False
         for raw_item in items:
             item = raw_item.get("item", {})
             article_id = item.get("articleId")
             if not article_id:
                 continue
+
+            # 3개월 이전 글이면 페이징 중단
+            write_ts = item.get("writeDateTimestamp", 0)
+            if write_ts and write_ts < cutoff_ms:
+                stop_paging = True
+                break
+
             fetched_ids.add(int(article_id))
 
             title = item.get("subject", "")
@@ -219,6 +228,9 @@ async def sync_board_to_db(
                     member_id=member.id if member else None,
                     is_deleted=False,
                 ))
+
+        if stop_paging:
+            break
 
     # Soft-delete: DB에 있는데 이번 스캔에 없으면 삭제된 것으로 마킹
     stmt = select(CafePost).where(
