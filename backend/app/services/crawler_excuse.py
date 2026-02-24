@@ -90,15 +90,16 @@ async def scan_excuses(
         except Exception as e:
             logger.error(f"Failed to fetch excuse board page {page}: {e}")
             break
-        items = data.get("message", {}).get("result", {}).get("articleList", [])
+        items = data.get("result", {}).get("articleList", [])
         if not items:
             break
         articles.extend(items)
 
     count = 0
-    for article in articles:
+    for raw_article in articles:
+        article = raw_article.get("item", {})
         title = article.get("subject", "")
-        writer_nick = article.get("writer", {}).get("nick", "")
+        writer_nick = article.get("writerInfo", {}).get("nickName", "")
 
         if not _is_match_week(title, week_num):
             continue
@@ -123,8 +124,7 @@ async def scan_excuses(
             try:
                 detail = fetch_article_detail(req_session, int(article_id))
                 content_html = (
-                    detail.get("message", {})
-                          .get("result", {})
+                    detail.get("result", {})
                           .get("article", {})
                           .get("contentHtml", "")
                 )

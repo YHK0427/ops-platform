@@ -51,7 +51,7 @@ async def scan_homework_all(
             # data 구조 분석 필요 (네이버 카페 API 응답 구조)
             # 보통 data['message']['result']['articleList'] 형태
             try:
-                items = data.get("message", {}).get("result", {}).get("articleList", [])
+                items = data.get("result", {}).get("articleList", [])
                 if not items:
                     break
                 articles.extend(items)
@@ -60,9 +60,10 @@ async def scan_homework_all(
                 break
 
         # 게시글 분석 및 저장
-        for article in articles:
+        for raw_article in articles:
+            article = raw_article.get("item", {})
             title = article.get("subject", "")
-            writer_name = article.get("writer", {}).get("nick", "")  # 닉네임 사용 가능 시 활용
+            writer_name = article.get("writerInfo", {}).get("nickName", "")
 
             # 주차 매칭 (제목에 "{week_num}주차" 또는 "Week {week_num}" 포함 여부)
             if not _is_match_week(title, week_num):
@@ -113,10 +114,11 @@ async def scan_feedback_comments(
     video_articles = []
     for page in range(1, 4):
         data = fetch_board_articles(req_session, settings.NAVER_CAFE_MENU_VIDEO, page=page)
-        items = data.get("message", {}).get("result", {}).get("articleList", [])
+        items = data.get("result", {}).get("articleList", [])
         if not items:
             break
-        for item in items:
+        for raw_item in items:
+            item = raw_item.get("item", {})
             if _is_match_week(item.get("subject", ""), week_num):
                 video_articles.append(item)
 
@@ -149,9 +151,9 @@ async def scan_feedback_comments(
         try:
             detail = fetch_article_detail(req_session, article_id)
             comments = (
-                detail.get("message", {})
-                      .get("result", {})
-                      .get("commentList", [])
+                detail.get("result", {})
+                      .get("comments", {})
+                      .get("items", [])
             )
             commenters_for_article: set[int] = set()
             for comment in comments:

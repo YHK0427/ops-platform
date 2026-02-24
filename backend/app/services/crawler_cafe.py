@@ -175,18 +175,19 @@ async def sync_board_to_db(
             logger.error(f"sync_board_to_db: fetch failed page={page}: {e}")
             break
 
-        items = data.get("message", {}).get("result", {}).get("articleList", [])
+        items = data.get("result", {}).get("articleList", [])
         if not items:
             break
 
-        for item in items:
-            article_id = item.get("articleId") or item.get("article_id")
+        for raw_item in items:
+            item = raw_item.get("item", {})
+            article_id = item.get("articleId")
             if not article_id:
                 continue
             fetched_ids.add(int(article_id))
 
             title = item.get("subject", "")
-            author_nick = item.get("writer", {}).get("nick", "")
+            author_nick = item.get("writerInfo", {}).get("nickName", "")
 
             # 주차 파싱
             week_match = _re.search(r"(\d+)\s*주차", title)
