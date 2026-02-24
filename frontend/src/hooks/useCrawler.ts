@@ -119,3 +119,24 @@ export function useUploadVideos() {
         },
     });
 }
+
+export interface DriveVideoItem {
+    id: string;
+    name: string;
+    presenter: string;
+    order: number;
+}
+
+export function useDriveVideos() {
+    return useMutation({
+        mutationFn: async (sessionId: number) => {
+            const { data } = await api.get<{ videos: DriveVideoItem[] }>(
+                `/crawler/drive-videos?session_id=${sessionId}`
+            );
+            return data.videos;
+        },
+        onError: () => {
+            toast.error("드라이브 영상 목록 조회 실패");
+        },
+    });
+}

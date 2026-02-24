@@ -115,3 +115,20 @@ export function useUpdateLedger() {
         },
     });
 }
+
+export function useDeleteLedgerEntry() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            await api.delete(`/ledger/${id}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["ledger"] });
+            queryClient.invalidateQueries({ queryKey: ["members"] });
+            toast.success("삭제되었습니다.");
+        },
+        onError: () => {
+            toast.error("삭제 실패");
+        },
+    });
+}
