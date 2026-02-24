@@ -19,10 +19,17 @@ from app.schemas.crawler import (
     NaverLoginRequest,
     CrawlerTaskStartRequest,
     DriveVideoListResponse,
+    DriveVideoItem,
 )
 from app.services.naver_session import import_session
+from app.services.crawler_video import list_drive_videos, parse_presenter_name
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
+
+
+def _parse_order(name: str) -> int:
+    m = re.search(r'\((\d+)번째\)', name)
+    return int(m.group(1)) if m else 9999
 
 
 @router.post("/naver/import", response_model=NaverSessionStatus)
@@ -156,9 +163,6 @@ async def list_drive_videos_api(
     _: str = Depends(get_current_user),
 ):
     """드라이브 영상 목록 조회 (Google Drive API, 동기 → thread offload)"""
-    from app.services.crawler_video import list_drive_videos, parse_presenter_name
-    from app.schemas.crawler import DriveVideoItem
-
     session = await db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -170,16 +174,12 @@ async def list_drive_videos_api(
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Drive API 오류: {e}")
 
-    def parse_order(name: str) -> int:
-        m = re.search(r'\((\d+)번째\)', name)
-        return int(m.group(1)) if m else 9999
-
     videos = [
         DriveVideoItem(
             id=f["id"],
             name=f["name"],
             presenter=parse_presenter_name(f["name"]),
-            order=parse_order(f["name"]),
+            order=_parse_order(f["name"]),
         )
         for f in files
     ]
