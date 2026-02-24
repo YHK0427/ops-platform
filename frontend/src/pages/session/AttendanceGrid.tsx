@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { RefreshCw, CheckCircle2, FileText } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
 
 interface AttendanceGridProps {
     sessionId: number;
@@ -198,10 +199,7 @@ export function AttendanceGrid({ sessionId, teams }: AttendanceGridProps) {
                                                         </Button>
                                                     </PopoverTrigger>
                                                     <PopoverContent className="w-80 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm" align="end">
-                                                        <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase mb-2">사유서 내용</p>
-                                                        <p className="text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed text-xs">
-                                                            {member.attendance.excuse_text}
-                                                        </p>
+                                                        <ExcuseTextDisplay text={member.attendance.excuse_text} />
                                                     </PopoverContent>
                                                 </Popover>
                                             )}

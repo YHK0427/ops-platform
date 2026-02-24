@@ -134,6 +134,7 @@ async def scan_excuses(
 
         # 게시글 본문 추출
         article_id = article.get("articleId") or article.get("article_id")
+        head_name = article.get("headName", "")  # 말머리: "지각", "결석" 등
         excuse_text = ""
         if article_id:
             try:
@@ -146,6 +147,10 @@ async def scan_excuses(
                 excuse_text = _strip_html(content_html)
             except Exception as e:
                 logger.warning(f"Failed to fetch article detail {article_id}: {e}")
+
+        # 제목(+ 말머리) 를 본문 앞에 추가
+        header = f"[{head_name}] {title}" if head_name else title
+        excuse_text = f"{header}\n---\n{excuse_text}" if excuse_text else header
 
         # writeDateTimestamp 기반으로 PRE/POST 자동 판별
         write_ts_ms = article.get("writeDateTimestamp", 0)

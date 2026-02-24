@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { FileSearch, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useScanPPT, useScanExcuses, useCrawlerTask, useMembers } from "@/hooks";
+import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
 import type { Session } from "@/hooks/useSessions";
 
 export default function PrepTab() {
@@ -254,10 +255,7 @@ export default function PrepTab() {
                                                 className="w-80 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm"
                                                 align="end"
                                             >
-                                                <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase mb-2">사유서 내용</p>
-                                                <p className="text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed">
-                                                    {att.excuse_text}
-                                                </p>
+                                                <ExcuseTextDisplay text={att.excuse_text} />
                                             </PopoverContent>
                                         </Popover>
                                     )}
