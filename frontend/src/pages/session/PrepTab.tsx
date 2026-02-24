@@ -105,6 +105,10 @@ export default function PrepTab() {
 
     const cfg = session.config || {};
 
+    const excusedAttendances = (session.attendances || []).filter(
+        (att) => att.excuse_type === "PRE" || att.excuse_type === "POST"
+    );
+
     return (
         <div className="space-y-8">
             {/* Action Panel */}
@@ -198,56 +202,50 @@ export default function PrepTab() {
             </section>
 
             {/* Excuse Summary */}
-            {(() => {
-                const excusedAttendances = (session.attendances || []).filter(
-                    (att) => att.excuse_type === "PRE" || att.excuse_type === "POST"
-                );
-                if (excusedAttendances.length === 0) return null;
-                return (
-                    <section>
-                        <h3 className="font-bold text-lg mb-3">사유서 제출 현황</h3>
-                        <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                            {excusedAttendances.map((att) => {
-                                const member = members?.find((m) => m.id === att.member_id);
-                                return (
-                                    <div key={att.member_id} className="flex items-center justify-between px-4 py-3">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-sm font-medium">
-                                                {member?.name ?? `ID:${att.member_id}`}
-                                            </span>
-                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${
-                                                att.excuse_type === "PRE"
-                                                    ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                                                    : "bg-orange-500/10 text-orange-400 border-orange-500/20"
-                                            }`}>
-                                                {att.excuse_type === "PRE" ? "사전 통보" : "사후 제출"}
-                                            </span>
-                                        </div>
-                                        {att.excuse_text && (
-                                            <Popover>
-                                                <PopoverTrigger asChild>
-                                                    <Button variant="ghost" size="sm" className="h-7 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
-                                                        내용 보기
-                                                    </Button>
-                                                </PopoverTrigger>
-                                                <PopoverContent
-                                                    className="w-80 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm"
-                                                    align="end"
-                                                >
-                                                    <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase mb-2">사유서 내용</p>
-                                                    <p className="text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed">
-                                                        {att.excuse_text}
-                                                    </p>
-                                                </PopoverContent>
-                                            </Popover>
-                                        )}
+            {excusedAttendances.length > 0 && (
+                <section>
+                    <h3 className="font-bold text-lg mb-3">사유서 제출 현황</h3>
+                    <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                        {excusedAttendances.map((att) => {
+                            const member = members?.find((m) => m.id === att.member_id);
+                            return (
+                                <div key={att.member_id} className="flex items-center justify-between px-4 py-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-sm font-medium">
+                                            {member?.name ?? `ID:${att.member_id}`}
+                                        </span>
+                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                                            att.excuse_type === "PRE"
+                                                ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                                                : "bg-orange-500/10 text-orange-400 border-orange-500/20"
+                                        }`}>
+                                            {att.excuse_type === "PRE" ? "사전 통보" : "사후 제출"}
+                                        </span>
                                     </div>
-                                );
-                            })}
-                        </div>
-                    </section>
-                );
-            })()}
+                                    {att.excuse_text && (
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button variant="ghost" size="sm" className="h-7 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
+                                                    내용 보기
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent
+                                                className="w-80 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm"
+                                                align="end"
+                                            >
+                                                <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase mb-2">사유서 내용</p>
+                                                <p className="text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed">
+                                                    {att.excuse_text}
+                                                </p>
+                                            </PopoverContent>
+                                        </Popover>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
 
             {/* Feedback Target Assignment (INDIVIDUAL sessions with has_feedback) */}
             {session.type === "INDIVIDUAL" && cfg.has_feedback !== false && (
