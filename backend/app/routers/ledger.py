@@ -183,3 +183,37 @@ async def update_ledger_entry(
     await db.commit()
     await db.refresh(entry)
     return entry
+
+
+@router.delete("/{ledger_id}", status_code=204)
+async def delete_ledger_entry(
+    ledger_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """
+    원장 항목 삭제 — amount_krw·score_delta 효과 역전 후 행 삭제
+    """
+    entry = await db.get(Ledger, ledger_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Ledger entry not found")
+
+    member = await db.get(Member, entry.member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    # 잔액 효과 역전
+    if entry.amount_krw != 0:
+        member.current_deposit -= entry.amount_krw
+
+    # 점수 효과 역전
+    if entry.score_delta > 0:
+        member.total_plus_score = max(0, member.total_plus_score - entry.score_delta)
+    elif entry.score_delta < 0:
+        member.total_minus_score = min(0, member.total_minus_score - entry.score_delta)
+
+    if entry.score_delta != 0:
+        member.net_score = member.total_plus_score + member.total_minus_score
+
+    await db.delete(entry)
+    await db.commit()
