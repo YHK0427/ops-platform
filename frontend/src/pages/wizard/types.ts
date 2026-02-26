@@ -15,6 +15,7 @@ export interface WizardState {
 
     // Deadlines (ISO datetime strings, e.g. "2026-03-05T09:00")
     deadline_ppt_email: string;
+    deadline_ppt_email_late: string;
     deadline_post: string;
 }
 

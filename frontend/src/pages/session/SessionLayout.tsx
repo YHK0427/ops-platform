@@ -166,10 +166,12 @@ function DeadlineBar({ session }: { session: Session }) {
     const { mutate: updateConfig, isPending } = useUpdateSessionConfig();
     const [editing, setEditing] = useState(false);
     const [pptEmail, setPptEmail] = useState(cfg.deadline_ppt_email || "");
+    const [pptEmailLate, setPptEmailLate] = useState(cfg.deadline_ppt_email_late || "");
     const [post, setPost] = useState(cfg.deadline_post || "");
 
     const hasPptEmail = cfg.has_ppt_email !== false;
-    const hasDeadlines = cfg.deadline_ppt_email || cfg.deadline_post;
+    const hasPostTasks = cfg.has_review !== false || cfg.has_feedback !== false;
+    const hasDeadlines = cfg.deadline_ppt_email || cfg.deadline_ppt_email_late || cfg.deadline_post;
     const isFinalized = session.status === "FINALIZED";
 
     if (!hasDeadlines && !editing) return null;
@@ -181,6 +183,7 @@ function DeadlineBar({ session }: { session: Session }) {
             sessionId: session.id,
             config: {
                 deadline_ppt_email: pptEmail || null,
+                deadline_ppt_email_late: pptEmailLate || null,
                 deadline_post: post || null,
             },
         }, {
@@ -190,6 +193,7 @@ function DeadlineBar({ session }: { session: Session }) {
 
     const handleCancel = () => {
         setPptEmail(cfg.deadline_ppt_email || "");
+        setPptEmailLate(cfg.deadline_ppt_email_late || "");
         setPost(cfg.deadline_post || "");
         setEditing(false);
     };
@@ -200,25 +204,38 @@ function DeadlineBar({ session }: { session: Session }) {
             {editing ? (
                 <>
                     {hasPptEmail && (
+                        <>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">PPT 이메일:</span>
+                                <Input
+                                    type="datetime-local"
+                                    value={pptEmail}
+                                    onChange={(e) => setPptEmail(e.target.value)}
+                                    className="h-7 text-xs w-44"
+                                />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">지각:</span>
+                                <Input
+                                    type="datetime-local"
+                                    value={pptEmailLate}
+                                    onChange={(e) => setPptEmailLate(e.target.value)}
+                                    className="h-7 text-xs w-44"
+                                />
+                            </div>
+                        </>
+                    )}
+                    {hasPostTasks && (
                         <div className="flex items-center gap-1.5">
-                            <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">PPT 이메일:</span>
+                            <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">후속 과제:</span>
                             <Input
                                 type="datetime-local"
-                                value={pptEmail}
-                                onChange={(e) => setPptEmail(e.target.value)}
+                                value={post}
+                                onChange={(e) => setPost(e.target.value)}
                                 className="h-7 text-xs w-44"
                             />
                         </div>
                     )}
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">후속 과제:</span>
-                        <Input
-                            type="datetime-local"
-                            value={post}
-                            onChange={(e) => setPost(e.target.value)}
-                            className="h-7 text-xs w-44"
-                        />
-                    </div>
                     <div className="flex items-center gap-1 ml-auto">
                         <Button size="sm" variant="ghost" onClick={handleSave} disabled={isPending} className="h-7 w-7 p-0">
                             <Check className="w-3.5 h-3.5 text-green-500" />
@@ -235,7 +252,12 @@ function DeadlineBar({ session }: { session: Session }) {
                             PPT 이메일: <span className="font-mono text-[var(--color-text-primary)]">{fmt(cfg.deadline_ppt_email)}</span>
                         </span>
                     )}
-                    {cfg.deadline_post && (
+                    {hasPptEmail && cfg.deadline_ppt_email_late && (
+                        <span className="text-[var(--color-text-secondary)]">
+                            지각: <span className="font-mono text-[var(--color-text-primary)]">{fmt(cfg.deadline_ppt_email_late)}</span>
+                        </span>
+                    )}
+                    {hasPostTasks && cfg.deadline_post && (
                         <span className="text-[var(--color-text-secondary)]">
                             후속 과제: <span className="font-mono text-[var(--color-text-primary)]">{fmt(cfg.deadline_post)}</span>
                         </span>

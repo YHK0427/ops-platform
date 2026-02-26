@@ -26,6 +26,7 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                     has_feedback: state.has_feedback,
                     is_holiday: state.is_holiday,
                     deadline_ppt_email: state.deadline_ppt_email || null,
+                    deadline_ppt_email_late: state.deadline_ppt_email_late || null,
                     deadline_post: state.deadline_post || null,
                 }
             };
@@ -89,16 +90,28 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                             </div>
                         )}
                     </div>
+                    {(state.has_ppt_email || state.has_review || state.has_feedback) && (
                     <div className="grid grid-cols-2 gap-4 text-sm pt-4 border-t border-[var(--color-border)]">
-                        <div>
-                            <span className="text-[var(--color-text-secondary)]">PPT 이메일 기한</span>
-                            <p className="font-mono">{state.deadline_ppt_email ? state.deadline_ppt_email.replace("T", " ") : "—"}</p>
-                        </div>
-                        <div>
-                            <span className="text-[var(--color-text-secondary)]">후속 과제 기한</span>
-                            <p className="font-mono">{state.deadline_post ? state.deadline_post.replace("T", " ") : "—"}</p>
-                        </div>
+                        {state.has_ppt_email && (
+                            <>
+                                <div>
+                                    <span className="text-[var(--color-text-secondary)]">PPT 이메일 기한</span>
+                                    <p className="font-mono">{state.deadline_ppt_email ? state.deadline_ppt_email.replace("T", " ") : "—"}</p>
+                                </div>
+                                <div>
+                                    <span className="text-[var(--color-text-secondary)]">PPT 이메일 지각 기한</span>
+                                    <p className="font-mono">{state.deadline_ppt_email_late ? state.deadline_ppt_email_late.replace("T", " ") : "—"}</p>
+                                </div>
+                            </>
+                        )}
+                        {(state.has_review || state.has_feedback) && (
+                            <div>
+                                <span className="text-[var(--color-text-secondary)]">후속 과제 기한</span>
+                                <p className="font-mono">{state.deadline_post ? state.deadline_post.replace("T", " ") : "—"}</p>
+                            </div>
+                        )}
                     </div>
+                    )}
                 </CardContent>
             </Card>
 

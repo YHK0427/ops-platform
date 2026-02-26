@@ -21,6 +21,7 @@ export default function SessionWizard() {
         has_feedback: true,
         is_holiday: false,
         deadline_ppt_email: defaults.pptEmail,
+        deadline_ppt_email_late: defaults.pptEmailLate,
         deadline_post: defaults.post,
     });
 

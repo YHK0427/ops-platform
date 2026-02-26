@@ -3,11 +3,15 @@
  *
  * Conventions:
  * - PPT email deadline: session day 09:00
+ * - PPT email late deadline: session day 18:00
  * - Post tasks deadline (review, PPT board, feedback): next Wednesday 21:59
  */
 export function calcDefaultDeadlines(sessionDate: string) {
     // PPT email: session day 09:00
     const pptEmail = `${sessionDate}T09:00`;
+
+    // PPT email late: session day 18:00
+    const pptEmailLate = `${sessionDate}T18:00`;
 
     // Post: next Wednesday (after session date) at 21:59
     const d = new Date(sessionDate + "T00:00:00");
@@ -21,5 +25,5 @@ export function calcDefaultDeadlines(sessionDate: string) {
     const dd = String(d.getDate()).padStart(2, "0");
     const post = `${yyyy}-${mm}-${dd}T21:59`;
 
-    return { pptEmail, post };
+    return { pptEmail, pptEmailLate, post };
 }

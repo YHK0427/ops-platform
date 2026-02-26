@@ -47,6 +47,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                     onChange({
                                         date: newDate,
                                         deadline_ppt_email: defaults.pptEmail,
+                                        deadline_ppt_email_late: defaults.pptEmailLate,
                                         deadline_post: defaults.post,
                                     });
                                 }}
@@ -132,30 +133,46 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                         </div>
                     </div>
 
+                    {(state.has_ppt_email || state.has_review || state.has_feedback) && (
                     <div className="space-y-3 pt-4 border-t border-[var(--color-border)]">
                         <Label>제출 기한 설정</Label>
                         <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <Label className="text-xs text-[var(--color-text-secondary)]">PPT 이메일 제출 기한</Label>
-                                <Input
-                                    type="datetime-local"
-                                    value={state.deadline_ppt_email}
-                                    onChange={(e) => onChange({ deadline_ppt_email: e.target.value })}
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-xs text-[var(--color-text-secondary)]">후속 과제 기한 (리뷰/PPT게시판/피드백)</Label>
-                                <Input
-                                    type="datetime-local"
-                                    value={state.deadline_post}
-                                    onChange={(e) => onChange({ deadline_post: e.target.value })}
-                                />
-                            </div>
+                            {state.has_ppt_email && (
+                                <>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs text-[var(--color-text-secondary)]">PPT 이메일 제출 기한</Label>
+                                        <Input
+                                            type="datetime-local"
+                                            value={state.deadline_ppt_email}
+                                            onChange={(e) => onChange({ deadline_ppt_email: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs text-[var(--color-text-secondary)]">PPT 이메일 지각 제출 기한</Label>
+                                        <Input
+                                            type="datetime-local"
+                                            value={state.deadline_ppt_email_late}
+                                            onChange={(e) => onChange({ deadline_ppt_email_late: e.target.value })}
+                                        />
+                                    </div>
+                                </>
+                            )}
+                            {(state.has_review || state.has_feedback) && (
+                                <div className="space-y-1.5">
+                                    <Label className="text-xs text-[var(--color-text-secondary)]">후속 과제 기한 (리뷰/PPT게시판/피드백)</Label>
+                                    <Input
+                                        type="datetime-local"
+                                        value={state.deadline_post}
+                                        onChange={(e) => onChange({ deadline_post: e.target.value })}
+                                    />
+                                </div>
+                            )}
                         </div>
                         <p className="text-xs text-[var(--color-text-muted)]">
-                            * 날짜 변경 시 기본값이 자동 설정됩니다. (PPT 이메일: 당일 09:00, 후속 과제: 다음 수요일 21:59)
+                            * 날짜 변경 시 기본값이 자동 설정됩니다. (PPT 이메일: 당일 09:00 / 지각: 18:00, 후속 과제: 다음 수요일 21:59)
                         </p>
                     </div>
+                    )}
                 </CardContent>
             </Card>
 
