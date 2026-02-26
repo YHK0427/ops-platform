@@ -86,6 +86,8 @@ class SessionStatsResponse(BaseModel):
     attendance_total: int
     ppt_submitted: int
     ppt_total: int
+    ppt_email_submitted: int
+    ppt_email_total: int
     homework_submitted: int
     homework_total: int
 

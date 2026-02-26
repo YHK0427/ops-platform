@@ -388,6 +388,8 @@ async def get_session_stats(
 
     ppt_total = 0
     ppt_submitted = 0
+    ppt_email_total = 0
+    ppt_email_submitted = 0
     hw_total = 0
     hw_submitted = 0
 
@@ -395,10 +397,14 @@ async def get_session_stats(
         atype, astatus, count = r.type, r.status, r.count
         is_submitted = astatus in ("PASS", "LATE")
 
-        if atype in ("PPT", "PPT_EMAIL"):
+        if atype == "PPT":
             ppt_total += count
             if is_submitted:
                 ppt_submitted += count
+        elif atype == "PPT_EMAIL":
+            ppt_email_total += count
+            if is_submitted:
+                ppt_email_submitted += count
         elif atype in ("REVIEW", "FEEDBACK", "HOMEWORK"):
             hw_total += count
             if is_submitted:
@@ -410,6 +416,8 @@ async def get_session_stats(
         attendance_total=att_total,
         ppt_submitted=ppt_submitted,
         ppt_total=ppt_total,
+        ppt_email_submitted=ppt_email_submitted,
+        ppt_email_total=ppt_email_total,
         homework_submitted=hw_submitted,
         homework_total=hw_total,
     )

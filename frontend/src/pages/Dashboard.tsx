@@ -314,8 +314,8 @@ export default function Dashboard() {
                                     icon={Users}
                                 />
                                 <StatBox
-                                    label="PPT 제출"
-                                    value={stats ? `${stats.ppt_submitted}/${stats.ppt_total}` : "-"}
+                                    label="PPT 이메일"
+                                    value={stats ? `${stats.ppt_email_submitted}/${stats.ppt_email_total}` : "-"}
                                     icon={Clock}
                                 />
                                 <StatBox

@@ -155,6 +155,8 @@ export interface SessionStats {
     attendance_total: number;
     ppt_submitted: number;
     ppt_total: number;
+    ppt_email_submitted: number;
+    ppt_email_total: number;
     homework_submitted: number;
     homework_total: number;
 }
