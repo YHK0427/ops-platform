@@ -59,9 +59,9 @@ export function PostTab() {
               });
 
     // Active assignment types based on session config
+    // PPT_EMAIL은 PREP 탭에서 관리, 여기는 post-session 과제만
     const cfg = session.config || {};
     const activeTypes: string[] = [];
-    if (cfg.has_ppt_email !== false) activeTypes.push("PPT_EMAIL");
     if (cfg.has_review !== false) activeTypes.push("REVIEW");
     if (cfg.has_feedback !== false) activeTypes.push("FEEDBACK");
 
@@ -82,10 +82,6 @@ export function PostTab() {
         return session.assignments?.find((a: any) => a.member_id === memberId && a.type === type);
     };
 
-    // Helper to find team-level PPT assignment (member_id=null, team_id=team.id)
-    const getTeamPPTAssignment = (teamId: number) => {
-        return session.assignments?.find((a: any) => a.team_id === teamId && a.type === "PPT_EMAIL");
-    };
 
     const handleToggleStatus = async (assignment: any) => {
         if (!assignment) {
@@ -168,10 +164,7 @@ export function PostTab() {
                                         </TableCell>
 
                                         {activeTypes.map((type) => {
-                                            // TEAM PPT는 팀 단위 과제 (member_id=null, team_id 기준 조회)
-                                            const assignment = type === "PPT" && session.type === "TEAM"
-                                                ? getTeamPPTAssignment(m.teamId!)
-                                                : getAssignment(m.id, type);
+                                            const assignment = getAssignment(m.id, type);
                                             const status = assignment?.status || "—";
 
                                             return (
