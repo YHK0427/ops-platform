@@ -198,14 +198,28 @@ async def scan_excuses(
             attendance.excuse_type = detected_type
             attendance.excuse_text = excuse_text
 
-            # PRE 모드: headName/제목에서 출결 상태 자동 감지 → 미리 세팅
+            # "인정사유" 2회 이상 → 공결(EXCUSED) 처리
+            is_excused = excuse_text.count("인정사유") >= 2
+
             if mode == "PRE":
+                # headName/제목에서 출결 상태 자동 감지 → 미리 세팅
                 detected_status = _detect_attendance_status(head_name, title)
                 if detected_status and attendance.status in ("PENDING", "PRESENT"):
-                    attendance.status = detected_status
+                    # 인정사유면 EXCUSED로 덮어씌움
+                    final_status = "EXCUSED" if is_excused else detected_status
+                    attendance.status = final_status
                     logger.info(
                         f"Attendance pre-set: member={member.name}, "
-                        f"status={detected_status} (from headName='{head_name}', title='{title}')"
+                        f"status={final_status} (from headName='{head_name}', "
+                        f"excused={is_excused})"
+                    )
+            elif mode == "POST" and is_excused:
+                # POST 모드: 인정사유면 ABSENT → EXCUSED 전환
+                if attendance.status == "ABSENT":
+                    attendance.status = "EXCUSED"
+                    logger.info(
+                        f"Attendance upgraded: member={member.name}, "
+                        f"ABSENT → EXCUSED (인정사유 감지)"
                     )
 
             count += 1
