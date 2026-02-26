@@ -1,4 +1,5 @@
 import type { StepProps } from "./types";
+import { calcDefaultDeadlines } from "./deadlineDefaults";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,7 +41,15 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                             <Input
                                 type="date"
                                 value={state.date}
-                                onChange={(e) => onChange({ date: e.target.value })}
+                                onChange={(e) => {
+                                    const newDate = e.target.value;
+                                    const defaults = calcDefaultDeadlines(newDate);
+                                    onChange({
+                                        date: newDate,
+                                        deadline_ppt_email: defaults.pptEmail,
+                                        deadline_post: defaults.post,
+                                    });
+                                }}
                             />
                         </div>
                     </div>
@@ -121,6 +130,31 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                 <span className="text-sm text-red-400">휴일 (Penalty 면제)</span>
                             </label>
                         </div>
+                    </div>
+
+                    <div className="space-y-3 pt-4 border-t border-[var(--color-border)]">
+                        <Label>제출 기한 설정</Label>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <Label className="text-xs text-[var(--color-text-secondary)]">PPT 이메일 제출 기한</Label>
+                                <Input
+                                    type="datetime-local"
+                                    value={state.deadline_ppt_email}
+                                    onChange={(e) => onChange({ deadline_ppt_email: e.target.value })}
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label className="text-xs text-[var(--color-text-secondary)]">후속 과제 기한 (리뷰/PPT게시판/피드백)</Label>
+                                <Input
+                                    type="datetime-local"
+                                    value={state.deadline_post}
+                                    onChange={(e) => onChange({ deadline_post: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                            * 날짜 변경 시 기본값이 자동 설정됩니다. (PPT 이메일: 당일 09:00, 후속 과제: 다음 수요일 21:59)
+                        </p>
                     </div>
                 </CardContent>
             </Card>

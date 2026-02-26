@@ -4,19 +4,24 @@ import { StepBasic } from "./wizard/StepBasic";
 import { StepTeamBuilding } from "./wizard/StepTeamBuilding";
 import { StepConfirmation } from "./wizard/StepConfirmation";
 import { PageHeader } from "@/components/PageHeader";
+import { calcDefaultDeadlines } from "./wizard/deadlineDefaults";
 
 export default function SessionWizard() {
     const [step, setStep] = useState(1);
+    const today = new Date().toISOString().split("T")[0];
+    const defaults = calcDefaultDeadlines(today);
     const [state, setState] = useState<WizardState>({
         week_num: 1,
         title: "",
-        date: new Date().toISOString().split("T")[0],
+        date: today,
         type: "TEAM",
         teams: {}, // { "unassigned": [id1, id2], "team1": [id3, id4] }
         has_ppt_email: true,
         has_review: true,
         has_feedback: true,
         is_holiday: false,
+        deadline_ppt_email: defaults.pptEmail,
+        deadline_post: defaults.post,
     });
 
     const updateState = (updates: Partial<WizardState>) => {

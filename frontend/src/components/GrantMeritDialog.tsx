@@ -15,13 +15,19 @@ import { Trophy, Loader2 } from "lucide-react";
 import { useGiveMerit, useMembers } from "@/hooks";
 import { Checkbox } from "@/components/ui/checkbox";
 
+interface TeamInfo {
+    name: string;
+    memberIds: number[];
+}
+
 interface GrantMeritDialogProps {
     trigger?: React.ReactNode;
     preselectedMemberId?: number;
     sessionId?: number;
+    teams?: TeamInfo[];
 }
 
-export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId }: GrantMeritDialogProps) {
+export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, teams }: GrantMeritDialogProps) {
     const [open, setOpen] = useState(false);
     const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
     const [reason, setReason] = useState("");
@@ -54,6 +60,15 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId }: Gr
         setSelectedMembers(prev =>
             prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
         );
+    };
+
+    const toggleTeam = (memberIds: number[]) => {
+        const allSelected = memberIds.every(id => selectedMembers.includes(id));
+        if (allSelected) {
+            setSelectedMembers(prev => prev.filter(id => !memberIds.includes(id)));
+        } else {
+            setSelectedMembers(prev => [...new Set([...prev, ...memberIds])]);
+        }
     };
 
     return (
@@ -101,6 +116,27 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId }: Gr
                     {!preselectedMemberId && (
                         <div className="space-y-2">
                             <Label>Select Members ({selectedMembers.length})</Label>
+                            {teams && teams.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {teams.map((team) => {
+                                        const allSelected = team.memberIds.every(id => selectedMembers.includes(id));
+                                        return (
+                                            <button
+                                                key={team.name}
+                                                type="button"
+                                                onClick={() => toggleTeam(team.memberIds)}
+                                                className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+                                                    allSelected
+                                                        ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)]/60 text-[var(--color-accent)]"
+                                                        : "bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-accent)]/40"
+                                                }`}
+                                            >
+                                                {team.name}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
                             <div className="h-[200px] overflow-y-auto border rounded-md p-2 space-y-1">
                                 {members?.map(member => (
                                     <div key={member.id} className="flex items-center space-x-2 p-1 hover:bg-accent rounded cursor-pointer" onClick={() => toggleMember(member.id)}>

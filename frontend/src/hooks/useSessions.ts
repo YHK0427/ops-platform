@@ -39,7 +39,7 @@ export interface Session {
         target_member_ids?: number[] | null;
     }[];
     finalized_at?: string | null;
-    config?: Record<string, boolean>;
+    config?: Record<string, any>;
 }
 
 // Keys
@@ -211,6 +211,23 @@ export function useDeleteSession() {
         },
         onError: (err: any) => {
             toast.error("삭제 실패: " + (err?.response?.data?.detail ?? "알 수 없는 오류"));
+        },
+    });
+}
+
+export function useUpdateSessionConfig() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ sessionId, config }: { sessionId: number; config: Record<string, any> }) => {
+            const { data } = await api.patch(`/sessions/${sessionId}/config`, { config });
+            return data;
+        },
+        onSuccess: (_, vars) => {
+            queryClient.invalidateQueries({ queryKey: sessionsKeys.detail(vars.sessionId) });
+            toast.success("세션 설정이 업데이트되었습니다.");
+        },
+        onError: () => {
+            toast.error("설정 업데이트 실패");
         },
     });
 }

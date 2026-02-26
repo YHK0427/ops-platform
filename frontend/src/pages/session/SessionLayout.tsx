@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useSession, useUpdateSessionStatus, useDeleteSession } from "@/hooks";
+import { useSession, useUpdateSessionStatus, useDeleteSession, useUpdateSessionConfig } from "@/hooks";
 import { type Session } from "@/hooks/useSessions";
-import { Lock, Trash2 } from "lucide-react";
+import { Lock, Trash2, Clock, Pencil, Check, X } from "lucide-react";
 
 export default function SessionLayout() {
     const { id } = useParams<{ id: string }>();
@@ -152,8 +154,104 @@ export default function SessionLayout() {
             </div>
 
             <div className="flex-1 container mx-auto px-4 py-6">
+                <DeadlineBar session={typedSession} />
                 <Outlet context={{ session: typedSession }} />
             </div>
+        </div>
+    );
+}
+
+function DeadlineBar({ session }: { session: Session }) {
+    const cfg = session.config || {};
+    const { mutate: updateConfig, isPending } = useUpdateSessionConfig();
+    const [editing, setEditing] = useState(false);
+    const [pptEmail, setPptEmail] = useState(cfg.deadline_ppt_email || "");
+    const [post, setPost] = useState(cfg.deadline_post || "");
+
+    const hasPptEmail = cfg.has_ppt_email !== false;
+    const hasDeadlines = cfg.deadline_ppt_email || cfg.deadline_post;
+    const isFinalized = session.status === "FINALIZED";
+
+    if (!hasDeadlines && !editing) return null;
+
+    const fmt = (v: string) => v ? v.replace("T", " ") : "—";
+
+    const handleSave = () => {
+        updateConfig({
+            sessionId: session.id,
+            config: {
+                deadline_ppt_email: pptEmail || null,
+                deadline_post: post || null,
+            },
+        }, {
+            onSuccess: () => setEditing(false),
+        });
+    };
+
+    const handleCancel = () => {
+        setPptEmail(cfg.deadline_ppt_email || "");
+        setPost(cfg.deadline_post || "");
+        setEditing(false);
+    };
+
+    return (
+        <div className="mb-4 px-4 py-2.5 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center gap-4 text-sm">
+            <Clock className="w-4 h-4 text-[var(--color-text-muted)] shrink-0" />
+            {editing ? (
+                <>
+                    {hasPptEmail && (
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">PPT 이메일:</span>
+                            <Input
+                                type="datetime-local"
+                                value={pptEmail}
+                                onChange={(e) => setPptEmail(e.target.value)}
+                                className="h-7 text-xs w-44"
+                            />
+                        </div>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">후속 과제:</span>
+                        <Input
+                            type="datetime-local"
+                            value={post}
+                            onChange={(e) => setPost(e.target.value)}
+                            className="h-7 text-xs w-44"
+                        />
+                    </div>
+                    <div className="flex items-center gap-1 ml-auto">
+                        <Button size="sm" variant="ghost" onClick={handleSave} disabled={isPending} className="h-7 w-7 p-0">
+                            <Check className="w-3.5 h-3.5 text-green-500" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={handleCancel} className="h-7 w-7 p-0">
+                            <X className="w-3.5 h-3.5 text-red-400" />
+                        </Button>
+                    </div>
+                </>
+            ) : (
+                <>
+                    {hasPptEmail && cfg.deadline_ppt_email && (
+                        <span className="text-[var(--color-text-secondary)]">
+                            PPT 이메일: <span className="font-mono text-[var(--color-text-primary)]">{fmt(cfg.deadline_ppt_email)}</span>
+                        </span>
+                    )}
+                    {cfg.deadline_post && (
+                        <span className="text-[var(--color-text-secondary)]">
+                            후속 과제: <span className="font-mono text-[var(--color-text-primary)]">{fmt(cfg.deadline_post)}</span>
+                        </span>
+                    )}
+                    {!isFinalized && (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEditing(true)}
+                            className="h-7 w-7 p-0 ml-auto"
+                        >
+                            <Pencil className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                        </Button>
+                    )}
+                </>
+            )}
         </div>
     );
 }

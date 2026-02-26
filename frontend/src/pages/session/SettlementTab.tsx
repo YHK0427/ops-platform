@@ -126,7 +126,7 @@ export default function SettlementTab() {
                         Ledger에서 확인
                     </Button>
                 </div>
-                <MeritPanel sessionId={session.id} merits={sessionMerits ?? []} memberNameMap={memberNameMap} />
+                <MeritPanel sessionId={session.id} merits={sessionMerits ?? []} memberNameMap={memberNameMap} session={session} />
             </div>
         );
     }
@@ -251,7 +251,7 @@ export default function SettlementTab() {
                 </p>
             </div>
 
-            <MeritPanel sessionId={session.id} merits={sessionMerits ?? []} memberNameMap={memberNameMap} />
+            <MeritPanel sessionId={session.id} merits={sessionMerits ?? []} memberNameMap={memberNameMap} session={session} />
         </div>
     );
 }
@@ -268,10 +268,12 @@ function MeritPanel({
     sessionId,
     merits,
     memberNameMap,
+    session,
 }: {
     sessionId: number;
     merits: MeritEntry[];
     memberNameMap: Map<number, string>;
+    session: Session;
 }) {
     const { mutate: deleteMerit, isPending: isDeleting } = useDeleteLedgerEntry();
     const { mutate: updateMerit, isPending: isUpdating } = useUpdateLedger();
@@ -290,6 +292,10 @@ function MeritPanel({
                 </div>
                 <GrantMeritDialog
                     sessionId={sessionId}
+                    teams={session.type === "TEAM" && session.teams ? session.teams.map((t: any) => ({
+                        name: t.name,
+                        memberIds: t.members.map((m: any) => m.id),
+                    })) : undefined}
                     trigger={
                         <Button size="sm" variant="outline" className="h-7 text-xs bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20">
                             <Trophy className="w-3 h-3 mr-1" />

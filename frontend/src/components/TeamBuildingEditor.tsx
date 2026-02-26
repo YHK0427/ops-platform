@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { UserPlus, Wand2, Save, X } from "lucide-react";
+import { UserPlus, Wand2, Save, X, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
     DndContext,
@@ -201,6 +201,18 @@ export function TeamBuildingEditor({
     const [teams, setTeams] = useState<Record<string, number[]>>(initialTeams);
     const [draggedIds, setDraggedIds] = useState<Set<number>>(new Set());
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [searchQuery, setSearchQuery] = useState("");
+
+    // Filter unassigned members by search query
+    const filteredUnassigned = useMemo(() => {
+        const all = teams["unassigned"] ?? [];
+        if (!searchQuery.trim()) return all;
+        const q = searchQuery.trim().toLowerCase();
+        return all.filter((id) => {
+            const m = members.find((m) => m.id === id);
+            return m?.name.toLowerCase().includes(q);
+        });
+    }, [teams, searchQuery, members]);
 
     // Conflict detection: multiple leaders in same team
     const conflicts = new Set<number>();
@@ -369,11 +381,21 @@ export function TeamBuildingEditor({
                 <div className="flex-1 overflow-x-auto pb-2">
                     <div className="flex gap-4 h-full min-w-max">
                         {/* Unassigned column */}
-                        <div className="w-64 flex-shrink-0">
+                        <div className="w-64 flex-shrink-0 flex flex-col">
+                            <div className="relative mb-2">
+                                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+                                <input
+                                    type="text"
+                                    placeholder="이름 검색..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full pl-8 pr-3 py-2 text-sm rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-white placeholder:text-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent)]/50"
+                                />
+                            </div>
                             <DroppableColumn
                                 id="unassigned"
-                                title="미배정"
-                                items={teams["unassigned"] ?? []}
+                                title={`미배정 (${(teams["unassigned"] ?? []).length})`}
+                                items={filteredUnassigned}
                                 members={members}
                                 selectedIds={selectedIds}
                                 conflicts={conflicts}

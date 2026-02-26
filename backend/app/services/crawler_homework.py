@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Assignment, Attendance, Member, Session
+from app.models import Assignment, Attendance, Member, Session, Team, TeamMember
 from app.services.crawler_cafe import (
     extract_name_from_title,
     fetch_article_detail,
@@ -36,6 +36,19 @@ async def scan_homework_all(
     if req_session is None:
         logger.error("No valid Naver session — skipping homework scan")
         return 0
+
+    # 팀 정보 로드 (HOMEWORK 게시판의 팀 PPT 매칭용)
+    teams_stmt = select(Team).where(Team.session_id == session_id)
+    teams_result = await db.execute(teams_stmt)
+    team_map: dict[str, Team] = {t.name: t for t in teams_result.scalars().all()}
+
+    # 팀별 멤버 ID 로드
+    team_member_ids: dict[int, list[int]] = {}
+    if team_map:
+        for team in team_map.values():
+            tm_stmt = select(TeamMember.member_id).where(TeamMember.team_id == team.id)
+            tm_result = await db.execute(tm_stmt)
+            team_member_ids[team.id] = [row[0] for row in tm_result.all()]
 
     total_processed = 0
 
@@ -82,6 +95,18 @@ async def scan_homework_all(
                 # DB Upsert
                 await upsert_assignment(db, session_id, member.id, assign_type, "PASS")
                 total_processed += 1
+            elif assign_type == "HOMEWORK" and team_map:
+                # 멤버 매칭 실패 시, 팀명 매칭 시도 (PPT 게시판 업로드: "과제16주차_1팀")
+                team_name = _extract_team_from_title(title)
+                matched_team = team_map.get(team_name) if team_name else None
+                if matched_team:
+                    mids = team_member_ids.get(matched_team.id, [])
+                    for mid in mids:
+                        await upsert_assignment(db, session_id, mid, "PPT", "PASS")
+                    total_processed += len(mids)
+                    logger.info(f"PPT team match: '{team_name}' → {len(mids)} members")
+                else:
+                    logger.warning(f"Member/team not found for article: {title} (writer: {writer_name})")
             else:
                 logger.warning(f"Member not found for article: {title} (writer: {writer_name})")
 
@@ -220,6 +245,18 @@ async def scan_feedback_comments(
 
     await db.commit()
     return count
+
+
+def _extract_team_from_title(title: str) -> str | None:
+    """제목에서 팀명 추출 (예: '과제16주차_1팀' → '1팀', '과제16주차_1조' → '1조')"""
+    if "_" not in title:
+        return None
+    parts = title.split("_")
+    possible_team = parts[-1].strip()
+    # "1팀", "2팀", "1조", "2조", "A팀" 등의 패턴
+    if re.search(r"^.+(팀|조)$", possible_team):
+        return possible_team
+    return None
 
 
 def _is_match_week(title: str, week_num: int) -> bool:

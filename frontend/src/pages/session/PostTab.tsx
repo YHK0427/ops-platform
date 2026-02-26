@@ -12,6 +12,12 @@ import { useScanHomework, useCrawlerTask } from "@/hooks/useCrawler";
 import type { Session } from "@/hooks/useSessions";
 import { useMembers } from "@/hooks/useMembers";
 
+const TYPE_LABEL: Record<string, string> = {
+    PPT: "PPT 게시판",
+    REVIEW: "Review",
+    FEEDBACK: "Feedback",
+};
+
 const STATUS_CYCLE: Record<string, string> = {
     PENDING: "PASS",
     PASS:    "LATE",
@@ -62,6 +68,7 @@ export function PostTab() {
     // PPT_EMAIL은 PREP 탭에서 관리, 여기는 post-session 과제만
     const cfg = session.config || {};
     const activeTypes: string[] = [];
+    activeTypes.push("PPT");
     if (cfg.has_review !== false) activeTypes.push("REVIEW");
     if (cfg.has_feedback !== false) activeTypes.push("FEEDBACK");
 
@@ -148,7 +155,7 @@ export function PostTab() {
                                     <TableHead>Member</TableHead>
                                     {activeTypes.map((type) => (
                                         <TableHead key={type} className="text-center w-[120px]">
-                                            {type.charAt(0) + type.slice(1).toLowerCase()}
+                                            {TYPE_LABEL[type] ?? type}
                                         </TableHead>
                                     ))}
                                 </TableRow>
