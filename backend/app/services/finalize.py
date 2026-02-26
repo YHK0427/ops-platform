@@ -119,7 +119,7 @@ async def finalize_session(
     if session.type == "TEAM" and session.teams:
         for team in session.teams:
             # 팀 멤버들 간의 조합 (nC2)
-            member_ids = sorted([m.id for m in team.members])
+            member_ids = sorted([m.member_id for m in team.members])
             for a_id, b_id in combinations(member_ids, 2):
                 # a_id < b_id (sorted 했으므로 자동 만족)
                 # 이미 존재하는지 체크? -> UniqueConstraint 있음.
