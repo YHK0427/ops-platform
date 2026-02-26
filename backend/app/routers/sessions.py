@@ -490,6 +490,32 @@ async def force_update_attendance(
     return attendance
 
 
+@router.delete("/{session_id}/excuses")
+async def clear_excuses(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """세션의 모든 사유서 데이터(excuse_type, excuse_text) 초기화"""
+    await _get_session_or_404(session_id, db)
+
+    result = await db.execute(
+        select(Attendance).where(
+            Attendance.session_id == session_id,
+            Attendance.excuse_type.isnot(None),
+        )
+    )
+    attendances = result.scalars().all()
+    cleared = 0
+    for att in attendances:
+        att.excuse_type = None
+        att.excuse_text = None
+        cleared += 1
+
+    await db.commit()
+    return {"cleared": cleared}
+
+
 # ── Team Building ─────────────────────────────────────────────────────────────
 
 @router.post("/{session_id}/teams/generate", response_model=list[TeamResponse])

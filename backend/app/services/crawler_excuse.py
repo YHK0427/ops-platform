@@ -19,6 +19,13 @@ from app.services.naver_session import get_valid_requests_session
 
 logger = logging.getLogger(__name__)
 
+# headName / 제목에서 출결 상태 감지용 매핑
+_ATTENDANCE_KEYWORDS: dict[str, str] = {
+    "결석": "ABSENT",
+    "지각": "LATE_UNDER10",
+    "조퇴": "EARLY_LEAVE",
+}
+
 
 class _HTMLStripper(HTMLParser):
     def __init__(self):
@@ -43,6 +50,22 @@ def _is_match_week(title: str, week_num: int) -> bool:
     return bool(re.search(pattern, title, re.IGNORECASE))
 
 
+def _detect_attendance_status(head_name: str, title: str) -> str | None:
+    """headName이나 제목에서 결석/지각/조퇴 키워드를 감지하여 출결 상태 반환."""
+    # headName 우선 체크
+    for keyword, status in _ATTENDANCE_KEYWORDS.items():
+        if keyword in head_name:
+            return status
+    # 제목 [] 안의 키워드 체크
+    bracket_match = re.search(r"\[([^\]]+)\]", title)
+    if bracket_match:
+        bracket_text = bracket_match.group(1)
+        for keyword, status in _ATTENDANCE_KEYWORDS.items():
+            if keyword in bracket_text:
+                return status
+    return None
+
+
 async def scan_excuses(
     session_id: int,
     week_num: int,
@@ -52,14 +75,13 @@ async def scan_excuses(
     session_date: date_type | None = None,
 ) -> int:
     """
-    사유서 게시판(NAVER_CAFE_MENU_EXCUSE)을 스캔하여 Attendance 레코드 업데이트.
-    - PRE 모드: 해당 주차 글을 찾아 매칭된 멤버의 excuse_type 자동 판별 후 저장
-    - POST 모드: 결석/지각 중 excuse_type 미설정 멤버의 글만 처리
-    - excuse_type은 mode 인자가 아닌 게시글의 writeDateTimestamp로 자동 판별:
-      PRE 마감(세션 전날 21:59:59 KST = UTC 12:59:59) 이전 작성 → "PRE", 이후 → "POST"
+    사유서 게시판 스캔하여 Attendance 레코드 업데이트.
+
+    - PRE 모드: PRE 마감 이전에 작성된 글만 처리. headName/제목에서 출결 상태 자동 감지.
+    - POST 모드: PRE 마감 이후에 작성된 글만 처리. 결석/지각 중 excuse_type 미설정 멤버 대상.
+    - PRE 마감: 세션 전날 21:59:59 KST (= UTC 12:59:59)
     """
     # PRE 마감 기준 계산 (ms 단위)
-    # session_date가 없으면 timestamp 판별 불가 → mode 폴백
     pre_deadline_ms: int | None = None
     if session_date is not None:
         pre_deadline_ms = int(
@@ -69,6 +91,7 @@ async def scan_excuses(
                 tzinfo=timezone.utc,
             ).timestamp() * 1000
         )
+
     req_session = await get_valid_requests_session(db)
     if req_session is None:
         logger.error("No valid Naver session — skipping excuse scan")
@@ -119,6 +142,15 @@ async def scan_excuses(
         if not _is_match_week(title, week_num):
             continue
 
+        # 시간 기반 필터링: PRE 모드는 마감 전 글만, POST 모드는 마감 후 글만
+        write_ts_ms = article.get("writeDateTimestamp", 0)
+        if pre_deadline_ms is not None and write_ts_ms:
+            is_pre_article = write_ts_ms <= pre_deadline_ms
+            if mode == "PRE" and not is_pre_article:
+                continue  # PRE 스캔인데 마감 후 작성된 글 → 스킵
+            if mode == "POST" and is_pre_article:
+                continue  # POST 스캔인데 마감 전 작성된 글 → 스킵
+
         # 멤버 매칭 (제목 → 닉네임 순서로 시도)
         extracted = extract_name_from_title(title)
         member = match_member_by_name(extracted, members) if extracted else None
@@ -148,17 +180,12 @@ async def scan_excuses(
             except Exception as e:
                 logger.warning(f"Failed to fetch article detail {article_id}: {e}")
 
-        # 제목(+ 말머리) 를 본문 앞에 추가
+        # 제목(+ 말머리)를 본문 앞에 추가
         header = f"[{head_name}] {title}" if head_name else title
         excuse_text = f"{header}\n---\n{excuse_text}" if excuse_text else header
 
-        # writeDateTimestamp 기반으로 PRE/POST 자동 판별
-        write_ts_ms = article.get("writeDateTimestamp", 0)
-        if pre_deadline_ms is not None and write_ts_ms:
-            detected_type = "PRE" if write_ts_ms <= pre_deadline_ms else "POST"
-        else:
-            # session_date 없거나 timestamp 없으면 mode 폴백
-            detected_type = mode
+        # excuse_type 결정
+        detected_type: str = mode  # 모드별 필터링을 이미 했으므로 mode가 곧 type
 
         # Attendance 업데이트
         stmt = select(Attendance).where(
@@ -170,6 +197,17 @@ async def scan_excuses(
         if attendance:
             attendance.excuse_type = detected_type
             attendance.excuse_text = excuse_text
+
+            # PRE 모드: headName/제목에서 출결 상태 자동 감지 → 미리 세팅
+            if mode == "PRE":
+                detected_status = _detect_attendance_status(head_name, title)
+                if detected_status and attendance.status in ("PENDING", "PRESENT"):
+                    attendance.status = detected_status
+                    logger.info(
+                        f"Attendance pre-set: member={member.name}, "
+                        f"status={detected_status} (from headName='{head_name}', title='{title}')"
+                    )
+
             count += 1
             logger.info(
                 f"Excuse set: member={member.name}, type={detected_type}, "

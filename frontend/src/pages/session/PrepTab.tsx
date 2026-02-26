@@ -4,7 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AttendanceGrid } from "./AttendanceGrid";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { FileSearch, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { FileSearch, Loader2, CheckCircle2, XCircle, Trash2 } from "lucide-react";
+import api from "@/lib/api";
 import { toast } from "sonner";
 import { useScanPPT, useScanExcuses, useCrawlerTask, useMembers } from "@/hooks";
 import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
@@ -52,6 +53,17 @@ export default function PrepTab() {
             },
             onError: () => toast.error("스캔 요청 실패"),
         });
+    };
+
+    const handleClearExcuses = async () => {
+        if (!confirm("사유서 데이터(사전/사후 구분, 사유서 내용)를 모두 초기화합니다. 계속하시겠습니까?")) return;
+        try {
+            const { data } = await api.delete(`/sessions/${session.id}/excuses`);
+            toast.success(`${data.cleared}건의 사유서가 초기화되었습니다.`);
+            await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", session.id] });
+        } catch {
+            toast.error("사유서 초기화 실패");
+        }
     };
 
     const handleScanExcuses = (mode: "PRE" | "POST") => {
@@ -180,6 +192,14 @@ export default function PrepTab() {
                             >
                                 <FileSearch className="w-4 h-4 mr-2" />
                                 사후사유서 받아오기
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="text-red-400 border-red-400/20 hover:bg-red-400/10"
+                                onClick={handleClearExcuses}
+                            >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                전체 삭제
                             </Button>
                         </div>
                         {excuseTaskId && excuseTaskStatus && (
