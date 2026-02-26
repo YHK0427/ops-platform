@@ -585,7 +585,7 @@ async def generate_teams(
             TeamResponse(
                 id=0,
                 session_id=session_id,
-                name=f"Team {chr(65+i)}", # Team A, B, C...
+                name=f"{i+1}조",
                 created_at=datetime.now(),
                 members=team_members,
             )

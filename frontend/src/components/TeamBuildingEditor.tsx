@@ -110,6 +110,7 @@ function DroppableColumn({
     selectedIds,
     conflicts,
     onToggleSelect,
+    onRename,
 }: {
     id: string;
     title: string;
@@ -118,14 +119,50 @@ function DroppableColumn({
     selectedIds: Set<number>;
     conflicts: Set<number>;
     onToggleSelect: (id: number) => void;
+    onRename?: (newName: string) => void;
 }) {
     const { setNodeRef } = useSortable({ id });
+    const [isEditing, setIsEditing] = useState(false);
+    const [editValue, setEditValue] = useState(title);
+
+    const handleSubmitRename = () => {
+        const trimmed = editValue.trim();
+        if (trimmed && trimmed !== title && onRename) {
+            onRename(trimmed);
+        } else {
+            setEditValue(title);
+        }
+        setIsEditing(false);
+    };
 
     return (
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 flex flex-col h-full min-h-[300px]">
             <div className="flex justify-between items-center mb-4 pb-2 border-b border-[var(--color-border)]">
-                <h3 className="font-bold text-sm uppercase tracking-wider text-[var(--color-text-secondary)]">{title}</h3>
-                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">{items.length}</span>
+                {isEditing && onRename ? (
+                    <input
+                        className="font-bold text-sm bg-transparent border-b border-[var(--color-accent)] outline-none text-white w-full mr-2"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={handleSubmitRename}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSubmitRename();
+                            if (e.key === "Escape") { setEditValue(title); setIsEditing(false); }
+                        }}
+                        autoFocus
+                    />
+                ) : (
+                    <h3
+                        className={cn(
+                            "font-bold text-sm uppercase tracking-wider text-[var(--color-text-secondary)]",
+                            onRename && "cursor-pointer hover:text-[var(--color-text-primary)]"
+                        )}
+                        onDoubleClick={() => { if (onRename) { setEditValue(title); setIsEditing(true); } }}
+                        title={onRename ? "더블클릭으로 이름 수정" : undefined}
+                    >
+                        {title}
+                    </h3>
+                )}
+                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full flex-shrink-0">{items.length}</span>
             </div>
             <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
                 <div ref={setNodeRef} className="flex-1 overflow-y-auto">
@@ -243,9 +280,11 @@ export function TeamBuildingEditor({
     };
 
     const handleAddTeam = () => {
-        const teamCount = Object.keys(teams).filter((k) => k.startsWith("Team")).length;
-        const newTeamId = `Team ${String.fromCharCode(65 + teamCount)}`;
-        setTeams((prev) => ({ ...prev, [newTeamId]: [] }));
+        const existingNums = Object.keys(teams)
+            .filter((k) => k !== "unassigned")
+            .map((k) => { const m = k.match(/^(\d+)조$/); return m ? parseInt(m[1]) : 0; });
+        const nextNum = (existingNums.length > 0 ? Math.max(...existingNums) : 0) + 1;
+        setTeams((prev) => ({ ...prev, [`${nextNum}조`]: [] }));
     };
 
     const handleRemoveTeam = (teamId: string) => {
@@ -257,14 +296,29 @@ export function TeamBuildingEditor({
         });
     };
 
+    const handleRenameTeam = (oldName: string, newName: string) => {
+        if (newName === oldName || newName === "unassigned") return;
+        if (newName in teams) {
+            toast.error("이미 존재하는 팀 이름입니다.");
+            return;
+        }
+        setTeams((prev) => {
+            const entries = Object.entries(prev);
+            const result: Record<string, number[]> = {};
+            for (const [key, val] of entries) {
+                result[key === oldName ? newName : key] = val;
+            }
+            return result;
+        });
+    };
+
     const handleAutoGenerate = () => {
         const active = members.filter((m) => m.is_active);
         const shuffled = [...active].sort(() => 0.5 - Math.random());
         const numTeams = Math.ceil(shuffled.length / 4);
         const newTeams: Record<string, number[]> = { unassigned: [] };
         for (let i = 0; i < numTeams; i++) {
-            const name = `Team ${String.fromCharCode(65 + i)}`;
-            newTeams[name] = shuffled.splice(0, 4).map((m) => m.id);
+            newTeams[`${i + 1}조`] = shuffled.splice(0, 4).map((m) => m.id);
         }
         setTeams(newTeams);
         toast.success(`${numTeams}개 팀 자동 생성 완료`);
@@ -334,12 +388,13 @@ export function TeamBuildingEditor({
                                 <div key={teamId} className="w-64 flex-shrink-0 relative">
                                     <DroppableColumn
                                         id={teamId}
-                                        title={teamId.toUpperCase()}
+                                        title={teamId}
                                         items={teams[teamId]}
                                         members={members}
                                         selectedIds={selectedIds}
                                         conflicts={conflicts}
                                         onToggleSelect={toggleSelect}
+                                        onRename={(newName) => handleRenameTeam(teamId, newName)}
                                     />
                                     <button
                                         type="button"

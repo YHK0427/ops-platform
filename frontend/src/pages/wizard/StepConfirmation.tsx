@@ -37,7 +37,7 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                 const teamsList = Object.entries(state.teams)
                     .filter(([key, members]) => key !== "unassigned" && members.length > 0)
                     .map(([key, members]) => ({
-                        name: key.replace("team", "Team "), // "team1" -> "Team 1"
+                        name: key,
                         members: members.map(id => ({ member_id: id }))
                     }));
 
