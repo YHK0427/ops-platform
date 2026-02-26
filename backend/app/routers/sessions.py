@@ -77,7 +77,7 @@ async def create_session(
             raise HTTPException(status_code=400, detail=f"week_num {body.week_num}은 이미 존재합니다")
 
         config_data = body.config.model_dump() if body.config else {
-            "has_ppt": True, "has_review": True, "has_feedback": True, "is_holiday": False
+            "has_ppt_email": True, "has_review": True, "has_feedback": True, "is_holiday": False
         }
 
         session = SessionModel(
@@ -211,11 +211,11 @@ async def update_session_status(
         )
         active_members = members_result.scalars().all()
         for member in active_members:
-            if cfg.get("has_ppt", True):
+            if cfg.get("has_ppt_email", True):
                 db.add(Assignment(
                     session_id=session_id,
                     member_id=member.id,
-                    type="PPT",
+                    type="PPT_EMAIL",
                     status="PENDING",
                 ))
             if cfg.get("has_review", True):
@@ -235,7 +235,7 @@ async def update_session_status(
 
     # POST→SETTLEMENT 전환 시: 크롤러 스캔 후에도 PENDING 상태로 남은 과제 = 미제출 → MISSING 처리
     if target == "SETTLEMENT":
-        # 결석 멤버의 REVIEW는 면제(EXEMPT) 처리
+        # 결석/공결 멤버 조회
         absent_stmt = select(Attendance.member_id).where(
             Attendance.session_id == session_id,
             Attendance.status.in_(("ABSENT", "EXCUSED")),
@@ -243,7 +243,16 @@ async def update_session_status(
         absent_result = await db.execute(absent_stmt)
         absent_ids = {row[0] for row in absent_result.all()}
 
+        # 공결 멤버만 별도 조회 (PPT_EMAIL EXEMPT용)
+        excused_stmt = select(Attendance.member_id).where(
+            Attendance.session_id == session_id,
+            Attendance.status == "EXCUSED",
+        )
+        excused_result = await db.execute(excused_stmt)
+        excused_ids = {row[0] for row in excused_result.all()}
+
         if absent_ids:
+            # REVIEW: ABSENT + EXCUSED → EXEMPT
             await db.execute(
                 update(Assignment)
                 .where(
@@ -254,6 +263,35 @@ async def update_session_status(
                 )
                 .values(status="EXEMPT")
             )
+
+        if excused_ids:
+            # PPT_EMAIL (INDIVIDUAL): EXCUSED만 → EXEMPT (ABSENT은 제출 의무)
+            await db.execute(
+                update(Assignment)
+                .where(
+                    Assignment.session_id == session_id,
+                    Assignment.status == "PENDING",
+                    Assignment.type == "PPT_EMAIL",
+                    Assignment.member_id.in_(excused_ids),
+                )
+                .values(status="EXEMPT")
+            )
+            # PPT_EMAIL (TEAM): 팀원 전원이 공결인 경우만 EXEMPT
+            team_ppt_result = await db.execute(
+                select(Assignment).where(
+                    Assignment.session_id == session_id,
+                    Assignment.type == "PPT_EMAIL",
+                    Assignment.team_id.isnot(None),
+                    Assignment.status == "PENDING",
+                )
+            )
+            for team_ppt in team_ppt_result.scalars().all():
+                tm_result = await db.execute(
+                    select(TeamMember.member_id).where(TeamMember.team_id == team_ppt.team_id)
+                )
+                team_member_ids = {row[0] for row in tm_result.all()}
+                if team_member_ids and team_member_ids.issubset(excused_ids):
+                    team_ppt.status = "EXEMPT"
 
         # 나머지 PENDING → MISSING
         await db.execute(
@@ -603,16 +641,16 @@ async def confirm_teams(
                 member_id=tm.member_id,
             ))
             
-        # 팀별 PPT 과제 1개 생성
-        if session.config.get("has_ppt", True):
-            ppt = Assignment(
+        # 팀별 PPT_EMAIL 과제 1개 생성
+        if session.config.get("has_ppt_email", True):
+            ppt_email = Assignment(
                 session_id=session_id,
                 team_id=team.id,
                 member_id=None, # 팀 과제
-                type="PPT",
+                type="PPT_EMAIL",
                 status="PENDING",
             )
-            db.add(ppt)
+            db.add(ppt_email)
 
     # 4. 개인별 Assignments 생성 (REVIEW, FEEDBACK, HOMEWORK)
     # 활성 멤버 전체? 아니면 팀에 속한 멤버만? -> 팀빌딩은 전원 참여가 원칙.
