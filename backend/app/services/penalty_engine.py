@@ -38,6 +38,12 @@ PPT_MATRIX = {
     "MISSING": (-2, -3000),
 }
 
+PPT_EMAIL_MATRIX = {
+    "PASS":    (0, 0),
+    "LATE":    (-1, -1000),
+    "MISSING": (-2, -3000),
+}
+
 HOMEWORK_PENALTY = (-1, -1000)   # 셋 중 하나라도 MISSING이면 동일하게 적용
 
 
@@ -147,6 +153,19 @@ class PenaltyEngine:
                         description=f"PPT {ppt.status}"
                     ))
 
+            # [PPT_EMAIL] (이메일 제출 - EXCUSED만 면제)
+            ppt_email = assignments.get("PPT_EMAIL")
+            if ppt_email and not is_excused:
+                s_d, d_d = PPT_EMAIL_MATRIX.get(ppt_email.status, (0, 0))
+                if s_d != 0 or d_d != 0:
+                    penalties.append(PenaltyItem(
+                        type="PPT_EMAIL",
+                        member=member,
+                        score_delta=s_d,
+                        deposit_delta=d_d,
+                        description=f"PPT이메일 {ppt_email.status}"
+                    ))
+
             # [과제/리뷰/피드백] (통합 페널티)
             # 하나라도 MISSING이면 페널티 적용
             # 단, 해당 주차에 과제/리뷰/피드백이 있어야 함. (없으면 PASS 취급)
@@ -184,6 +203,51 @@ class PenaltyEngine:
                     deposit_delta=HOMEWORK_PENALTY[1],
                     description=f"미제출: {', '.join(missing_types)}"
                 ))
+
+        # [TEAM PPT_EMAIL] member_id=NULL이므로 별도 처리
+        if self.session.type == "TEAM":
+            from app.models import TeamMember
+            team_ppt_stmt = select(Assignment).where(
+                Assignment.session_id == self.session.id,
+                Assignment.type == "PPT_EMAIL",
+                Assignment.member_id.is_(None),
+            )
+            team_ppt_result = await self.db.execute(team_ppt_stmt)
+            team_ppts = {a.team_id: a for a in team_ppt_result.scalars().all()}
+
+            for team_id, ppt_a in team_ppts.items():
+                if ppt_a.status in ("PASS", "EXEMPT"):
+                    continue
+                s_d, d_d = PPT_EMAIL_MATRIX.get(ppt_a.status, (0, 0))
+                if s_d == 0 and d_d == 0:
+                    continue
+                tm_stmt = select(TeamMember.member_id).where(TeamMember.team_id == team_id)
+                tm_result = await self.db.execute(tm_stmt)
+                for (mid,) in tm_result.all():
+                    member_obj = next((m for m in members if m.id == mid), None)
+                    if not member_obj:
+                        continue
+                    # EXCUSED 멤버는 면제
+                    att_check = next(
+                        (p for p in penalties if p.type == "ATTENDANCE" and p.member.id == mid),
+                        None
+                    )
+                    # Check attendance directly
+                    att_stmt2 = select(Attendance).where(
+                        Attendance.session_id == self.session.id,
+                        Attendance.member_id == mid,
+                    )
+                    att_res2 = await self.db.execute(att_stmt2)
+                    att2 = att_res2.scalar_one_or_none()
+                    if att2 and att2.status == "EXCUSED":
+                        continue
+                    penalties.append(PenaltyItem(
+                        type="PPT_EMAIL",
+                        member=member_obj,
+                        score_delta=s_d,
+                        deposit_delta=d_d,
+                        description=f"PPT이메일 {ppt_a.status} (팀)"
+                    ))
 
         return penalties
 
