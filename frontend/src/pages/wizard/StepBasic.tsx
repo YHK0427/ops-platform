@@ -169,7 +169,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                             )}
                         </div>
                         <p className="text-xs text-[var(--color-text-muted)]">
-                            * 날짜 변경 시 기본값이 자동 설정됩니다. (PPT 이메일: 당일 09:00 / 지각: 18:00, 후속 과제: 다음 수요일 21:59)
+                            * 날짜 변경 시 기본값이 자동 설정됩니다. (PPT 이메일: 전날 21:59 / 지각: 당일 09:59, 후속 과제: 다음 수요일 21:59)
                         </p>
                     </div>
                     )}

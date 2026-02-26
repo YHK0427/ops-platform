@@ -2,16 +2,21 @@
  * Calculate default deadlines based on session date.
  *
  * Conventions:
- * - PPT email deadline: session day 09:00
- * - PPT email late deadline: session day 18:00
+ * - PPT email deadline: day before session 21:59
+ * - PPT email late deadline: session day 09:59
  * - Post tasks deadline (review, PPT board, feedback): next Wednesday 21:59
  */
 export function calcDefaultDeadlines(sessionDate: string) {
-    // PPT email: session day 09:00
-    const pptEmail = `${sessionDate}T09:00`;
+    // PPT email: day before session 21:59
+    const prev = new Date(sessionDate + "T00:00:00");
+    prev.setDate(prev.getDate() - 1);
+    const py = prev.getFullYear();
+    const pm = String(prev.getMonth() + 1).padStart(2, "0");
+    const pd = String(prev.getDate()).padStart(2, "0");
+    const pptEmail = `${py}-${pm}-${pd}T21:59`;
 
-    // PPT email late: session day 18:00
-    const pptEmailLate = `${sessionDate}T18:00`;
+    // PPT email late: session day 09:59
+    const pptEmailLate = `${sessionDate}T09:59`;
 
     // Post: next Wednesday (after session date) at 21:59
     const d = new Date(sessionDate + "T00:00:00");
