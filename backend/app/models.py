@@ -142,7 +142,7 @@ class Assignment(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "type IN ('PPT','REVIEW','FEEDBACK','HOMEWORK')",
+            "type IN ('PPT','PPT_EMAIL','REVIEW','FEEDBACK','HOMEWORK')",
             name="ck_assignments_type",
         ),
         CheckConstraint(

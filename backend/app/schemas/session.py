@@ -9,7 +9,7 @@ from app.schemas.assignment import AssignmentResponse
 
 
 class SessionConfig(BaseModel):
-    has_ppt: bool = True
+    has_ppt_email: bool = True
     has_review: bool = True
     has_feedback: bool = True
     is_holiday: bool = False
