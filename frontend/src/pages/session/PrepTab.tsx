@@ -240,7 +240,7 @@ export default function PrepTab() {
                         </Button>
                     )}
                 </div>
-                <AttendanceGrid sessionId={session.id} teams={displayTeams} />
+                <AttendanceGrid sessionId={session.id} teams={displayTeams} assignments={session.assignments} sessionType={session.type} />
             </section>
 
             {/* Excuse Summary */}

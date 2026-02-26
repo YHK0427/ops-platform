@@ -25,11 +25,13 @@ import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
 interface AttendanceGridProps {
     sessionId: number;
     teams: any[];
+    assignments?: any[];     // session.assignments
+    sessionType?: string;    // "INDIVIDUAL" | "TEAM"
 }
 
-export function AttendanceGrid({ sessionId, teams }: AttendanceGridProps) {
+export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: AttendanceGridProps) {
     const queryClient = useQueryClient();
-    const [updating, setUpdating] = useState<Record<number, boolean>>({});
+    const [updating, setUpdating] = useState<Record<string, boolean>>({});
 
     const handleStatusChange = async (memberId: number, status: string) => {
         setUpdating(prev => ({ ...prev, [memberId]: true }));
@@ -60,6 +62,27 @@ export function AttendanceGrid({ sessionId, teams }: AttendanceGridProps) {
             toast.error(error?.response?.data?.detail ?? "사유서 업데이트 실패");
         } finally {
             setUpdating(prev => ({ ...prev, [memberId]: false }));
+        }
+    };
+
+    const handlePptEmailChange = async (assignmentId: number, currentStatus: string) => {
+        const PPT_CYCLE: Record<string, string> = {
+            PENDING: "PASS",
+            PASS: "LATE",
+            LATE: "EXEMPT",
+            EXEMPT: "PENDING",
+        };
+        const next = PPT_CYCLE[currentStatus] || "PENDING";
+        const key = `ppt_${assignmentId}`;
+        setUpdating(prev => ({ ...prev, [key]: true }));
+        try {
+            await api.patch(`/assignments/${assignmentId}`, { status: next });
+            await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
+        } catch (error) {
+            console.error(error);
+            toast.error("PPT 이메일 상태 변경 실패");
+        } finally {
+            setUpdating(prev => ({ ...prev, [key]: false }));
         }
     };
 
@@ -119,6 +142,7 @@ export function AttendanceGrid({ sessionId, teams }: AttendanceGridProps) {
                             <TableHead>Member</TableHead>
                             <TableHead className="w-[180px]">Status</TableHead>
                             <TableHead className="w-[200px]">Excuse Details</TableHead>
+                            <TableHead className="w-[120px]">PPT 이메일</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -204,6 +228,56 @@ export function AttendanceGrid({ sessionId, teams }: AttendanceGridProps) {
                                                 </Popover>
                                             )}
                                         </div>
+                                    </TableCell>
+                                    <TableCell>
+                                        {(() => {
+                                            if (!assignments) return <span className="text-gray-600 text-xs">-</span>;
+
+                                            let pptAssignment: any = null;
+                                            let isToggleable = true;
+
+                                            if (sessionType === "TEAM" && team.id) {
+                                                // TEAM: find by team_id
+                                                pptAssignment = assignments.find((a: any) => a.type === "PPT_EMAIL" && a.team_id === team.id);
+                                                // Only first member in team gets the toggle
+                                                isToggleable = team.members[0]?.member_id === member.member_id;
+                                            } else {
+                                                // INDIVIDUAL: find by member_id
+                                                pptAssignment = assignments.find((a: any) => a.type === "PPT_EMAIL" && a.member_id === member.member_id);
+                                            }
+
+                                            if (!pptAssignment) return <span className="text-gray-600 text-xs">-</span>;
+
+                                            const statusColors: Record<string, string> = {
+                                                PENDING: "bg-gray-500/10 text-gray-400 border-gray-500/20",
+                                                PASS: "bg-green-500/10 text-green-400 border-green-500/20",
+                                                LATE: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+                                                MISSING: "bg-red-500/10 text-red-400 border-red-500/20",
+                                                EXEMPT: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+                                            };
+                                            const statusLabels: Record<string, string> = {
+                                                PENDING: "미제출",
+                                                PASS: "제출완료",
+                                                LATE: "지각제출",
+                                                MISSING: "미제출(확정)",
+                                                EXEMPT: "면제",
+                                            };
+
+                                            const pptKey = `ppt_${pptAssignment.id}`;
+
+                                            return (
+                                                <button
+                                                    onClick={() => isToggleable && handlePptEmailChange(pptAssignment.id, pptAssignment.status)}
+                                                    disabled={!isToggleable || updating[pptKey]}
+                                                    className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                                                        isToggleable ? "cursor-pointer hover:opacity-80" : "cursor-default"
+                                                    } ${statusColors[pptAssignment.status] || statusColors.PENDING}`}
+                                                    title={isToggleable ? "클릭하여 상태 변경" : "팀 대표만 변경 가능"}
+                                                >
+                                                    {updating[pptKey] ? "..." : (statusLabels[pptAssignment.status] || pptAssignment.status)}
+                                                </button>
+                                            );
+                                        })()}
                                     </TableCell>
                                 </TableRow>
                             ))
