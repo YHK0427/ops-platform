@@ -18,9 +18,10 @@ import { useDeleteLedgerEntry, useUpdateLedger } from "@/hooks/useLedger";
 import type { Session } from "@/hooks/useSessions";
 
 const PENALTY_TYPE_LABEL: Record<string, string> = {
-    ATTENDANCE:    "출결",
-    PPT:           "PPT",
-    HOMEWORK:      "과제미제출",
+    ATTENDANCE:     "출결",
+    PPT:            "PPT",
+    PPT_EMAIL:      "PPT이메일",
+    HOMEWORK:       "과제미제출",
     MILESTONE_FINE: "마일스톤",
 };
 

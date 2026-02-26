@@ -359,7 +359,7 @@ async def get_session_stats(
         atype, astatus, count = r.type, r.status, r.count
         is_submitted = astatus in ("PASS", "LATE")
 
-        if atype == "PPT":
+        if atype in ("PPT", "PPT_EMAIL"):
             ppt_total += count
             if is_submitted:
                 ppt_submitted += count

@@ -54,7 +54,7 @@ class Session(Base):
     config = Column(
         JSONB,
         server_default=text(
-            '\'{"has_ppt":true,"has_review":true,"has_feedback":true,"is_holiday":false}\''
+            '\'{"has_ppt_email":true,"has_review":true,"has_feedback":true,"is_holiday":false}\''
         ),
     )
     status = Column(String(20), server_default="SETUP")

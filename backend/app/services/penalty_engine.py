@@ -228,11 +228,6 @@ class PenaltyEngine:
                     if not member_obj:
                         continue
                     # EXCUSED 멤버는 면제
-                    att_check = next(
-                        (p for p in penalties if p.type == "ATTENDANCE" and p.member.id == mid),
-                        None
-                    )
-                    # Check attendance directly
                     att_stmt2 = select(Attendance).where(
                         Attendance.session_id == self.session.id,
                         Attendance.member_id == mid,

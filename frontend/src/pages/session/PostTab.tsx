@@ -61,7 +61,7 @@ export function PostTab() {
     // Active assignment types based on session config
     const cfg = session.config || {};
     const activeTypes: string[] = [];
-    if (cfg.has_ppt_email !== false) activeTypes.push("PPT");
+    if (cfg.has_ppt_email !== false) activeTypes.push("PPT_EMAIL");
     if (cfg.has_review !== false) activeTypes.push("REVIEW");
     if (cfg.has_feedback !== false) activeTypes.push("FEEDBACK");
 
@@ -84,7 +84,7 @@ export function PostTab() {
 
     // Helper to find team-level PPT assignment (member_id=null, team_id=team.id)
     const getTeamPPTAssignment = (teamId: number) => {
-        return session.assignments?.find((a: any) => a.team_id === teamId && a.type === "PPT");
+        return session.assignments?.find((a: any) => a.team_id === teamId && a.type === "PPT_EMAIL");
     };
 
     const handleToggleStatus = async (assignment: any) => {
