@@ -21,6 +21,7 @@ from app.models import (
 from app.schemas.attendance import AttendanceForceUpdate, AttendanceUpdate
 from app.schemas.session import (
     FeedbackTargetUpdate,
+    SessionConfigUpdate,
     SessionCreate,
     SessionFinalizeRequest,
     SessionFinalizeResponse,
@@ -170,6 +171,41 @@ async def delete_session(
         )
     await db.delete(session)
     await db.commit()
+
+
+@router.patch("/{session_id}/config")
+async def update_session_config(
+    session_id: int,
+    body: SessionConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """세션 config 업데이트 (기한 등)"""
+    session = await _get_session_or_404(session_id, db)
+    if session.status == "FINALIZED":
+        raise HTTPException(status_code=400, detail="Cannot modify finalized session")
+
+    # Merge new config with existing
+    current_config = session.config or {}
+    current_config.update(body.config)
+    session.config = current_config
+    # Force SQLAlchemy to detect JSONB change
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(session, "config")
+
+    await db.commit()
+    await db.refresh(session)
+    return {
+        "id": session.id,
+        "week_num": session.week_num,
+        "title": session.title,
+        "date": session.date,
+        "type": session.type,
+        "config": session.config,
+        "status": session.status,
+        "finalized_at": session.finalized_at,
+        "created_at": session.created_at,
+    }
 
 
 @router.patch("/{session_id}/status", response_model=SessionResponse)
