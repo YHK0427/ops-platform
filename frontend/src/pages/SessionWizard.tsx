@@ -13,7 +13,7 @@ export default function SessionWizard() {
         date: new Date().toISOString().split("T")[0],
         type: "TEAM",
         teams: {}, // { "unassigned": [id1, id2], "team1": [id3, id4] }
-        has_ppt: true,
+        has_ppt_email: true,
         has_review: true,
         has_feedback: true,
         is_holiday: false,

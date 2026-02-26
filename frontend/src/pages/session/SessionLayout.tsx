@@ -121,22 +121,32 @@ export default function SessionLayout() {
             <div className="border-b border-[var(--color-border)] bg-[var(--color-surface)] sticky top-[60px] z-10 backdrop-blur-md">
                 <div className="container mx-auto px-4">
                     <div className="flex space-x-1">
-                        {tabs.map((tab) => (
-                            <NavLink
-                                key={tab.id}
-                                to={tab.id}
-                                className={({ isActive }) =>
-                                    cn(
-                                        "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
-                                        isActive
-                                            ? "border-[var(--color-accent)] text-[var(--color-accent)]"
-                                            : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-border-highlight)]"
-                                    )
-                                }
-                            >
-                                {tab.label}
-                            </NavLink>
-                        ))}
+                        {tabs.map((tab) => {
+                            const locked = typedSession.status === "PREP" && tab.id !== "prep";
+                            return locked ? (
+                                <span
+                                    key={tab.id}
+                                    className="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed select-none"
+                                >
+                                    {tab.label}
+                                </span>
+                            ) : (
+                                <NavLink
+                                    key={tab.id}
+                                    to={tab.id}
+                                    className={({ isActive }) =>
+                                        cn(
+                                            "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                                            isActive
+                                                ? "border-[var(--color-accent)] text-[var(--color-accent)]"
+                                                : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-border-highlight)]"
+                                        )
+                                    }
+                                >
+                                    {tab.label}
+                                </NavLink>
+                            );
+                        })}
                     </div>
                 </div>
             </div>

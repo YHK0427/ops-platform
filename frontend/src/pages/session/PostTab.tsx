@@ -61,7 +61,7 @@ export function PostTab() {
     // Active assignment types based on session config
     const cfg = session.config || {};
     const activeTypes: string[] = [];
-    if (cfg.has_ppt !== false) activeTypes.push("PPT");
+    if (cfg.has_ppt_email !== false) activeTypes.push("PPT");
     if (cfg.has_review !== false) activeTypes.push("REVIEW");
     if (cfg.has_feedback !== false) activeTypes.push("FEEDBACK");
 

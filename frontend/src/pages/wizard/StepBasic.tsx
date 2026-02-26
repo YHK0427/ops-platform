@@ -88,10 +88,10 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                 <input
                                     type="checkbox"
                                     className="rounded border-gray-600 bg-gray-800 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                                    checked={state.has_ppt}
-                                    onChange={(e) => onChange({ has_ppt: e.target.checked })}
+                                    checked={state.has_ppt_email}
+                                    onChange={(e) => onChange({ has_ppt_email: e.target.checked })}
                                 />
-                                <span className="text-sm">발표 (PPT) 포함</span>
+                                <span className="text-sm">PPT 이메일 제출</span>
                             </label>
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input

@@ -147,7 +147,7 @@ export default function PrepTab() {
         <div className="space-y-8">
             {/* Action Panel */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {cfg.has_ppt !== false && (
+                {cfg.has_ppt_email !== false && (
                     <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)]">
                         <div className="mb-4">
                             <h3 className="font-bold text-lg">Presentation Scan</h3>

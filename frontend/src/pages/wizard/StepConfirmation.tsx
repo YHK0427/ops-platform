@@ -21,7 +21,7 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                 date: state.date,
                 type: state.type,
                 config: {
-                    has_ppt: state.has_ppt,
+                    has_ppt_email: state.has_ppt_email,
                     has_review: state.has_review,
                     has_feedback: state.has_feedback,
                     is_holiday: state.is_holiday
