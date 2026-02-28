@@ -25,6 +25,8 @@ class LedgerCreate(LedgerBase):
 class LedgerResponse(LedgerBase):
     id: int
     session_id: int | None = None
+    session_title: str | None = None
+    session_date: str | None = None
     created_at: datetime
     deposit_after: int
 

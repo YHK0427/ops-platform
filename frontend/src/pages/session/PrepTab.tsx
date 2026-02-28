@@ -3,12 +3,10 @@ import { useOutletContext, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { AttendanceGrid } from "./AttendanceGrid";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { FileSearch, Loader2, CheckCircle2, XCircle, Trash2 } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { useScanPPT, useScanExcuses, useCrawlerTask, useMembers } from "@/hooks";
-import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
 import type { Session } from "@/hooks/useSessions";
 
 export default function PrepTab() {
@@ -139,10 +137,6 @@ export default function PrepTab() {
 
     const cfg = session.config || {};
 
-    const excusedAttendances = (session.attendances || []).filter(
-        (att) => att.excuse_type === "PRE" || att.excuse_type === "POST"
-    );
-
     return (
         <div className="space-y-8">
             {/* Action Panel */}
@@ -242,49 +236,6 @@ export default function PrepTab() {
                 </div>
                 <AttendanceGrid sessionId={session.id} teams={displayTeams} assignments={session.assignments} sessionType={session.type} />
             </section>
-
-            {/* Excuse Summary */}
-            {excusedAttendances.length > 0 && (
-                <section>
-                    <h3 className="font-bold text-lg mb-3">사유서 제출 현황</h3>
-                    <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                        {excusedAttendances.map((att) => {
-                            const member = members?.find((m) => m.id === att.member_id);
-                            return (
-                                <div key={att.member_id} className="flex items-center justify-between px-4 py-3">
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-sm font-medium">
-                                            {member?.name ?? `ID:${att.member_id}`}
-                                        </span>
-                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${
-                                            att.excuse_type === "PRE"
-                                                ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                                                : "bg-orange-500/10 text-orange-400 border-orange-500/20"
-                                        }`}>
-                                            {att.excuse_type === "PRE" ? "사전 통보" : "사후 제출"}
-                                        </span>
-                                    </div>
-                                    {att.excuse_text && (
-                                        <Popover>
-                                            <PopoverTrigger asChild>
-                                                <Button variant="ghost" size="sm" className="h-7 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
-                                                    내용 보기
-                                                </Button>
-                                            </PopoverTrigger>
-                                            <PopoverContent
-                                                className="w-80 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm"
-                                                align="end"
-                                            >
-                                                <ExcuseTextDisplay text={att.excuse_text} />
-                                            </PopoverContent>
-                                        </Popover>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </section>
-            )}
 
         </div>
     );

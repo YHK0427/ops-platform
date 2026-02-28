@@ -368,6 +368,7 @@ export default function Ledger() {
                             <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
                                 <TableHead className="w-[120px]">날짜</TableHead>
                                 <TableHead className="w-[100px]">멤버</TableHead>
+                                <TableHead className="w-[140px]">세션</TableHead>
                                 <TableHead className="w-[120px]">유형</TableHead>
                                 <TableHead>설명</TableHead>
                                 <TableHead className="text-right w-[100px]">금액</TableHead>
@@ -380,7 +381,7 @@ export default function Ledger() {
                             {isLoading ? (
                                 Array.from({ length: 5 }).map((_, i) => (
                                     <TableRow key={i}>
-                                        {Array.from({ length: 8 }).map((_, j) => (
+                                        {Array.from({ length: 9 }).map((_, j) => (
                                             <TableCell key={j}><div className="h-4 bg-gray-800 rounded animate-pulse" /></TableCell>
                                         ))}
                                     </TableRow>
@@ -393,6 +394,16 @@ export default function Ledger() {
                                         </TableCell>
                                         <TableCell className="font-medium">
                                             {memberMap.get(entry.member_id) || entry.member_id}
+                                        </TableCell>
+                                        <TableCell className="text-xs text-gray-400">
+                                            {entry.session_title ? (
+                                                <div>
+                                                    <span className="text-gray-300">{entry.session_title}</span>
+                                                    {entry.session_date && <span className="block text-gray-600">{entry.session_date}</span>}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-600">—</span>
+                                            )}
                                         </TableCell>
                                         <TableCell>
                                             <Badge variant="outline" className={`
@@ -452,7 +463,7 @@ export default function Ledger() {
                                 ))
                             ) : (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="text-center py-12 text-[var(--color-text-muted)]">
+                                    <TableCell colSpan={9} className="text-center py-12 text-[var(--color-text-muted)]">
                                         표시할 내역이 없습니다.
                                     </TableCell>
                                 </TableRow>

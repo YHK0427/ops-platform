@@ -47,6 +47,8 @@ export interface LedgerEntry {
     id: number;
     member_id: number;
     session_id?: number | null;
+    session_title?: string | null;
+    session_date?: string | null;
     type: "FINE" | "MILESTONE_FINE" | "DEPOSIT_RECHARGE" | "DEPOSIT_ADJUST" | "DEPOSIT_REFUND" | "MERIT" | "ADJUSTMENT";
     amount_krw: number;
     score_delta: number;

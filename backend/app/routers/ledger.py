@@ -6,7 +6,7 @@ from typing import Optional
 
 from app.database import AsyncSessionLocal
 from app.deps import get_db, get_current_user
-from app.models import Ledger, Member
+from app.models import Ledger, Member, Session
 from app.schemas.ledger import LedgerResponse, LedgerType, MeritRequest, TransactionRequest, LedgerUpdate
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
@@ -24,7 +24,11 @@ async def get_ledger_entries(
     """
     원장(Ledger) 조회
     """
-    stmt = select(Ledger).order_by(desc(Ledger.created_at))
+    stmt = (
+        select(Ledger, Session.title, Session.date)
+        .outerjoin(Session, Ledger.session_id == Session.id)
+        .order_by(desc(Ledger.created_at))
+    )
 
     if member_id:
         stmt = stmt.where(Ledger.member_id == member_id)
@@ -32,10 +36,17 @@ async def get_ledger_entries(
         stmt = stmt.where(Ledger.type == type)
     if session_id:
         stmt = stmt.where(Ledger.session_id == session_id)
-        
+
     stmt = stmt.offset((page - 1) * limit).limit(limit)
     result = await db.execute(stmt)
-    entries = result.scalars().all()
+    rows = result.all()
+
+    entries = []
+    for ledger, s_title, s_date in rows:
+        resp = LedgerResponse.model_validate(ledger)
+        resp.session_title = s_title
+        resp.session_date = str(s_date) if s_date else None
+        entries.append(resp)
     return entries
 
 @router.post("/merit", response_model=list[LedgerResponse])

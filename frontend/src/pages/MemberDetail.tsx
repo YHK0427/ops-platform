@@ -221,6 +221,7 @@ export default function MemberDetail() {
                             <TableHeader className="bg-[var(--color-surface)]">
                                 <TableRow className="border-b-[var(--color-border)] hover:bg-transparent">
                                     <TableHead className="w-[120px] text-[var(--color-text-muted)]">날짜</TableHead>
+                                    <TableHead className="w-[140px] text-[var(--color-text-muted)]">세션</TableHead>
                                     <TableHead className="text-[var(--color-text-muted)]">유형</TableHead>
                                     <TableHead className="text-[var(--color-text-muted)]">설명</TableHead>
                                     <TableHead className="text-right text-[var(--color-text-muted)]">금액</TableHead>
@@ -232,7 +233,7 @@ export default function MemberDetail() {
                             <TableBody>
                                 {ledger?.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={7} className="h-24 text-center text-[var(--color-text-muted)]">
+                                        <TableCell colSpan={8} className="h-24 text-center text-[var(--color-text-muted)]">
                                             내역이 없습니다.
                                         </TableCell>
                                     </TableRow>
@@ -342,6 +343,16 @@ function LedgerRow({
         <TableRow className="group/row border-b-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
             <TableCell className="text-xs font-mono text-[var(--color-text-muted)]">
                 {new Date(entry.created_at).toLocaleDateString()}
+            </TableCell>
+            <TableCell className="text-xs text-[var(--color-text-muted)]">
+                {entry.session_title ? (
+                    <div>
+                        <span className="text-[var(--color-text-secondary)]">{entry.session_title}</span>
+                        {entry.session_date && <span className="block text-[var(--color-text-muted)] opacity-60">{entry.session_date}</span>}
+                    </div>
+                ) : (
+                    <span className="opacity-40">—</span>
+                )}
             </TableCell>
             <TableCell>
                 <LedgerTypeBadge type={entry.type} />
