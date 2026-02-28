@@ -106,15 +106,24 @@ async def create_transaction(
         
     if member.current_deposit + req.amount_krw < 0 and req.type not in (LedgerType.FINE, LedgerType.MILESTONE_FINE):
         raise HTTPException(status_code=400, detail="잔여 디파짓이 부족합니다")
-        
+
     # 1. Update Deposit
     member.current_deposit += req.amount_krw
-    # 2. Create Ledger
+
+    # 2. Update Score (if provided)
+    if req.score_delta > 0:
+        member.total_plus_score += req.score_delta
+    elif req.score_delta < 0:
+        member.total_minus_score += req.score_delta
+    if req.score_delta != 0:
+        member.net_score = member.total_plus_score + member.total_minus_score
+
+    # 3. Create Ledger
     entry = Ledger(
         member_id=req.member_id,
         type=req.type,
         amount_krw=req.amount_krw,
-        score_delta=0,
+        score_delta=req.score_delta,
         description=req.description,
         deposit_after=member.current_deposit,
         created_by=created_by

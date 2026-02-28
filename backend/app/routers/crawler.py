@@ -23,7 +23,7 @@ from app.schemas.crawler import (
     ScanExcusesRequest,
 )
 from app.services.naver_session import import_session
-from app.services.crawler_video import list_drive_videos, parse_presenter_name
+from app.services.crawler_video import list_drive_videos, list_drive_videos_by_folder, parse_presenter_name
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
 
@@ -188,7 +188,11 @@ async def list_drive_videos_api(
         raise HTTPException(status_code=404, detail="Session not found")
 
     try:
-        files = await asyncio.to_thread(list_drive_videos, session.week_num)
+        drive_folder_id = (session.config or {}).get("drive_folder_id")
+        if drive_folder_id:
+            files = await asyncio.to_thread(list_drive_videos_by_folder, drive_folder_id)
+        else:
+            files = await asyncio.to_thread(list_drive_videos, session.week_num)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:

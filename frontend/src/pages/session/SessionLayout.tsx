@@ -124,7 +124,7 @@ export default function SessionLayout() {
                 <div className="container mx-auto px-4">
                     <div className="flex space-x-1">
                         {tabs.map((tab) => {
-                            const locked = typedSession.status === "PREP" && tab.id !== "prep";
+                            const locked = (typedSession.status === "SETUP" || typedSession.status === "PREP") && tab.id !== "prep";
                             return locked ? (
                                 <span
                                     key={tab.id}

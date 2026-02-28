@@ -46,6 +46,33 @@ PPT_EMAIL_MATRIX = {
 
 HOMEWORK_PENALTY = (-1, -1000)   # 셋 중 하나라도 MISSING이면 동일하게 적용
 
+# --- Korean labels ---
+ATT_STATUS_LABEL = {
+    "LATE_UNDER10": "지각(10분 미만)",
+    "LATE_OVER10": "지각(10분 이상)",
+    "EARLY_LEAVE": "조퇴",
+    "ABSENT": "결석",
+    "PRESENT": "출석",
+    "EXCUSED": "공결",
+}
+EXCUSE_TYPE_LABEL = {
+    "PRE": "사전",
+    "POST": "사후",
+    None: "사유서없음",
+}
+PPT_STATUS_LABEL = {
+    "PASS": "통과",
+    "LATE": "지연제출",
+    "MISSING": "미제출",
+}
+ASSIGN_TYPE_LABEL = {
+    "PPT": "발표",
+    "PPT_EMAIL": "PPT이메일",
+    "REVIEW": "리뷰",
+    "HOMEWORK": "과제",
+    "FEEDBACK": "피드백",
+}
+
 
 @dataclass
 class PenaltyItem:
@@ -137,7 +164,7 @@ class PenaltyEngine:
                     member=member,
                     score_delta=score_d,
                     deposit_delta=dep_d,
-                    description=f"{att_status} ({excuse_type or '사유서없음'})"
+                    description=f"{ATT_STATUS_LABEL.get(att_status, att_status)} ({EXCUSE_TYPE_LABEL.get(excuse_type, excuse_type or '사유서없음')})"
                 ))
 
             # [PPT] (발표자이고, 인정결석이 아닌 경우 체크)
@@ -150,7 +177,7 @@ class PenaltyEngine:
                         member=member,
                         score_delta=s_d,
                         deposit_delta=d_d,
-                        description=f"PPT {ppt.status}"
+                        description=f"발표 {PPT_STATUS_LABEL.get(ppt.status, ppt.status)}"
                     ))
 
             # [PPT_EMAIL] (이메일 제출 - EXCUSED만 면제)
@@ -163,7 +190,7 @@ class PenaltyEngine:
                         member=member,
                         score_delta=s_d,
                         deposit_delta=d_d,
-                        description=f"PPT이메일 {ppt_email.status}"
+                        description=f"PPT이메일 {PPT_STATUS_LABEL.get(ppt_email.status, ppt_email.status)}"
                     ))
 
             # [과제/리뷰/피드백] (통합 페널티)
@@ -201,7 +228,7 @@ class PenaltyEngine:
                     member=member,
                     score_delta=HOMEWORK_PENALTY[0],
                     deposit_delta=HOMEWORK_PENALTY[1],
-                    description=f"미제출: {', '.join(missing_types)}"
+                    description=f"미제출: {', '.join(ASSIGN_TYPE_LABEL.get(t, t) for t in missing_types)}"
                 ))
 
         # [TEAM PPT_EMAIL] member_id=NULL이므로 별도 처리
@@ -241,7 +268,7 @@ class PenaltyEngine:
                         member=member_obj,
                         score_delta=s_d,
                         deposit_delta=d_d,
-                        description=f"PPT이메일 {ppt_a.status} (팀)"
+                        description=f"PPT이메일 {PPT_STATUS_LABEL.get(ppt_a.status, ppt_a.status)} (팀)"
                     ))
 
         return penalties

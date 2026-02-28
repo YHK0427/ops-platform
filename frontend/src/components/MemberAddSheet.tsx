@@ -62,12 +62,12 @@ export function MemberAddSheet() {
             <SheetTrigger asChild>
                 <Button className="gap-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white">
                     <Plus className="w-4 h-4" />
-                    Add Member
+                    멤버 추가
                 </Button>
             </SheetTrigger>
             <SheetContent className="bg-[var(--color-elevated)] border-l-[var(--color-border)] text-[var(--color-text-primary)]">
                 <SheetHeader>
-                    <SheetTitle className="text-white">Add New Member</SheetTitle>
+                    <SheetTitle className="text-white">새 멤버 추가</SheetTitle>
                     <SheetDescription>
                         새로운 멤버를 추가합니다. 초기 디파짓은 0원으로 시작합니다.
                     </SheetDescription>
@@ -75,7 +75,7 @@ export function MemberAddSheet() {
 
                 <div className="grid gap-6 py-6">
                     <div className="grid gap-2">
-                        <Label htmlFor="name">Name</Label>
+                        <Label htmlFor="name">이름</Label>
                         <Input
                             id="name"
                             value={name}
@@ -86,7 +86,7 @@ export function MemberAddSheet() {
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="email">Email</Label>
+                        <Label htmlFor="email">이메일</Label>
                         <Input
                             id="email"
                             type="email"
@@ -98,7 +98,7 @@ export function MemberAddSheet() {
                     </div>
 
                     <div className="grid gap-2">
-                        <Label>Tags</Label>
+                        <Label>태그</Label>
                         <div className="flex flex-wrap gap-2 mb-2">
                             {SUGGESTED_TAGS.map((tag) => (
                                 <button
@@ -121,7 +121,7 @@ export function MemberAddSheet() {
                                 className="bg-[var(--color-surface)] border-[var(--color-border)] h-8 text-xs"
                                 onKeyDown={(e) => e.key === "Enter" && addCustomTag()}
                             />
-                            <Button size="sm" variant="outline" onClick={addCustomTag} className="h-8">Add</Button>
+                            <Button size="sm" variant="outline" onClick={addCustomTag} className="h-8">추가</Button>
                         </div>
 
                         {tags.length > 0 && (
@@ -143,7 +143,7 @@ export function MemberAddSheet() {
                         disabled={!name || !email || createMutation.isPending}
                         className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white"
                     >
-                        {createMutation.isPending ? "Creating..." : "Create Member"}
+                        {createMutation.isPending ? "생성 중..." : "멤버 생성"}
                     </Button>
                 </SheetFooter>
             </SheetContent>

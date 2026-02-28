@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     NAVER_CAFE_ID: str = "31668555"
     NAVER_CAFE_MENU_VIDEO: int = 1
     NAVER_CAFE_MENU_REVIEW: int = 2
-    NAVER_CAFE_MENU_HOMEWORK: int = 3
+    NAVER_CAFE_MENU_PPT: int = 3
     NAVER_CAFE_MENU_EXCUSE: int = 0
 
     # Google Drive

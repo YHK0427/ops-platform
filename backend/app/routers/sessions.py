@@ -106,8 +106,20 @@ async def create_session(
 
         await db.commit()
 
-        # Emergency Fix: Return simple dict to bypass complex response validation
-        # Frontend does not use the response body for navigation, so this is safe.
+        # Google Drive 하위 폴더 생성 (실패해도 세션 생성은 유지)
+        try:
+            import asyncio
+            from app.services.crawler_video import create_drive_folder
+            folder_name = f"{body.week_num}주차_{body.title}"
+            folder_id = await asyncio.to_thread(create_drive_folder, folder_name)
+            session.config = {**(session.config or {}), "drive_folder_id": folder_id}
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(session, "config")
+            await db.commit()
+            logger.info(f"Drive folder created: {folder_name} ({folder_id})")
+        except Exception as e:
+            logger.warning(f"Drive folder creation failed (non-fatal): {e}")
+
         logger.info(f"Session {session.id} created successfully.")
         return {"id": session.id, "week_num": session.week_num, "status": "created"}
 
@@ -254,6 +266,13 @@ async def update_session_status(
                     type="PPT_EMAIL",
                     status="PENDING",
                 ))
+            # PPT 게시판 과제
+            db.add(Assignment(
+                session_id=session_id,
+                member_id=member.id,
+                type="PPT",
+                status="PENDING",
+            ))
             if cfg.get("has_review", True):
                 db.add(Assignment(
                     session_id=session_id,
@@ -299,6 +318,17 @@ async def update_session_status(
                 )
                 .values(status="EXEMPT")
             )
+            # FEEDBACK: ABSENT + EXCUSED → EXEMPT (결석자는 피드백 작성 불가)
+            await db.execute(
+                update(Assignment)
+                .where(
+                    Assignment.session_id == session_id,
+                    Assignment.status == "PENDING",
+                    Assignment.type == "FEEDBACK",
+                    Assignment.member_id.in_(absent_ids),
+                )
+                .values(status="EXEMPT")
+            )
 
         if excused_ids:
             # PPT_EMAIL (INDIVIDUAL): EXCUSED만 → EXEMPT (ABSENT은 제출 의무)
@@ -328,6 +358,18 @@ async def update_session_status(
                 team_member_ids = {row[0] for row in tm_result.all()}
                 if team_member_ids and team_member_ids.issubset(excused_ids):
                     team_ppt.status = "EXEMPT"
+
+            # PPT (게시판): EXCUSED만 → EXEMPT (ABSENT은 제출 의무)
+            await db.execute(
+                update(Assignment)
+                .where(
+                    Assignment.session_id == session_id,
+                    Assignment.status == "PENDING",
+                    Assignment.type == "PPT",
+                    Assignment.member_id.in_(excused_ids),
+                )
+                .values(status="EXEMPT")
+            )
 
         # 나머지 PENDING → MISSING
         await db.execute(
@@ -716,6 +758,8 @@ async def confirm_teams(
         existing_pairs = {(row.member_id, row.type) for row in existing_result}
 
         for mid in all_assigned_member_ids:
+            if (mid, "PPT") not in existing_pairs:
+                db.add(Assignment(session_id=session_id, member_id=mid, type="PPT", status="PENDING"))
             if session.config.get("has_review", True) and (mid, "REVIEW") not in existing_pairs:
                 db.add(Assignment(session_id=session_id, member_id=mid, type="REVIEW", status="PENDING"))
             if session.config.get("has_feedback", True) and (mid, "FEEDBACK") not in existing_pairs:
@@ -723,6 +767,7 @@ async def confirm_teams(
     else:
         # SETUP 최초 확정: 전원 개인 과제 생성
         for mid in all_assigned_member_ids:
+            db.add(Assignment(session_id=session_id, member_id=mid, type="PPT", status="PENDING"))
             if session.config.get("has_review", True):
                 db.add(Assignment(session_id=session_id, member_id=mid, type="REVIEW", status="PENDING"))
             if session.config.get("has_feedback", True):

@@ -1,6 +1,6 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film } from "lucide-react";
+import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
 import { useCrawlerTask, useUploadVideos, useSetFeedbackTargets, useDriveVideos } from "@/hooks";
@@ -44,17 +44,34 @@ export default function OpsTab() {
     const feedbackAssignments = session.assignments?.filter((a) => a.type === "FEEDBACK") ?? [];
     const sessionMemberIds = session.attendances?.map((a) => a.member_id) ?? [];
 
-    // Receiver map: memberId → number of writers pointing to them
+    // 결석/공결 멤버는 영상이 없으므로 피드백 대상에서 제외
+    const absentMemberIds = useMemo(() => {
+        return new Set(
+            (session.attendances ?? [])
+                .filter((a) => a.status === "ABSENT" || a.status === "EXCUSED")
+                .map((a) => a.member_id)
+        );
+    }, [session.attendances]);
+
+    // 피드백 대상 가능 멤버 (영상이 있는 멤버만)
+    const feedbackEligibleMemberIds = useMemo(
+        () => sessionMemberIds.filter((id) => !absentMemberIds.has(id)),
+        [sessionMemberIds, absentMemberIds]
+    );
+
+    // Receiver map: memberId → number of writers pointing to them (영상이 있는 멤버만)
     const receiverCountMap = useMemo(() => {
         const map = new Map<number, number>();
-        sessionMemberIds.forEach(id => map.set(id, 0));
+        feedbackEligibleMemberIds.forEach(id => map.set(id, 0));
         feedbackAssignments.forEach((a) => {
             a.target_member_ids?.forEach((tid) => {
-                map.set(tid, (map.get(tid) ?? 0) + 1);
+                if (!absentMemberIds.has(tid)) {
+                    map.set(tid, (map.get(tid) ?? 0) + 1);
+                }
             });
         });
         return map;
-    }, [feedbackAssignments, sessionMemberIds]);
+    }, [feedbackAssignments, feedbackEligibleMemberIds, absentMemberIds]);
 
     const handleCafeUpload = () => {
         uploadVideos({ sessionId: session.id }, {
@@ -102,7 +119,20 @@ export default function OpsTab() {
             <div className="bg-[var(--color-surface)] p-6 rounded-xl border border-[var(--color-border)]">
                 <div className="flex items-start justify-between mb-4">
                     <div>
-                        <h3 className="font-bold text-lg mb-1">Video Upload</h3>
+                        <h3 className="font-bold text-lg mb-1 flex items-center gap-2">
+                            영상 업로드
+                            {session.config?.drive_folder_id && (
+                                <a
+                                    href={`https://drive.google.com/drive/folders/${session.config.drive_folder_id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs font-normal text-[var(--color-accent)] hover:underline"
+                                >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    드라이브 폴더
+                                </a>
+                            )}
+                        </h3>
                         <p className="text-sm text-[var(--color-text-secondary)]">
                             구글 드라이브 영상을 다운로드하여 네이버 카페에 업로드합니다.
                         </p>
@@ -211,7 +241,7 @@ export default function OpsTab() {
                                                 writerName={writerName}
                                                 writerId={writerId}
                                                 currentTargetIds={currentTargetIds}
-                                                sessionMemberIds={sessionMemberIds}
+                                                sessionMemberIds={feedbackEligibleMemberIds}
                                                 memberNameMap={memberNameMap}
                                                 disabled={isSettingTarget}
                                                 onSetTargets={(targetIds) => {
@@ -235,7 +265,7 @@ export default function OpsTab() {
                                 피드백 수신 현황
                             </div>
                             <div className="divide-y divide-[var(--color-border)]">
-                                {sessionMemberIds.map((id) => {
+                                {feedbackEligibleMemberIds.map((id) => {
                                     const count = receiverCountMap.get(id) ?? 0;
                                     const name = memberNameMap.get(id) ?? `ID:${id}`;
                                     const isUnassigned = count === 0;

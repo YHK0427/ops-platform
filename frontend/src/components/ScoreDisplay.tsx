@@ -39,7 +39,11 @@ export function ScoreDisplay({
                         ? "text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.7)]"
                         : isWarning
                             ? "text-yellow-400"
-                            : "text-[var(--color-text-primary)]"
+                            : netScore > 0
+                                ? "text-green-400"
+                                : netScore < 0
+                                    ? "text-rose-400"
+                                    : "text-gray-400"
                 )}
             >
                 {netScore >= 0 ? "+" : ""}

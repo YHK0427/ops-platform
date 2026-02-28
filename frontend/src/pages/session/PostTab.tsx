@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, Search, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { RefreshCw, Search, Loader2, CheckCircle2, XCircle, Check, X, MessageSquare } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { useScanHomework, useCrawlerTask } from "@/hooks/useCrawler";
@@ -173,24 +174,75 @@ export function PostTab() {
                                         {activeTypes.map((type) => {
                                             const assignment = getAssignment(m.id, type);
                                             const status = assignment?.status || "—";
+                                            const feedbackDetail = type === "FEEDBACK" ? assignment?.raw_data?.feedback_detail : undefined;
 
                                             return (
                                                 <TableCell key={type} className="text-center">
-                                                    <Badge
-                                                        variant="outline"
-                                                        title={assignment ? "클릭해서 상태 변경" : "과제 데이터 없음"}
-                                                        className={`cursor-pointer hover:opacity-80 transition-opacity select-none ${
-                                                            status === "PASS" ? "bg-green-500/10 text-green-500 border-green-500/50" :
-                                                            status === "MISSING" ? "bg-red-500/10 text-red-500 border-red-500/50" :
-                                                            status === "LATE" ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/50" :
-                                                            status === "EXEMPT" ? "bg-gray-500/10 text-gray-400 border-gray-500/50" :
-                                                            status === "PENDING" ? "bg-blue-900/30 text-blue-400 border-blue-700 hover:bg-blue-800/30" :
-                                                            "bg-gray-800 text-gray-500 border-gray-800"
-                                                        }`}
-                                                        onClick={() => handleToggleStatus(assignment)}
-                                                    >
-                                                        {status}
-                                                    </Badge>
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <Badge
+                                                            variant="outline"
+                                                            title={assignment ? "클릭해서 상태 변경" : "과제 데이터 없음"}
+                                                            className={`cursor-pointer hover:opacity-80 transition-opacity select-none ${
+                                                                status === "PASS" ? "bg-green-500/10 text-green-500 border-green-500/50" :
+                                                                status === "MISSING" ? "bg-red-500/10 text-red-500 border-red-500/50" :
+                                                                status === "LATE" ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/50" :
+                                                                status === "EXEMPT" ? "bg-gray-500/10 text-gray-400 border-gray-500/50" :
+                                                                status === "PENDING" ? "bg-blue-900/30 text-blue-400 border-blue-700 hover:bg-blue-800/30" :
+                                                                "bg-gray-800 text-gray-500 border-gray-800"
+                                                            }`}
+                                                            onClick={() => handleToggleStatus(assignment)}
+                                                        >
+                                                            {status}
+                                                        </Badge>
+                                                        {feedbackDetail && feedbackDetail.length > 0 && (
+                                                            <div className="flex flex-wrap justify-center gap-1 mt-0.5">
+                                                                {feedbackDetail.map((d) => {
+                                                                    const hasComments = d.comments && d.comments.length > 0;
+                                                                    const label = d.is_self ? "본인" : d.name;
+                                                                    const chip = (
+                                                                        <span
+                                                                            className={`inline-flex items-center gap-0.5 text-[10px] leading-none px-1 py-0.5 rounded ${
+                                                                                hasComments ? "cursor-pointer hover:opacity-80" : ""
+                                                                            } ${
+                                                                                d.commented
+                                                                                    ? "bg-green-500/10 text-green-400"
+                                                                                    : "bg-red-500/10 text-red-400"
+                                                                            }`}
+                                                                        >
+                                                                            {d.commented ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />}
+                                                                            {label}
+                                                                            {hasComments && <MessageSquare className="w-2.5 h-2.5 ml-0.5 opacity-60" />}
+                                                                        </span>
+                                                                    );
+
+                                                                    if (!hasComments) return <span key={d.member_id}>{chip}</span>;
+
+                                                                    return (
+                                                                        <Popover key={d.member_id}>
+                                                                            <PopoverTrigger asChild>
+                                                                                {chip}
+                                                                            </PopoverTrigger>
+                                                                            <PopoverContent
+                                                                                className="w-80 max-h-60 overflow-y-auto bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm"
+                                                                                align="center"
+                                                                            >
+                                                                                <div className="space-y-2">
+                                                                                    <p className="font-medium text-gray-300 text-xs border-b border-gray-700 pb-1">
+                                                                                        {m.name} → {d.is_self ? "본인" : d.name} 영상 댓글
+                                                                                    </p>
+                                                                                    {d.comments!.map((text, i) => (
+                                                                                        <p key={i} className="text-gray-400 text-xs whitespace-pre-wrap break-words leading-relaxed">
+                                                                                            {text}
+                                                                                        </p>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </PopoverContent>
+                                                                        </Popover>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </TableCell>
                                             );
                                         })}

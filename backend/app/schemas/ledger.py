@@ -40,6 +40,7 @@ class TransactionRequest(BaseModel):
     member_id: int
     type: LedgerType
     amount_krw: int
+    score_delta: int = 0
     description: str
 
 class LedgerUpdate(BaseModel):

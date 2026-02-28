@@ -22,7 +22,7 @@ const PENALTY_TYPE_LABEL: Record<string, string> = {
     PPT:            "PPT",
     PPT_EMAIL:      "PPT이메일",
     HOMEWORK:       "과제미제출",
-    MILESTONE_FINE: "마일스톤",
+    MILESTONE_FINE: "누적 벌점",
 };
 
 export default function SettlementTab() {

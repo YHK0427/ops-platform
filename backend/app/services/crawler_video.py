@@ -30,9 +30,43 @@ def get_drive_service():
         
     creds_info = json.loads(settings.GOOGLE_SERVICE_ACCOUNT_JSON)
     creds = service_account.Credentials.from_service_account_info(
-        creds_info, scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        creds_info, scopes=["https://www.googleapis.com/auth/drive"]
     )
     return build("drive", "v3", credentials=creds)
+
+
+def create_drive_folder(folder_name: str, parent_id: str | None = None) -> str:
+    """Google Drive에 폴더 생성 후 폴더 ID 반환"""
+    service = get_drive_service()
+    parent = parent_id or settings.GOOGLE_DRIVE_FOLDER_ID
+    if not parent:
+        raise ValueError("GOOGLE_DRIVE_FOLDER_ID is not set")
+
+    metadata = {
+        "name": folder_name,
+        "mimeType": "application/vnd.google-apps.folder",
+        "parents": [parent],
+    }
+    folder = service.files().create(body=metadata, fields="id").execute()
+    return folder["id"]
+
+
+def list_drive_videos_by_folder(folder_id: str) -> List[dict]:
+    """특정 폴더 ID에서 영상 목록 조회"""
+    service = get_drive_service()
+    query = f"'{folder_id}' in parents and mimeType contains 'video/' and trashed=false"
+    results = service.files().list(
+        q=query,
+        fields="files(id, name)",
+        orderBy="name",
+    ).execute()
+    files = results.get("files", [])
+
+    def sort_key(f):
+        m = re.search(r'\((\d+)번째\)', f["name"])
+        return int(m.group(1)) if m else 9999
+
+    return sorted(files, key=sort_key)
 
 
 def list_drive_videos(week_num: int) -> List[dict]:
@@ -165,10 +199,12 @@ async def upload_all_videos(session_id: int, db: AsyncSession) -> List[dict]:
     # 네이버 세션 (Playwright용)
     storage = await _get_naver_storage_state(db)
 
-    # 드라이브 파일 목록
-    # 실제로는 구글 서비스 계정 설정이 되어 있어야 함.
-    # 설정이 없으면 에러 발생.
-    drive_files = list_drive_videos(session.week_num)
+    # 드라이브 파일 목록 (세션 폴더 우선, 없으면 루트 폴더)
+    drive_folder_id = (session.config or {}).get("drive_folder_id")
+    if drive_folder_id:
+        drive_files = list_drive_videos_by_folder(drive_folder_id)
+    else:
+        drive_files = list_drive_videos(session.week_num)
     if not drive_files:
         logger.warning(f"No videos found in Drive for week {session.week_num}")
         return []

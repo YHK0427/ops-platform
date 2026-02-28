@@ -286,36 +286,6 @@ export default function PrepTab() {
                 </section>
             )}
 
-            {/* Feedback Target Assignment (INDIVIDUAL sessions with has_feedback) */}
-            {session.type === "INDIVIDUAL" && cfg.has_feedback !== false && (
-                <section>
-                    <h3 className="font-bold text-lg mb-3">영상 피드백 대상 지정</h3>
-                    <p className="text-sm text-[var(--color-text-secondary)] mb-4">
-                        각 멤버가 댓글 피드백을 남겨야 할 대상 영상의 멤버를 지정합니다.
-                        기본 1명, 결석자는 2명.
-                    </p>
-                    <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                        {(session.attendances || []).map((att) => {
-                            const member = members?.find((m) => m.id === att.member_id);
-                            const feedbackAssignment = session.assignments?.find(
-                                (a) => a.member_id === att.member_id && a.type === "FEEDBACK"
-                            );
-                            const targets = feedbackAssignment?.target_member_ids ?? [];
-                            return (
-                                <div key={att.member_id} className="flex items-center justify-between px-4 py-3">
-                                    <span className="text-sm font-medium">{member?.name ?? `ID:${att.member_id}`}</span>
-                                    <span className="text-xs text-[var(--color-text-muted)]">
-                                        {targets.length > 0
-                                            ? targets.map((tid) => members?.find((m) => m.id === tid)?.name ?? `ID:${tid}`).join(", ")
-                                            : <span className="text-yellow-500 font-medium">미지정</span>
-                                        }
-                                    </span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </section>
-            )}
         </div>
     );
 }

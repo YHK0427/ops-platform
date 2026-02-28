@@ -106,20 +106,6 @@ async def scan_excuses(
         logger.error(f"Invalid mode '{mode}' — expected PRE or POST")
         return 0
 
-    # POST 모드: 대상 멤버 사전 필터링 (PRESENT 아니고 excuse_type 미설정)
-    target_member_ids: set[int] | None = None
-    if mode == "POST":
-        stmt = select(Attendance).where(
-            Attendance.session_id == session_id,
-            Attendance.status != "PRESENT",
-            Attendance.excuse_type.is_(None),
-        )
-        result = await db.execute(stmt)
-        target_member_ids = {a.member_id for a in result.scalars().all()}
-        if not target_member_ids:
-            logger.info("POST mode: no unexcused absent members found")
-            return 0
-
     # 게시판 스캔 (최대 10페이지)
     articles = []
     for page in range(1, 11):
@@ -158,10 +144,6 @@ async def scan_excuses(
             member = match_member_by_name(writer_nick, members)
         if not member:
             logger.warning(f"No member match for article: {title}")
-            continue
-
-        # POST 모드: 대상 멤버만 처리
-        if target_member_ids is not None and member.id not in target_member_ids:
             continue
 
         # 게시글 본문 추출

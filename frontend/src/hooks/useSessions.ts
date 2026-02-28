@@ -37,6 +37,9 @@ export interface Session {
         status: string;
         scanned_at?: string;
         target_member_ids?: number[] | null;
+        raw_data?: {
+            feedback_detail?: { member_id: number; name: string; commented: boolean; is_self: boolean; comments?: string[] }[];
+        } | null;
     }[];
     finalized_at?: string | null;
     config?: Record<string, any>;

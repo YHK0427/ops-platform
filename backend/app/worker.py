@@ -81,7 +81,7 @@ async def task_sync_cafe_boards(ctx):
         results = []
         for board_type, menu_id in [
             ("REVIEW",   settings.NAVER_CAFE_MENU_REVIEW),
-            ("HOMEWORK", settings.NAVER_CAFE_MENU_HOMEWORK),
+            ("PPT",      settings.NAVER_CAFE_MENU_PPT),
             ("VIDEO",    settings.NAVER_CAFE_MENU_VIDEO),
         ]:
             r = await sync_board_to_db(board_type, menu_id, req_session, members, db)

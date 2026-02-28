@@ -77,13 +77,13 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                 {trigger || (
                     <Button variant="outline">
                         <Trophy className="w-4 h-4 mr-2" />
-                        Grant Merit
+                        상점 부여
                     </Button>
                 )}
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
-                    <DialogTitle>Grant Merit (상점 부여)</DialogTitle>
+                    <DialogTitle>상점 부여</DialogTitle>
                     <DialogDescription>
                         우수 활동 멤버에게 상점을 부여합니다.
                     </DialogDescription>
@@ -91,7 +91,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                 <div className="grid gap-4 py-4">
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="score" className="text-right">
-                            Score
+                            점수
                         </Label>
                         <Input
                             id="score"
@@ -103,19 +103,19 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                     </div>
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="reason" className="text-right">
-                            Reason
+                            사유
                         </Label>
                         <Input
                             id="reason"
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
-                            placeholder="e.g. Best Question"
+                            placeholder="예: 우수 질문"
                             className="col-span-3"
                         />
                     </div>
                     {!preselectedMemberId && (
                         <div className="space-y-2">
-                            <Label>Select Members ({selectedMembers.length})</Label>
+                            <Label>멤버 선택 ({selectedMembers.length})</Label>
                             {teams && teams.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5">
                                     {teams.map((team) => {
@@ -151,7 +151,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                 <DialogFooter>
                     <Button onClick={handleSubmit} disabled={isPending || effectiveMembers.length === 0}>
                         {isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                        Grant
+                        부여
                     </Button>
                 </DialogFooter>
             </DialogContent>

@@ -4,7 +4,6 @@ import { Search, Filter } from "lucide-react";
 import { useMembers } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ScoreDisplay } from "@/components/ScoreDisplay";
 import { MemberAddSheet } from "@/components/MemberAddSheet";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,7 +38,7 @@ export default function Members() {
     return (
         <div className="flex flex-col h-full">
             <PageHeader
-                title="Members"
+                title="멤버"
                 subtitle={`총 ${members?.length || 0}명의 멤버`}
                 actions={<MemberAddSheet />}
             />
@@ -81,23 +80,26 @@ export default function Members() {
                     <Table>
                         <TableHeader className="bg-[var(--color-surface)] hover:bg-[var(--color-surface)]">
                             <TableRow className="border-b-[var(--color-border)] hover:bg-transparent">
-                                <TableHead className="w-[100px] text-[var(--color-text-muted)]">ID</TableHead>
+                                <TableHead className="w-[60px] text-[var(--color-text-muted)]">ID</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">이름 / 이메일</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">태그</TableHead>
-                                <TableHead className="text-center text-[var(--color-text-muted)]">현황 (Dep/Score)</TableHead>
+                                <TableHead className="text-right text-[var(--color-text-muted)]">보증금</TableHead>
+                                <TableHead className="text-right text-[var(--color-text-muted)]">상점</TableHead>
+                                <TableHead className="text-right text-[var(--color-text-muted)]">벌점</TableHead>
+                                <TableHead className="text-right text-[var(--color-text-muted)]">순점수</TableHead>
                                 <TableHead className="text-right text-[var(--color-text-muted)]">가입일</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="h-24 text-center text-[var(--color-text-muted)]">
-                                        Loading members...
+                                    <TableCell colSpan={8} className="h-24 text-center text-[var(--color-text-muted)]">
+                                        로딩 중...
                                     </TableCell>
                                 </TableRow>
                             ) : filteredMembers?.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="h-32 text-center text-[var(--color-text-muted)]">
+                                    <TableCell colSpan={8} className="h-32 text-center text-[var(--color-text-muted)]">
                                         데이터가 없습니다.
                                     </TableCell>
                                 </TableRow>
@@ -127,18 +129,17 @@ export default function Members() {
                                                 ))}
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-center">
-                                            <div className="flex flex-col items-center gap-1">
-                                                <span className={(member.current_deposit || 0) < 10000 ? "text-rose-400 font-mono text-xs" : "text-[var(--color-text-secondary)] font-mono text-xs"}>
-                                                    ₩{(member.current_deposit || 0).toLocaleString()}
-                                                </span>
-                                                <ScoreDisplay
-                                                    totalPlus={member.total_plus_score || 0}
-                                                    totalMinus={member.total_minus_score || 0}
-                                                    netScore={member.net_score || 0}
-                                                    className="scale-90"
-                                                />
-                                            </div>
+                                        <TableCell className={`text-right font-mono text-sm ${(member.current_deposit || 0) < 10000 ? "text-rose-400" : "text-[var(--color-text-secondary)]"}`}>
+                                            ₩{(member.current_deposit || 0).toLocaleString()}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono text-sm text-green-400">
+                                            {member.total_plus_score || 0 ? `+${member.total_plus_score}` : "-"}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono text-sm text-rose-400">
+                                            {member.total_minus_score ? member.total_minus_score : "-"}
+                                        </TableCell>
+                                        <TableCell className={`text-right font-mono text-sm font-semibold ${(member.net_score || 0) > 0 ? "text-green-400" : (member.net_score || 0) < 0 ? "text-rose-400" : "text-gray-400"}`}>
+                                            {member.net_score || 0}
                                         </TableCell>
                                         <TableCell className="text-right text-xs text-[var(--color-text-muted)] font-mono">
                                             {new Date(member.created_at).toLocaleDateString()}

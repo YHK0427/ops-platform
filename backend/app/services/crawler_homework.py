@@ -17,10 +17,10 @@ from app.services.naver_session import get_valid_requests_session
 
 logger = logging.getLogger(__name__)
 
-# Only REVIEW and HOMEWORK scan board posts; FEEDBACK uses video board comments
+# REVIEW and PPT scan board posts; FEEDBACK uses video board comments
 BOARD_TYPE_TO_MENU = {
-    "REVIEW":   settings.NAVER_CAFE_MENU_REVIEW,
-    "HOMEWORK": settings.NAVER_CAFE_MENU_HOMEWORK,
+    "REVIEW": settings.NAVER_CAFE_MENU_REVIEW,
+    "PPT":    settings.NAVER_CAFE_MENU_PPT,
 }
 
 async def scan_homework_all(
@@ -59,10 +59,8 @@ async def scan_homework_all(
         # 게시글 목록 조회 (최근 50개 정도? 주차가 안 보이면 더 조회해야 할 수도 있음)
         # 여기서는 1페이지(20개) ~ 2페이지 정도 조회
         articles = []
-        for page in range(1, 11):  # 최대 10페이지 (200개)
+        for page in range(1, 14):  # 임시: 13페이지 (260개)
             data = fetch_board_articles(req_session, menu_id, page=page)
-            # data 구조 분석 필요 (네이버 카페 API 응답 구조)
-            # 보통 data['message']['result']['articleList'] 형태
             try:
                 items = data.get("result", {}).get("articleList", [])
                 if not items:
@@ -95,7 +93,7 @@ async def scan_homework_all(
                 # DB Upsert
                 await upsert_assignment(db, session_id, member.id, assign_type, "PASS")
                 total_processed += 1
-            elif assign_type == "HOMEWORK" and team_map:
+            elif assign_type == "PPT" and team_map:
                 # 멤버 매칭 실패 시, 팀명 매칭 시도 (PPT 게시판 업로드: "과제16주차_1팀")
                 team_name = _extract_team_from_title(title)
                 matched_team = team_map.get(team_name) if team_name else None
@@ -110,7 +108,7 @@ async def scan_homework_all(
             else:
                 logger.warning(f"Member not found for article: {title} (writer: {writer_name})")
 
-    # 결석 멤버의 REVIEW는 면제(EXEMPT) 처리
+    # 결석/공결 멤버의 REVIEW/FEEDBACK 면제(EXEMPT) 처리
     absent_stmt = select(Attendance.member_id).where(
         Attendance.session_id == session_id,
         Attendance.status.in_(("ABSENT", "EXCUSED")),
@@ -118,10 +116,36 @@ async def scan_homework_all(
     absent_result = await db.execute(absent_stmt)
     absent_ids = {row[0] for row in absent_result.all()}
 
+    # 공결 멤버만 별도 조회 (PPT EXEMPT용 — 결석자는 PPT 제출 의무)
+    excused_stmt = select(Attendance.member_id).where(
+        Attendance.session_id == session_id,
+        Attendance.status == "EXCUSED",
+    )
+    excused_result = await db.execute(excused_stmt)
+    excused_ids = {row[0] for row in excused_result.all()}
+
     if absent_ids:
         for mid in absent_ids:
             await upsert_assignment(db, session_id, mid, "REVIEW", "EXEMPT")
             logger.info(f"REVIEW EXEMPT for absent member_id={mid}")
+
+    # PPT: 공결(EXCUSED)만 EXEMPT (결석은 제출 의무)
+    if excused_ids:
+        for mid in excused_ids:
+            await upsert_assignment(db, session_id, mid, "PPT", "EXEMPT")
+            logger.info(f"PPT EXEMPT for excused member_id={mid}")
+
+    # PPT: 스캔 후에도 PENDING인 멤버 → MISSING (미제출)
+    pending_ppt_stmt = select(Assignment).where(
+        Assignment.session_id == session_id,
+        Assignment.type == "PPT",
+        Assignment.status == "PENDING",
+    )
+    pending_ppt_result = await db.execute(pending_ppt_stmt)
+    for ppt_a in pending_ppt_result.scalars().all():
+        ppt_a.status = "MISSING"
+        ppt_a.scanned_at = datetime.now()
+        logger.info(f"PPT MISSING for member_id={ppt_a.member_id}")
 
     await db.commit()
     return total_processed
@@ -171,6 +195,8 @@ async def scan_feedback_comments(
     member_to_articles: dict[int, set[int]] = {}
     # article_id → set[member_id]: 이 영상에 댓글을 단 멤버들
     article_commenters: dict[int, set[int]] = {}
+    # (commenter_id, article_id) → [comment_text, ...]: 댓글 원문
+    comment_texts: dict[tuple[int, int], list[str]] = {}
 
     for article in video_articles:
         article_id = article.get("articleId") or article.get("article_id")
@@ -178,14 +204,18 @@ async def scan_feedback_comments(
             continue
         article_id = int(article_id)
 
-        # 영상 저자 매칭 (영상 제목 형식 우선, fallback으로 일반 형식)
+        # 영상 저자 매칭: 제목에 멤버 이름이 포함되어 있는지로 판단
+        # 예: "연합UP 32기 11주차 발표-[시초윺]-김민지P(1분반 1번째)"
         title = article.get("subject", "")
-        extracted = extract_name_from_title(title, doc_type="VIDEO") or extract_name_from_title(title)
-        owner = match_member_by_name(extracted, members) if extracted else None
+        owner = None
+        for m in members:
+            if m.name in title:
+                owner = m
+                break
         if owner:
             member_to_articles.setdefault(owner.id, set()).add(article_id)
 
-        # 댓글 작성자 수집
+        # 댓글 작성자 수집 (텍스트 포함)
         try:
             detail = fetch_article_detail(req_session, article_id)
             comments = (
@@ -199,6 +229,12 @@ async def scan_feedback_comments(
                 commenter = match_member_by_name(nick, members)
                 if commenter:
                     commenters_for_article.add(commenter.id)
+                    # 댓글 텍스트 저장: (commenter_id, article_id) → text
+                    body_text = comment.get("content", "").strip()
+                    if body_text:
+                        comment_texts.setdefault(
+                            (commenter.id, article_id), []
+                        ).append(body_text)
             article_commenters[article_id] = commenters_for_article
         except Exception as e:
             logger.warning(f"Failed to fetch article {article_id}: {e}")
@@ -212,7 +248,10 @@ async def scan_feedback_comments(
     result = await db.execute(stmt)
     feedback_assignments = {a.member_id: a for a in result.scalars().all()}
 
-    # 4. 각 멤버별 FEEDBACK 상태 업데이트
+    # 4. 멤버 이름 맵 (raw_data에 이름 저장용)
+    member_name_map = {m.id: m.name for m in members}
+
+    # 5. 각 멤버별 FEEDBACK 상태 업데이트
     count = 0
     for member in members:
         assignment = feedback_assignments.get(member.id)
@@ -224,23 +263,37 @@ async def scan_feedback_comments(
         # 영상이 있는 대상만 체크 (영상 없는 대상은 확인 불가이므로 skip)
         targets_with_videos = [t for t in effective_targets if t in member_to_articles]
 
+        feedback_detail = []
         if not targets_with_videos:
-            # 체크 가능한 영상이 없음 → PASS (확인 불가)
             logger.warning(
                 f"Member {member.id}: no video articles for any effective target "
                 f"({effective_targets}) — marking PASS"
             )
             status = "PASS"
         else:
-            # 모든 target의 영상에 댓글을 달았는지 확인
-            all_covered = all(
-                member.id in article_commenters.get(article_id, set())
-                for target_id in targets_with_videos
-                for article_id in member_to_articles.get(target_id, set())
-            )
+            all_covered = True
+            for target_id in targets_with_videos:
+                commented = all(
+                    member.id in article_commenters.get(aid, set())
+                    for aid in member_to_articles.get(target_id, set())
+                )
+                if not commented:
+                    all_covered = False
+                # 해당 타겟의 영상에 작성한 댓글 텍스트 수집
+                texts: list[str] = []
+                for aid in member_to_articles.get(target_id, set()):
+                    texts.extend(comment_texts.get((member.id, aid), []))
+                feedback_detail.append({
+                    "member_id": target_id,
+                    "name": member_name_map.get(target_id, "?"),
+                    "commented": commented,
+                    "is_self": target_id == member.id,
+                    "comments": texts,
+                })
             status = "PASS" if all_covered else "MISSING"
 
-        await upsert_assignment(db, session_id, member.id, "FEEDBACK", status)
+        raw_data = {"feedback_detail": feedback_detail} if feedback_detail else None
+        await upsert_assignment(db, session_id, member.id, "FEEDBACK", status, raw_data=raw_data)
         count += 1
 
     await db.commit()
@@ -274,6 +327,7 @@ async def upsert_assignment(
     member_id: int,
     type_: str,
     status: str,
+    raw_data: dict | None = None,
 ):
     """Assignment 생성 또는 업데이트"""
     # 이미 존재하는지 확인
@@ -286,9 +340,11 @@ async def upsert_assignment(
     assignment = result.scalar_one_or_none()
 
     if assignment:
-        if assignment.status != status:
+        if assignment.status != status or raw_data is not None:
             assignment.status = status
             assignment.scanned_at = datetime.now()
+            if raw_data is not None:
+                assignment.raw_data = raw_data
     else:
         assignment = Assignment(
             session_id=session_id,
@@ -296,6 +352,7 @@ async def upsert_assignment(
             type=type_,
             status=status,
             scanned_at=datetime.now(),
+            raw_data=raw_data,
         )
         db.add(assignment)
 

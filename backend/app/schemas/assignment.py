@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Any, Optional, List
 
 from pydantic import BaseModel, Field
 
@@ -25,5 +25,6 @@ class AssignmentResponse(BaseModel):
     status: str
     scanned_at: Optional[datetime] = None
     target_member_ids: Optional[List[int]] = None
+    raw_data: Optional[dict[str, Any]] = None
 
     model_config = {"from_attributes": True}

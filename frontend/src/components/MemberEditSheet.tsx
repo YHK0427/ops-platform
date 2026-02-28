@@ -73,7 +73,7 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent className="bg-[var(--color-elevated)] border-l-[var(--color-border)] text-[var(--color-text-primary)]">
                 <SheetHeader>
-                    <SheetTitle className="text-white">Edit Member</SheetTitle>
+                    <SheetTitle className="text-white">멤버 수정</SheetTitle>
                     <SheetDescription>
                         멤버 정보를 수정합니다.
                     </SheetDescription>
@@ -81,7 +81,7 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
 
                 <div className="grid gap-6 py-6">
                     <div className="grid gap-2">
-                        <Label htmlFor="edit-name">Name</Label>
+                        <Label htmlFor="edit-name">이름</Label>
                         <Input
                             id="edit-name"
                             value={name}
@@ -92,7 +92,7 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="edit-email">Email</Label>
+                        <Label htmlFor="edit-email">이메일</Label>
                         <Input
                             id="edit-email"
                             type="email"
@@ -104,7 +104,7 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
                     </div>
 
                     <div className="grid gap-2">
-                        <Label>Tags</Label>
+                        <Label>태그</Label>
                         <div className="flex flex-wrap gap-2 mb-2">
                             {SUGGESTED_TAGS.map((tag) => (
                                 <button
@@ -127,7 +127,7 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
                                 className="bg-[var(--color-surface)] border-[var(--color-border)] h-8 text-xs"
                                 onKeyDown={(e) => e.key === "Enter" && addCustomTag()}
                             />
-                            <Button size="sm" variant="outline" onClick={addCustomTag} className="h-8">Add</Button>
+                            <Button size="sm" variant="outline" onClick={addCustomTag} className="h-8">추가</Button>
                         </div>
 
                         {tags.length > 0 && (
@@ -149,7 +149,7 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
                         disabled={!name || !email || updateMutation.isPending}
                         className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white"
                     >
-                        {updateMutation.isPending ? "Saving..." : "Save Changes"}
+                        {updateMutation.isPending ? "저장 중..." : "저장"}
                     </Button>
                 </SheetFooter>
             </SheetContent>

@@ -18,9 +18,9 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-    { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
-    { label: "Members", to: "/members", icon: Users },
-    { label: "Ledger", to: "/ledger", icon: BookOpen },
+    { label: "대시보드", to: "/dashboard", icon: LayoutDashboard },
+    { label: "멤버", to: "/members", icon: Users },
+    { label: "원장", to: "/ledger", icon: BookOpen },
 ];
 
 export function Sidebar() {
@@ -71,7 +71,7 @@ export function Sidebar() {
                 {/* Sessions divider */}
                 <div className="pt-4 pb-1">
                     <p className="px-3 text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
-                        Sessions
+                        세션
                     </p>
                 </div>
                 <button
@@ -79,7 +79,7 @@ export function Sidebar() {
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-hover)] transition-colors"
                 >
                     <Plus className="w-4 h-4" />
-                    New Session
+                    새 세션
                 </button>
                 <NavLink
                     to="/sessions"
@@ -93,7 +93,7 @@ export function Sidebar() {
                     }
                 >
                     <CalendarDays className="w-4 h-4" />
-                    All Sessions
+                    전체 세션
                 </NavLink>
             </nav>
 
@@ -105,7 +105,7 @@ export function Sidebar() {
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-rose-400 hover:bg-rose-500/5 transition-colors"
                     >
                         <LogOut className="w-4 h-4" />
-                        Logout
+                        로그아웃
                     </button>
                 )}
             </div>

@@ -140,11 +140,11 @@ def match_member_by_name(
     for m in members:
         if m.name == extracted_name:
             return m
-            
-    # 2. Initial 일치 (예: "KMJ")
-    # extracted_name이 영어라면?
-    
-    # 3. 부분 일치 (생략 - 오매칭 방지)
+
+    # 2. 포함 일치: 닉네임에 멤버 이름이 포함 (예: "강명서P" → "강명서")
+    for m in members:
+        if m.name in extracted_name:
+            return m
 
     return None
 
