@@ -6,8 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from sqlalchemy.orm.attributes import flag_modified
+
 from app.models import Ledger, Member, Session, Team, TeamHistory
 from app.services.penalty_engine import PenaltyEngine
+from app.services.streak_checker import check_attendance_streaks
 
 
 class SessionAlreadyFinalizedError(Exception):
@@ -18,6 +21,7 @@ async def finalize_session(
     session_id: int,
     db: AsyncSession,
     overrides: Optional[list[dict[str, Any]]] = None,
+    skip_merit_indices: Optional[list[int]] = None,
 ):
     """
     세션 마감 처리 (Finalize)
@@ -114,6 +118,63 @@ async def finalize_session(
                 description=p.description, # "LATE_UNDER10/..."
                 created_at=now
             ))
+
+    # ── Merit 적용 ──────────────────────────────────────────────────────────
+    skip_merits = set(skip_merit_indices or [])
+
+    # 1) Auto merits (streak)
+    streak_result = await check_attendance_streaks(db, session_id)
+    auto_merits = streak_result["merit_items"]  # [{member_id, member_name, score_delta, description}]
+
+    # 2) Manual staged merits
+    staged_merits = (session.config or {}).get("staged_merits", [])
+    manual_merits = [
+        {
+            "member_id": sm["member_id"],
+            "score_delta": sm["score_delta"],
+            "description": sm["reason"],
+        }
+        for sm in staged_merits
+    ]
+
+    # 3) 합산 (auto 먼저, manual 뒤)
+    all_merits = auto_merits + manual_merits
+
+    # 4) 멤버 조회 (merit 대상)
+    merit_member_ids = {m["member_id"] for m in all_merits}
+    merit_members_map: dict[int, Member] = {}
+    if merit_member_ids:
+        stmt_merit_members = select(Member).where(Member.id.in_(merit_member_ids))
+        result_mm = await db.execute(stmt_merit_members)
+        merit_members_map = {m.id: m for m in result_mm.scalars().all()}
+
+    for idx, merit in enumerate(all_merits):
+        if idx in skip_merits:
+            continue
+
+        member = merit_members_map.get(merit["member_id"])
+        if not member:
+            continue
+
+        member.total_plus_score += merit["score_delta"]
+        member.net_score = member.total_plus_score + member.total_minus_score
+
+        db.add(Ledger(
+            member_id=member.id,
+            session_id=session_id,
+            type="MERIT",
+            amount_krw=0,
+            score_delta=merit["score_delta"],
+            deposit_after=member.current_deposit,
+            description=merit["description"],
+            created_at=now,
+        ))
+
+    # staged_merits 초기화
+    config = session.config or {}
+    config["staged_merits"] = []
+    session.config = config
+    flag_modified(session, "config")
 
     # Team History 기록 (TEAM 세션인 경우)
     if session.type == "TEAM" and session.teams:

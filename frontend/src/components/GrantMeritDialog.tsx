@@ -12,7 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Trophy, Loader2 } from "lucide-react";
-import { useGiveMerit, useMembers } from "@/hooks";
+import { useGiveMerit, useMembers, useAddStagedMerit } from "@/hooks";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface TeamInfo {
@@ -33,27 +33,40 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
     const [reason, setReason] = useState("");
     const [score, setScore] = useState(1);
 
-    const { data: members } = useMembers(true); // Active members
-    const { mutate: giveMerit, isPending } = useGiveMerit();
+    const { data: members } = useMembers(true);
+    // Staged API for session context, direct API for non-session (ledger/member page)
+    const { mutate: addStagedMerit, isPending: isStagedPending } = useAddStagedMerit();
+    const { mutate: giveMerit, isPending: isDirectPending } = useGiveMerit();
 
+    const isPending = sessionId != null ? isStagedPending : isDirectPending;
     const effectiveMembers = preselectedMemberId ? [preselectedMemberId] : selectedMembers;
 
     const handleSubmit = () => {
         if (effectiveMembers.length === 0) return;
 
-        giveMerit({
-            member_ids: effectiveMembers,
-            score_delta: score,
-            reason,
-            ...(sessionId != null ? { session_id: sessionId } : {}),
-        }, {
-            onSuccess: () => {
-                setOpen(false);
-                setSelectedMembers([]);
-                setReason("");
-                setScore(1);
-            }
-        });
+        const onSuccess = () => {
+            setOpen(false);
+            setSelectedMembers([]);
+            setReason("");
+            setScore(1);
+        };
+
+        if (sessionId != null) {
+            // Staged merit (settlement flow)
+            addStagedMerit({
+                sessionId,
+                member_ids: effectiveMembers,
+                score_delta: score,
+                reason,
+            }, { onSuccess });
+        } else {
+            // Direct merit (ledger/member page)
+            giveMerit({
+                member_ids: effectiveMembers,
+                score_delta: score,
+                reason,
+            }, { onSuccess });
+        }
     };
 
     const toggleMember = (id: number) => {
@@ -83,9 +96,11 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
-                    <DialogTitle>상점 부여</DialogTitle>
+                    <DialogTitle>{sessionId != null ? "상점 추가 (Staged)" : "상점 부여"}</DialogTitle>
                     <DialogDescription>
-                        우수 활동 멤버에게 상점을 부여합니다.
+                        {sessionId != null
+                            ? "Finalize 시 일괄 적용됩니다."
+                            : "우수 활동 멤버에게 상점을 부여합니다."}
                     </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -151,7 +166,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                 <DialogFooter>
                     <Button onClick={handleSubmit} disabled={isPending || effectiveMembers.length === 0}>
                         {isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                        부여
+                        {sessionId != null ? "추가" : "부여"}
                     </Button>
                 </DialogFooter>
             </DialogContent>

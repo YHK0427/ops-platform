@@ -49,6 +49,7 @@ export function useMembers(activeOnly = true) {
             });
             return data;
         },
+        refetchInterval: 30_000,
     });
 }
 
@@ -60,16 +61,6 @@ export function useMember(id: number) {
             return data;
         },
         enabled: !!id,
-    });
-}
-
-export function useStreakCandidates() {
-    return useQuery({
-        queryKey: [...membersKeys.all, "streak-candidates"],
-        queryFn: async () => {
-            const { data } = await api.get<Member[]>("/members/streak-candidates");
-            return data;
-        },
     });
 }
 

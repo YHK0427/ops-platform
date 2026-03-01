@@ -1,15 +1,15 @@
-import { useState, useEffect, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RefreshCw, Search, Loader2, CheckCircle2, XCircle, Check, X, MessageSquare } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { useScanHomework, useCrawlerTask } from "@/hooks/useCrawler";
+import { useScanHomework } from "@/hooks/useCrawler";
+import { useSessionTask } from "@/hooks/useSessionTask";
 import type { Session } from "@/hooks/useSessions";
 import { useMembers } from "@/hooks/useMembers";
 
@@ -19,13 +19,20 @@ const TYPE_LABEL: Record<string, string> = {
     FEEDBACK: "Feedback",
 };
 
-const STATUS_CYCLE: Record<string, string> = {
-    PENDING: "PASS",
-    PASS:    "LATE",
-    LATE:    "MISSING",
-    MISSING: "EXEMPT",
-    EXEMPT:  "PASS",
-    FAIL:    "PASS",
+const STATUS_OPTIONS = ["PASS", "MISSING", "EXEMPT", "PENDING"] as const;
+
+const STATUS_LABEL: Record<string, string> = {
+    PASS:    "제출완료",
+    MISSING: "미제출(확정)",
+    EXEMPT:  "면제",
+    PENDING: "미확인",
+};
+
+const STATUS_STYLE: Record<string, string> = {
+    PASS:    "text-green-500",
+    MISSING: "text-red-500",
+    EXEMPT:  "text-gray-400",
+    PENDING: "text-blue-400",
 };
 
 export function PostTab() {
@@ -34,20 +41,10 @@ export function PostTab() {
 
     const queryClient = useQueryClient();
     const scanHomeworkMutation = useScanHomework();
-    const [taskId, setTaskId] = useState<string | null>(null);
-    const { data: taskStatus } = useCrawlerTask(taskId);
+    const { setTaskId, taskStatus } = useSessionTask(session.id, "homework-scan");
     const { data: members } = useMembers();
 
     const isPolling = taskStatus?.status === "queued" || taskStatus?.status === "in_progress";
-
-    // Auto-refresh session data when scan task completes
-    const prevTaskStatus = useRef<string | undefined>(undefined);
-    useEffect(() => {
-        if (prevTaskStatus.current !== "complete" && taskStatus?.status === "complete") {
-            queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
-        }
-        prevTaskStatus.current = taskStatus?.status;
-    }, [taskStatus?.status]);
 
     // Build row list: TEAM uses teams.members, INDIVIDUAL uses attendances
     const rows: { id: number; name: string; teamName: string; teamId: number | null }[] =
@@ -69,7 +66,7 @@ export function PostTab() {
     // PPT_EMAIL은 PREP 탭에서 관리, 여기는 post-session 과제만
     const cfg = session.config || {};
     const activeTypes: string[] = [];
-    activeTypes.push("PPT");
+    if (cfg.has_ppt !== false) activeTypes.push("PPT");
     if (cfg.has_review !== false) activeTypes.push("REVIEW");
     if (cfg.has_feedback !== false) activeTypes.push("FEEDBACK");
 
@@ -91,19 +88,10 @@ export function PostTab() {
     };
 
 
-    const handleToggleStatus = async (assignment: any) => {
-        if (!assignment) {
-            toast.error("과제 데이터가 없습니다. (세션 상태 확인 필요)");
-            return;
-        }
-
-        const currentStatus = assignment.status;
-        const newStatus = STATUS_CYCLE[currentStatus] ?? "PASS";
-
+    const handleStatusChange = async (assignmentId: number, newStatus: string) => {
         try {
-            await api.patch(`/assignments/${assignment.id}`, { status: newStatus });
+            await api.patch(`/assignments/${assignmentId}`, { status: newStatus });
             await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
-            toast.success(`상태 변경: ${newStatus}`);
         } catch (e) {
             toast.error("상태 변경 실패");
         }
@@ -146,7 +134,7 @@ export function PostTab() {
             <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                 <CardHeader>
                     <CardTitle className="text-lg">Assignment Status</CardTitle>
-                    <CardDescription>배지를 클릭해 수동 변경: PENDING → PASS → LATE → MISSING (스캔 없이도 수동 설정 가능)</CardDescription>
+                    <CardDescription>드롭다운으로 상태를 직접 변경할 수 있습니다.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
@@ -179,21 +167,25 @@ export function PostTab() {
                                             return (
                                                 <TableCell key={type} className="text-center">
                                                     <div className="flex flex-col items-center gap-1">
-                                                        <Badge
-                                                            variant="outline"
-                                                            title={assignment ? "클릭해서 상태 변경" : "과제 데이터 없음"}
-                                                            className={`cursor-pointer hover:opacity-80 transition-opacity select-none ${
-                                                                status === "PASS" ? "bg-green-500/10 text-green-500 border-green-500/50" :
-                                                                status === "MISSING" ? "bg-red-500/10 text-red-500 border-red-500/50" :
-                                                                status === "LATE" ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/50" :
-                                                                status === "EXEMPT" ? "bg-gray-500/10 text-gray-400 border-gray-500/50" :
-                                                                status === "PENDING" ? "bg-blue-900/30 text-blue-400 border-blue-700 hover:bg-blue-800/30" :
-                                                                "bg-gray-800 text-gray-500 border-gray-800"
-                                                            }`}
-                                                            onClick={() => handleToggleStatus(assignment)}
-                                                        >
-                                                            {status}
-                                                        </Badge>
+                                                        {assignment ? (
+                                                            <Select
+                                                                value={status}
+                                                                onValueChange={(val) => handleStatusChange(assignment.id, val)}
+                                                            >
+                                                                <SelectTrigger className={`h-7 w-[100px] text-xs border-[var(--color-border)] bg-transparent ${STATUS_STYLE[status] ?? "text-gray-500"}`}>
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent className="bg-[var(--color-elevated)] border-[var(--color-border)]">
+                                                                    {STATUS_OPTIONS.map((opt) => (
+                                                                        <SelectItem key={opt} value={opt} className={`text-xs ${STATUS_STYLE[opt]}`}>
+                                                                            {STATUS_LABEL[opt] ?? opt}
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        ) : (
+                                                            <span className="text-gray-600 text-xs">—</span>
+                                                        )}
                                                         {feedbackDetail && feedbackDetail.length > 0 && (
                                                             <div className="flex flex-wrap justify-center gap-1 mt-0.5">
                                                                 {feedbackDetail.map((d) => {

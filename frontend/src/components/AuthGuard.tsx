@@ -1,8 +1,9 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 
 export function AuthGuard() {
     const { user, isLoading } = useAuth();
+    const location = useLocation();
 
     if (isLoading) {
         return (
@@ -14,6 +15,11 @@ export function AuthGuard() {
 
     if (!user) {
         return <Navigate to="/login" replace />;
+    }
+
+    // Admin-only routes
+    if (location.pathname.startsWith("/admin") && user.role !== "admin") {
+        return <Navigate to="/dashboard" replace />;
     }
 
     return <Outlet />;

@@ -73,6 +73,7 @@ export function useSession(id: number) {
             return data;
         },
         enabled: !!id,
+        refetchInterval: 5_000,
     });
 }
 
@@ -152,6 +153,19 @@ export interface SettlementPenalty {
     description: string;
 }
 
+export interface MeritPreviewItem {
+    member_id: number;
+    member_name: string;
+    score_delta: number;
+    description: string;
+    source: "streak" | "manual";
+}
+
+interface SettlementPreviewResponse {
+    penalties: SettlementPenalty[];
+    merits: MeritPreviewItem[];
+}
+
 export interface SessionStats {
     attendance_rate: number;
     attendance_present: number;
@@ -179,7 +193,7 @@ export function useSettlementPreview(sessionId: number) {
     return useQuery({
         queryKey: [...sessionsKeys.detail(sessionId), "settlement"],
         queryFn: async () => {
-            const { data } = await api.get<{ penalties: SettlementPenalty[] }>(`/sessions/${sessionId}/settlement-preview`);
+            const { data } = await api.get<SettlementPreviewResponse>(`/sessions/${sessionId}/settlement-preview`);
             return data;
         },
         enabled: !!sessionId,
@@ -189,8 +203,8 @@ export function useSettlementPreview(sessionId: number) {
 export function useFinalizeSession() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ sessionId, overrides }: { sessionId: number; overrides: any[] }) => {
-            const { data } = await api.post(`/sessions/${sessionId}/finalize`, { overrides });
+        mutationFn: async ({ sessionId, overrides, skip_merit_indices = [] }: { sessionId: number; overrides: any[]; skip_merit_indices?: number[] }) => {
+            const { data } = await api.post(`/sessions/${sessionId}/finalize`, { overrides, skip_merit_indices });
             return data;
         },
         onSuccess: () => {
@@ -233,6 +247,39 @@ export function useUpdateSessionConfig() {
         },
         onError: () => {
             toast.error("설정 업데이트 실패");
+        },
+    });
+}
+
+export function useAddStagedMerit() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ sessionId, member_ids, score_delta, reason }: { sessionId: number; member_ids: number[]; score_delta: number; reason: string }) => {
+            const { data } = await api.post(`/sessions/${sessionId}/staged-merits`, { member_ids, score_delta, reason });
+            return data;
+        },
+        onSuccess: (_, vars) => {
+            queryClient.invalidateQueries({ queryKey: [...sessionsKeys.detail(vars.sessionId), "settlement"] });
+            toast.success("상점이 추가되었습니다.");
+        },
+        onError: () => {
+            toast.error("상점 추가 실패");
+        },
+    });
+}
+
+export function useRemoveStagedMerit() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ sessionId, index }: { sessionId: number; index: number }) => {
+            await api.delete(`/sessions/${sessionId}/staged-merits/${index}`);
+        },
+        onSuccess: (_, vars) => {
+            queryClient.invalidateQueries({ queryKey: [...sessionsKeys.detail(vars.sessionId), "settlement"] });
+            toast.success("상점이 삭제되었습니다.");
+        },
+        onError: () => {
+            toast.error("상점 삭제 실패");
         },
     });
 }

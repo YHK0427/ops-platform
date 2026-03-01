@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Any, Literal
+from typing import Optional, Any, Literal, List
 from datetime import datetime
 
 class NaverSessionStatus(BaseModel):
@@ -27,8 +27,15 @@ class ScanPPTRequest(BaseModel):
 class ScanHomeworkRequest(BaseModel):
     session_id: int
 
+class VideoOrderItem(BaseModel):
+    id: str
+    name: str
+    presenter: str
+    order: int
+
 class VideoUploadRequest(BaseModel):
     session_id: int
+    videos: Optional[List[VideoOrderItem]] = None
 
 class NaverLoginRequest(BaseModel):
     username: str

@@ -107,10 +107,19 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                 <input
                                     type="checkbox"
                                     className="rounded border-gray-600 bg-gray-800 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                    checked={state.has_ppt}
+                                    onChange={(e) => onChange({ has_ppt: e.target.checked })}
+                                />
+                                <span className="text-sm">PPT 게시판 포함</span>
+                            </label>
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="rounded border-gray-600 bg-gray-800 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
                                     checked={state.has_review}
                                     onChange={(e) => onChange({ has_review: e.target.checked })}
                                 />
-                                <span className="text-sm">피어 리뷰 포함</span>
+                                <span className="text-sm">리뷰 포함</span>
                             </label>
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
@@ -119,7 +128,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                     checked={state.has_feedback}
                                     onChange={(e) => onChange({ has_feedback: e.target.checked })}
                                 />
-                                <span className="text-sm">훈수(피드백) 포함</span>
+                                <span className="text-sm">영상 피드백 포함</span>
                             </label>
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
@@ -133,7 +142,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                         </div>
                     </div>
 
-                    {(state.has_ppt_email || state.has_review || state.has_feedback) && (
+                    {(state.has_ppt_email || state.has_ppt || state.has_review || state.has_feedback) && (
                     <div className="space-y-3 pt-4 border-t border-[var(--color-border)]">
                         <Label>제출 기한 설정</Label>
                         <div className="grid grid-cols-2 gap-4">
@@ -157,7 +166,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                     </div>
                                 </>
                             )}
-                            {(state.has_review || state.has_feedback) && (
+                            {(state.has_ppt || state.has_review || state.has_feedback) && (
                                 <div className="space-y-1.5">
                                     <Label className="text-xs text-[var(--color-text-secondary)]">후속 과제 기한 (리뷰/PPT게시판/피드백)</Label>
                                     <Input

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -128,7 +129,19 @@ async def start_upload_videos(
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
-    job = await pool.enqueue_job("task_upload_videos", session_id=body.session_id)
+    videos_raw = None
+    if body.videos:
+        videos_raw = [v.model_dump() for v in body.videos]
+
+    job = await pool.enqueue_job("task_upload_videos", session_id=body.session_id, videos=videos_raw)
+
+    # 활성 태스크 Redis 등록 (다중 사용자 공유용, TTL 2시간)
+    redis = pool
+    try:
+        await redis.set(f"active_upload_task:{body.session_id}", job.job_id, ex=7200)
+    except Exception:
+        pass  # Redis 저장 실패해도 업로드는 진행
+
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 
@@ -142,25 +155,68 @@ async def get_task_status(
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
-        
+
     from arq.jobs import Job
     job = Job(task_id, pool)
     status = await job.status()
     info = await job.info()
-    
+
     result = None
     if status == "complete":
         try:
             result = await job.result()
         except Exception as e:
             result = str(e)
-            
+
+    # 진행 중인 태스크의 실시간 progress 조회
+    progress = None
+    if status in ("queued", "in_progress"):
+        try:
+            redis = pool
+            raw = await redis.get(f"upload_progress:{task_id}")
+            if raw:
+                progress = json.loads(raw)
+        except Exception:
+            pass
+
     return {
         "task_id": task_id,
         "status": status,
         "result": result,
+        "progress": progress,
         "enqueue_time": info.enqueue_time if info else None,
     }
+
+@router.get("/active-task/{session_id}")
+async def get_active_upload_task(
+    request: Request,
+    session_id: int,
+    _: str = Depends(get_current_user),
+):
+    """세션의 활성 업로드 태스크 ID 조회 (다중 사용자 공유)"""
+    pool = getattr(request.app.state, "arq_pool", None)
+    if not pool:
+        raise HTTPException(status_code=503, detail="ARQ pool not initialized")
+
+    try:
+        redis = pool
+        task_id = await redis.get(f"active_upload_task:{session_id}")
+        if task_id:
+            task_id = task_id if isinstance(task_id, str) else task_id.decode()
+            # 태스크가 아직 활성 상태인지 확인
+            from arq.jobs import Job
+            job = Job(task_id, pool)
+            status = await job.status()
+            if status in ("queued", "in_progress"):
+                return {"task_id": task_id, "status": status}
+            else:
+                # 완료/실패된 태스크는 정리
+                await redis.delete(f"active_upload_task:{session_id}")
+    except Exception:
+        pass
+
+    return {"task_id": None}
+
 
 @router.post("/sync-boards", response_model=CrawlerTaskResponse)
 async def trigger_board_sync(

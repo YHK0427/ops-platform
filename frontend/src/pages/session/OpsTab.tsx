@@ -3,11 +3,15 @@ import { Button } from "@/components/ui/button";
 import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
-import { useCrawlerTask, useUploadVideos, useSetFeedbackTargets, useDriveVideos } from "@/hooks";
+import { useUploadVideos, useSetFeedbackTargets, useDriveVideos, useActiveUploadTask } from "@/hooks";
+import type { VideoProgress, DriveVideoItem } from "@/hooks/useCrawler";
+import { crawlerKeys } from "@/hooks/useCrawler";
 import { useMembers } from "@/hooks/useMembers";
-import { useState, useMemo } from "react";
-import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Loader2, CheckCircle2, XCircle, Download, Upload } from "lucide-react";
 import type { Session } from "@/hooks/useSessions";
+import { useSessionTask } from "@/hooks/useSessionTask";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -16,12 +20,28 @@ import { cn } from "@/lib/utils";
 export default function OpsTab() {
     const { session } = useOutletContext<{ session: Session }>();
 
-    const [uploadTaskId, setUploadTaskId] = useState<string | null>(null);
+    const { taskId: uploadTaskId, setTaskId: setUploadTaskId, taskStatus } = useSessionTask(session.id, "video-upload");
     const { mutate: uploadVideos, isPending: isUploading } = useUploadVideos();
-    const { mutate: fetchDriveVideos, isPending: isLoadingDrive, data: driveVideos } = useDriveVideos();
-    const { data: taskStatus } = useCrawlerTask(uploadTaskId);
+    const { refetch: fetchDriveVideos, isFetching: isLoadingDrive, data: driveVideos } = useDriveVideos(session.id);
     const { mutate: setFeedbackTargets, isPending: isSettingTarget } = useSetFeedbackTargets();
     const { data: allMembers } = useMembers();
+    const { data: activeTask } = useActiveUploadTask(session.id);
+    const queryClient = useQueryClient();
+
+    // 순서 변경 시 React Query 캐시를 직접 업데이트 (탭 이동해도 유지됨)
+    const updateVideoOrder = useCallback((videoId: string, newOrder: number) => {
+        queryClient.setQueryData<DriveVideoItem[]>(
+            crawlerKeys.driveVideos(session.id),
+            (old) => old?.map(v => v.id === videoId ? { ...v, order: newOrder } : v),
+        );
+    }, [queryClient, session.id]);
+
+    // Auto-discover active upload task from other admins
+    useEffect(() => {
+        if (!uploadTaskId && activeTask?.task_id && activeTask.status && ["queued", "in_progress"].includes(activeTask.status)) {
+            setUploadTaskId(activeTask.task_id);
+        }
+    }, [activeTask, uploadTaskId]);
 
     // D+1 Warning Logic
     const sessionDate = new Date(session.date);
@@ -74,7 +94,7 @@ export default function OpsTab() {
     }, [feedbackAssignments, feedbackEligibleMemberIds, absentMemberIds]);
 
     const handleCafeUpload = () => {
-        uploadVideos({ sessionId: session.id }, {
+        uploadVideos({ sessionId: session.id, videos: driveVideos ?? undefined }, {
             onSuccess: (data) => {
                 toast.success("업로드 작업이 시작되었습니다.");
                 setUploadTaskId(data.task_id);
@@ -85,21 +105,72 @@ export default function OpsTab() {
 
     const renderTaskStatus = () => {
         if (!uploadTaskId || !taskStatus) return (
-            <div className="bg-[var(--color-base)] rounded-lg p-4 border border-[var(--color-border)] min-h-[100px] flex items-center justify-center text-[var(--color-text-muted)] text-sm">
-                Task status will appear here...
+            <div className="bg-[var(--color-base)] rounded-lg p-4 border border-[var(--color-border)] min-h-[60px] flex items-center justify-center text-[var(--color-text-muted)] text-sm">
+                업로드 상태가 여기에 표시됩니다.
             </div>
         );
+
+        const isActive = taskStatus.status === "in_progress" || taskStatus.status === "queued";
+        const progress = taskStatus.progress;
+        const result = taskStatus.result;
+
         return (
-            <div className="bg-[var(--color-base)] rounded-lg p-4 border border-[var(--color-border)] min-h-[100px] flex flex-col items-center justify-center text-sm gap-2">
-                {taskStatus.status === "in_progress" || taskStatus.status === "queued" ? (
-                    <Loader2 className="w-8 h-8 animate-spin text-[var(--color-accent)]" />
-                ) : taskStatus.status === "complete" ? (
-                    <CheckCircle2 className="w-8 h-8 text-green-500" />
-                ) : (
-                    <XCircle className="w-8 h-8 text-red-500" />
+            <div className="bg-[var(--color-base)] rounded-lg border border-[var(--color-border)] overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)]">
+                    {isActive ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-[var(--color-accent)]" />
+                    ) : taskStatus.status === "complete" ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    ) : (
+                        <XCircle className="w-4 h-4 text-red-500" />
+                    )}
+                    <span className="text-sm font-medium">
+                        {isActive ? "업로드 진행 중..." : taskStatus.status === "complete" ? "업로드 완료" : "업로드 실패"}
+                    </span>
+                    <span className="ml-auto text-xs text-[var(--color-text-muted)] font-mono">
+                        {uploadTaskId.slice(0, 8)}
+                    </span>
+                </div>
+
+                {/* Per-video progress */}
+                {progress && progress.length > 0 && (
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="text-[var(--color-text-muted)] text-xs border-b border-[var(--color-border)]">
+                                <th className="text-left px-4 py-1.5 w-[50px]">순서</th>
+                                <th className="text-left px-4 py-1.5">발표자</th>
+                                <th className="text-left px-4 py-1.5 w-[120px]">상태</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--color-border)]">
+                            {progress.map((item, idx) => (
+                                <tr key={idx} className="hover:bg-white/5">
+                                    <td className="px-4 py-1.5 text-xs tabular-nums text-[var(--color-text-muted)]">
+                                        {item.order === 9999 ? "-" : item.order}
+                                    </td>
+                                    <td className="px-4 py-1.5 text-gray-300 text-xs">{item.presenter}</td>
+                                    <td className="px-4 py-1.5">
+                                        <VideoStatusBadge status={item.status} error={item.error} />
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 )}
-                <div className="font-mono text-xs text-[var(--color-text-muted)]">Task ID: {uploadTaskId}</div>
-                <div className="font-bold">{taskStatus.status.toUpperCase()}</div>
+
+                {/* Final result summary */}
+                {taskStatus.status === "complete" && result && Array.isArray(result) && (
+                    <div className="px-4 py-2.5 border-t border-[var(--color-border)] text-xs">
+                        <span className="text-green-400">{result.filter((r: any) => r.success).length}</span>
+                        <span className="text-[var(--color-text-muted)]">/{result.length} 업로드 성공</span>
+                        {result.some((r: any) => !r.success) && (
+                            <span className="text-rose-400 ml-2">
+                                ({result.filter((r: any) => !r.success).length}건 실패)
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
         );
     };
@@ -140,7 +211,7 @@ export default function OpsTab() {
                     <div className="flex items-center gap-2">
                         <Button
                             variant="outline"
-                            onClick={() => fetchDriveVideos(session.id)}
+                            onClick={() => fetchDriveVideos()}
                             disabled={isLoadingDrive}
                             className="border-[var(--color-border)] hover:bg-white/5"
                         >
@@ -157,7 +228,7 @@ export default function OpsTab() {
                 </div>
 
                 {/* Drive Video List */}
-                {driveVideos !== undefined && (
+                {driveVideos && driveVideos.length > 0 && (
                     <div className="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
                         <div className="flex items-center gap-2 px-4 py-2 bg-gray-900/40 border-b border-[var(--color-border)]">
                             <Film className="w-4 h-4 text-[var(--color-accent)]" />
@@ -166,36 +237,45 @@ export default function OpsTab() {
                                 총 {driveVideos.length}개
                             </span>
                         </div>
-                        {driveVideos.length === 0 ? (
-                            <div className="py-8 text-center text-sm text-[var(--color-text-muted)]">
-                                드라이브에 영상이 없습니다.
-                            </div>
-                        ) : (
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">
-                                        <th className="text-left px-4 py-2 w-[60px]">순서</th>
-                                        <th className="text-left px-4 py-2">파일명</th>
-                                        <th className="text-left px-4 py-2 w-[120px]">발표자</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[var(--color-border)]">
-                                    {[...driveVideos]
-                                        .sort((a, b) => a.order - b.order)
-                                        .map((v) => (
-                                            <tr key={v.id} className="hover:bg-white/5">
-                                                <td className="px-4 py-2 font-mono text-[var(--color-text-muted)] text-xs">
-                                                    {v.order === 9999 ? "-" : `${v.order}번째`}
-                                                </td>
-                                                <td className="px-4 py-2 text-gray-300 font-mono text-xs truncate max-w-[300px]" title={v.name}>
-                                                    {v.name}
-                                                </td>
-                                                <td className="px-4 py-2 font-medium text-gray-200">{v.presenter}</td>
-                                            </tr>
-                                        ))}
-                                </tbody>
-                            </table>
-                        )}
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">
+                                    <th className="text-left px-4 py-2 w-[70px]">순서</th>
+                                    <th className="text-left px-4 py-2">파일명</th>
+                                    <th className="text-left px-4 py-2 w-[120px]">발표자</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--color-border)]">
+                                {[...driveVideos]
+                                    .sort((a, b) => a.order - b.order)
+                                    .map((v) => (
+                                        <tr key={v.id} className="hover:bg-white/5">
+                                            <td className="px-4 py-1.5">
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    className="w-14 bg-transparent border border-[var(--color-border)] rounded px-2 py-1 text-xs text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                    value={v.order === 9999 ? "" : v.order}
+                                                    placeholder="-"
+                                                    onChange={(e) => {
+                                                        const val = parseInt(e.target.value);
+                                                        updateVideoOrder(v.id, isNaN(val) ? 9999 : val);
+                                                    }}
+                                                />
+                                            </td>
+                                            <td className="px-4 py-1.5 text-gray-300 text-xs truncate max-w-[300px]" title={v.name}>
+                                                {v.name}
+                                            </td>
+                                            <td className="px-4 py-1.5 font-medium text-gray-200">{v.presenter}</td>
+                                        </tr>
+                                    ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                {driveVideos && driveVideos.length === 0 && (
+                    <div className="mb-4 py-8 text-center text-sm text-[var(--color-text-muted)] rounded-lg border border-[var(--color-border)]">
+                        드라이브에 영상이 없습니다.
                     </div>
                 )}
 
@@ -274,7 +354,7 @@ export default function OpsTab() {
                                             <span className={isUnassigned ? "text-rose-400" : "text-[var(--color-text-primary)]"}>
                                                 {name}
                                             </span>
-                                            <span className={`text-xs font-mono px-1.5 py-0.5 rounded border ${isUnassigned
+                                            <span className={`text-xs tabular-nums px-1.5 py-0.5 rounded border ${isUnassigned
                                                 ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
                                                 : "bg-green-500/10 text-green-400 border-green-500/20"
                                             }`}>
@@ -289,6 +369,26 @@ export default function OpsTab() {
                 </div>
             )}
         </div>
+    );
+}
+
+function VideoStatusBadge({ status, error }: { status: VideoProgress["status"]; error?: string | null }) {
+    const config: Record<string, { label: string; className: string; icon?: React.ReactNode }> = {
+        pending:     { label: "대기",       className: "bg-gray-500/10 text-gray-400 border-gray-500/20" },
+        downloading: { label: "다운로드 중", className: "bg-blue-500/10 text-blue-400 border-blue-500/20", icon: <Download className="w-3 h-3 animate-pulse" /> },
+        uploading:   { label: "업로드 중",   className: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20", icon: <Upload className="w-3 h-3 animate-pulse" /> },
+        done:        { label: "완료",       className: "bg-green-500/10 text-green-400 border-green-500/20", icon: <CheckCircle2 className="w-3 h-3" /> },
+        failed:      { label: "실패",       className: "bg-red-500/10 text-red-400 border-red-500/20", icon: <XCircle className="w-3 h-3" /> },
+    };
+    const c = config[status] ?? config.pending;
+    return (
+        <span
+            className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border ${c.className}`}
+            title={error ?? undefined}
+        >
+            {c.icon}
+            {c.label}
+        </span>
     );
 }
 

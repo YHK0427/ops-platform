@@ -8,16 +8,22 @@ import {
 import api, { setToken, getToken } from "@/lib/api";
 
 interface AuthUser {
-    id: number;
-    name: string;
-    email: string;
-    is_admin: boolean;
+    username: string;
+    role: "admin" | "manager" | "viewer";
+    display_name: string;
+}
+
+interface TotpPending {
+    token: string;
 }
 
 interface AuthContextValue {
     user: AuthUser | null;
     isLoading: boolean;
-    login: (email: string, password: string) => Promise<void>;
+    totpPending: TotpPending | null;
+    login: (username: string, password: string) => Promise<boolean>; // returns true if TOTP needed
+    verifyTotp: (code: string) => Promise<void>;
+    cancelTotp: () => void;
     logout: () => void;
 }
 
@@ -26,51 +32,70 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [totpPending, setTotpPending] = useState<TotpPending | null>(null);
 
     useEffect(() => {
-        const savedToken = getToken(); // reads from localStorage via the module-level init
+        const savedToken = getToken();
         if (!savedToken) {
             setIsLoading(false);
             return;
         }
-        // Token exists in localStorage: verify with backend
         api.get<AuthUser>("/members/me")
             .then(({ data }) => setUser(data))
             .catch((err) => {
-                // 401만 토큰 무효로 처리 (서버 오류/네트워크 오류는 토큰 유지)
                 if (err?.response?.status === 401) setToken(null);
             })
             .finally(() => setIsLoading(false));
     }, []);
 
-    const login = useCallback(async (email: string, password: string) => {
-        // 백엔드는 username="admin"을 기대함. 이메일 입력 시 매핑 처리
-        const usernameToSend = email === "admin@univpt.kr" ? "admin" : email;
+    const login = useCallback(async (username: string, password: string): Promise<boolean> => {
+        const { data } = await api.post<{
+            access_token: string | null;
+            requires_totp: boolean;
+            totp_pending_token: string | null;
+        }>("/auth/login", { username, password });
 
-        const payload = {
-            username: usernameToSend,
-            password: password
-        };
+        if (data.requires_totp && data.totp_pending_token) {
+            setTotpPending({ token: data.totp_pending_token });
+            return true; // TOTP needed
+        }
 
-        const { data } = await api.post<{ access_token: string }>(
-            "/auth/login",
-            payload
-        );
-
-        setToken(data.access_token);
-
-        const { data: me } = await api.get<AuthUser>("/members/me");
-        setUser(me);
+        if (data.access_token) {
+            setToken(data.access_token);
+            const { data: me } = await api.get<AuthUser>("/members/me");
+            setUser(me);
+        }
+        return false; // no TOTP needed, logged in
     }, []);
 
-    const logout = useCallback(() => {
+    const verifyTotp = useCallback(async (code: string) => {
+        if (!totpPending) throw new Error("No TOTP pending");
+
+        const { data } = await api.post<{
+            access_token: string | null;
+        }>("/auth/verify-totp", { token: totpPending.token, totp_code: code });
+
+        if (data.access_token) {
+            setTotpPending(null);
+            setToken(data.access_token);
+            const { data: me } = await api.get<AuthUser>("/members/me");
+            setUser(me);
+        }
+    }, [totpPending]);
+
+    const cancelTotp = useCallback(() => {
+        setTotpPending(null);
+    }, []);
+
+    const logout = useCallback(async () => {
+        try { await api.delete("/auth/logout"); } catch { /* ignore */ }
         setToken(null);
         setUser(null);
         window.location.href = "/login";
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+        <AuthContext.Provider value={{ user, isLoading, totpPending, login, verifyTotp, cancelTotp, logout }}>
             {children}
         </AuthContext.Provider>
     );

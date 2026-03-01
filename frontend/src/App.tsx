@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
@@ -18,6 +18,22 @@ import OpsTab from "@/pages/session/OpsTab";
 import { PostTab } from "@/pages/session/PostTab";
 import SettlementTab from "@/pages/session/SettlementTab";
 import TeamEditPage from "@/pages/session/TeamEditPage";
+import AdminUsers from "@/pages/AdminUsers";
+
+function SessionDefaultTab() {
+  const { session } = useOutletContext<{ session: { status: string } }>();
+  const tab = (() => {
+    switch (session?.status) {
+      case "SETUP": case "PREP": return "prep";
+      case "OPS": return "ops";
+      case "POST": return "post";
+      case "SETTLEMENT": return "settlement";
+      case "FINALIZED": return "settlement";
+      default: return "prep";
+    }
+  })();
+  return <Navigate to={tab} replace />;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,7 +77,7 @@ export default function App() {
                 <Route path="/sessions" element={<SessionList />} />
                 <Route path="/sessions/new" element={<SessionWizard />} />
                 <Route path="/sessions/:id" element={<SessionLayout />}>
-                  <Route index element={<Navigate to="prep" replace />} />
+                  <Route index element={<SessionDefaultTab />} />
                   <Route path="prep" element={<PrepTab />} />
                   <Route path="ops" element={<OpsTab />} />
                   <Route path="post" element={<PostTab />} />
@@ -69,6 +85,7 @@ export default function App() {
                   <Route path="team-edit" element={<TeamEditPage />} />
                 </Route>
                 <Route path="/ledger" element={<Ledger />} />
+                <Route path="/admin/users" element={<AdminUsers />} />
               </Route>
             </Route>
 

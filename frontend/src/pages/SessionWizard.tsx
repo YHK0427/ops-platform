@@ -17,6 +17,7 @@ export default function SessionWizard() {
         type: "TEAM",
         teams: {}, // { "unassigned": [id1, id2], "team1": [id3, id4] }
         has_ppt_email: true,
+        has_ppt: true,
         has_review: true,
         has_feedback: true,
         is_holiday: false,

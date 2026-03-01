@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { useLedger, useMembers, useGiveMerit, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
+import { useLedger, useMembers, useSessions, useGiveMerit, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { formatNumber } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -294,17 +294,20 @@ function CreateTransactionDialog() {
 export default function Ledger() {
     const [memberFilter, setMemberFilter] = useState("all");
     const [typeFilter, setTypeFilter] = useState("all");
+    const [sessionFilter, setSessionFilter] = useState("all");
     const [page, setPage] = useState(1);
     const LIMIT = 50;
 
     // Include inactive members so deactivated member names resolve correctly in the ledger
     const { data: members } = useMembers(false);
+    const { data: sessions } = useSessions();
     const memberMap = new Map();
     if (members) members.forEach((m: any) => memberMap.set(m.id, m.name));
 
     const { data: ledgerEntries, isLoading } = useLedger({
         member_id: memberFilter === "all" ? undefined : parseInt(memberFilter),
         type: typeFilter === "all" ? undefined : typeFilter,
+        session_id: sessionFilter === "all" ? undefined : parseInt(sessionFilter),
         page,
         limit: LIMIT,
     });
@@ -313,6 +316,7 @@ export default function Ledger() {
     // Reset page when filters change
     const handleMemberFilter = (v: string) => { setMemberFilter(v); setPage(1); };
     const handleTypeFilter = (v: string) => { setTypeFilter(v); setPage(1); };
+    const handleSessionFilter = (v: string) => { setSessionFilter(v); setPage(1); };
 
     return (
         <div className="flex flex-col h-full bg-[var(--color-base)] min-h-screen">
@@ -357,7 +361,21 @@ export default function Ledger() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        {/* Date Picker would go here */}
+                        <div className="w-[200px]">
+                            <Select value={sessionFilter} onValueChange={handleSessionFilter}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="세션 필터" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">전체 세션</SelectItem>
+                                    {sessions?.slice().sort((a, b) => b.week_num - a.week_num).map(s => (
+                                        <SelectItem key={s.id} value={s.id.toString()}>
+                                            {s.week_num}주차 — {s.title}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </CardContent>
                 </Card>
 

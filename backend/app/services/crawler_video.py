@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, List
+from typing import Any, List, Optional
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -14,8 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models import Session
 from app.services.naver_session import get_valid_requests_session
-from app.services.naver_session import _build_requests_session 
-# _build_requests_session은 Session 객체가 없으므로 
+from app.services.naver_session import _build_requests_session
+# _build_requests_session은 Session 객체가 없으므로
 # Playwright storage_state를 얻기 위해 DB조회 함수가 필요함.
 from sqlalchemy import select
 from app.models import NaverSession
@@ -189,7 +189,28 @@ async def _upload_single(page, video_path: str, cafe_title: str) -> bool:
         return False
 
 
-async def upload_all_videos(session_id: int, db: AsyncSession) -> List[dict]:
+async def _set_progress(redis, job_id: str, progress: list) -> None:
+    """Redis에 개별 영상 진행률 저장 (TTL 1시간)"""
+    if not redis or not job_id:
+        return
+    try:
+        await redis.set(
+            f"upload_progress:{job_id}",
+            json.dumps(progress, ensure_ascii=False),
+            ex=3600,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to set progress in Redis: {e}")
+
+
+async def upload_all_videos(
+    session_id: int,
+    db: AsyncSession,
+    *,
+    redis=None,
+    job_id: Optional[str] = None,
+    videos: Optional[List[dict]] = None,
+) -> List[dict]:
     """전체 비디오 업로드 프로세스"""
     # 세션 정보 조회
     session = await db.get(Session, session_id)
@@ -199,15 +220,33 @@ async def upload_all_videos(session_id: int, db: AsyncSession) -> List[dict]:
     # 네이버 세션 (Playwright용)
     storage = await _get_naver_storage_state(db)
 
-    # 드라이브 파일 목록 (세션 폴더 우선, 없으면 루트 폴더)
-    drive_folder_id = (session.config or {}).get("drive_folder_id")
-    if drive_folder_id:
-        drive_files = list_drive_videos_by_folder(drive_folder_id)
+    # 사용자가 지정한 영상 목록이 있으면 사용, 없으면 Drive에서 조회
+    if videos:
+        # 사용자가 보낸 videos: [{id, name, presenter, order}, ...]
+        drive_files = sorted(videos, key=lambda v: v.get("order", 9999))
     else:
-        drive_files = list_drive_videos(session.week_num)
+        drive_folder_id = (session.config or {}).get("drive_folder_id")
+        if drive_folder_id:
+            drive_files = list_drive_videos_by_folder(drive_folder_id)
+        else:
+            drive_files = list_drive_videos(session.week_num)
+
     if not drive_files:
         logger.warning(f"No videos found in Drive for week {session.week_num}")
         return []
+
+    # 초기 progress 생성
+    progress_list = []
+    for f in drive_files:
+        name = f.get("name", f.get("id", "unknown"))
+        progress_list.append({
+            "file": name,
+            "presenter": f.get("presenter", parse_presenter_name(name)),
+            "order": f.get("order", 9999),
+            "status": "pending",
+            "error": None,
+        })
+    await _set_progress(redis, job_id, progress_list)
 
     results = []
     tmp_dir = "/app/files/video"
@@ -215,42 +254,61 @@ async def upload_all_videos(session_id: int, db: AsyncSession) -> List[dict]:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        ctx = await browser.new_context(storage_state=storage)
-        
+        pw_ctx = await browser.new_context(storage_state=storage)
+
         # webdriver 감지 우회
-        await ctx.add_init_script(
+        await pw_ctx.add_init_script(
             "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
         )
-        
-        page = await ctx.new_page()
 
-        for drive_file in drive_files:
-            raw_name = drive_file["name"]
-            presenter = parse_presenter_name(raw_name)
-            
-            # 게시글 제목: {week}주차_{title}_{presenter}
-            cafe_title = f"{session.week_num}주차_{session.title}_{presenter}"
+        page = await pw_ctx.new_page()
+
+        for idx, drive_file in enumerate(drive_files):
+            raw_name = drive_file.get("name", drive_file.get("id", "unknown"))
+            presenter = drive_file.get("presenter", parse_presenter_name(raw_name))
+            file_id = drive_file.get("id", drive_file.get("file_id"))
+
+            # 게시글 제목: {week}주차_{title}_{presenter}({order}번째)
+            order = drive_file.get("order", 9999)
+            order_suffix = f"({order}번째)" if order != 9999 else ""
+            cafe_title = f"{session.week_num}주차_{session.title}_{presenter}{order_suffix}"
             tmp_path = os.path.join(tmp_dir, raw_name)
 
             logger.info(f"Processing video: {raw_name} -> {cafe_title}")
 
             try:
                 # 1. 다운로드
-                download_drive_file(drive_file["id"], tmp_path)
-                
+                progress_list[idx]["status"] = "downloading"
+                await _set_progress(redis, job_id, progress_list)
+
+                await asyncio.to_thread(download_drive_file, file_id, tmp_path)
+
                 # 2. 업로드
+                progress_list[idx]["status"] = "uploading"
+                await _set_progress(redis, job_id, progress_list)
+
                 ok = await _upload_single(page, tmp_path, cafe_title)
-                
+
+                if ok:
+                    progress_list[idx]["status"] = "done"
+                else:
+                    progress_list[idx]["status"] = "failed"
+                    progress_list[idx]["error"] = "업로드 실패"
+                await _set_progress(redis, job_id, progress_list)
+
                 results.append({"file": raw_name, "title": cafe_title, "success": ok})
                 logger.info(f"Upload result for {raw_name}: {ok}")
-                
+
                 if ok:
-                    await asyncio.sleep(10) # rate limit 방지
-                    
+                    await asyncio.sleep(10)  # rate limit 방지
+
             except Exception as e:
                 logger.error(f"Failed to process {raw_name}: {e}", exc_info=True)
+                progress_list[idx]["status"] = "failed"
+                progress_list[idx]["error"] = str(e)
+                await _set_progress(redis, job_id, progress_list)
                 results.append({"file": raw_name, "title": cafe_title, "success": False, "error": str(e)})
-            
+
             finally:
                 # 임시 파일 삭제
                 if os.path.exists(tmp_path):
@@ -260,5 +318,13 @@ async def upload_all_videos(session_id: int, db: AsyncSession) -> List[dict]:
                         pass
 
         await browser.close()
+
+    # 완료 후 Redis 정리
+    if redis and job_id:
+        try:
+            await redis.delete(f"upload_progress:{job_id}")
+            await redis.delete(f"active_upload_task:{session_id}")
+        except Exception:
+            pass
 
     return results

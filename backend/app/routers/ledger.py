@@ -53,7 +53,7 @@ async def get_ledger_entries(
 async def give_merit(
     req: MeritRequest,
     db: AsyncSession = Depends(get_db),
-    created_by: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     상점(Merit) 부여 (다수 멤버 가능)
@@ -83,7 +83,7 @@ async def give_merit(
             score_delta=req.score_delta,
             description=req.reason,
             deposit_after=member.current_deposit,
-            created_by=created_by,
+            created_by=current_user["username"],
             session_id=req.session_id,
         )
         db.add(entry)
@@ -101,7 +101,7 @@ async def give_merit(
 async def create_transaction(
     req: TransactionRequest,
     db: AsyncSession = Depends(get_db),
-    created_by: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     수동 입출금/벌금 처리
@@ -137,7 +137,7 @@ async def create_transaction(
         score_delta=req.score_delta,
         description=req.description,
         deposit_after=member.current_deposit,
-        created_by=created_by
+        created_by=current_user["username"]
     )
     db.add(entry)
     await db.commit()

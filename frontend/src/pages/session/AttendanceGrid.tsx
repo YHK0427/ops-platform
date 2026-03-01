@@ -65,18 +65,11 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
         }
     };
 
-    const handlePptEmailChange = async (assignmentId: number, currentStatus: string) => {
-        const PPT_CYCLE: Record<string, string> = {
-            PENDING: "PASS",
-            PASS: "LATE",
-            LATE: "EXEMPT",
-            EXEMPT: "PENDING",
-        };
-        const next = PPT_CYCLE[currentStatus] || "PENDING";
+    const handlePptEmailChange = async (assignmentId: number, newStatus: string) => {
         const key = `ppt_${assignmentId}`;
         setUpdating(prev => ({ ...prev, [key]: true }));
         try {
-            await api.patch(`/assignments/${assignmentId}`, { status: next });
+            await api.patch(`/assignments/${assignmentId}`, { status: newStatus });
             await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
         } catch (error) {
             console.error(error);
@@ -249,33 +242,44 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                             if (!pptAssignment) return <span className="text-gray-600 text-xs">-</span>;
 
                                             const statusColors: Record<string, string> = {
-                                                PENDING: "bg-gray-500/10 text-gray-400 border-gray-500/20",
-                                                PASS: "bg-green-500/10 text-green-400 border-green-500/20",
-                                                LATE: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-                                                MISSING: "bg-red-500/10 text-red-400 border-red-500/20",
-                                                EXEMPT: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+                                                PENDING: "text-gray-400",
+                                                PASS: "text-green-400",
+                                                LATE: "text-orange-400",
+                                                MISSING: "text-red-400",
+                                                EXEMPT: "text-blue-400",
                                             };
                                             const statusLabels: Record<string, string> = {
-                                                PENDING: "미제출",
+                                                PENDING: "미제출(임시)",
                                                 PASS: "제출완료",
                                                 LATE: "지각제출",
                                                 MISSING: "미제출(확정)",
                                                 EXEMPT: "면제",
                                             };
+                                            const pptOptions = ["PASS", "LATE", "MISSING", "EXEMPT", "PENDING"] as const;
 
                                             const pptKey = `ppt_${pptAssignment.id}`;
 
-                                            return (
-                                                <button
-                                                    onClick={() => isToggleable && handlePptEmailChange(pptAssignment.id, pptAssignment.status)}
-                                                    disabled={!isToggleable || updating[pptKey]}
-                                                    className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${
-                                                        isToggleable ? "cursor-pointer hover:opacity-80" : "cursor-default"
-                                                    } ${statusColors[pptAssignment.status] || statusColors.PENDING}`}
-                                                    title={isToggleable ? "클릭하여 상태 변경" : "팀 대표만 변경 가능"}
+                                            return isToggleable ? (
+                                                <Select
+                                                    value={pptAssignment.status}
+                                                    onValueChange={(val) => handlePptEmailChange(pptAssignment.id, val)}
+                                                    disabled={updating[pptKey]}
                                                 >
-                                                    {updating[pptKey] ? "..." : (statusLabels[pptAssignment.status] || pptAssignment.status)}
-                                                </button>
+                                                    <SelectTrigger className={`h-7 w-[110px] text-xs border-[var(--color-border)] bg-transparent ${statusColors[pptAssignment.status] || ""}`}>
+                                                        <SelectValue>{updating[pptKey] ? "..." : (statusLabels[pptAssignment.status] || pptAssignment.status)}</SelectValue>
+                                                    </SelectTrigger>
+                                                    <SelectContent className="bg-[var(--color-elevated)] border-[var(--color-border)]">
+                                                        {pptOptions.map((opt) => (
+                                                            <SelectItem key={opt} value={opt} className={`text-xs ${statusColors[opt]}`}>
+                                                                {statusLabels[opt]}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            ) : (
+                                                <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[pptAssignment.status] || ""}`}>
+                                                    {statusLabels[pptAssignment.status] || pptAssignment.status}
+                                                </span>
                                             );
                                         })()}
                                     </TableCell>

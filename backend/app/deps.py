@@ -34,6 +34,26 @@ async def is_token_blacklisted(token: str) -> bool:
     return await redis.exists(f"blacklist:{token}") > 0
 
 
+async def check_login_rate(ip: str) -> None:
+    """Redis 기반 로그인 시도 횟수 제한 (10회/5분)"""
+    redis = _get_redis_client()
+    key = f"login_attempts:{ip}"
+    attempts = await redis.incr(key)
+    if attempts == 1:
+        await redis.expire(key, 300)  # 5분 윈도우
+    if attempts > 10:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="로그인 시도 횟수 초과. 5분 후 다시 시도하세요.",
+        )
+
+
+async def clear_login_rate(ip: str) -> None:
+    """로그인 성공 시 카운터 초기화"""
+    redis = _get_redis_client()
+    await redis.delete(f"login_attempts:{ip}")
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """AsyncSession 의존성"""
     async with AsyncSessionLocal() as session:
@@ -43,8 +63,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
-    """JWT 검증 의존성 — 유효한 토큰이면 username 반환"""
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    """JWT 검증 의존성 — 유효한 토큰이면 {"username": str, "role": str} 반환"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="인증 정보가 유효하지 않습니다",
@@ -60,11 +80,22 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
             algorithms=[settings.JWT_ALGORITHM],
         )
         username: str | None = payload.get("sub")
+        role: str | None = payload.get("role")
         if username is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    return username
+    return {"username": username, "role": role or "viewer"}
+
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """admin 역할 필수"""
+    if user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다",
+        )
+    return user
 
 
 def verify_password(plain: str, hashed: str) -> bool:

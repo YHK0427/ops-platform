@@ -7,6 +7,7 @@ import {
     LogOut,
     Plus,
     CalendarDays,
+    Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -96,6 +97,31 @@ export function Sidebar() {
                     전체 세션
                 </NavLink>
             </nav>
+
+            {/* Admin */}
+            {user?.role === "admin" && (
+                <div className="px-3">
+                    <div className="pt-4 pb-1">
+                        <p className="px-3 text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+                            관리
+                        </p>
+                    </div>
+                    <NavLink
+                        to="/admin/users"
+                        className={({ isActive }) =>
+                            cn(
+                                "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                                isActive
+                                    ? "text-white bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent"
+                                    : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-hover)]"
+                            )
+                        }
+                    >
+                        <Shield className="w-4 h-4" />
+                        사용자 관리
+                    </NavLink>
+                </div>
+            )}
 
             {/* Footer */}
             <div className="px-3 py-4 border-t border-[var(--color-border-subtle)] space-y-1">

@@ -10,6 +10,7 @@ from app.schemas.assignment import AssignmentResponse
 
 class SessionConfig(BaseModel):
     has_ppt_email: bool = True
+    has_ppt: bool = True
     has_review: bool = True
     has_feedback: bool = True
     is_holiday: bool = False
@@ -64,9 +65,22 @@ class PenaltyItemResponse(BaseModel):
     deposit_delta: int
     description: str
 
+class MeritItemResponse(BaseModel):
+    member_id: int
+    member_name: str
+    score_delta: int
+    description: str
+    source: str  # "streak" | "manual"
+
 class SettlementPreviewResponse(BaseModel):
     session_id: int
     penalties: list[PenaltyItemResponse]
+    merits: list[MeritItemResponse] = []
+
+class StagedMeritCreate(BaseModel):
+    member_ids: list[int]
+    score_delta: int = Field(ge=1)
+    reason: str
 
 class SessionFinalizeOverride(BaseModel):
     member_id: int
@@ -74,6 +88,7 @@ class SessionFinalizeOverride(BaseModel):
 
 class SessionFinalizeRequest(BaseModel):
     overrides: list[SessionFinalizeOverride] = []
+    skip_merit_indices: list[int] = []
 
 class SessionFinalizeResponse(BaseModel):
     status: str

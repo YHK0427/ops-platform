@@ -9,6 +9,7 @@ export interface WizardState {
 
     // Config Options
     has_ppt_email: boolean;
+    has_ppt: boolean;
     has_review: boolean;
     has_feedback: boolean;
     is_holiday: boolean;

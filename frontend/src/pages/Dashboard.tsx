@@ -12,7 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { WarningBanner } from "@/components/WarningBanner";
 import { StatusBadge } from "@/components/StatusBadge";
-import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, useStreakCandidates, useImportNaverSession, useNaverLogin, useCrawlerTask, crawlerKeys } from "@/hooks";
+import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, useImportNaverSession, useNaverLogin, useCrawlerTask, crawlerKeys } from "@/hooks";
 import { toast } from "sonner";
 
 function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
@@ -182,8 +182,6 @@ export default function Dashboard() {
 
     // Additional data for dashboard
     const { data: stats } = useSessionStats(session?.id || 0);
-    const { data: streakCandidates } = useStreakCandidates();
-
     // Derived values
     const isNaverExpired = !isNaverLoading && naverStatus ? !naverStatus.is_valid : false;
 
@@ -213,60 +211,6 @@ export default function Dashboard() {
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
                 {/* 1. Naver Session Card */}
                 <NaverSessionCard naverStatus={naverStatus} />
-
-                {/* 2. Warning Stack */}
-                <div className="space-y-4">
-                    <h2 className="text-sm font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                        Required Actions
-                    </h2>
-
-                    <div className="space-y-2">
-                        {isNaverExpired && (
-                            <WarningBanner
-                                level="error"
-                                title="Naver Login Expired"
-                                message="네이버 카페 자동화 기능이 제한됩니다. 상단 Naver Session 카드에서 재로그인해주세요."
-                            />
-                        )}
-
-                        {lowDepositMembers.map((m) => (
-                            <WarningBanner
-                                key={`deposit-${m.id}`}
-                                level="warning"
-                                message={`[디파짓 부족] ${m.name}님의 잔액이 ${(m.current_deposit || 0).toLocaleString()}원입니다. (최저 10,000원)`}
-                            />
-                        ))}
-
-                        {riskScoreMembers.length > 0 && (
-                            <>
-                                {riskScoreMembers.map(member => (
-                                    <WarningBanner
-                                        key={`score-${member.id}`}
-                                        level={(member.net_score || 0) <= -12 ? "error" : "warning"}
-                                        title={(member.net_score || 0) <= -12 ? "Eviction Risk" : "Score Warning"}
-                                        message={`[점수 경고] ${member.name}님의 점수가 ${member.net_score || 0}점입니다. ${(member.net_score || 0) <= -12 ? "(퇴출 대상)" : "(경고 단계)"}`}
-                                    />
-                                ))}
-                            </>
-                        )}
-
-                        {streakCandidates && streakCandidates.length > 0 && (
-                            <WarningBanner
-                                level="info"
-                                title="Streak Candidates"
-                                message={`${streakCandidates.length}명의 멤버가 4회 연속 출석을 달성했습니다. (상점 부여 필요)`}
-                                action={{ label: "View Members", onClick: () => navigate("/members") }}
-                            />
-                        )}
-
-                        {!isNaverExpired && lowDepositMembers.length === 0 && riskScoreMembers.length === 0 && (!streakCandidates || streakCandidates.length === 0) && (
-                            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-green-500/20 bg-green-500/5 text-green-400 text-sm">
-                                <CheckCircle2 className="w-4 h-4" />
-                                <span>현재 조치 필요한 경고 사항이 없습니다.</span>
-                            </div>
-                        )}
-                    </div>
-                </div>
 
                 {/* 2. Current Session Card */}
                 <div className="space-y-4">
@@ -350,6 +294,53 @@ export default function Dashboard() {
                             </button>
                         </div>
                     )}
+                </div>
+
+                {/* 3. Warning Stack */}
+                <div className="space-y-4">
+                    <h2 className="text-sm font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                        Required Actions
+                    </h2>
+
+                    <div className="space-y-2">
+                        {isNaverExpired && (
+                            <WarningBanner
+                                level="error"
+                                title="Naver Login Expired"
+                                message="네이버 카페 자동화 기능이 제한됩니다. 상단 Naver Session 카드에서 재로그인해주세요."
+                            />
+                        )}
+
+                        {lowDepositMembers.map((m) => (
+                            <WarningBanner
+                                key={`deposit-${m.id}`}
+                                level="warning"
+                                message={`[디파짓 부족] ${m.name}님의 잔액이 ${(m.current_deposit || 0).toLocaleString()}원입니다. (최저 10,000원)`}
+                                action={{ label: `${m.name} 상세보기`, onClick: () => navigate(`/members/${m.id}`) }}
+                            />
+                        ))}
+
+                        {riskScoreMembers.length > 0 && (
+                            <>
+                                {riskScoreMembers.map(member => (
+                                    <WarningBanner
+                                        key={`score-${member.id}`}
+                                        level={(member.net_score || 0) <= -12 ? "error" : "warning"}
+                                        title={(member.net_score || 0) <= -12 ? "Eviction Risk" : "Score Warning"}
+                                        message={`[점수 경고] ${member.name}님의 점수가 ${member.net_score || 0}점입니다. ${(member.net_score || 0) <= -12 ? "(퇴출 대상)" : "(경고 단계)"}`}
+                                        action={{ label: `${member.name} 상세보기`, onClick: () => navigate(`/members/${member.id}`) }}
+                                    />
+                                ))}
+                            </>
+                        )}
+
+                        {!isNaverExpired && lowDepositMembers.length === 0 && riskScoreMembers.length === 0 && (
+                            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-green-500/20 bg-green-500/5 text-green-400 text-sm">
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>현재 조치 필요한 경고 사항이 없습니다.</span>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

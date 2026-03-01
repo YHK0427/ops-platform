@@ -1,21 +1,17 @@
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
-import { useSettlementPreview, useFinalizeSession } from "@/hooks";
-import { useLedger } from "@/hooks/useLedger";
-import { useMembers } from "@/hooks/useMembers";
+import { useSettlementPreview, useFinalizeSession, useRemoveStagedMerit } from "@/hooks";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, CheckCircle2, ExternalLink, Trophy, Pencil, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertTriangle, CheckCircle2, ExternalLink, Trophy, Trash2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Input } from "@/components/ui/input";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "sonner";
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
-import { useDeleteLedgerEntry, useUpdateLedger } from "@/hooks/useLedger";
-import type { Session } from "@/hooks/useSessions";
+import type { Session, MeritPreviewItem } from "@/hooks/useSessions";
 
 const PENALTY_TYPE_LABEL: Record<string, string> = {
     ATTENDANCE:     "출결",
@@ -30,19 +26,56 @@ export default function SettlementTab() {
     const navigate = useNavigate();
     const { data: previewData, isLoading } = useSettlementPreview(session.id);
     const { mutate: finalizeSession, isPending: isFinalizing } = useFinalizeSession();
-    const { data: sessionMerits } = useLedger({ session_id: session.id, type: "MERIT", limit: 50 });
-    const { data: allMembers } = useMembers();
+    // Penalty Filters
+    const [filterMember, setFilterMember] = useState<string>("all");
+    const [filterType, setFilterType] = useState<string>("all");
 
-    const memberNameMap = useMemo(() => {
-        const map = new Map<number, string>();
-        allMembers?.forEach(m => map.set(m.id, m.name));
-        return map;
-    }, [allMembers]);
+    // Merit Filter
+    const [meritFilterMember, setMeritFilterMember] = useState<string>("all");
 
-    // Set of indices that are SKIPPED (unchecked)
+    // Set of penalty indices that are SKIPPED (unchecked)
     const [skippedIndices, setSkippedIndices] = useState<Set<number>>(new Set());
+    // Set of merit indices that are SKIPPED (unchecked)
+    const [skippedMeritIndices, setSkippedMeritIndices] = useState<Set<number>>(new Set());
 
     const penalties = useMemo(() => previewData?.penalties || [], [previewData]);
+    const merits = useMemo(() => previewData?.merits || [], [previewData]);
+
+    // Unique member list from penalties
+    const penaltyMembers = useMemo(() => {
+        const seen = new Map<number, string>();
+        penalties.forEach(p => { if (!seen.has(p.member_id)) seen.set(p.member_id, p.member_name); });
+        return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    }, [penalties]);
+
+    // Unique member list from merits
+    const meritMembers = useMemo(() => {
+        const seen = new Map<number, string>();
+        merits.forEach(m => { if (!seen.has(m.member_id)) seen.set(m.member_id, m.member_name); });
+        return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    }, [merits]);
+
+    // Unique type list from penalties
+    const penaltyTypes = useMemo(() => {
+        const seen = new Set<string>();
+        penalties.forEach(p => seen.add(p.type));
+        return Array.from(seen);
+    }, [penalties]);
+
+    const filteredPenalties = useMemo(() => {
+        return penalties.map((p, idx) => ({ ...p, _idx: idx })).filter(p => {
+            if (filterMember !== "all" && p.member_id !== Number(filterMember)) return false;
+            if (filterType !== "all" && p.type !== filterType) return false;
+            return true;
+        });
+    }, [penalties, filterMember, filterType]);
+
+    const filteredMerits = useMemo(() => {
+        return merits.map((m, idx) => ({ ...m, _idx: idx })).filter(m => {
+            if (meritFilterMember !== "all" && m.member_id !== Number(meritFilterMember)) return false;
+            return true;
+        });
+    }, [merits, meritFilterMember]);
 
     const { totalScoreDelta, totalDepositDelta } = useMemo(() => {
         let score = 0;
@@ -56,22 +89,41 @@ export default function SettlementTab() {
         return { totalScoreDelta: score, totalDepositDelta: deposit };
     }, [penalties, skippedIndices]);
 
+    const totalMeritScore = useMemo(() => {
+        let score = 0;
+        merits.forEach((m, idx) => {
+            if (!skippedMeritIndices.has(idx)) {
+                score += m.score_delta;
+            }
+        });
+        return score;
+    }, [merits, skippedMeritIndices]);
+
     const handleToggle = (idx: number, type: string) => {
-        if (type === "MILESTONE_FINE") return; // Cannot skip
+        if (type === "MILESTONE_FINE") return;
 
         const newSkipped = new Set(skippedIndices);
         if (newSkipped.has(idx)) {
-            newSkipped.delete(idx); // Key removed = Checked = Applied
+            newSkipped.delete(idx);
         } else {
-            newSkipped.add(idx); // Key added = Unchecked = Skipped
+            newSkipped.add(idx);
         }
         setSkippedIndices(newSkipped);
     };
 
-    const handleFinalize = () => {
-        // Build overrides
-        const overridesMap = new Map<number, Set<string>>(); // member_id -> Set<type>
+    const handleMeritToggle = (idx: number) => {
+        const newSkipped = new Set(skippedMeritIndices);
+        if (newSkipped.has(idx)) {
+            newSkipped.delete(idx);
+        } else {
+            newSkipped.add(idx);
+        }
+        setSkippedMeritIndices(newSkipped);
+    };
 
+    const handleFinalize = () => {
+        // Build penalty overrides
+        const overridesMap = new Map<number, Set<string>>();
         skippedIndices.forEach(idx => {
             const p = penalties[idx];
             if (!overridesMap.has(p.member_id)) {
@@ -79,14 +131,15 @@ export default function SettlementTab() {
             }
             overridesMap.get(p.member_id)?.add(p.type);
         });
-
         const overrides = Array.from(overridesMap.entries()).map(([member_id, types]) => ({
             member_id,
             skip_types: Array.from(types)
         }));
 
-        if (confirm(`세션을 마감(Finalize) 하시겠습니까?\n\n총 벌점: ${totalScoreDelta}\n총 차감액: ${formatNumber(totalDepositDelta)} KRW\n\n마감 후에는 수정할 수 없으며, 벌점과 벌금이 확정됩니다.`)) {
-            finalizeSession({ sessionId: session.id, overrides }, {
+        const skip_merit_indices = Array.from(skippedMeritIndices);
+
+        if (confirm(`세션을 마감(Finalize) 하시겠습니까?\n\n총 벌점: ${totalScoreDelta}\n총 차감액: ${formatNumber(totalDepositDelta)} KRW\n총 상점: +${totalMeritScore}\n\n마감 후에는 수정할 수 없으며, 벌점/상점이 확정됩니다.`)) {
+            finalizeSession({ sessionId: session.id, overrides, skip_merit_indices }, {
                 onSuccess: () => {
                     toast.success("세션이 성공적으로 마감되었습니다.");
                 },
@@ -126,7 +179,6 @@ export default function SettlementTab() {
                         Ledger에서 확인
                     </Button>
                 </div>
-                <MeritPanel sessionId={session.id} merits={sessionMerits ?? []} memberNameMap={memberNameMap} session={session} />
             </div>
         );
     }
@@ -149,7 +201,7 @@ export default function SettlementTab() {
                 </Button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-[var(--color-text-muted)]">
@@ -174,8 +226,50 @@ export default function SettlementTab() {
                         </div>
                     </CardContent>
                 </Card>
+                <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-[var(--color-text-muted)]">
+                            Total Merit
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className={`text-2xl font-bold ${totalMeritScore > 0 ? 'text-green-400' : 'text-gray-400'}`}>
+                            +{totalMeritScore}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
+            {/* Penalty filters */}
+            <div className="flex items-center gap-3 mb-2">
+                <Select value={filterMember} onValueChange={setFilterMember}>
+                    <SelectTrigger className="w-[160px] h-8 text-xs bg-[var(--color-surface)] border-[var(--color-border)]">
+                        <SelectValue placeholder="멤버 필터" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">전체 멤버</SelectItem>
+                        {penaltyMembers.map(([id, name]) => (
+                            <SelectItem key={id} value={String(id)}>{name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Select value={filterType} onValueChange={setFilterType}>
+                    <SelectTrigger className="w-[160px] h-8 text-xs bg-[var(--color-surface)] border-[var(--color-border)]">
+                        <SelectValue placeholder="유형 필터" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">전체 유형</SelectItem>
+                        {penaltyTypes.map(t => (
+                            <SelectItem key={t} value={t}>{PENALTY_TYPE_LABEL[t] ?? t}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <span className="text-xs text-[var(--color-text-muted)] ml-auto">
+                    {filteredPenalties.length} / {penalties.length}건
+                </span>
+            </div>
+
+            {/* Penalty table */}
             <div className="rounded-xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-surface)]">
                 <Table>
                     <TableHeader>
@@ -189,14 +283,15 @@ export default function SettlementTab() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {penalties.length === 0 ? (
+                        {filteredPenalties.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={6} className="text-center py-12 text-[var(--color-text-muted)]">
-                                    패널티 부과 대상이 없습니다.
+                                    {penalties.length === 0 ? "패널티 부과 대상이 없습니다." : "필터 조건에 맞는 항목이 없습니다."}
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            penalties.map((penalty, idx) => {
+                            filteredPenalties.map((penalty) => {
+                                const idx = penalty._idx;
                                 const isMilestone = penalty.type === "MILESTONE_FINE";
                                 const isSkipped = skippedIndices.has(idx);
                                 const isApplied = !isSkipped;
@@ -243,47 +338,70 @@ export default function SettlementTab() {
                 </Table>
             </div>
 
+            {/* Merit section */}
+            <StagedMeritPanel
+                sessionId={session.id}
+                merits={merits}
+                filteredMerits={filteredMerits}
+                meritMembers={meritMembers}
+                meritFilterMember={meritFilterMember}
+                onMeritFilterChange={setMeritFilterMember}
+                session={session}
+                skippedMeritIndices={skippedMeritIndices}
+                onToggle={handleMeritToggle}
+            />
+
             <div className="flex items-start gap-3 p-4 rounded-lg bg-yellow-500/5 border border-yellow-500/20 text-yellow-500/90 text-sm">
                 <AlertTriangle className="w-5 h-5 shrink-0" />
                 <p>
-                    Finalize 버튼을 누르면 위 내역(체크된 항목)이 <strong>Ledger</strong>에 영구 기록되며, 멤버들의 점수와 보증금이 즉시 차감됩니다.
+                    Finalize 버튼을 누르면 위 내역(체크된 항목)이 <strong>Ledger</strong>에 영구 기록되며, 멤버들의 점수와 보증금이 즉시 반영됩니다.
                     이 작업은 되돌릴 수 없습니다.
                 </p>
             </div>
-
-            <MeritPanel sessionId={session.id} merits={sessionMerits ?? []} memberNameMap={memberNameMap} session={session} />
         </div>
     );
 }
 
-interface MeritEntry {
-    id: number;
-    member_id: number;
-    score_delta: number;
-    description: string;
-    created_at: string;
-}
+// ── Staged Merit Panel (before finalize) ─────────────────────────────────────
 
-function MeritPanel({
+function StagedMeritPanel({
     sessionId,
     merits,
-    memberNameMap,
+    filteredMerits,
+    meritMembers,
+    meritFilterMember,
+    onMeritFilterChange,
     session,
+    skippedMeritIndices,
+    onToggle,
 }: {
     sessionId: number;
-    merits: MeritEntry[];
-    memberNameMap: Map<number, string>;
+    merits: MeritPreviewItem[];
+    filteredMerits: (MeritPreviewItem & { _idx: number })[];
+    meritMembers: [number, string][];
+    meritFilterMember: string;
+    onMeritFilterChange: (v: string) => void;
     session: Session;
+    skippedMeritIndices: Set<number>;
+    onToggle: (idx: number) => void;
 }) {
-    const { mutate: deleteMerit, isPending: isDeleting } = useDeleteLedgerEntry();
-    const { mutate: updateMerit, isPending: isUpdating } = useUpdateLedger();
+    const { mutate: removeStagedMerit, isPending: isRemoving } = useRemoveStagedMerit();
+
+    // Count auto (streak) merits to calculate manual index offset
+    const autoCount = merits.filter(m => m.source === "streak").length;
+
+    const handleRemoveManual = (meritIdx: number) => {
+        const manualIndex = meritIdx - autoCount;
+        if (manualIndex < 0) return;
+        removeStagedMerit({ sessionId, index: manualIndex });
+    };
 
     return (
         <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
                 <div className="flex items-center gap-2">
                     <Trophy className="w-4 h-4 text-yellow-500" />
-                    <h3 className="font-semibold text-sm">이 세션 상점 내역</h3>
+                    <h3 className="font-semibold text-sm">상점 (Merit)</h3>
                     {merits.length > 0 && (
                         <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
                             {merits.length}건
@@ -299,141 +417,97 @@ function MeritPanel({
                     trigger={
                         <Button size="sm" variant="outline" className="h-7 text-xs bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20">
                             <Trophy className="w-3 h-3 mr-1" />
-                            상점 부여
+                            상점 추가
                         </Button>
                     }
                 />
             </div>
+
+            {/* Merit filter */}
+            {merits.length > 0 && (
+                <div className="px-6 py-3 border-b border-[var(--color-border)] flex items-center gap-3">
+                    <Select value={meritFilterMember} onValueChange={onMeritFilterChange}>
+                        <SelectTrigger className="w-[160px] h-8 text-xs bg-[var(--color-surface)] border-[var(--color-border)]">
+                            <SelectValue placeholder="멤버 필터" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">전체 멤버</SelectItem>
+                            {meritMembers.map(([id, name]) => (
+                                <SelectItem key={id} value={String(id)}>{name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <span className="text-xs text-[var(--color-text-muted)] ml-auto">
+                        {filteredMerits.length} / {merits.length}건
+                    </span>
+                </div>
+            )}
+
             <Table>
                 <TableHeader>
                     <TableRow className="bg-gray-900/30 hover:bg-gray-900/30">
+                        <TableHead className="w-[50px] text-center">Apply</TableHead>
+                        <TableHead className="w-[80px]">구분</TableHead>
                         <TableHead>멤버</TableHead>
                         <TableHead>사유</TableHead>
                         <TableHead className="text-right w-[80px]">점수</TableHead>
-                        <TableHead className="text-right w-[120px] text-[var(--color-text-muted)] font-normal text-xs">일시</TableHead>
-                        <TableHead className="w-[72px]" />
+                        <TableHead className="w-[50px]" />
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {merits.length === 0 ? (
+                    {filteredMerits.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={5} className="text-center py-8 text-[var(--color-text-muted)] text-sm">
-                                이 세션에 부여된 상점이 없습니다.
+                            <TableCell colSpan={6} className="text-center py-8 text-[var(--color-text-muted)] text-sm">
+                                {merits.length === 0 ? "상점 항목이 없습니다." : "필터 조건에 맞는 항목이 없습니다."}
                             </TableCell>
                         </TableRow>
                     ) : (
-                        merits.map((entry) => (
-                            <MeritRow
-                                key={entry.id}
-                                entry={entry}
-                                memberName={memberNameMap.get(entry.member_id) ?? `ID:${entry.member_id}`}
-                                onDelete={() => deleteMerit(entry.id)}
-                                onUpdate={(data) => updateMerit({ id: entry.id, data })}
-                                isDeleting={isDeleting}
-                                isUpdating={isUpdating}
-                            />
-                        ))
+                        filteredMerits.map((merit) => {
+                            const idx = merit._idx;
+                            const isSkipped = skippedMeritIndices.has(idx);
+                            const isApplied = !isSkipped;
+                            const isManual = merit.source === "manual";
+
+                            return (
+                                <TableRow
+                                    key={idx}
+                                    className={`transition-colors hover:bg-white/5 ${!isApplied ? 'opacity-50' : ''}`}
+                                >
+                                    <TableCell className="text-center">
+                                        <Checkbox
+                                            checked={isApplied}
+                                            onCheckedChange={() => onToggle(idx)}
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border bg-green-500/10 text-green-400 border-green-500/20">
+                                            상점
+                                        </span>
+                                    </TableCell>
+                                    <TableCell className="font-medium text-gray-300">{merit.member_name}</TableCell>
+                                    <TableCell className="text-sm text-[var(--color-text-secondary)] max-w-[300px] truncate" title={merit.description}>
+                                        {merit.description}
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono text-green-400">+{merit.score_delta}</TableCell>
+                                    <TableCell>
+                                        {isManual && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 w-6 p-0 hover:bg-rose-500/10 hover:text-rose-400"
+                                                onClick={() => handleRemoveManual(idx)}
+                                                disabled={isRemoving}
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </Button>
+                                        )}
+                                    </TableCell>
+                                </TableRow>
+                            );
+                        })
                     )}
                 </TableBody>
             </Table>
         </div>
-    );
-}
-
-function MeritRow({
-    entry,
-    memberName,
-    onDelete,
-    onUpdate,
-    isDeleting,
-    isUpdating,
-}: {
-    entry: MeritEntry;
-    memberName: string;
-    onDelete: () => void;
-    onUpdate: (data: { score_delta?: number; description?: string }) => void;
-    isDeleting: boolean;
-    isUpdating: boolean;
-}) {
-    const [editOpen, setEditOpen] = useState(false);
-    const [editScore, setEditScore] = useState(entry.score_delta);
-    const [editReason, setEditReason] = useState(entry.description);
-
-    React.useEffect(() => {
-        setEditScore(entry.score_delta);
-        setEditReason(entry.description);
-    }, [entry.score_delta, entry.description]);
-
-    const handleSave = () => {
-        onUpdate({ score_delta: editScore, description: editReason });
-        setEditOpen(false);
-    };
-
-    return (
-        <TableRow className="group/row hover:bg-white/5">
-            <TableCell className="font-medium text-gray-300">{memberName}</TableCell>
-            <TableCell className="text-sm text-[var(--color-text-secondary)]">{entry.description}</TableCell>
-            <TableCell className="text-right font-mono text-green-400">+{entry.score_delta}</TableCell>
-            <TableCell className="text-right text-xs font-mono text-[var(--color-text-muted)]">
-                {new Date(entry.created_at).toLocaleDateString()}
-            </TableCell>
-            <TableCell>
-                <div className="flex items-center justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                    <Popover open={editOpen} onOpenChange={setEditOpen}>
-                        <PopoverTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0 hover:bg-white/10"
-                                disabled={isUpdating}
-                            >
-                                <Pencil className="w-3 h-3" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-64 bg-[var(--color-elevated)] border-[var(--color-border)] p-3" align="end">
-                            <div className="space-y-3">
-                                <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase">상점 수정</p>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-[var(--color-text-muted)]">점수</label>
-                                    <Input
-                                        type="number"
-                                        value={editScore}
-                                        onChange={(e) => setEditScore(Number(e.target.value))}
-                                        className="h-7 text-sm bg-transparent border-[var(--color-border)]"
-                                        min={1}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-[var(--color-text-muted)]">사유</label>
-                                    <Input
-                                        value={editReason}
-                                        onChange={(e) => setEditReason(e.target.value)}
-                                        className="h-7 text-sm bg-transparent border-[var(--color-border)]"
-                                    />
-                                </div>
-                                <Button
-                                    size="sm"
-                                    onClick={handleSave}
-                                    disabled={isUpdating || !editReason}
-                                    className="w-full h-7 text-xs bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
-                                >
-                                    저장
-                                </Button>
-                            </div>
-                        </PopoverContent>
-                    </Popover>
-
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 hover:bg-rose-500/10 hover:text-rose-400"
-                        onClick={onDelete}
-                        disabled={isDeleting}
-                    >
-                        <Trash2 className="w-3 h-3" />
-                    </Button>
-                </div>
-            </TableCell>
-        </TableRow>
     );
 }

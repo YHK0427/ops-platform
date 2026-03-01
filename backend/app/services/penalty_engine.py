@@ -32,12 +32,6 @@ ATTENDANCE_MATRIX = {
     ("PRESENT",      None):   (0,  0),
 }
 
-PPT_MATRIX = {
-    "PASS":    (0, 0),
-    "LATE":    (-1, -1000),
-    "MISSING": (-2, -3000),
-}
-
 PPT_EMAIL_MATRIX = {
     "PASS":    (0, 0),
     "LATE":    (-1, -1000),
@@ -66,7 +60,7 @@ PPT_STATUS_LABEL = {
     "MISSING": "미제출",
 }
 ASSIGN_TYPE_LABEL = {
-    "PPT": "발표",
+    "PPT": "PPT게시판",
     "PPT_EMAIL": "PPT이메일",
     "REVIEW": "리뷰",
     "HOMEWORK": "과제",
@@ -167,19 +161,6 @@ class PenaltyEngine:
                     description=f"{ATT_STATUS_LABEL.get(att_status, att_status)} ({EXCUSE_TYPE_LABEL.get(excuse_type, excuse_type or '사유서없음')})"
                 ))
 
-            # [PPT] (발표자이고, 인정결석이 아닌 경우 체크)
-            if ppt and not is_excused:
-                # PPT 담당자인데 상태가 있는지 확인
-                s_d, d_d = PPT_MATRIX.get(ppt.status, (0, 0))
-                if s_d != 0 or d_d != 0:
-                    penalties.append(PenaltyItem(
-                        type="PPT",
-                        member=member,
-                        score_delta=s_d,
-                        deposit_delta=d_d,
-                        description=f"발표 {PPT_STATUS_LABEL.get(ppt.status, ppt.status)}"
-                    ))
-
             # [PPT_EMAIL] (이메일 제출 - EXCUSED만 면제)
             ppt_email = assignments.get("PPT_EMAIL")
             if ppt_email and not is_excused:
@@ -217,7 +198,7 @@ class PenaltyEngine:
             
             # 여기서 Assignment가 없으면 PASS로 간주 (안그러면 모든 주차에 과제 강요됨)
             # 운영팀이 수동으로 관리하거나 스캔 시 생성해야 함.
-            for a in [review, hw, fb]:
+            for a in [ppt, review, hw, fb]:
                 if a and a.status == "MISSING":
                     any_hw_missing = True
                     missing_types.append(a.type)

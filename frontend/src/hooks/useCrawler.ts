@@ -6,6 +6,7 @@ export interface CrawlerTaskResponse {
     task_id: string;
     status: "queued" | "in_progress" | "complete" | "failed" | "unknown";
     result?: any;
+    progress?: VideoProgress[] | null;
     enqueue_time?: string;
 }
 
@@ -15,11 +16,21 @@ export interface NaverSessionStatus {
     expires_hint?: string;
 }
 
+export interface VideoProgress {
+    file: string;
+    presenter: string;
+    order: number;
+    status: "pending" | "downloading" | "uploading" | "done" | "failed";
+    error?: string | null;
+}
+
 // Keys
 export const crawlerKeys = {
     all: ["crawler"] as const,
     task: (id: string) => [...crawlerKeys.all, "task", id] as const,
     naverSession: () => [...crawlerKeys.all, "naverSession"] as const,
+    driveVideos: (sessionId: number) => [...crawlerKeys.all, "drive-videos", sessionId] as const,
+    activeTask: (sessionId: number) => [...crawlerKeys.all, "active-task", sessionId] as const,
 };
 
 // Hooks
@@ -114,9 +125,10 @@ export function useScanHomework() {
 export function useUploadVideos() {
     return useMutation({
         networkMode: "always",
-        mutationFn: async ({ sessionId }: { sessionId: number }) => {
+        mutationFn: async ({ sessionId, videos }: { sessionId: number; videos?: DriveVideoItem[] }) => {
             const { data } = await api.post<CrawlerTaskResponse>("/crawler/upload-videos", {
-                session_id: sessionId
+                session_id: sessionId,
+                videos: videos ?? undefined,
             });
             return data;
         },
@@ -130,17 +142,32 @@ export interface DriveVideoItem {
     order: number;
 }
 
-export function useDriveVideos() {
-    return useMutation({
-        mutationFn: async (sessionId: number) => {
+export function useDriveVideos(sessionId: number) {
+    return useQuery({
+        queryKey: crawlerKeys.driveVideos(sessionId),
+        queryFn: async () => {
             const { data } = await api.get<{ videos: DriveVideoItem[] }>(
                 `/crawler/drive-videos?session_id=${sessionId}`
             );
             return data.videos;
         },
-        onError: () => {
-            toast.error("드라이브 영상 목록 조회 실패");
+        enabled: false,
+        staleTime: 5 * 60 * 1000,
+    });
+}
+
+export function useActiveUploadTask(sessionId: number) {
+    return useQuery({
+        queryKey: crawlerKeys.activeTask(sessionId),
+        queryFn: async () => {
+            const { data } = await api.get<{ task_id: string | null; status?: string }>(
+                `/crawler/active-task/${sessionId}`
+            );
+            return data;
         },
+        enabled: !!sessionId,
+        staleTime: 10_000,
+        refetchInterval: 10_000,
     });
 }
 

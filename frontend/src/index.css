@@ -32,6 +32,21 @@
   --color-yellow: #F59E0B;
   --color-danger: #F43F5E;
 
+  /* shadcn/ui token mappings */
+  --color-background: #0A0A0F;
+  --color-foreground: #E8E8F0;
+  --color-card: #14141A;
+  --color-card-foreground: #E8E8F0;
+  --color-popover: #1A1A22;
+  --color-popover-foreground: #E8E8F0;
+  --color-muted: #28282F;
+  --color-muted-foreground: #9090A8;
+  --color-accent-foreground: #E8E8F0;
+  --color-destructive: #F43F5E;
+  --color-destructive-foreground: #FFFFFF;
+  --color-input: rgb(255 255 255 / 0.12);
+  --color-ring: #F43F5E;
+
   /* Font families */
   --font-sans: "Pretendard Variable", Pretendard, system-ui, sans-serif;
   --font-mono: "Geist Mono", "SF Mono", monospace;
@@ -56,6 +71,10 @@
     font-feature-settings: "tnum";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  input, select, textarea, button {
+    font-family: inherit;
   }
 
   body {

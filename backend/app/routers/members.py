@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_current_user, get_db
-from app.models import Attendance, Ledger, Member, Session as SessionModel
+from app.models import Attendance, Ledger, Member, Session as SessionModel, User
 from app.schemas.member import MemberCreate, MemberResponse, MemberUpdate
 
 router = APIRouter(prefix="/members", tags=["members"])
@@ -24,9 +24,18 @@ async def _get_member_or_404(member_id: int, db: AsyncSession) -> Member:
 # ── 엔드포인트 ────────────────────────────────────────────────────────────────
 
 @router.get("/me")
-async def get_me(current_user: str = Depends(get_current_user)):
-    """현재 로그인 사용자 정보 (단일 어드민 시스템)"""
-    return {"username": current_user, "role": "admin"}
+async def get_me(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """현재 로그인 사용자 정보"""
+    result = await db.execute(
+        select(User).where(User.username == current_user["username"])
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"username": current_user["username"], "role": current_user["role"], "display_name": current_user["username"]}
+    return {"username": user.username, "role": user.role, "display_name": user.display_name}
 
 
 @router.get("", response_model=list[MemberResponse])
@@ -63,22 +72,6 @@ async def create_member(
     await db.commit()
     await db.refresh(member)
     return member
-
-
-@router.get("/streak-candidates", response_model=list[MemberResponse])
-async def streak_candidates(
-    db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
-):
-    """4회 연속 출석 조건 충족 대상자"""
-    from app.services.streak_checker import check_attendance_streaks
-    
-    candidates = await check_attendance_streaks(db)
-    # candidates는 dict list이므로 MemberResponse로 변환 필요하지만
-    # MemberResponse는 ORM/Dict 모두 호환 가능 (from_attributes=True)
-    # 하지만 check_attendance_streaks가 dict를 리턴하므로,
-    # Pydantic이 dict를 받아서 처리.
-    return candidates
 
 
 @router.get("/{member_id}", response_model=MemberResponse)

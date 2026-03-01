@@ -21,6 +21,7 @@ from app.models import (
 from app.schemas.attendance import AttendanceForceUpdate, AttendanceUpdate
 from app.schemas.session import (
     FeedbackTargetUpdate,
+    MeritItemResponse,
     SessionConfigUpdate,
     SessionCreate,
     SessionFinalizeRequest,
@@ -30,6 +31,7 @@ from app.schemas.session import (
     SessionStatsResponse,
     SessionStatusUpdate,
     SettlementPreviewResponse,
+    StagedMeritCreate,
 )
 from app.schemas.team import TeamCreateRequest, TeamGenerateRequest, TeamResponse
 from app.schemas.attendance import AttendanceResponse
@@ -78,7 +80,7 @@ async def create_session(
             raise HTTPException(status_code=400, detail=f"week_num {body.week_num}은 이미 존재합니다")
 
         config_data = body.config.model_dump() if body.config else {
-            "has_ppt_email": True, "has_review": True, "has_feedback": True, "is_holiday": False
+            "has_ppt_email": True, "has_ppt": True, "has_review": True, "has_feedback": True, "is_holiday": False
         }
 
         session = SessionModel(
@@ -267,12 +269,13 @@ async def update_session_status(
                     status="PENDING",
                 ))
             # PPT 게시판 과제
-            db.add(Assignment(
-                session_id=session_id,
-                member_id=member.id,
-                type="PPT",
-                status="PENDING",
-            ))
+            if cfg.get("has_ppt", True):
+                db.add(Assignment(
+                    session_id=session_id,
+                    member_id=member.id,
+                    type="PPT",
+                    status="PENDING",
+                ))
             if cfg.get("has_review", True):
                 db.add(Assignment(
                     session_id=session_id,
@@ -758,7 +761,7 @@ async def confirm_teams(
         existing_pairs = {(row.member_id, row.type) for row in existing_result}
 
         for mid in all_assigned_member_ids:
-            if (mid, "PPT") not in existing_pairs:
+            if session.config.get("has_ppt", True) and (mid, "PPT") not in existing_pairs:
                 db.add(Assignment(session_id=session_id, member_id=mid, type="PPT", status="PENDING"))
             if session.config.get("has_review", True) and (mid, "REVIEW") not in existing_pairs:
                 db.add(Assignment(session_id=session_id, member_id=mid, type="REVIEW", status="PENDING"))
@@ -767,7 +770,8 @@ async def confirm_teams(
     else:
         # SETUP 최초 확정: 전원 개인 과제 생성
         for mid in all_assigned_member_ids:
-            db.add(Assignment(session_id=session_id, member_id=mid, type="PPT", status="PENDING"))
+            if session.config.get("has_ppt", True):
+                db.add(Assignment(session_id=session_id, member_id=mid, type="PPT", status="PENDING"))
             if session.config.get("has_review", True):
                 db.add(Assignment(session_id=session_id, member_id=mid, type="REVIEW", status="PENDING"))
             if session.config.get("has_feedback", True):
@@ -833,9 +837,11 @@ async def get_settlement_preview(
     session = await _get_session_or_404(session_id, db)
     
     from app.services.penalty_engine import PenaltyEngine
+    from app.services.streak_checker import check_attendance_streaks
+
     engine = PenaltyEngine(session, db)
     penalties = await engine.calculate_all()
-    
+
     response_items = []
     for p in penalties:
         response_items.append({
@@ -846,11 +852,102 @@ async def get_settlement_preview(
             "deposit_delta": p.deposit_delta,
             "description": p.description,
         })
-        
+
+    # 스트릭 merit 항목 조회
+    streak_result = await check_attendance_streaks(db, session_id)
+    merits: list[dict] = []
+    for item in streak_result["merit_items"]:
+        merits.append({
+            "member_id": item["member_id"],
+            "member_name": item["member_name"],
+            "score_delta": item["score_delta"],
+            "description": item["description"],
+            "source": "streak",
+        })
+
+    # 수동 staged merits (session config)
+    staged_merits = (session.config or {}).get("staged_merits", [])
+    if staged_merits:
+        # member_id -> name 매핑 조회
+        staged_member_ids = {sm["member_id"] for sm in staged_merits}
+        stmt_members = select(Member).where(Member.id.in_(staged_member_ids))
+        result_members = await db.execute(stmt_members)
+        member_name_map = {m.id: m.name for m in result_members.scalars().all()}
+
+        for sm in staged_merits:
+            merits.append({
+                "member_id": sm["member_id"],
+                "member_name": member_name_map.get(sm["member_id"], f"ID:{sm['member_id']}"),
+                "score_delta": sm["score_delta"],
+                "description": sm["reason"],
+                "source": "manual",
+            })
+
     return SettlementPreviewResponse(
         session_id=session.id,
-        penalties=response_items
+        penalties=response_items,
+        merits=merits,
     )
+
+
+@router.post("/{session_id}/staged-merits", status_code=status.HTTP_201_CREATED)
+async def add_staged_merits(
+    session_id: int,
+    body: StagedMeritCreate,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """수동 상점을 session config에 staging"""
+    session = await _get_session_or_404(session_id, db)
+    if session.status == "FINALIZED":
+        raise HTTPException(status_code=400, detail="FINALIZED 세션에는 상점을 추가할 수 없습니다")
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    config = session.config or {}
+    staged = config.get("staged_merits", [])
+
+    for mid in body.member_ids:
+        staged.append({
+            "member_id": mid,
+            "score_delta": body.score_delta,
+            "reason": body.reason,
+        })
+
+    config["staged_merits"] = staged
+    session.config = config
+    flag_modified(session, "config")
+
+    await db.commit()
+    return {"staged_count": len(staged)}
+
+
+@router.delete("/{session_id}/staged-merits/{index}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_staged_merit(
+    session_id: int,
+    index: int,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """수동 staged 상점 삭제 (인덱스)"""
+    session = await _get_session_or_404(session_id, db)
+    if session.status == "FINALIZED":
+        raise HTTPException(status_code=400, detail="FINALIZED 세션은 수정할 수 없습니다")
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    config = session.config or {}
+    staged = config.get("staged_merits", [])
+
+    if index < 0 or index >= len(staged):
+        raise HTTPException(status_code=404, detail="해당 인덱스의 staged merit이 없습니다")
+
+    staged.pop(index)
+    config["staged_merits"] = staged
+    session.config = config
+    flag_modified(session, "config")
+
+    await db.commit()
 
 
 @router.post("/{session_id}/finalize", response_model=SessionFinalizeResponse)
@@ -867,7 +964,7 @@ async def finalize_session_api(
     overrides_dict = [o.model_dump() for o in body.overrides]
     
     try:
-        await finalize_session(session_id, db, overrides_dict)
+        await finalize_session(session_id, db, overrides_dict, body.skip_merit_indices)
         await db.commit() # 트랜잭션 확정
         
         # 갱신된 세션 정보 조회하여 finalized_at 반환

@@ -57,10 +57,12 @@ async def task_scan_excuses(ctx, session_id: int, mode: str):
         count = await scan_excuses(session.id, session.week_num, members, mode, db, session_date=session.date)
         return {"status": "complete", "excuse_count": count, "mode": mode}
 
-async def task_upload_videos(ctx, session_id: int):
+async def task_upload_videos(ctx, session_id: int, videos: list | None = None):
     """영상 업로드 태스크"""
+    redis = ctx.get("redis")
+    job_id = ctx.get("job_id")
     async with AsyncSessionLocal() as db:
-        return await upload_all_videos(session_id, db)
+        return await upload_all_videos(session_id, db, redis=redis, job_id=job_id, videos=videos)
 
 async def task_naver_login(ctx, username: str, password: str):
     """네이버 로그인 태스크 (아이디/비번 자동화)"""

@@ -124,7 +124,16 @@ export default function SessionLayout() {
                 <div className="container mx-auto px-4">
                     <div className="flex space-x-1">
                         {tabs.map((tab) => {
-                            const locked = (typedSession.status === "SETUP" || typedSession.status === "PREP") && tab.id !== "prep";
+                            const unlockedTabs: Record<string, string[]> = {
+                                SETUP:      ["prep"],
+                                PREP:       ["prep"],
+                                OPS:        ["prep", "ops"],
+                                POST:       ["prep", "ops", "post"],
+                                SETTLEMENT: ["prep", "ops", "post", "settlement"],
+                                FINALIZED:  ["prep", "ops", "post", "settlement"],
+                            };
+                            const allowed = unlockedTabs[typedSession.status] ?? tabs.map(t => t.id);
+                            const locked = !allowed.includes(tab.id);
                             return locked ? (
                                 <span
                                     key={tab.id}
@@ -249,17 +258,17 @@ function DeadlineBar({ session }: { session: Session }) {
                 <>
                     {hasPptEmail && cfg.deadline_ppt_email && (
                         <span className="text-[var(--color-text-secondary)]">
-                            PPT 이메일: <span className="font-mono text-[var(--color-text-primary)]">{fmt(cfg.deadline_ppt_email)}</span>
+                            PPT 이메일: <span className="text-[var(--color-text-primary)]">{fmt(cfg.deadline_ppt_email)}</span>
                         </span>
                     )}
                     {hasPptEmail && cfg.deadline_ppt_email_late && (
                         <span className="text-[var(--color-text-secondary)]">
-                            지각: <span className="font-mono text-[var(--color-text-primary)]">{fmt(cfg.deadline_ppt_email_late)}</span>
+                            지각: <span className="text-[var(--color-text-primary)]">{fmt(cfg.deadline_ppt_email_late)}</span>
                         </span>
                     )}
                     {hasPostTasks && cfg.deadline_post && (
                         <span className="text-[var(--color-text-secondary)]">
-                            후속 과제: <span className="font-mono text-[var(--color-text-primary)]">{fmt(cfg.deadline_post)}</span>
+                            후속 과제: <span className="text-[var(--color-text-primary)]">{fmt(cfg.deadline_post)}</span>
                         </span>
                     )}
                     {!isFinalized && (
