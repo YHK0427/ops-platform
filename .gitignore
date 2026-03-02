@@ -60,5 +60,6 @@ frontend/@/
 # 문서 파일 (PDF 등)
 *.pdf
 
-# 
+#
 *.png
+!docs/screenshots/*.png
