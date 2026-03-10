@@ -10,6 +10,7 @@ export default function LoginPage() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [totpCode, setTotpCode] = useState("");
+    const [remember, setRemember] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
@@ -18,7 +19,7 @@ export default function LoginPage() {
         setError(null);
         setLoading(true);
         try {
-            const needsTotp = await login(username, password);
+            const needsTotp = await login(username, password, remember);
             if (!needsTotp) {
                 navigate("/dashboard", { replace: true });
             }
@@ -67,7 +68,7 @@ export default function LoginPage() {
                                 UnivPT
                             </p>
                             <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/60">
-                                Ops Platform
+                                운영 플랫폼
                             </h1>
                         </div>
 
@@ -154,6 +155,27 @@ export default function LoginPage() {
                                         className="w-full px-4 py-2.5 rounded-lg bg-black/40 border border-[var(--color-border)] text-white text-sm outline-none focus:border-[var(--color-accent)] focus:shadow-[0_0_0_2px_rgba(244,63,94,0.15)] transition-all"
                                     />
                                 </div>
+
+                                <label className="flex items-center justify-between cursor-pointer select-none group">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+                                            로그인 유지
+                                        </span>
+                                        <span className="text-[10px] text-[var(--color-text-muted)]">
+                                            {remember ? "3일간 유지" : "브라우저 종료 시 로그아웃"}
+                                        </span>
+                                    </div>
+                                    <div className="relative">
+                                        <input
+                                            type="checkbox"
+                                            checked={remember}
+                                            onChange={(e) => setRemember(e.target.checked)}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-9 h-5 rounded-full bg-white/10 border border-white/10 peer-checked:bg-[var(--color-accent)]/30 peer-checked:border-[var(--color-accent)]/50 transition-all" />
+                                        <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white/40 peer-checked:bg-[var(--color-accent)] peer-checked:translate-x-4 transition-all shadow-sm" />
+                                    </div>
+                                </label>
 
                                 {error && (
                                     <p className="text-xs text-rose-400 text-center">{error}</p>

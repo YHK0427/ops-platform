@@ -11,6 +11,7 @@ interface AuthUser {
     username: string;
     role: "admin" | "manager" | "viewer";
     display_name: string;
+    department: string | null;
 }
 
 interface TotpPending {
@@ -21,7 +22,7 @@ interface AuthContextValue {
     user: AuthUser | null;
     isLoading: boolean;
     totpPending: TotpPending | null;
-    login: (username: string, password: string) => Promise<boolean>; // returns true if TOTP needed
+    login: (username: string, password: string, remember?: boolean) => Promise<boolean>; // returns true if TOTP needed
     verifyTotp: (code: string) => Promise<void>;
     cancelTotp: () => void;
     logout: () => void;
@@ -48,7 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .finally(() => setIsLoading(false));
     }, []);
 
-    const login = useCallback(async (username: string, password: string): Promise<boolean> => {
+    const login = useCallback(async (username: string, password: string, remember?: boolean): Promise<boolean> => {
         const { data } = await api.post<{
             access_token: string | null;
             requires_totp: boolean;
@@ -56,12 +57,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }>("/auth/login", { username, password });
 
         if (data.requires_totp && data.totp_pending_token) {
+            // remember 값을 미리 저장해두어 TOTP 완료 후 사용
+            if (remember !== undefined) {
+                localStorage.setItem("ops_remember", remember ? "1" : "0");
+            }
             setTotpPending({ token: data.totp_pending_token });
             return true; // TOTP needed
         }
 
         if (data.access_token) {
-            setToken(data.access_token);
+            setToken(data.access_token, remember);
             const { data: me } = await api.get<AuthUser>("/members/me");
             setUser(me);
         }
