@@ -39,6 +39,8 @@ export interface Session {
         target_member_ids?: number[] | null;
         raw_data?: {
             feedback_detail?: { member_id: number; name: string; commented: boolean; is_self: boolean; comments?: string[] }[];
+            article_id?: number;
+            menu_id?: number;
         } | null;
     }[];
     finalized_at?: string | null;

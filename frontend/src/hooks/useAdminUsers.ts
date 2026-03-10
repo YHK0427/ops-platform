@@ -152,7 +152,6 @@ export function useBulkResetGenPassword() {
 }
 
 export function useResetGenPassword() {
-    const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (accountId: number) => {
             const { data } = await api.post(`/generation/accounts/${accountId}/reset-password`);
