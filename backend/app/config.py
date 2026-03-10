@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 1440
 
     # Naver
+    NAVER_IMAP_EMAIL: str = ""
+    NAVER_IMAP_PASSWORD: str = ""
     NAVER_CAFE_ID: str = "31668555"
     NAVER_CAFE_MENU_VIDEO: int = 1
     NAVER_CAFE_MENU_REVIEW: int = 2
@@ -34,6 +36,12 @@ class Settings(BaseSettings):
     # App
     GENERATION: int = 33
     CORS_ORIGINS: str = "http://localhost:3000"
+    ENV: str = "dev"
+
+    # Telegram
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_ALERT_CHAT_ID: str = ""
+    TELEGRAM_AUDIT_CHAT_ID: str = ""
 
     class Config:
         env_file = ".env"

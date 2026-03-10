@@ -8,7 +8,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_staff
 from app.models import (
     Assignment,
     Attendance,
@@ -69,7 +69,7 @@ async def list_sessions(
 async def create_session(
     body: SessionCreate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """세션 생성 + 전체 활성 멤버 attendance 자동 생성"""
     try:
@@ -89,7 +89,7 @@ async def create_session(
             date=body.date,
             type=body.type,
             config=config_data,
-            status="SETUP",
+            status="PREP",
         )
         db.add(session)
         await db.flush()
@@ -98,6 +98,7 @@ async def create_session(
             select(Member).where(Member.is_active == True)
         )
         members = members_result.scalars().all()
+        cfg = config_data or {}
         for member in members:
             attendance = Attendance(
                 session_id=session.id,
@@ -106,23 +107,61 @@ async def create_session(
             )
             db.add(attendance)
 
+            # INDIVIDUAL 세션: 생성 시 바로 과제 생성 (PREP 상태이므로)
+            if body.type == "INDIVIDUAL":
+                if cfg.get("has_ppt_email", True):
+                    db.add(Assignment(
+                        session_id=session.id,
+                        member_id=member.id,
+                        type="PPT_EMAIL",
+                        status="PENDING",
+                    ))
+                if cfg.get("has_ppt", True):
+                    db.add(Assignment(
+                        session_id=session.id,
+                        member_id=member.id,
+                        type="PPT",
+                        status="PENDING",
+                    ))
+                if cfg.get("has_review", True):
+                    db.add(Assignment(
+                        session_id=session.id,
+                        member_id=member.id,
+                        type="REVIEW",
+                        status="PENDING",
+                    ))
+                if cfg.get("has_feedback", True):
+                    db.add(Assignment(
+                        session_id=session.id,
+                        member_id=member.id,
+                        type="FEEDBACK",
+                        status="PENDING",
+                    ))
+
         await db.commit()
 
-        # Google Drive 하위 폴더 생성 (실패해도 세션 생성은 유지)
+        # Google Drive 폴더 생성: 메인 + videos/ + ppt/ (실패해도 세션 생성은 유지)
         try:
             import asyncio
             from app.services.crawler_video import create_drive_folder
             folder_name = f"{body.week_num}주차_{body.title}"
             folder_id = await asyncio.to_thread(create_drive_folder, folder_name)
-            session.config = {**(session.config or {}), "drive_folder_id": folder_id}
+            video_folder_id = await asyncio.to_thread(create_drive_folder, "videos", folder_id)
+            ppt_folder_id = await asyncio.to_thread(create_drive_folder, "ppt", folder_id)
+            session.config = {
+                **(session.config or {}),
+                "drive_folder_id": folder_id,
+                "drive_video_folder_id": video_folder_id,
+                "drive_ppt_folder_id": ppt_folder_id,
+            }
             from sqlalchemy.orm.attributes import flag_modified
             flag_modified(session, "config")
             await db.commit()
-            logger.info(f"Drive folder created: {folder_name} ({folder_id})")
+            logger.info(f"Drive folders created: {folder_name} (main={folder_id}, videos={video_folder_id}, ppt={ppt_folder_id})")
         except Exception as e:
             logger.warning(f"Drive folder creation failed (non-fatal): {e}")
 
-        logger.info(f"Session {session.id} created successfully.")
+        logger.audit(f"session_created id={session.id} week={session.week_num} title={session.title}")
         return {"id": session.id, "week_num": session.week_num, "status": "created"}
 
     except HTTPException:
@@ -164,27 +203,39 @@ async def get_session(
 async def delete_session(
     session_id: int,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
-    """세션 삭제 — FINALIZED가 아니고 원장 항목이 없을 때만 허용"""
+    """세션 삭제 — 연결된 장부 항목도 효과 역전 후 함께 삭제"""
     session = await _get_session_or_404(session_id, db)
-    if session.status == "FINALIZED":
-        raise HTTPException(
-            status_code=400,
-            detail="정산이 완료된 세션은 삭제할 수 없습니다",
-        )
-    # 원장 항목이 있으면 삭제 불가 (디파짓/페널티가 이미 적용됨)
-    ledger_count_result = await db.execute(
-        select(func.count(Ledger.id)).where(Ledger.session_id == session_id)
+
+    # 장부 항목 효과 역전 후 삭제
+    ledger_result = await db.execute(
+        select(Ledger).where(Ledger.session_id == session_id)
     )
-    ledger_count = ledger_count_result.scalar() or 0
-    if ledger_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"이미 원장 항목이 존재하는 세션은 삭제할 수 없습니다 ({ledger_count}건)",
-        )
+    for entry in ledger_result.scalars().all():
+        member = await db.get(Member, entry.member_id)
+        if member:
+            if entry.amount_krw != 0:
+                member.current_deposit -= entry.amount_krw
+            if entry.score_delta > 0:
+                member.total_plus_score = max(0, member.total_plus_score - entry.score_delta)
+            elif entry.score_delta < 0:
+                member.total_minus_score = min(0, member.total_minus_score - entry.score_delta)
+            if entry.score_delta != 0:
+                member.net_score = member.total_plus_score + member.total_minus_score
+        await db.delete(entry)
+
+    # TeamHistory 삭제
+    from app.models import TeamHistory
+    th_result = await db.execute(
+        select(TeamHistory).where(TeamHistory.session_id == session_id)
+    )
+    for th in th_result.scalars().all():
+        await db.delete(th)
+
     await db.delete(session)
     await db.commit()
+    logger.audit(f"session_deleted id={session_id} title={session.title}")
 
 
 @router.patch("/{session_id}/config")
@@ -192,7 +243,7 @@ async def update_session_config(
     session_id: int,
     body: SessionConfigUpdate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """세션 config 업데이트 (기한 등)"""
     session = await _get_session_or_404(session_id, db)
@@ -227,7 +278,7 @@ async def update_session_status(
     session_id: int,
     body: SessionStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """상태 머신 전환"""
     session = await _get_session_or_404(session_id, db)
@@ -382,6 +433,7 @@ async def update_session_status(
         )
 
     await db.commit()
+    logger.audit(f"session_status id={session_id} {current}→{target}")
 
     # Eager-load relationships to avoid MissingGreenlet error during response serialization
     stmt = (
@@ -504,7 +556,7 @@ async def update_attendance(
     member_id: int,
     body: AttendanceUpdate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """출결 정보 수정 (마감 가드 포함)"""
     session = await _get_session_or_404(session_id, db)
@@ -552,6 +604,7 @@ async def update_attendance(
         setattr(attendance, field, value)
     
     await db.commit()
+    logger.audit(f"attendance_updated session={session_id} member={member_id} fields={list(update_data.keys())}")
     return attendance
 
 
@@ -561,7 +614,7 @@ async def force_update_attendance(
     member_id: int,
     body: AttendanceForceUpdate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """출결 강제 수정 (FINALIZED 상태에서도 가능, Ledger 자동 생성)"""
     session = await _get_session_or_404(session_id, db)
@@ -614,6 +667,7 @@ async def force_update_attendance(
     db.add(ledger)
 
     await db.commit()
+    logger.audit(f"attendance_forced session={session_id} member={member_id} {old_status}→{body.status or old_status} reason={body.reason}")
     return attendance
 
 
@@ -621,7 +675,7 @@ async def force_update_attendance(
 async def clear_excuses(
     session_id: int,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """세션의 모든 사유서 데이터(excuse_type, excuse_text) 초기화"""
     await _get_session_or_404(session_id, db)
@@ -650,7 +704,7 @@ async def generate_teams(
     session_id: int,
     body: TeamGenerateRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """팀빌딩 시뮬레이션 (Snake Draft)"""
     session = await _get_session_or_404(session_id, db)
@@ -687,7 +741,7 @@ async def confirm_teams(
     session_id: int,
     body: TeamCreateRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """팀 확정 (DB 저장) + Assignments 자동 생성 + PREP 전환"""
     session = await _get_session_or_404(session_id, db)
@@ -781,6 +835,7 @@ async def confirm_teams(
         session.status = "PREP"
 
     await db.commit()
+    logger.audit(f"teams_confirmed session={session_id} teams={len(body.teams)} members={len(all_assigned_member_ids)}")
 
 
 @router.patch("/{session_id}/assignments/{member_id}/feedback-targets")
@@ -789,7 +844,7 @@ async def set_feedback_targets(
     member_id: int,
     body: FeedbackTargetUpdate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """피드백 대상 멤버 지정 (보통 1명, 결석 시 2명)"""
     session = await _get_session_or_404(session_id, db)
@@ -822,6 +877,7 @@ async def set_feedback_targets(
     assignment.target_member_ids = body.target_member_ids
     assignment.target_count = len(body.target_member_ids)
     await db.commit()
+    logger.audit(f"feedback_targets session={session_id} member={member_id} targets={body.target_member_ids}")
     return {"member_id": member_id, "target_member_ids": body.target_member_ids}
 
 
@@ -895,7 +951,7 @@ async def add_staged_merits(
     session_id: int,
     body: StagedMeritCreate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """수동 상점을 session config에 staging"""
     session = await _get_session_or_404(session_id, db)
@@ -927,7 +983,7 @@ async def remove_staged_merit(
     session_id: int,
     index: int,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """수동 staged 상점 삭제 (인덱스)"""
     session = await _get_session_or_404(session_id, db)
@@ -955,7 +1011,7 @@ async def finalize_session_api(
     session_id: int,
     body: SessionFinalizeRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """세션 마감 (Finalize) - 페널티 확정 및 정산 처리"""
     from app.services.finalize import finalize_session, SessionAlreadyFinalizedError
@@ -966,7 +1022,8 @@ async def finalize_session_api(
     try:
         await finalize_session(session_id, db, overrides_dict, body.skip_merit_indices)
         await db.commit() # 트랜잭션 확정
-        
+        logger.audit(f"session_finalized id={session_id}")
+
         # 갱신된 세션 정보 조회하여 finalized_at 반환
         updated_session = await db.get(SessionModel, session_id)
         
@@ -983,4 +1040,130 @@ async def finalize_session_api(
         logger.error("Finalize failed", exc_info=True)
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Finalize failed: {str(e)}")
+
+
+# ── PPT Download ──────────────────────────────────────────────────────────────
+
+@router.get("/{session_id}/ppt/{member_id}/download")
+async def download_member_ppt(
+    session_id: int,
+    member_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """멤버의 PPT 파일을 구글 드라이브에서 다운로드하여 반환"""
+    import asyncio
+    from fastapi.responses import Response
+    from app.services.crawler_video import download_drive_file_bytes
+
+    session = await _get_session_or_404(session_id, db)
+
+    # Assignment 조회 (INDIVIDUAL or TEAM)
+    assignment = None
+    if session.type == "TEAM":
+        # member → team → team assignment
+        tm_result = await db.execute(
+            select(TeamMember.team_id)
+            .join(Team)
+            .where(Team.session_id == session_id, TeamMember.member_id == member_id)
+        )
+        team_id = tm_result.scalar_one_or_none()
+        if team_id:
+            result = await db.execute(
+                select(Assignment).where(
+                    Assignment.session_id == session_id,
+                    Assignment.type == "PPT_EMAIL",
+                    Assignment.team_id == team_id,
+                )
+            )
+            assignment = result.scalar_one_or_none()
+    else:
+        result = await db.execute(
+            select(Assignment).where(
+                Assignment.session_id == session_id,
+                Assignment.type == "PPT_EMAIL",
+                Assignment.member_id == member_id,
+            )
+        )
+        assignment = result.scalar_one_or_none()
+
+    if not assignment:
+        raise HTTPException(status_code=404, detail="PPT_EMAIL assignment not found")
+
+    drive_file_id = (assignment.raw_data or {}).get("drive_file_id")
+    if not drive_file_id:
+        raise HTTPException(status_code=404, detail="드라이브에 업로드된 PPT 파일이 없습니다")
+
+    try:
+        file_bytes, filename = await asyncio.to_thread(download_drive_file_bytes, drive_file_id)
+    except Exception as e:
+        logger.error(f"PPT 다운로드 실패: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"드라이브 다운로드 실패: {e}")
+
+    return Response(
+        content=file_bytes,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{session_id}/ppt/download-all")
+async def download_all_ppt(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """모든 PPT를 ZIP으로 묶어서 다운로드"""
+    import asyncio
+    import io
+    import zipfile
+    from fastapi.responses import Response
+    from app.services.crawler_video import download_drive_file_bytes
+
+    session = await _get_session_or_404(session_id, db)
+
+    # 해당 세션의 모든 PPT_EMAIL Assignment (drive_file_id 있는 것)
+    result = await db.execute(
+        select(Assignment).where(
+            Assignment.session_id == session_id,
+            Assignment.type == "PPT_EMAIL",
+        )
+    )
+    assignments = result.scalars().all()
+
+    files_to_zip: list[tuple[str, bytes]] = []
+    for a in assignments:
+        drive_file_id = (a.raw_data or {}).get("drive_file_id")
+        if not drive_file_id:
+            continue
+        try:
+            file_bytes, filename = await asyncio.to_thread(download_drive_file_bytes, drive_file_id)
+            files_to_zip.append((filename, file_bytes))
+        except Exception as e:
+            logger.warning(f"ZIP용 PPT 다운로드 실패 (assignment={a.id}): {e}")
+
+    if not files_to_zip:
+        raise HTTPException(status_code=404, detail="다운로드할 PPT 파일이 없습니다")
+
+    # ZIP 생성
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        seen_names: set[str] = set()
+        for filename, content in files_to_zip:
+            # 중복 파일명 처리
+            unique_name = filename
+            counter = 1
+            while unique_name in seen_names:
+                name_part, ext = (filename.rsplit(".", 1) + [""])[:2]
+                unique_name = f"{name_part}_{counter}.{ext}" if ext else f"{name_part}_{counter}"
+                counter += 1
+            seen_names.add(unique_name)
+            zf.writestr(unique_name, content)
+
+    zip_filename = f"{session.week_num}주차_{session.title}_PPT.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_filename}"'},
+    )
 

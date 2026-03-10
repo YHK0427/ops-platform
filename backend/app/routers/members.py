@@ -5,9 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_staff
 from app.models import Attendance, Ledger, Member, Session as SessionModel, User
 from app.schemas.member import MemberCreate, MemberResponse, MemberUpdate
+
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/members", tags=["members"])
 
@@ -34,8 +37,8 @@ async def get_me(
     )
     user = result.scalar_one_or_none()
     if not user:
-        return {"username": current_user["username"], "role": current_user["role"], "display_name": current_user["username"]}
-    return {"username": user.username, "role": user.role, "display_name": user.display_name}
+        return {"username": current_user["username"], "role": current_user["role"], "display_name": current_user["username"], "department": None}
+    return {"username": user.username, "role": user.role, "display_name": user.display_name, "department": user.department}
 
 
 @router.get("", response_model=list[MemberResponse])
@@ -59,7 +62,7 @@ async def list_members(
 async def create_member(
     body: MemberCreate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """멤버 생성"""
     member = Member(
@@ -71,6 +74,7 @@ async def create_member(
     db.add(member)
     await db.commit()
     await db.refresh(member)
+    logger.audit(f"member_created id={member.id} name={member.name}")
     return member
 
 
@@ -89,7 +93,7 @@ async def update_member(
     member_id: int,
     body: MemberUpdate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """멤버 정보 수정"""
     member = await _get_member_or_404(member_id, db)
@@ -101,6 +105,7 @@ async def update_member(
         member.deactivated_at = None
     await db.commit()
     await db.refresh(member)
+    logger.audit(f"member_updated id={member_id} fields={list(update_data.keys())}")
     return member
 
 
@@ -108,27 +113,27 @@ async def update_member(
 async def delete_member(
     member_id: int,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
-    """Soft delete + DEPOSIT_REFUND ledger 자동 생성"""
+    """Soft delete + 잔여 디포짓 금고 몰수 (DEPOSIT_FORFEIT)"""
     member = await _get_member_or_404(member_id, db)
     if not member.is_active:
         raise HTTPException(status_code=400, detail="이미 비활성화된 멤버입니다")
 
-    refund_amount = member.current_deposit
+    forfeit_amount = member.current_deposit
 
     # Soft delete
     member.is_active = False
     member.deactivated_at = datetime.now(timezone.utc)
 
-    # DEPOSIT_REFUND ledger 자동 생성
-    if refund_amount > 0:
+    # 잔여 디포짓 → 금고 몰수
+    if forfeit_amount > 0:
         ledger = Ledger(
             member_id=member.id,
-            type="DEPOSIT_REFUND",
-            amount_krw=refund_amount,
+            type="DEPOSIT_FORFEIT",
+            amount_krw=-forfeit_amount,
             score_delta=0,
-            description=f"멤버 비활성화 잔여 디파짓 환불 ({member.name})",
+            description=f"이탈 — 잔여 디포짓 금고 귀속 ({member.name})",
             created_by="system",
             deposit_after=0,
         )
@@ -136,6 +141,43 @@ async def delete_member(
 
     member.current_deposit = 0
     await db.commit()
+    logger.audit(f"member_deleted id={member_id} name={member.name} forfeit={forfeit_amount}")
+
+
+@router.post("/{member_id}/graduate", status_code=status.HTTP_200_OK)
+async def graduate_member(
+    member_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+):
+    """수료 처리 — 디포짓 환급 후 비활성화"""
+    member = await _get_member_or_404(member_id, db)
+    if not member.is_active:
+        raise HTTPException(status_code=400, detail="이미 비활성화된 멤버입니다")
+
+    refund_amount = member.current_deposit
+
+    # 비활성화
+    member.is_active = False
+    member.deactivated_at = datetime.now(timezone.utc)
+
+    # 디포짓 환급
+    if refund_amount > 0:
+        ledger = Ledger(
+            member_id=member.id,
+            type="DEPOSIT_REFUND",
+            amount_krw=-refund_amount,
+            score_delta=0,
+            description=f"수료 — 디포짓 환급 ({member.name})",
+            created_by="system",
+            deposit_after=0,
+        )
+        db.add(ledger)
+
+    member.current_deposit = 0
+    await db.commit()
+    logger.audit(f"member_graduated id={member_id} name={member.name} refund={refund_amount}")
+    return {"id": member.id, "name": member.name, "refund_amount": refund_amount}
 
 
 @router.get("/{member_id}/ledger")

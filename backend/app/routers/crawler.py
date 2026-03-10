@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_staff
 from app.models import NaverSession
 from app.models import Session as SessionModel
 from app.schemas.crawler import (
@@ -26,19 +26,34 @@ from app.schemas.crawler import (
 from app.services.naver_session import import_session
 from app.services.crawler_video import list_drive_videos, list_drive_videos_by_folder, parse_presenter_name
 
+import logging
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/crawler", tags=["crawler"])
 
 
 def _parse_order(name: str) -> int:
+    """'(8번째)' → 8, '(2분반 6번째)' → 6"""
+    # 분반 형식: (N분반 M번째)
+    m = re.search(r'\(\d+분반\s*(\d+)번째\)', name)
+    if m:
+        return int(m.group(1))
+    # 일반 형식: (N번째)
     m = re.search(r'\((\d+)번째\)', name)
     return int(m.group(1)) if m else 9999
+
+
+def _parse_group(name: str) -> int | None:
+    """'(2분반 6번째)' → 2, 분반 없으면 None"""
+    m = re.search(r'\((\d+)분반', name)
+    return int(m.group(1)) if m else None
 
 
 @router.post("/naver/import", response_model=NaverSessionStatus)
 async def import_naver_session_api(
     body: NaverImportRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """네이버 세션(Playwright storage state) 임포트"""
     session = await import_session(db, body.storage_json)
@@ -73,14 +88,15 @@ async def get_naver_session_status(
 async def start_scan_ppt(
     request: Request,
     body: CrawlerTaskStartRequest,
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
-    """PPT 스캔 태스크 시작 (Stub 실행)"""
+    """PPT 이메일 스캔 태스크 시작 (IMAP)"""
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
     job = await pool.enqueue_job("task_scan_ppt", session_id=body.session_id, mode=body.mode)
+    logger.audit(f"crawler_start type=scan_ppt session={body.session_id} mode={body.mode}")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 
@@ -88,7 +104,7 @@ async def start_scan_ppt(
 async def start_scan_homework(
     request: Request,
     body: CrawlerTaskStartRequest,
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """과제/리뷰/피드백 게시판 스캔 태스크 시작"""
     pool = getattr(request.app.state, "arq_pool", None)
@@ -96,6 +112,7 @@ async def start_scan_homework(
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
     job = await pool.enqueue_job("task_scan_homework", session_id=body.session_id)
+    logger.audit(f"crawler_start type=scan_homework session={body.session_id}")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 
@@ -103,7 +120,7 @@ async def start_scan_homework(
 async def start_scan_excuses(
     request: Request,
     body: ScanExcusesRequest,
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """사유서 게시판 스캔 태스크 시작 (PRE/POST 모드)"""
     pool = getattr(request.app.state, "arq_pool", None)
@@ -115,6 +132,7 @@ async def start_scan_excuses(
         session_id=body.session_id,
         mode=body.mode,
     )
+    logger.audit(f"crawler_start type=scan_excuses session={body.session_id} mode={body.mode}")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 
@@ -122,7 +140,7 @@ async def start_scan_excuses(
 async def start_upload_videos(
     request: Request,
     body: VideoUploadRequest,
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """영상 업로드 태스크 시작"""
     pool = getattr(request.app.state, "arq_pool", None)
@@ -134,6 +152,7 @@ async def start_upload_videos(
         videos_raw = [v.model_dump() for v in body.videos]
 
     job = await pool.enqueue_job("task_upload_videos", session_id=body.session_id, videos=videos_raw)
+    logger.audit(f"crawler_start type=upload_videos session={body.session_id}")
 
     # 활성 태스크 Redis 등록 (다중 사용자 공유용, TTL 2시간)
     redis = pool
@@ -221,14 +240,15 @@ async def get_active_upload_task(
 @router.post("/sync-boards", response_model=CrawlerTaskResponse)
 async def trigger_board_sync(
     request: Request,
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
-    """수동 게시판 동기화 트리거"""
+    """네이버 세션 헬스체크 수동 트리거"""
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
-    job = await pool.enqueue_job("task_sync_cafe_boards")
+    job = await pool.enqueue_job("task_naver_health_check")
+    logger.audit("crawler_start type=naver_health_check")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 
@@ -244,7 +264,8 @@ async def list_drive_videos_api(
         raise HTTPException(status_code=404, detail="Session not found")
 
     try:
-        drive_folder_id = (session.config or {}).get("drive_folder_id")
+        cfg = session.config or {}
+        drive_folder_id = cfg.get("drive_video_folder_id") or cfg.get("drive_folder_id")
         if drive_folder_id:
             files = await asyncio.to_thread(list_drive_videos_by_folder, drive_folder_id)
         else:
@@ -254,15 +275,24 @@ async def list_drive_videos_api(
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Drive API 오류: {e}")
 
-    videos = [
-        DriveVideoItem(
+    videos = []
+    for f in files:
+        presenter = parse_presenter_name(f["name"])
+        order = _parse_order(f["name"])
+        group = _parse_group(f["name"])
+        # 카페 게시글 제목 자동 생성
+        order_suffix = f"({order}번째)" if order != 9999 else ""
+        if group is not None:
+            order_suffix = f"({group}분반 {order}번째)" if order != 9999 else f"({group}분반)"
+        cafe_title = f"연합UP 33기 {session.week_num}주차 발표-[{session.title}]-{presenter}{order_suffix}"
+        videos.append(DriveVideoItem(
             id=f["id"],
             name=f["name"],
-            presenter=parse_presenter_name(f["name"]),
-            order=_parse_order(f["name"]),
-        )
-        for f in files
-    ]
+            presenter=presenter,
+            order=order,
+            group=group,
+            cafe_title=cafe_title,
+        ))
     return DriveVideoListResponse(videos=videos)
 
 
@@ -270,7 +300,7 @@ async def list_drive_videos_api(
 async def start_naver_login(
     body: NaverLoginRequest,
     request: Request,
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_staff),
 ):
     """네이버 로그인 태스크 시작 (자동화)"""
     pool = getattr(request.app.state, "arq_pool", None)
@@ -278,8 +308,9 @@ async def start_naver_login(
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
     job = await pool.enqueue_job(
-        "task_naver_login", 
-        username=body.username, 
+        "task_naver_login",
+        username=body.username,
         password=body.password
     )
+    logger.audit(f"crawler_start type=naver_login")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")

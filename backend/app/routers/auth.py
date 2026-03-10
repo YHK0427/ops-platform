@@ -22,7 +22,10 @@ from app.deps import (
     require_admin,
     verify_password,
 )
-from app.models import User
+from app.models import (
+    User, Member, Session, Team, TeamMember, TeamHistory,
+    Assignment, Attendance, Ledger, CafePost, TreasuryExpense,
+)
 
 logger = logging.getLogger("auth")
 
@@ -60,6 +63,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=6, max_length=128)
     display_name: str = Field(max_length=50)
     role: str = Field(pattern=r"^(admin|manager|viewer)$")
+    department: str | None = None
 
 
 class UserUpdate(BaseModel):
@@ -67,6 +71,7 @@ class UserUpdate(BaseModel):
     role: str | None = Field(None, pattern=r"^(admin|manager|viewer)$")
     password: str | None = Field(None, min_length=6, max_length=128)
     is_active: bool | None = None
+    department: str | None = Field(None)
 
 
 class UserResponse(BaseModel):
@@ -74,6 +79,7 @@ class UserResponse(BaseModel):
     username: str
     display_name: str
     role: str
+    department: str | None = None
     is_active: bool
     has_totp: bool = False
     created_at: datetime
@@ -87,6 +93,7 @@ class UserResponse(BaseModel):
             username=user.username,
             display_name=user.display_name,
             role=user.role,
+            department=user.department,
             is_active=user.is_active,
             has_totp=bool(user.totp_secret),
             created_at=user.created_at,
@@ -179,7 +186,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             logger.info("totp_pending user=%s ip=%s", user.username, ip)
             return TokenResponse(requires_totp=True, totp_pending_token=pending_token)
 
-    logger.info("login_success user=%s ip=%s role=%s", user.username, ip, user.role)
+    logger.audit("login_success user=%s ip=%s role=%s", user.username, ip, user.role)
     token = _create_access_token(user.username, user.role)
     return TokenResponse(access_token=token)
 
@@ -208,7 +215,7 @@ async def verify_totp(body: VerifyTotpRequest, request: Request, db: AsyncSessio
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP 코드가 올바르지 않습니다")
 
     await _delete_totp_pending(body.token)
-    logger.info("login_success user=%s ip=%s role=%s (totp)", user.username, ip, user.role)
+    logger.audit("login_success user=%s ip=%s role=%s (totp)", user.username, ip, user.role)
     token = _create_access_token(user.username, user.role)
     return TokenResponse(access_token=token)
 
@@ -230,7 +237,7 @@ async def logout(
     exp: int = payload.get("exp", 0)
     ttl = max(1, exp - int(datetime.now(timezone.utc).timestamp()))
     await blacklist_token(token, ttl)
-    logger.info("logout user=%s", current_user["username"])
+    logger.audit("logout user=%s", current_user["username"])
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -283,7 +290,7 @@ async def totp_confirm(
 
     user.totp_secret = secret
     await db.commit()
-    logger.info("totp_enabled user=%s", current_user["username"])
+    logger.audit("totp_enabled user=%s", current_user["username"])
     return {"status": "enabled"}
 
 
@@ -302,7 +309,7 @@ async def totp_disable(
 
     user.totp_secret = None
     await db.commit()
-    logger.info("totp_disabled user=%s", current_user["username"])
+    logger.audit("totp_disabled user=%s", current_user["username"])
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -348,10 +355,12 @@ async def create_user(
         password_hash=hashed,
         display_name=body.display_name,
         role=body.role,
+        department=body.department,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    logger.audit(f"user_created username={user.username} role={user.role} dept={user.department}")
     return UserResponse.from_user(user)
 
 
@@ -371,6 +380,8 @@ async def update_user(
         user.display_name = body.display_name
     if body.role is not None:
         user.role = body.role
+    if body.department is not None:
+        user.department = body.department if body.department else None
     if body.password is not None:
         user.password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     if body.is_active is not None:
@@ -378,6 +389,7 @@ async def update_user(
 
     await db.commit()
     await db.refresh(user)
+    logger.audit(f"user_updated id={user_id} username={user.username}")
     return UserResponse.from_user(user)
 
 
@@ -387,10 +399,49 @@ async def delete_user(
     _: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """사용자 비활성화 (admin 전용)"""
+    """사용자 삭제 (admin 전용)"""
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
-    user.is_active = False
+    await db.delete(user)
     await db.commit()
+    logger.audit(f"user_deleted id={user_id} username={user.username}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/reset-semester", status_code=status.HTTP_200_OK)
+async def reset_semester(
+    _: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    기수 초기화 (admin 전용)
+    - 모든 세션, 장부, 출석, 과제, 팀, 게시판 캐시 삭제
+    - 멤버 유지, 디포짓 20000원 초기화, 점수 초기화
+    """
+    from sqlalchemy import delete
+
+    # 순서 중요: FK 의존성 역순으로 삭제
+    await db.execute(delete(Ledger))
+    await db.execute(delete(Assignment))
+    await db.execute(delete(Attendance))
+    await db.execute(delete(TeamHistory))
+    await db.execute(delete(TeamMember))
+    await db.execute(delete(Team))
+    await db.execute(delete(Session))
+    await db.execute(delete(CafePost))
+    await db.execute(delete(TreasuryExpense))
+
+    # 멤버 디포짓/점수 초기화
+    members_result = await db.execute(select(Member))
+    count = 0
+    for member in members_result.scalars().all():
+        member.current_deposit = 20000
+        member.total_plus_score = 0
+        member.total_minus_score = 0
+        member.net_score = 0
+        count += 1
+
+    await db.commit()
+    logger.audit(f"semester_reset members={count}")
+    return {"reset_members": count}

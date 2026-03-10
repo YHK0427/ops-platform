@@ -63,3 +63,6 @@ frontend/@/
 #
 *.png
 !docs/screenshots/*.png
+
+# DB 백업 파일
+*.sql

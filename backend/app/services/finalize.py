@@ -1,6 +1,9 @@
+import logging
 from datetime import datetime, timezone
 from itertools import combinations
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.models import Ledger, Member, Session, Team, TeamHistory
-from app.services.penalty_engine import PenaltyEngine
+from app.services.penalty_engine import PenaltyEngine, check_milestone_fines
 from app.services.streak_checker import check_attendance_streaks
 
 
@@ -42,6 +45,8 @@ async def finalize_session(
         
     if session.status == "FINALIZED":
         raise SessionAlreadyFinalizedError("Session is already finalized")
+
+    logger.info(f"finalize_start session={session_id}")
 
     # overrides 맵 변환 (member_id -> skip_types set)
     override_map = {}
@@ -83,23 +88,18 @@ async def finalize_session(
         p.member.net_score = p.member.total_plus_score + p.member.total_minus_score
             
         # ③ 마일스톤 체크 (Milestone Check) - Update 후 비교
-        milestone = engine.check_milestone_after_update(before_minus, p.member.total_minus_score)
-        if milestone:
-            # 마일스톤 벌금 적용 (Deposit 차감)
-            # p.member.current_deposit += milestone.deposit_delta (보통 음수)
-            # 하지만 여기서 바로 반영? Spec: "p.member.current_deposit += milestone.deposit_delta"
-            # 그리고 Ledger 기록
-            p.member.current_deposit += milestone.deposit_delta
-            
+        milestones = check_milestone_fines(before_minus, p.member.total_minus_score)
+        for ms in milestones:
             db.add(Ledger(
                 member_id=member_id,
                 session_id=session_id,
                 type="MILESTONE_FINE",
-                amount_krw=milestone.deposit_delta, # -5000
+                amount_krw=ms["deposit_delta"],
                 score_delta=0,
                 deposit_after=p.member.current_deposit,
-                description=milestone.description,
-                created_at=now
+                description=ms["description"],
+                created_at=now,
+                is_paid=False,
             ))
             
         # ④ 디파짓 차감 (Deposit Update) - 본 페널티
@@ -198,5 +198,7 @@ async def finalize_session(
     # 세션 상태 업데이트
     session.status = "FINALIZED"
     session.finalized_at = now
-    
+
+    logger.audit(f"finalize_complete session={session_id} penalties={len(penalties)} merits={len(all_merits)}")
+
     # Caller가 commit 수행
