@@ -35,4 +35,5 @@ jobs:
             docker compose build
             docker compose up -d
             docker compose exec -T backend alembic upgrade head
+            docker compose restart backend worker
           SCRIPT
