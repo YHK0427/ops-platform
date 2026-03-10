@@ -33,7 +33,7 @@ jobs:
             cd /home/ubuntu/ops-deploy
             git pull origin main
             docker compose build
+            docker compose down
             docker compose up -d
             docker compose exec -T backend alembic upgrade head
-            docker compose restart backend worker
           SCRIPT
