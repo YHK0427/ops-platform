@@ -96,8 +96,7 @@ export function useUpdateMember() {
     });
 }
 
-// Deactivate logic: typically triggers a refund (server-side logic needed via dedicated endpoint or PATCH)
-// In Phase 10 spec: DELETE /members/{id} triggers refund + deactivate
+// 이탈 처리: 잔여 디파짓 금고 몰수 + 비활성화
 export function useDeactivateMember() {
     const queryClient = useQueryClient();
     return useMutation({
@@ -107,10 +106,31 @@ export function useDeactivateMember() {
         onSuccess: (_, id) => {
             queryClient.invalidateQueries({ queryKey: membersKeys.lists() });
             queryClient.invalidateQueries({ queryKey: membersKeys.detail(id) });
-            toast.success("멤버가 비활성화되었습니다.");
+            queryClient.invalidateQueries({ queryKey: ["ledger"] });
+            toast.success("멤버가 비활성화되었습니다. 잔여 디파짓은 금고로 귀속됩니다.");
         },
         onError: (err) => {
             toast.error("비활성화 실패: " + (err as any).response?.data?.detail);
+        },
+    });
+}
+
+// 수료 처리: 디파짓 환급 + 비활성화
+export function useGraduateMember() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            const { data } = await api.post(`/members/${id}/graduate`);
+            return data;
+        },
+        onSuccess: (data: any) => {
+            queryClient.invalidateQueries({ queryKey: membersKeys.lists() });
+            queryClient.invalidateQueries({ queryKey: membersKeys.detail(data.id) });
+            queryClient.invalidateQueries({ queryKey: ["ledger"] });
+            toast.success(`${data.name} 수료 처리 완료. 환급액: ₩${data.refund_amount?.toLocaleString()}`);
+        },
+        onError: (err) => {
+            toast.error("수료 처리 실패: " + (err as any).response?.data?.detail);
         },
     });
 }

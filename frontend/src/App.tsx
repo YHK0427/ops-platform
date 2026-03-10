@@ -19,6 +19,7 @@ import { PostTab } from "@/pages/session/PostTab";
 import SettlementTab from "@/pages/session/SettlementTab";
 import TeamEditPage from "@/pages/session/TeamEditPage";
 import AdminUsers from "@/pages/AdminUsers";
+import Treasury from "@/pages/Treasury";
 
 function SessionDefaultTab() {
   const { session } = useOutletContext<{ session: { status: string } }>();
@@ -85,6 +86,7 @@ export default function App() {
                   <Route path="team-edit" element={<TeamEditPage />} />
                 </Route>
                 <Route path="/ledger" element={<Ledger />} />
+                <Route path="/treasury" element={<Treasury />} />
                 <Route path="/admin/users" element={<AdminUsers />} />
               </Route>
             </Route>

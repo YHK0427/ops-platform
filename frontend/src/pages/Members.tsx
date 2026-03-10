@@ -27,6 +27,8 @@ export default function Members() {
     // In a real app with pagination, we'd pass showInactive to API
     const { data: members, isLoading } = useMembers(!showInactive);
 
+    const lowDepositCount = members?.filter(m => m.is_active && (m.current_deposit || 0) < 10000).length || 0;
+
     const filteredMembers = members?.filter((m) => {
         if (!search) return true;
         return (
@@ -39,7 +41,7 @@ export default function Members() {
         <div className="flex flex-col h-full">
             <PageHeader
                 title="멤버"
-                subtitle={`총 ${members?.length || 0}명의 멤버`}
+                subtitle={`총 ${members?.length || 0}명${lowDepositCount > 0 ? ` · 충전 필요 ${lowDepositCount}명` : ""}`}
                 actions={<MemberAddSheet />}
             />
 
@@ -83,7 +85,7 @@ export default function Members() {
                                 <TableHead className="w-[60px] text-[var(--color-text-muted)]">ID</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">이름 / 이메일</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">태그</TableHead>
-                                <TableHead className="text-right text-[var(--color-text-muted)]">보증금</TableHead>
+                                <TableHead className="text-right text-[var(--color-text-muted)]">디파짓</TableHead>
                                 <TableHead className="text-right text-[var(--color-text-muted)]">상점</TableHead>
                                 <TableHead className="text-right text-[var(--color-text-muted)]">벌점</TableHead>
                                 <TableHead className="text-right text-[var(--color-text-muted)]">순점수</TableHead>
@@ -110,7 +112,7 @@ export default function Members() {
                                         className="cursor-pointer border-b-[var(--color-border-subtle)] hover:bg-[var(--color-hover)] transition-colors"
                                         onClick={() => navigate(`/members/${member.id}`)}
                                     >
-                                        <TableCell className="font-mono text-[var(--color-text-muted)]">#{member.id}</TableCell>
+                                        <TableCell className="text-[var(--color-text-muted)]">#{member.id}</TableCell>
                                         <TableCell>
                                             <div className="flex flex-col">
                                                 <span className="font-medium text-[var(--color-text-primary)] flex items-center gap-2">
@@ -129,19 +131,26 @@ export default function Members() {
                                                 ))}
                                             </div>
                                         </TableCell>
-                                        <TableCell className={`text-right font-mono text-sm ${(member.current_deposit || 0) < 10000 ? "text-rose-400" : "text-[var(--color-text-secondary)]"}`}>
-                                            ₩{(member.current_deposit || 0).toLocaleString()}
+                                        <TableCell className={`text-right text-sm ${(member.current_deposit || 0) < 10000 ? "text-rose-400" : "text-[var(--color-text-secondary)]"}`}>
+                                            <div className="flex items-center justify-end gap-1.5">
+                                                {member.is_active && (member.current_deposit || 0) < 10000 && (
+                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/20">
+                                                        충전요망
+                                                    </span>
+                                                )}
+                                                ₩{(member.current_deposit || 0).toLocaleString()}
+                                            </div>
                                         </TableCell>
-                                        <TableCell className="text-right font-mono text-sm text-green-400">
+                                        <TableCell className="text-right text-sm text-green-400">
                                             {member.total_plus_score || 0 ? `+${member.total_plus_score}` : "-"}
                                         </TableCell>
-                                        <TableCell className="text-right font-mono text-sm text-rose-400">
+                                        <TableCell className="text-right text-sm text-rose-400">
                                             {member.total_minus_score ? member.total_minus_score : "-"}
                                         </TableCell>
-                                        <TableCell className={`text-right font-mono text-sm font-semibold ${(member.net_score || 0) > 0 ? "text-green-400" : (member.net_score || 0) < 0 ? "text-rose-400" : "text-gray-400"}`}>
+                                        <TableCell className={`text-right text-sm font-semibold ${(member.net_score || 0) > 0 ? "text-green-400" : (member.net_score || 0) < 0 ? "text-rose-400" : "text-gray-400"}`}>
                                             {member.net_score || 0}
                                         </TableCell>
-                                        <TableCell className="text-right text-xs text-[var(--color-text-muted)] font-mono">
+                                        <TableCell className="text-right text-xs text-[var(--color-text-muted)]">
                                             {new Date(member.created_at).toLocaleDateString()}
                                         </TableCell>
                                     </TableRow>

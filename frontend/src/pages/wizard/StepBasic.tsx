@@ -23,12 +23,12 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
         <div className="space-y-6 max-w-2xl mx-auto">
             <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                 <CardHeader>
-                    <CardTitle>Step 1: 기본 설정</CardTitle>
+                    <CardTitle>1단계: 기본 설정</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <Label>주차 (Week)</Label>
+                            <Label>주차</Label>
                             <Input
                                 type="number"
                                 value={state.week_num}
@@ -65,7 +65,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                         {state.title && (
                             <p className="text-xs text-[var(--color-text-muted)]">
                                 ℹ️ 영상 파일명 예시:{" "}
-                                <span className="font-mono text-[var(--color-accent)]">
+                                <span className="text-[var(--color-accent)]">
                                     {state.week_num}주차_{state.title}_홍길동.mp4
                                 </span>
                             </p>
@@ -82,8 +82,8 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="INDIVIDUAL">개인 발표 (INDIVIDUAL)</SelectItem>
-                                <SelectItem value="TEAM">팀 세션 (TEAM)</SelectItem>
+                                <SelectItem value="INDIVIDUAL">개인 발표</SelectItem>
+                                <SelectItem value="TEAM">팀 세션</SelectItem>
                             </SelectContent>
                         </Select>
                         <p className="text-xs text-[var(--color-text-muted)]">
@@ -137,7 +137,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                     checked={state.is_holiday}
                                     onChange={(e) => onChange({ is_holiday: e.target.checked })}
                                 />
-                                <span className="text-sm text-red-400">휴일 (Penalty 면제)</span>
+                                <span className="text-sm text-red-400">휴일 (벌점 면제)</span>
                             </label>
                         </div>
                     </div>

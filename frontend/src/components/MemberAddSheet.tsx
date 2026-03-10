@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/sheet";
 
 // Predefined tags for convenience
-const SUGGESTED_TAGS = ["leader", "backend", "frontend", "designer", "planner"];
+const SUGGESTED_TAGS = ["리더", "백엔드", "프론트엔드", "디자이너", "기획"];
 
 export function MemberAddSheet() {
     const [open, setOpen] = useState(false);

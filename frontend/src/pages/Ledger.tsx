@@ -1,25 +1,28 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { useLedger, useMembers, useSessions, useGiveMerit, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
+import { useLedger, useMembers, useSessions, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { formatNumber } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, PlusCircle, ArrowRightLeft, Pencil, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, PlusCircle, ArrowRightLeft, Pencil, Trash2, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { toast } from "sonner";
+import { GrantMeritDialog } from "@/components/GrantMeritDialog";
+import { BulkPenaltyDialog } from "@/components/BulkPenaltyDialog";
+import { WeeklyReportButton } from "@/components/WeeklyReportImage";
 
 // --- Dialogs ---
 
 const LEDGER_TYPES = [
     "FINE", "MILESTONE_FINE", "DEPOSIT_RECHARGE", "DEPOSIT_ADJUST",
-    "DEPOSIT_REFUND", "MERIT", "ADJUSTMENT"
+    "DEPOSIT_REFUND", "DEPOSIT_FORFEIT", "MERIT", "ADJUSTMENT"
 ];
 
 function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberName: string }) {
@@ -61,9 +64,9 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
             </DialogTrigger>
             <DialogContent className="sm:max-w-[450px]">
                 <DialogHeader>
-                    <DialogTitle>원장 항목 수정</DialogTitle>
+                    <DialogTitle>장부 항목 수정</DialogTitle>
                     <DialogDescription>
-                        <span className="font-medium">{memberName}</span>의 원장 항목을 수정합니다.
+                        <span className="font-medium">{memberName}</span>의 장부 항목을 수정합니다.
                         amount/score 변경 시 멤버 잔액이 즉시 반영됩니다.
                     </DialogDescription>
                 </DialogHeader>
@@ -88,7 +91,7 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
                             value={amount}
                             onChange={(e) => setAmount(parseInt(e.target.value) || 0)}
                             className="col-span-3"
-                            placeholder="KRW (음수 가능)"
+                            placeholder="원 (음수 가능)"
                         />
                     </div>
                     <div className="grid grid-cols-4 items-center gap-4">
@@ -122,86 +125,21 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
     );
 }
 
-function GrantMeritDialog() {
-    const { mutate: giveMerit, isPending } = useGiveMerit();
-    const { data: members } = useMembers(); // Need active members
-    const [selectedMemberId, setSelectedMemberId] = useState<string>("");
-    const [score, setScore] = useState(1);
-    const [reason, setReason] = useState("");
-    const [open, setOpen] = useState(false);
+// GrantMeritDialog and BulkPenaltyDialog are imported from components
 
-    const handleSubmit = () => {
-        if (!selectedMemberId) return toast.error("멤버를 선택해주세요.");
-        if (!reason) return toast.error("사유를 입력해주세요.");
-
-        giveMerit({
-            member_ids: [parseInt(selectedMemberId)],
-            score_delta: score,
-            reason
-        }, {
-            onSuccess: () => {
-                setOpen(false);
-                setReason("");
-                setSelectedMemberId("");
-            }
-        });
-    };
-
-    return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button className="bg-[var(--color-primary)] hover:bg-rose-600 text-white">
-                    <PlusCircle className="mr-2 h-4 w-4" /> 상점 부여
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                    <DialogTitle>상점 부여</DialogTitle>
-                    <DialogDescription>멤버에게 상점을 부여합니다.</DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right">멤버</Label>
-                        <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
-                            <SelectTrigger className="col-span-3">
-                                <SelectValue placeholder="멤버 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {members?.map((m: any) => (
-                                    <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right">점수</Label>
-                        <Input type="number" value={score} onChange={(e) => setScore(parseInt(e.target.value))} className="col-span-3" />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right">사유</Label>
-                        <Input value={reason} onChange={(e) => setReason(e.target.value)} className="col-span-3" placeholder="예: 우수 질문" />
-                    </div>
-                </div>
-                <DialogFooter>
-                    <Button onClick={handleSubmit} disabled={isPending}>
-                        {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        부여
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
-}
+const DEDUCT_TYPES = new Set(["FINE", "DEPOSIT_ADJUST"]);
 
 function CreateTransactionDialog() {
     const { mutate: createTransaction, isPending } = useCreateTransaction();
     const { data: members } = useMembers();
     const [selectedMemberId, setSelectedMemberId] = useState<string>("");
-    const [type, setType] = useState<string>("DEPOSIT_ADJUST");
+    const [type, setType] = useState<string>("DEPOSIT_RECHARGE");
     const [amount, setAmount] = useState(0);
     const [score, setScore] = useState(0);
     const [description, setDescription] = useState("");
     const [open, setOpen] = useState(false);
+
+    const isDeduct = DEDUCT_TYPES.has(type);
 
     const handleSubmit = () => {
         if (!selectedMemberId) return toast.error("멤버를 선택해주세요.");
@@ -211,7 +149,7 @@ function CreateTransactionDialog() {
         createTransaction({
             member_id: parseInt(selectedMemberId),
             type,
-            amount_krw: amount,
+            amount_krw: isDeduct ? -Math.abs(amount) : Math.abs(amount),
             score_delta: score,
             description
         }, {
@@ -235,7 +173,7 @@ function CreateTransactionDialog() {
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
                     <DialogTitle>수동 거래 생성</DialogTitle>
-                    <DialogDescription>보증금/승점을 수동으로 조정합니다.</DialogDescription>
+                    <DialogDescription>디파짓/승점을 수동으로 조정합니다.</DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                     <div className="grid grid-cols-4 items-center gap-4">
@@ -253,24 +191,38 @@ function CreateTransactionDialog() {
                     </div>
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label className="text-right">유형</Label>
-                        <Select value={type} onValueChange={setType}>
+                        <Select value={type} onValueChange={(v) => { setType(v); setAmount(0); }}>
                             <SelectTrigger className="col-span-3">
                                 <SelectValue placeholder="유형 선택" />
                             </SelectTrigger>
                             <SelectContent>
-                                {["DEPOSIT_RECHARGE", "DEPOSIT_ADJUST", "DEPOSIT_REFUND", "FINE", "ADJUSTMENT"].map(t => (
-                                    <SelectItem key={t} value={t}>{LEDGER_TYPE_LABELS[t] ?? t}</SelectItem>
-                                ))}
+                                <SelectItem value="DEPOSIT_RECHARGE">디파짓 충전 (+)</SelectItem>
+                                <SelectItem value="DEPOSIT_ADJUST">디파짓 차감 (-)</SelectItem>
+                                <SelectItem value="DEPOSIT_REFUND">디파짓 환급 (+)</SelectItem>
+                                <SelectItem value="FINE">벌금 (-)</SelectItem>
+                                <SelectItem value="ADJUSTMENT">기타 조정</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
                     <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right">금액</Label>
-                        <Input type="number" value={amount} onChange={(e) => setAmount(parseInt(e.target.value) || 0)} className="col-span-3" placeholder="KRW (음수 가능)" />
+                        <Label className="text-right">{isDeduct ? "차감 금액" : "금액"}</Label>
+                        <div className="col-span-3 relative">
+                            <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-medium text-sm ${isDeduct ? "text-rose-400" : "text-green-400"}`}>
+                                {isDeduct ? "-" : "+"}
+                            </span>
+                            <Input
+                                type="number"
+                                value={amount}
+                                onChange={(e) => setAmount(Math.abs(parseInt(e.target.value) || 0))}
+                                min={0}
+                                className="pl-7"
+                                placeholder="원"
+                            />
+                        </div>
                     </div>
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label className="text-right">점수</Label>
-                        <Input type="number" value={score} onChange={(e) => setScore(parseInt(e.target.value) || 0)} className="col-span-3" placeholder="점수 (음수 가능)" />
+                        <Input type="number" value={score} onChange={(e) => setScore(parseInt(e.target.value) || 0)} className="col-span-3" placeholder="0 (변동 없으면 0)" />
                     </div>
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label className="text-right">설명</Label>
@@ -295,8 +247,19 @@ export default function Ledger() {
     const [memberFilter, setMemberFilter] = useState("all");
     const [typeFilter, setTypeFilter] = useState("all");
     const [sessionFilter, setSessionFilter] = useState("all");
+    const [searchInput, setSearchInput] = useState("");
+    const [searchQuery, setSearchQuery] = useState("");
     const [page, setPage] = useState(1);
     const LIMIT = 50;
+    const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+    useEffect(() => {
+        debounceRef.current = setTimeout(() => {
+            setSearchQuery(searchInput);
+            setPage(1);
+        }, 300);
+        return () => clearTimeout(debounceRef.current);
+    }, [searchInput]);
 
     // Include inactive members so deactivated member names resolve correctly in the ledger
     const { data: members } = useMembers(false);
@@ -308,6 +271,7 @@ export default function Ledger() {
         member_id: memberFilter === "all" ? undefined : parseInt(memberFilter),
         type: typeFilter === "all" ? undefined : typeFilter,
         session_id: sessionFilter === "all" ? undefined : parseInt(sessionFilter),
+        search: searchQuery || undefined,
         page,
         limit: LIMIT,
     });
@@ -321,12 +285,20 @@ export default function Ledger() {
     return (
         <div className="flex flex-col h-full bg-[var(--color-base)] min-h-screen">
             <PageHeader
-                title="원장"
+                title="장부"
                 subtitle="입출금 및 승점 내역 관리"
                 actions={
                     <div className="flex gap-2">
+                        <WeeklyReportButton />
                         <CreateTransactionDialog />
-                        <GrantMeritDialog />
+                        <BulkPenaltyDialog />
+                        <GrantMeritDialog
+                            trigger={
+                                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                                    <PlusCircle className="mr-2 h-4 w-4" /> 상점 부여
+                                </Button>
+                            }
+                        />
                     </div>
                 }
             />
@@ -335,6 +307,15 @@ export default function Ledger() {
                 {/* Filters */}
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                     <CardContent className="p-4 flex flex-wrap gap-4 items-center">
+                        <div className="relative w-[220px]">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]" />
+                            <Input
+                                placeholder="멤버명·설명 검색..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                className="pl-9 h-9"
+                            />
+                        </div>
                         <div className="w-[200px]">
                             <Select value={memberFilter} onValueChange={handleMemberFilter}>
                                 <SelectTrigger>
@@ -442,13 +423,13 @@ export default function Ledger() {
                                                 />
                                             </div>
                                         </TableCell>
-                                        <TableCell className={`text-right font-mono text-sm ${entry.amount_krw < 0 ? 'text-rose-400' : 'text-gray-300'}`}>
+                                        <TableCell className={`text-right text-sm ${entry.amount_krw < 0 ? 'text-rose-400' : 'text-gray-300'}`}>
                                             {entry.amount_krw !== 0 ? formatNumber(entry.amount_krw) : '-'}
                                         </TableCell>
-                                        <TableCell className={`text-right font-mono text-sm ${entry.score_delta < 0 ? 'text-rose-400' : 'text-gray-300'}`}>
+                                        <TableCell className={`text-right text-sm ${entry.score_delta < 0 ? 'text-rose-400' : 'text-gray-300'}`}>
                                             {entry.score_delta !== 0 ? (entry.score_delta > 0 ? `+${entry.score_delta}` : entry.score_delta) : '-'}
                                         </TableCell>
-                                        <TableCell className="text-right font-mono text-sm text-[var(--color-text-muted)]">
+                                        <TableCell className="text-right text-sm text-[var(--color-text-muted)]">
                                             {formatNumber(entry.deposit_after)}
                                         </TableCell>
                                         <TableCell>
@@ -460,7 +441,7 @@ export default function Ledger() {
                                                 </AlertDialogTrigger>
                                                 <AlertDialogContent className="bg-[var(--color-elevated)] border-[var(--color-border)] text-[var(--color-text-primary)]">
                                                     <AlertDialogHeader>
-                                                        <AlertDialogTitle>원장 항목 삭제</AlertDialogTitle>
+                                                        <AlertDialogTitle>장부 항목 삭제</AlertDialogTitle>
                                                         <AlertDialogDescription>
                                                             이 항목을 삭제하면 멤버의 잔액과 점수가 역전됩니다. 계속하시겠습니까?
                                                         </AlertDialogDescription>
@@ -494,7 +475,7 @@ export default function Ledger() {
                 {ledgerEntries && ledgerEntries.length > 0 && (
                     <div className="flex items-center justify-between">
                         <span className="text-sm text-[var(--color-text-muted)]">
-                            Page {page} {ledgerEntries.length < LIMIT ? "(마지막)" : ""}
+                            {page}페이지 {ledgerEntries.length < LIMIT ? "(마지막)" : ""}
                         </span>
                         <div className="flex gap-2">
                             <Button

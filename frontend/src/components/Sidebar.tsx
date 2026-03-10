@@ -4,6 +4,7 @@ import {
     LayoutDashboard,
     Users,
     BookOpen,
+    PiggyBank,
     LogOut,
     Plus,
     CalendarDays,
@@ -21,7 +22,8 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
     { label: "대시보드", to: "/dashboard", icon: LayoutDashboard },
     { label: "멤버", to: "/members", icon: Users },
-    { label: "원장", to: "/ledger", icon: BookOpen },
+    { label: "장부(기수시점)", to: "/ledger", icon: BookOpen },
+    { label: "금고(총무부시점)", to: "/treasury", icon: PiggyBank },
 ];
 
 export function Sidebar() {
@@ -31,12 +33,12 @@ export function Sidebar() {
     return (
         <aside className="flex flex-col w-56 shrink-0 h-full bg-black/50 backdrop-blur-xl border-r border-[var(--color-border-subtle)]">
             {/* Logo */}
-            <div className="px-5 py-5 border-b border-[var(--color-border-subtle)]">
+            <NavLink to="/dashboard" className="block px-5 py-5 border-b border-[var(--color-border-subtle)] hover:bg-white/5 transition-colors">
                 <span className="text-sm font-bold tracking-widest text-[var(--color-text-secondary)] uppercase">
                     UnivPT
                 </span>
-                <span className="ml-2 text-xs text-[var(--color-accent)] font-mono">Ops</span>
-            </div>
+                <span className="ml-2 text-xs font-semibold text-[var(--color-accent)]">Ops</span>
+            </NavLink>
 
             {/* Navigation */}
             <nav className="flex-1 px-3 py-4 space-y-1">

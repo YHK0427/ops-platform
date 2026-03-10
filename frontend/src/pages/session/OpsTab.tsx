@@ -3,13 +3,13 @@ import { Button } from "@/components/ui/button";
 import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
-import { useUploadVideos, useSetFeedbackTargets, useDriveVideos, useActiveUploadTask } from "@/hooks";
+import { useUploadVideos, useSetFeedbackTargets, useDriveVideos, useActiveUploadTask, useUpdateSessionConfig } from "@/hooks";
 import type { VideoProgress, DriveVideoItem } from "@/hooks/useCrawler";
 import { crawlerKeys } from "@/hooks/useCrawler";
 import { useMembers } from "@/hooks/useMembers";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, CheckCircle2, XCircle, Download, Upload } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Download, Upload, UserMinus } from "lucide-react";
 import type { Session } from "@/hooks/useSessions";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,6 +24,7 @@ export default function OpsTab() {
     const { mutate: uploadVideos, isPending: isUploading } = useUploadVideos();
     const { refetch: fetchDriveVideos, isFetching: isLoadingDrive, data: driveVideos } = useDriveVideos(session.id);
     const { mutate: setFeedbackTargets, isPending: isSettingTarget } = useSetFeedbackTargets();
+    const { mutate: updateConfig } = useUpdateSessionConfig();
     const { data: allMembers } = useMembers();
     const { data: activeTask } = useActiveUploadTask(session.id);
     const queryClient = useQueryClient();
@@ -35,6 +36,32 @@ export default function OpsTab() {
             (old) => old?.map(v => v.id === videoId ? { ...v, order: newOrder } : v),
         );
     }, [queryClient, session.id]);
+
+    const updateVideoTitle = useCallback((videoId: string, newTitle: string) => {
+        queryClient.setQueryData<DriveVideoItem[]>(
+            crawlerKeys.driveVideos(session.id),
+            (old) => old?.map(v => v.id === videoId ? { ...v, cafe_title: newTitle } : v),
+        );
+    }, [queryClient, session.id]);
+
+    // 제목 접두어 — 뒤에 발표자(순서) 자동 붙음
+    const defaultPrefix = `연합UP 33기 ${session.week_num}주차 발표-[${session.title}]-`;
+    const [titlePrefix, setTitlePrefix] = useState(defaultPrefix);
+
+    // 접두어 + 발표자 + (순서) 로 제목 생성
+    const buildTitle = useCallback((v: DriveVideoItem) => {
+        const orderPart = v.group != null
+            ? `${v.group}분반 ${v.order !== 9999 ? `${v.order}번째` : ""}`
+            : (v.order !== 9999 ? `${v.order}번째` : "");
+        return `${titlePrefix}${v.presenter}${orderPart ? `(${orderPart})` : ""}`;
+    }, [titlePrefix]);
+
+    const applyTemplate = useCallback(() => {
+        queryClient.setQueryData<DriveVideoItem[]>(
+            crawlerKeys.driveVideos(session.id),
+            (old) => old?.map(v => ({ ...v, cafe_title: buildTitle(v) })),
+        );
+    }, [queryClient, session.id, buildTitle]);
 
     // Auto-discover active upload task from other admins
     useEffect(() => {
@@ -64,7 +91,7 @@ export default function OpsTab() {
     const feedbackAssignments = session.assignments?.filter((a) => a.type === "FEEDBACK") ?? [];
     const sessionMemberIds = session.attendances?.map((a) => a.member_id) ?? [];
 
-    // 결석/공결 멤버는 영상이 없으므로 피드백 대상에서 제외
+    // 결석/공결 멤버 ID
     const absentMemberIds = useMemo(() => {
         return new Set(
             (session.attendances ?? [])
@@ -73,25 +100,56 @@ export default function OpsTab() {
         );
     }, [session.attendances]);
 
-    // 피드백 대상 가능 멤버 (영상이 있는 멤버만)
-    const feedbackEligibleMemberIds = useMemo(
-        () => sessionMemberIds.filter((id) => !absentMemberIds.has(id)),
-        [sessionMemberIds, absentMemberIds]
-    );
+    // 발표자 (피드백 수신 가능) 목록 — config에 저장, 없으면 출석 멤버 기본값
+    const presenterIds: number[] = useMemo(() => {
+        const saved = session.config?.feedback_presenters as number[] | undefined;
+        if (saved && saved.length > 0) return saved;
+        // 기본값: 결석/공결 제외
+        return sessionMemberIds.filter((id) => !absentMemberIds.has(id));
+    }, [session.config?.feedback_presenters, sessionMemberIds, absentMemberIds]);
 
-    // Receiver map: memberId → number of writers pointing to them (영상이 있는 멤버만)
+    const presenterIdSet = useMemo(() => new Set(presenterIds), [presenterIds]);
+
+    // 발표자 목록 저장
+    const savePresenters = useCallback((newIds: number[]) => {
+        updateConfig({ sessionId: session.id, config: { feedback_presenters: newIds } });
+    }, [updateConfig, session.id]);
+
+    // 발표자 추가 시 본인을 피드백 대상에 자동 추가
+    const addPresenter = useCallback((memberId: number) => {
+        const newPresenters = [...presenterIds, memberId];
+        savePresenters(newPresenters);
+        // 본인 피드백 영상 자동 포함: 해당 멤버의 FEEDBACK 대상에 자기 자신 추가
+        const assignment = feedbackAssignments.find((a) => a.member_id === memberId);
+        if (assignment) {
+            const currentTargets = assignment.target_member_ids ?? [];
+            if (!currentTargets.includes(memberId)) {
+                setFeedbackTargets({
+                    sessionId: session.id,
+                    memberId,
+                    targetMemberIds: [...currentTargets, memberId],
+                });
+            }
+        }
+    }, [presenterIds, savePresenters, feedbackAssignments, setFeedbackTargets, session.id]);
+
+    const removePresenter = useCallback((memberId: number) => {
+        savePresenters(presenterIds.filter((id) => id !== memberId));
+    }, [presenterIds, savePresenters]);
+
+    // Receiver map: memberId → number of writers pointing to them (발표자만)
     const receiverCountMap = useMemo(() => {
         const map = new Map<number, number>();
-        feedbackEligibleMemberIds.forEach(id => map.set(id, 0));
+        presenterIds.forEach(id => map.set(id, 0));
         feedbackAssignments.forEach((a) => {
             a.target_member_ids?.forEach((tid) => {
-                if (!absentMemberIds.has(tid)) {
+                if (presenterIdSet.has(tid)) {
                     map.set(tid, (map.get(tid) ?? 0) + 1);
                 }
             });
         });
         return map;
-    }, [feedbackAssignments, feedbackEligibleMemberIds, absentMemberIds]);
+    }, [feedbackAssignments, presenterIds, presenterIdSet]);
 
     const handleCafeUpload = () => {
         uploadVideos({ sessionId: session.id, videos: driveVideos ?? undefined }, {
@@ -128,7 +186,7 @@ export default function OpsTab() {
                     <span className="text-sm font-medium">
                         {isActive ? "업로드 진행 중..." : taskStatus.status === "complete" ? "업로드 완료" : "업로드 실패"}
                     </span>
-                    <span className="ml-auto text-xs text-[var(--color-text-muted)] font-mono">
+                    <span className="ml-auto text-xs text-[var(--color-text-muted)]">
                         {uploadTaskId.slice(0, 8)}
                     </span>
                 </div>
@@ -222,7 +280,7 @@ export default function OpsTab() {
                         </Button>
                         <Button onClick={handleCafeUpload} disabled={isUploading} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]">
                             <UploadCloud className="w-4 h-4 mr-2" />
-                            {isUploading ? "Starting..." : "업로드 시작"}
+                            {isUploading ? "시작 중..." : "업로드 시작"}
                         </Button>
                     </div>
                 </div>
@@ -237,19 +295,46 @@ export default function OpsTab() {
                                 총 {driveVideos.length}개
                             </span>
                         </div>
+                        {/* Title Prefix + Apply */}
+                        <div className="px-4 py-2.5 bg-gray-900/20 border-b border-[var(--color-border)] space-y-2">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">제목 접두어</span>
+                                <input
+                                    type="text"
+                                    className="flex-1 bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2.5 py-1 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
+                                    value={titlePrefix}
+                                    onChange={(e) => setTitlePrefix(e.target.value)}
+                                />
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={applyTemplate}
+                                    className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-white/5 whitespace-nowrap"
+                                >
+                                    일괄 적용
+                                </Button>
+                            </div>
+                            <div className="text-[10px] text-[var(--color-text-muted)]">
+                                미리보기: <span className="text-gray-400">{driveVideos[0] ? buildTitle(driveVideos[0]) : ""}</span>
+                            </div>
+                        </div>
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">
-                                    <th className="text-left px-4 py-2 w-[70px]">순서</th>
-                                    <th className="text-left px-4 py-2">파일명</th>
-                                    <th className="text-left px-4 py-2 w-[120px]">발표자</th>
+                                    <th className="text-left px-4 py-2 w-[60px]">순서</th>
+                                    <th className="text-left px-4 py-2 w-[140px]">발표자</th>
+                                    <th className="text-left px-4 py-2">카페 게시글 제목</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-[var(--color-border)]">
                                 {[...driveVideos]
-                                    .sort((a, b) => a.order - b.order)
+                                    .sort((a, b) => {
+                                        const ga = a.group ?? 0, gb = b.group ?? 0;
+                                        if (ga !== gb) return ga - gb;
+                                        return a.order - b.order;
+                                    })
                                     .map((v) => (
-                                        <tr key={v.id} className="hover:bg-white/5">
+                                        <tr key={v.id} className="hover:bg-white/5 group/vrow">
                                             <td className="px-4 py-1.5">
                                                 <input
                                                     type="number"
@@ -263,14 +348,30 @@ export default function OpsTab() {
                                                     }}
                                                 />
                                             </td>
-                                            <td className="px-4 py-1.5 text-gray-300 text-xs truncate max-w-[300px]" title={v.name}>
-                                                {v.name}
+                                            <td className="px-4 py-1.5 whitespace-nowrap">
+                                                <span className="font-medium text-gray-200">{v.presenter}</span>
+                                                {v.group != null && (
+                                                    <span className="ml-1 text-[10px] text-blue-400 bg-blue-500/10 px-1 py-0.5 rounded border border-blue-500/20">
+                                                        {v.group}분반
+                                                    </span>
+                                                )}
                                             </td>
-                                            <td className="px-4 py-1.5 font-medium text-gray-200">{v.presenter}</td>
+                                            <td className="px-4 py-1.5">
+                                                <input
+                                                    type="text"
+                                                    className="w-full bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
+                                                    value={v.cafe_title}
+                                                    onChange={(e) => updateVideoTitle(v.id, e.target.value)}
+                                                    title={`원본: ${v.name}`}
+                                                />
+                                            </td>
                                         </tr>
                                     ))}
                             </tbody>
                         </table>
+                        <div className="px-4 py-1.5 bg-gray-900/20 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)]">
+                            접두어 수정 후 "일괄 적용"을 누르면 전체 제목이 변경됩니다. 개별 제목도 직접 수정 가능합니다.
+                        </div>
                     </div>
                 )}
                 {driveVideos && driveVideos.length === 0 && (
@@ -284,20 +385,20 @@ export default function OpsTab() {
 
             {/* Feedback Target Designation Panel */}
             {session.config?.has_feedback !== false && feedbackAssignments.length > 0 && (
-                <div className="bg-[var(--color-surface)] p-6 rounded-xl border border-[var(--color-border)]">
-                    <div className="flex items-start justify-between mb-6">
+                <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)]">
+                    <div className="flex items-start justify-between mb-3">
                         <div>
-                            <h3 className="font-bold text-lg mb-1 flex items-center gap-2">
-                                <Users className="w-5 h-5 text-[var(--color-accent)]" />
+                            <h3 className="font-bold text-sm mb-0.5 flex items-center gap-2">
+                                <Users className="w-4 h-4 text-[var(--color-accent)]" />
                                 피드백 대상 지정
                             </h3>
-                            <p className="text-sm text-[var(--color-text-secondary)]">
+                            <p className="text-xs text-[var(--color-text-secondary)]">
                                 각 멤버가 피드백을 작성할 대상을 지정합니다. 본인 영상은 크롤러에서 기본 포함됩니다.
                             </p>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
                         {/* Left: Assignment table */}
                         <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
                             <Table>
@@ -314,6 +415,7 @@ export default function OpsTab() {
                                             ? (memberNameMap.get(writerId) ?? `ID:${writerId}`)
                                             : "Unknown";
                                         const currentTargetIds = assignment.target_member_ids ?? [];
+                                        const isAbsent = writerId != null && absentMemberIds.has(writerId);
 
                                         return (
                                             <FeedbackTargetRow
@@ -321,9 +423,10 @@ export default function OpsTab() {
                                                 writerName={writerName}
                                                 writerId={writerId}
                                                 currentTargetIds={currentTargetIds}
-                                                sessionMemberIds={feedbackEligibleMemberIds}
+                                                sessionMemberIds={presenterIds}
                                                 memberNameMap={memberNameMap}
                                                 disabled={isSettingTarget}
+                                                isAbsent={isAbsent}
                                                 onSetTargets={(targetIds) => {
                                                     if (writerId == null) return;
                                                     setFeedbackTargets({
@@ -339,31 +442,48 @@ export default function OpsTab() {
                             </Table>
                         </div>
 
-                        {/* Right: Receiver status panel */}
+                        {/* Right: Receiver status panel (editable presenter list) */}
                         <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
                             <div className="bg-gray-900/50 px-3 py-2 text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider border-b border-[var(--color-border)]">
-                                피드백 수신 현황
+                                발표자 (피드백 수신)
                             </div>
                             <div className="divide-y divide-[var(--color-border)]">
-                                {feedbackEligibleMemberIds.map((id) => {
+                                {presenterIds.map((id) => {
                                     const count = receiverCountMap.get(id) ?? 0;
                                     const name = memberNameMap.get(id) ?? `ID:${id}`;
                                     const isUnassigned = count === 0;
                                     return (
-                                        <div key={id} className={`flex items-center justify-between px-3 py-2 text-sm ${isUnassigned ? "bg-rose-500/5" : ""}`}>
+                                        <div key={id} className={`flex items-center justify-between px-3 py-1.5 text-xs ${isUnassigned ? "bg-rose-500/5" : ""}`}>
                                             <span className={isUnassigned ? "text-rose-400" : "text-[var(--color-text-primary)]"}>
                                                 {name}
                                             </span>
-                                            <span className={`text-xs tabular-nums px-1.5 py-0.5 rounded border ${isUnassigned
-                                                ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                                                : "bg-green-500/10 text-green-400 border-green-500/20"
-                                            }`}>
-                                                {count}명
-                                            </span>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`tabular-nums px-1.5 py-0.5 rounded border ${isUnassigned
+                                                    ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                                    : "bg-green-500/10 text-green-400 border-green-500/20"
+                                                }`}>
+                                                    {count}명
+                                                </span>
+                                                <button
+                                                    onClick={() => removePresenter(id)}
+                                                    className="text-[var(--color-text-muted)] hover:text-rose-400 transition-colors"
+                                                    title="발표자에서 제거"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
                                         </div>
                                     );
                                 })}
                             </div>
+                            {/* Add presenter */}
+                            <PresenterAddButton
+                                sessionMemberIds={sessionMemberIds}
+                                presenterIdSet={presenterIdSet}
+                                memberNameMap={memberNameMap}
+                                absentMemberIds={absentMemberIds}
+                                onAdd={addPresenter}
+                            />
                         </div>
                     </div>
                 </div>
@@ -399,6 +519,7 @@ interface FeedbackTargetRowProps {
     sessionMemberIds: number[];
     memberNameMap: Map<number, string>;
     disabled: boolean;
+    isAbsent?: boolean;
     onSetTargets: (targetIds: number[]) => void;
 }
 
@@ -409,6 +530,7 @@ function FeedbackTargetRow({
     sessionMemberIds,
     memberNameMap,
     disabled,
+    isAbsent,
     onSetTargets,
 }: FeedbackTargetRowProps) {
     const [open, setOpen] = useState(false);
@@ -428,15 +550,25 @@ function FeedbackTargetRow({
     };
 
     return (
-        <TableRow className="hover:bg-white/5 align-top">
-            <TableCell className="font-medium text-gray-300 pt-3">{writerName}</TableCell>
-            <TableCell>
-                <div className="flex flex-wrap items-center gap-1.5 min-h-[32px]">
+        <TableRow className={cn("hover:bg-white/5 align-top", isAbsent && "bg-rose-500/5")}>
+            <TableCell className="font-medium py-1.5 text-sm">
+                <div className="flex items-center gap-1.5">
+                    <span className={isAbsent ? "text-rose-300" : "text-gray-300"}>{writerName}</span>
+                    {isAbsent && (
+                        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                            <UserMinus className="w-2.5 h-2.5" />
+                            결석 · 2개
+                        </span>
+                    )}
+                </div>
+            </TableCell>
+            <TableCell className="py-1.5">
+                <div className="flex flex-wrap items-center gap-1 min-h-[24px]">
                     {/* Current target badges */}
                     {currentTargetIds.map((tid) => (
                         <span
                             key={tid}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
                         >
                             {memberNameMap.get(tid) ?? `ID:${tid}`}
                             <button
@@ -495,5 +627,71 @@ function FeedbackTargetRow({
                 </div>
             </TableCell>
         </TableRow>
+    );
+}
+
+function PresenterAddButton({
+    sessionMemberIds,
+    presenterIdSet,
+    memberNameMap,
+    absentMemberIds,
+    onAdd,
+}: {
+    sessionMemberIds: number[];
+    presenterIdSet: Set<number>;
+    memberNameMap: Map<number, string>;
+    absentMemberIds: Set<number>;
+    onAdd: (id: number) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const addable = sessionMemberIds
+        .filter((id) => !presenterIdSet.has(id))
+        .map((id) => ({
+            id,
+            name: memberNameMap.get(id) ?? `ID:${id}`,
+            isAbsent: absentMemberIds.has(id),
+        }));
+
+    if (addable.length === 0) return null;
+
+    return (
+        <div className="px-3 py-2 border-t border-[var(--color-border)]">
+            <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full h-7 text-xs border-dashed border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-white/5"
+                    >
+                        <Plus className="w-3 h-3 mr-1" />
+                        발표자 추가
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-0 bg-[var(--color-elevated)] border-[var(--color-border)]">
+                    <Command className="bg-transparent">
+                        <CommandInput placeholder="이름 검색..." className="h-8 text-sm" />
+                        <CommandList>
+                            <CommandEmpty className="text-[var(--color-text-muted)]">검색 결과 없음</CommandEmpty>
+                            <CommandGroup>
+                                {addable.map((opt) => (
+                                    <CommandItem
+                                        key={opt.id}
+                                        value={opt.name}
+                                        onSelect={() => { onAdd(opt.id); setOpen(false); }}
+                                        className="text-sm"
+                                    >
+                                        <Check className={cn("mr-2 h-3 w-3 opacity-0")} />
+                                        {opt.name}
+                                        {opt.isAbsent && (
+                                            <span className="ml-auto text-[10px] text-rose-400">결석</span>
+                                        )}
+                                    </CommandItem>
+                                ))}
+                            </CommandGroup>
+                        </CommandList>
+                    </Command>
+                </PopoverContent>
+            </Popover>
+        </div>
     );
 }

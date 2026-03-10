@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Shield, Plus, Pencil, UserX, ShieldCheck, ShieldOff, Loader2 } from "lucide-react";
+import { Shield, Plus, Pencil, ShieldCheck, ShieldOff, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { useAdminUsers, useCreateAdminUser, useUpdateAdminUser, useDeleteAdminUser, adminUserKeys } from "@/hooks";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
@@ -37,6 +37,16 @@ const ROLE_COLORS: Record<string, string> = {
     viewer: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
 };
 
+const DEPARTMENTS = ["회장단", "인홍부", "학술부", "기획부", "총무부"] as const;
+
+const DEPT_COLORS: Record<string, string> = {
+    "회장단": "bg-rose-500/10 text-rose-400 border-rose-500/20",
+    "인홍부": "bg-purple-500/10 text-purple-400 border-purple-500/20",
+    "학술부": "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    "기획부": "bg-green-500/10 text-green-400 border-green-500/20",
+    "총무부": "bg-amber-500/10 text-amber-400 border-amber-500/20",
+};
+
 // ── Create User Dialog ──────────────────────────────────────────────────────
 
 function CreateUserDialog() {
@@ -45,11 +55,12 @@ function CreateUserDialog() {
     const [password, setPassword] = useState("");
     const [displayName, setDisplayName] = useState("");
     const [role, setRole] = useState("manager");
+    const [department, setDepartment] = useState("");
     const { mutate, isPending } = useCreateAdminUser();
 
-    const reset = () => { setUsername(""); setPassword(""); setDisplayName(""); setRole("manager"); };
+    const reset = () => { setUsername(""); setPassword(""); setDisplayName(""); setRole("manager"); setDepartment(""); };
     const handleSubmit = () => {
-        mutate({ username, password, display_name: displayName, role }, {
+        mutate({ username, password, display_name: displayName, role, department: department || null }, {
             onSuccess: () => { setOpen(false); reset(); },
         });
     };
@@ -88,6 +99,19 @@ function CreateUserDialog() {
                             </SelectContent>
                         </Select>
                     </div>
+                    {role === "manager" && (
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right">부서</Label>
+                            <Select value={department} onValueChange={setDepartment}>
+                                <SelectTrigger className="col-span-3"><SelectValue placeholder="부서 선택" /></SelectTrigger>
+                                <SelectContent>
+                                    {DEPARTMENTS.map((d) => (
+                                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
                 </div>
                 <DialogFooter>
                     <Button onClick={handleSubmit} disabled={isPending || !username || !password || !displayName}>
@@ -102,16 +126,17 @@ function CreateUserDialog() {
 
 // ── Edit User Dialog ────────────────────────────────────────────────────────
 
-function EditUserDialog({ user, trigger }: { user: { id: number; display_name: string; role: string; is_active: boolean }; trigger: React.ReactNode }) {
+function EditUserDialog({ user, trigger }: { user: { id: number; display_name: string; role: string; department: string | null; is_active: boolean }; trigger: React.ReactNode }) {
     const [open, setOpen] = useState(false);
     const [displayName, setDisplayName] = useState(user.display_name);
     const [role, setRole] = useState(user.role);
+    const [department, setDepartment] = useState(user.department ?? "");
     const [password, setPassword] = useState("");
     const [isActive, setIsActive] = useState(user.is_active);
     const { mutate, isPending } = useUpdateAdminUser();
 
     const handleSubmit = () => {
-        const body: Record<string, any> = { userId: user.id, display_name: displayName, role, is_active: isActive };
+        const body: Record<string, any> = { userId: user.id, display_name: displayName, role, is_active: isActive, department: department || null };
         if (password) body.password = password;
         mutate(body as any, { onSuccess: () => setOpen(false) });
     };
@@ -139,6 +164,19 @@ function EditUserDialog({ user, trigger }: { user: { id: number; display_name: s
                             </SelectContent>
                         </Select>
                     </div>
+                    {role === "manager" && (
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right">부서</Label>
+                            <Select value={department} onValueChange={setDepartment}>
+                                <SelectTrigger className="col-span-3"><SelectValue placeholder="부서 선택" /></SelectTrigger>
+                                <SelectContent>
+                                    {DEPARTMENTS.map((d) => (
+                                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label className="text-right">비밀번호</Label>
                         <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="col-span-3" placeholder="변경 시 입력" />
@@ -314,6 +352,54 @@ function TotpSetupDialog() {
     );
 }
 
+// ── Semester Reset ───────────────────────────────────────────────────────────
+
+function SemesterResetButton() {
+    const [loading, setLoading] = useState(false);
+    const queryClient = useQueryClient();
+
+    const handleReset = async () => {
+        setLoading(true);
+        try {
+            const { data } = await api.post<{ reset_members: number }>("/auth/reset-semester");
+            toast.success(`기수 초기화 완료 — ${data.reset_members}명 디파짓 2만원 리셋`);
+            queryClient.invalidateQueries();
+        } catch {
+            toast.error("초기화 실패");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <AlertDialog>
+            <AlertDialogTrigger asChild>
+                <Button variant="outline" className="text-rose-400 border-rose-500/30 hover:bg-rose-500/10">
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    기수 초기화
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>기수 초기화</AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-2">
+                        <span className="block">모든 세션, 장부, 출석, 과제 기록이 삭제됩니다.</span>
+                        <span className="block">멤버 명단은 유지되며 디파짓이 2만원으로 초기화됩니다.</span>
+                        <span className="block font-bold text-rose-400">이 작업은 되돌릴 수 없습니다.</span>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>취소</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleReset} disabled={loading} className="bg-rose-500 hover:bg-rose-600">
+                        {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        초기화 실행
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}
+
 // ── Main Page ───────────────────────────────────────────────────────────────
 
 export default function AdminUsers() {
@@ -328,6 +414,7 @@ export default function AdminUsers() {
                 subtitle="운영진 계정을 관리합니다"
                 actions={
                     <div className="flex gap-2">
+                        {currentUser?.role === "admin" && <SemesterResetButton />}
                         {currentUser?.role === "admin" && <TotpSetupDialog />}
                         <CreateUserDialog />
                     </div>
@@ -342,6 +429,7 @@ export default function AdminUsers() {
                                 <TableHead className="text-[var(--color-text-muted)]">아이디</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">이름</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">역할</TableHead>
+                                <TableHead className="text-[var(--color-text-muted)]">부서</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">2FA</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">상태</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">생성일</TableHead>
@@ -352,14 +440,14 @@ export default function AdminUsers() {
                             {isLoading ? (
                                 Array.from({ length: 3 }).map((_, i) => (
                                     <TableRow key={i}>
-                                        {Array.from({ length: 7 }).map((_, j) => (
+                                        {Array.from({ length: 8 }).map((_, j) => (
                                             <TableCell key={j}><div className="h-4 rounded bg-[var(--color-surface)] animate-pulse" /></TableCell>
                                         ))}
                                     </TableRow>
                                 ))
                             ) : !users?.length ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8 text-[var(--color-text-muted)]">
+                                    <TableCell colSpan={8} className="text-center py-8 text-[var(--color-text-muted)]">
                                         사용자가 없습니다
                                     </TableCell>
                                 </TableRow>
@@ -372,6 +460,15 @@ export default function AdminUsers() {
                                             <Badge variant="outline" className={ROLE_COLORS[u.role] ?? ""}>
                                                 {ROLE_LABELS[u.role] ?? u.role}
                                             </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            {u.department ? (
+                                                <Badge variant="outline" className={DEPT_COLORS[u.department] ?? "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"}>
+                                                    {u.department}
+                                                </Badge>
+                                            ) : (
+                                                <span className="text-[var(--color-text-muted)]">-</span>
+                                            )}
                                         </TableCell>
                                         <TableCell>
                                             {u.has_totp ? (
@@ -403,20 +500,20 @@ export default function AdminUsers() {
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild>
                                                         <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-400 hover:text-rose-300">
-                                                            <UserX className="w-3.5 h-3.5" />
+                                                            <Trash2 className="w-3.5 h-3.5" />
                                                         </Button>
                                                     </AlertDialogTrigger>
                                                     <AlertDialogContent>
                                                         <AlertDialogHeader>
-                                                            <AlertDialogTitle>사용자 비활성화</AlertDialogTitle>
+                                                            <AlertDialogTitle>사용자 삭제</AlertDialogTitle>
                                                             <AlertDialogDescription>
-                                                                {u.display_name} ({u.username})을(를) 비활성화하시겠습니까?
+                                                                {u.display_name} ({u.username})을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
                                                             </AlertDialogDescription>
                                                         </AlertDialogHeader>
                                                         <AlertDialogFooter>
                                                             <AlertDialogCancel>취소</AlertDialogCancel>
                                                             <AlertDialogAction onClick={() => deleteUser(u.id)} className="bg-rose-500 hover:bg-rose-600">
-                                                                비활성화
+                                                                삭제
                                                             </AlertDialogAction>
                                                         </AlertDialogFooter>
                                                     </AlertDialogContent>

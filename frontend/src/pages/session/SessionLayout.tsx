@@ -16,13 +16,17 @@ export default function SessionLayout() {
     const { mutate: deleteSession, isPending: isDeleting } = useDeleteSession();
     const { data: session, isLoading } = useSession(sessionId);
 
-    if (isLoading) return <div>Loading...</div>;
-    if (!session) return <div>Session not found</div>;
+    if (isLoading) return <div>로딩 중...</div>;
+    if (!session) return <div>세션을 찾을 수 없습니다</div>;
 
     const typedSession = session as Session;
 
+    const STATUS_LABEL_MAP: Record<string, string> = {
+        PREP: "출석", OPS: "과제 준비", POST: "과제 검사", SETTLEMENT: "정산",
+    };
     const handleStatusChange = (newStatus: string) => {
-        if (confirm(`세션 상태를 ${newStatus}로 변경하시겠습니까?`)) {
+        const label = STATUS_LABEL_MAP[newStatus] ?? newStatus;
+        if (confirm(`세션 상태를 '${label}' 단계로 변경하시겠습니까?`)) {
             updateStatus({ sessionId, status: newStatus });
         }
     };
@@ -36,7 +40,7 @@ export default function SessionLayout() {
                         onClick={() => handleStatusChange("PREP")}
                         className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
-                        {typedSession.type === "INDIVIDUAL" ? "세션 준비 완료 (PREP)" : "팀 확정 (PREP 시작)"}
+                        {typedSession.type === "INDIVIDUAL" ? "출석 시작" : "팀 확정 (출석 시작)"}
                     </Button>
                 );
             case "PREP":
@@ -46,7 +50,7 @@ export default function SessionLayout() {
                         onClick={() => handleStatusChange("OPS")}
                         className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
-                        Start Operations (운영 시작)
+                        과제 준비 시작
                     </Button>
                 );
             case "OPS":
@@ -56,7 +60,7 @@ export default function SessionLayout() {
                         onClick={() => handleStatusChange("POST")}
                         className="bg-purple-600 hover:bg-purple-700 text-white"
                     >
-                        Finish Session (세션 종료)
+                        과제 검사 시작
                     </Button>
                 );
             case "POST":
@@ -66,7 +70,7 @@ export default function SessionLayout() {
                         onClick={() => handleStatusChange("SETTLEMENT")}
                         className="bg-green-600 hover:bg-green-700 text-white"
                     >
-                        Start Settlement (정산 시작)
+                        정산 시작
                     </Button>
                 );
             default:
@@ -75,10 +79,10 @@ export default function SessionLayout() {
     };
 
     const tabs = [
-        { id: "prep",       label: "Prep (준비)" },
-        { id: "ops",        label: "Ops (운영)" },
-        { id: "post",       label: "Post (후속)" },
-        { id: "settlement", label: "Settlement (정산)" },
+        { id: "prep",       label: "출석" },
+        { id: "ops",        label: "과제 준비" },
+        { id: "post",       label: "과제 검사" },
+        { id: "settlement", label: "정산" },
     ];
 
     return (

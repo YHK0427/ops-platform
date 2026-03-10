@@ -17,6 +17,7 @@ class User(Base):
     password_hash = Column(String(200), nullable=False)
     display_name = Column(String(50), nullable=False)
     role = Column(String(20), nullable=False, server_default="viewer")
+    department = Column(String(30), nullable=True)  # 운영진 부서: 회장단, 인홍부, 학술부, 기획부, 총무부
     totp_secret = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True, server_default="true", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
@@ -219,11 +220,12 @@ class Ledger(Base):
     created_by = Column(String(20), server_default="system")
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     deposit_after = Column(Integer, nullable=False)  # 처리 후 디파짓 잔액 스냅샷
+    is_paid = Column(Boolean, nullable=True)  # MILESTONE_FINE 납부 여부
 
     __table_args__ = (
         CheckConstraint(
             "type IN ('FINE','MILESTONE_FINE','DEPOSIT_RECHARGE','DEPOSIT_ADJUST',"
-            "'DEPOSIT_REFUND','MERIT','ADJUSTMENT')",
+            "'DEPOSIT_REFUND','DEPOSIT_FORFEIT','MERIT','ADJUSTMENT')",
             name="ck_ledger_type",
         ),
     )
@@ -231,6 +233,17 @@ class Ledger(Base):
     # Relationships
     session = relationship("Session", back_populates="ledger_entries")
     member = relationship("Member", back_populates="ledger_entries")
+
+
+class TreasuryExpense(Base):
+    """금고 지출 기록"""
+    __tablename__ = "treasury_expenses"
+
+    id = Column(Integer, primary_key=True)
+    amount_krw = Column(Integer, nullable=False)
+    description = Column(String(500), nullable=False)
+    created_by = Column(String(50))
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
 
 class CafePost(Base):
@@ -251,7 +264,7 @@ class CafePost(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "board_type IN ('REVIEW','HOMEWORK','VIDEO')",
+            "board_type IN ('REVIEW','PPT','VIDEO')",
             name="ck_cafe_posts_board_type",
         ),
     )

@@ -271,3 +271,21 @@ class PenaltyEngine:
                     description=f"누적벌점 {th}점 도달 추가 벌금"
                 )
         return None
+
+
+def check_milestone_fines(before_minus: int, after_minus: int) -> list[dict]:
+    """
+    순벌점(total_minus_score) 변동 시 마일스톤 벌금 체크.
+    -10, -20, -30... 돌파할 때마다 5,000원 벌금.
+    Returns list of milestone dicts: [{"threshold": -10, "deposit_delta": -5000, "description": "..."}]
+    """
+    results = []
+    thresholds = [-10, -20, -30, -40, -50]
+    for th in thresholds:
+        if before_minus > th >= after_minus:
+            results.append({
+                "threshold": th,
+                "deposit_delta": -5000,
+                "description": f"누적벌점 {abs(th)}점 도달 벌금",
+            })
+    return results

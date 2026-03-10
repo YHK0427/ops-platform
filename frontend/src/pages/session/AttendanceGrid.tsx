@@ -123,7 +123,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                     className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-md text-sm font-bold hover:bg-rose-600 transition-colors flex items-center shadow-[0_0_15px_rgba(244,63,94,0.4)]"
                 >
                     <CheckCircle2 className="w-4 h-4 mr-2" />
-                    일괄 출석 (PENDING → PRESENT)
+                    일괄 출석 처리
                 </button>
             </div>
 
@@ -131,11 +131,11 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead className="w-[100px]">Team</TableHead>
-                            <TableHead>Member</TableHead>
-                            <TableHead className="w-[180px]">Status</TableHead>
-                            <TableHead className="w-[200px]">Excuse Details</TableHead>
-                            <TableHead className="w-[120px]">PPT 이메일</TableHead>
+                            <TableHead className="w-[100px]">팀</TableHead>
+                            <TableHead>멤버</TableHead>
+                            <TableHead className="w-[180px]">출결</TableHead>
+                            <TableHead className="w-[200px]">사유서</TableHead>
+                            <TableHead className="w-[220px]">PPT 이메일</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -150,7 +150,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                             <span className={member.is_active ? "text-white" : "text-gray-500"}>
                                                 {member.name}
                                             </span>
-                                            {!member.is_active && <span className="text-[10px] bg-red-500/10 text-red-500 px-1 rounded">Inactive</span>}
+                                            {!member.is_active && <span className="text-[10px] bg-red-500/10 text-red-500 px-1 rounded">비활성</span>}
                                         </div>
                                     </TableCell>
                                     <TableCell>
@@ -173,13 +173,13 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent className="bg-gray-800 text-white border-gray-700">
-                                                    <SelectItem value="PENDING">미처리 (PENDING)</SelectItem>
-                                                    <SelectItem value="PRESENT">출석 (PRESENT)</SelectItem>
+                                                    <SelectItem value="PENDING">미처리</SelectItem>
+                                                    <SelectItem value="PRESENT">출석</SelectItem>
                                                     <SelectItem value="LATE_UNDER10">지각 (10분 미만)</SelectItem>
                                                     <SelectItem value="LATE_OVER10">지각 (10분 초과)</SelectItem>
                                                     <SelectItem value="EARLY_LEAVE">조퇴</SelectItem>
-                                                    <SelectItem value="ABSENT">결석 (ABSENT)</SelectItem>
-                                                    <SelectItem value="EXCUSED">공결 (EXCUSED)</SelectItem>
+                                                    <SelectItem value="ABSENT">결석</SelectItem>
+                                                    <SelectItem value="EXCUSED">공결</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                             {updating[member.member_id] && (
@@ -230,56 +230,54 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                             let isToggleable = true;
 
                                             if (sessionType === "TEAM" && team.id) {
-                                                // TEAM: find by team_id
                                                 pptAssignment = assignments.find((a: any) => a.type === "PPT_EMAIL" && a.team_id === team.id);
-                                                // Only first member in team gets the toggle
                                                 isToggleable = team.members[0]?.member_id === member.member_id;
                                             } else {
-                                                // INDIVIDUAL: find by member_id
                                                 pptAssignment = assignments.find((a: any) => a.type === "PPT_EMAIL" && a.member_id === member.member_id);
                                             }
 
                                             if (!pptAssignment) return <span className="text-gray-600 text-xs">-</span>;
 
-                                            const statusColors: Record<string, string> = {
-                                                PENDING: "text-gray-400",
-                                                PASS: "text-green-400",
-                                                LATE: "text-orange-400",
-                                                MISSING: "text-red-400",
-                                                EXEMPT: "text-blue-400",
-                                            };
-                                            const statusLabels: Record<string, string> = {
-                                                PENDING: "미제출(임시)",
-                                                PASS: "제출완료",
-                                                LATE: "지각제출",
-                                                MISSING: "미제출(확정)",
-                                                EXEMPT: "면제",
-                                            };
-                                            const pptOptions = ["PASS", "LATE", "MISSING", "EXEMPT", "PENDING"] as const;
-
                                             const pptKey = `ppt_${pptAssignment.id}`;
+                                            const isUpdating = updating[pptKey];
+                                            const currentStatus = pptAssignment.status;
 
-                                            return isToggleable ? (
-                                                <Select
-                                                    value={pptAssignment.status}
-                                                    onValueChange={(val) => handlePptEmailChange(pptAssignment.id, val)}
-                                                    disabled={updating[pptKey]}
-                                                >
-                                                    <SelectTrigger className={`h-7 w-[110px] text-xs border-[var(--color-border)] bg-transparent ${statusColors[pptAssignment.status] || ""}`}>
-                                                        <SelectValue>{updating[pptKey] ? "..." : (statusLabels[pptAssignment.status] || pptAssignment.status)}</SelectValue>
-                                                    </SelectTrigger>
-                                                    <SelectContent className="bg-[var(--color-elevated)] border-[var(--color-border)]">
-                                                        {pptOptions.map((opt) => (
-                                                            <SelectItem key={opt} value={opt} className={`text-xs ${statusColors[opt]}`}>
-                                                                {statusLabels[opt]}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            ) : (
-                                                <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[pptAssignment.status] || ""}`}>
-                                                    {statusLabels[pptAssignment.status] || pptAssignment.status}
-                                                </span>
+                                            const buttons = [
+                                                { value: "PASS", label: "제출", color: "text-green-400 border-green-500/40 bg-green-500/10", activeColor: "bg-green-500/30 border-green-400 text-green-300 ring-1 ring-green-400/30" },
+                                                { value: "LATE", label: "지각", color: "text-orange-400 border-orange-500/40 bg-orange-500/10", activeColor: "bg-orange-500/30 border-orange-400 text-orange-300 ring-1 ring-orange-400/30" },
+                                                { value: "MISSING", label: "미제출", color: "text-red-400 border-red-500/40 bg-red-500/10", activeColor: "bg-red-500/30 border-red-400 text-red-300 ring-1 ring-red-400/30" },
+                                                { value: "EXEMPT", label: "면제", color: "text-blue-400 border-blue-500/40 bg-blue-500/10", activeColor: "bg-blue-500/30 border-blue-400 text-blue-300 ring-1 ring-blue-400/30" },
+                                            ];
+
+                                            if (!isToggleable) {
+                                                const active = buttons.find(b => b.value === currentStatus);
+                                                if (currentStatus === "PENDING") return <span className="text-gray-500 text-[10px]">미검사</span>;
+                                                return (
+                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${active?.activeColor || "text-gray-400"}`}>
+                                                        {active?.label || currentStatus}
+                                                    </span>
+                                                );
+                                            }
+
+                                            return (
+                                                <div className="flex items-center gap-1 whitespace-nowrap">
+                                                    {buttons.map(btn => {
+                                                        const isActive = currentStatus === btn.value;
+                                                        return (
+                                                            <button
+                                                                key={btn.value}
+                                                                disabled={isUpdating}
+                                                                onClick={() => handlePptEmailChange(pptAssignment.id, isActive ? "PENDING" : btn.value)}
+                                                                className={`px-1.5 py-0.5 rounded text-[10px] font-medium border transition-all ${
+                                                                    isActive ? btn.activeColor : `${btn.color} opacity-40 hover:opacity-80`
+                                                                }`}
+                                                                title={isActive ? "클릭하면 미검사로 초기화" : btn.label}
+                                                            >
+                                                                {btn.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
                                             );
                                         })()}
                                     </TableCell>

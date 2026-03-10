@@ -138,7 +138,7 @@ export default function SettlementTab() {
 
         const skip_merit_indices = Array.from(skippedMeritIndices);
 
-        if (confirm(`세션을 마감(Finalize) 하시겠습니까?\n\n총 벌점: ${totalScoreDelta}\n총 차감액: ${formatNumber(totalDepositDelta)} KRW\n총 상점: +${totalMeritScore}\n\n마감 후에는 수정할 수 없으며, 벌점/상점이 확정됩니다.`)) {
+        if (confirm(`세션을 마감하시겠습니까?\n\n총 벌점: ${totalScoreDelta}\n총 차감액: ${formatNumber(totalDepositDelta)}원\n총 상점: +${totalMeritScore}\n\n마감 후에는 수정할 수 없으며, 벌점/상점이 확정됩니다.`)) {
             finalizeSession({ sessionId: session.id, overrides, skip_merit_indices }, {
                 onSuccess: () => {
                     toast.success("세션이 성공적으로 마감되었습니다.");
@@ -166,17 +166,17 @@ export default function SettlementTab() {
                     <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
                         <CheckCircle2 className="w-8 h-8 text-green-500" />
                     </div>
-                    <h2 className="text-xl font-bold mb-2 text-white">Session Finalized</h2>
+                    <h2 className="text-xl font-bold mb-2 text-white">세션 마감 완료</h2>
                     <p className="text-[var(--color-text-muted)] mb-6">
                         이 세션은 {new Date(session.finalized_at || "").toLocaleString()}에 마감되었습니다.<br />
-                        정산 내역은 <span className="text-[var(--color-accent)]">Ledger</span> 메뉴에서 확인할 수 있습니다.
+                        정산 내역은 <span className="text-[var(--color-accent)]">장부</span> 메뉴에서 확인할 수 있습니다.
                     </p>
                     <Button
                         onClick={() => navigate("/ledger")}
                         className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white"
                     >
                         <ExternalLink className="w-4 h-4 mr-2" />
-                        Ledger에서 확인
+                        장부에서 확인
                     </Button>
                 </div>
             </div>
@@ -187,7 +187,7 @@ export default function SettlementTab() {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-bold tracking-tight text-white/90">Settlement Preview</h2>
+                    <h2 className="text-xl font-bold tracking-tight text-white/90">정산 미리보기</h2>
                     <p className="text-sm text-[var(--color-text-secondary)]">
                         이번 세션의 페널티 및 정산 예정 내역입니다. 체크박스를 해제하여 면제할 수 있습니다.
                     </p>
@@ -197,7 +197,7 @@ export default function SettlementTab() {
                     disabled={isFinalizing}
                     className="bg-rose-600 hover:bg-rose-700 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)] transition-all hover:scale-105"
                 >
-                    {isFinalizing ? "Finalizing..." : "Finalize Session"}
+                    {isFinalizing ? "마감 처리 중..." : "세션 마감"}
                 </Button>
             </div>
 
@@ -205,7 +205,7 @@ export default function SettlementTab() {
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-[var(--color-text-muted)]">
-                            Total Score Penalty
+                            총 벌점
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -217,19 +217,19 @@ export default function SettlementTab() {
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-[var(--color-text-muted)]">
-                            Total Deposit Penalty
+                            총 차감액
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
                         <div className={`text-2xl font-bold ${totalDepositDelta < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
-                            {formatNumber(totalDepositDelta)} KRW
+                            {formatNumber(totalDepositDelta)}원
                         </div>
                     </CardContent>
                 </Card>
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-[var(--color-text-muted)]">
-                            Total Merit
+                            총 상점
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -274,12 +274,12 @@ export default function SettlementTab() {
                 <Table>
                     <TableHeader>
                         <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
-                            <TableHead className="w-[50px] text-center">Apply</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Member</TableHead>
-                            <TableHead>Reason</TableHead>
-                            <TableHead className="text-right">Score</TableHead>
-                            <TableHead className="text-right">Deposit</TableHead>
+                            <TableHead className="w-[50px] text-center">적용</TableHead>
+                            <TableHead>유형</TableHead>
+                            <TableHead>멤버</TableHead>
+                            <TableHead>사유</TableHead>
+                            <TableHead className="text-right">점수</TableHead>
+                            <TableHead className="text-right">디파짓</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -324,10 +324,10 @@ export default function SettlementTab() {
                                         <TableCell className="text-[var(--color-text-secondary)] text-sm max-w-[300px] truncate" title={penalty.description}>
                                             {penalty.description}
                                         </TableCell>
-                                        <TableCell className={`text-right font-mono ${penalty.score_delta < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
+                                        <TableCell className={`text-right ${penalty.score_delta < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
                                             {penalty.score_delta}
                                         </TableCell>
-                                        <TableCell className={`text-right font-mono ${penalty.deposit_delta < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
+                                        <TableCell className={`text-right ${penalty.deposit_delta < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
                                             {formatNumber(penalty.deposit_delta)}
                                         </TableCell>
                                     </TableRow>
@@ -354,7 +354,7 @@ export default function SettlementTab() {
             <div className="flex items-start gap-3 p-4 rounded-lg bg-yellow-500/5 border border-yellow-500/20 text-yellow-500/90 text-sm">
                 <AlertTriangle className="w-5 h-5 shrink-0" />
                 <p>
-                    Finalize 버튼을 누르면 위 내역(체크된 항목)이 <strong>Ledger</strong>에 영구 기록되며, 멤버들의 점수와 보증금이 즉시 반영됩니다.
+                    마감 버튼을 누르면 위 내역(체크된 항목)이 <strong>장부</strong>에 영구 기록되며, 멤버들의 점수와 디파짓이 즉시 반영됩니다.
                     이 작업은 되돌릴 수 없습니다.
                 </p>
             </div>
@@ -401,7 +401,7 @@ function StagedMeritPanel({
             <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
                 <div className="flex items-center gap-2">
                     <Trophy className="w-4 h-4 text-yellow-500" />
-                    <h3 className="font-semibold text-sm">상점 (Merit)</h3>
+                    <h3 className="font-semibold text-sm">상점</h3>
                     {merits.length > 0 && (
                         <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
                             {merits.length}건
@@ -415,7 +415,7 @@ function StagedMeritPanel({
                         memberIds: t.members.map((m: any) => m.id),
                     })) : undefined}
                     trigger={
-                        <Button size="sm" variant="outline" className="h-7 text-xs bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20">
+                        <Button size="sm" variant="outline" className="h-7 text-xs bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20">
                             <Trophy className="w-3 h-3 mr-1" />
                             상점 추가
                         </Button>
@@ -446,7 +446,7 @@ function StagedMeritPanel({
             <Table>
                 <TableHeader>
                     <TableRow className="bg-gray-900/30 hover:bg-gray-900/30">
-                        <TableHead className="w-[50px] text-center">Apply</TableHead>
+                        <TableHead className="w-[50px] text-center">적용</TableHead>
                         <TableHead className="w-[80px]">구분</TableHead>
                         <TableHead>멤버</TableHead>
                         <TableHead>사유</TableHead>
@@ -488,7 +488,7 @@ function StagedMeritPanel({
                                     <TableCell className="text-sm text-[var(--color-text-secondary)] max-w-[300px] truncate" title={merit.description}>
                                         {merit.description}
                                     </TableCell>
-                                    <TableCell className="text-right font-mono text-green-400">+{merit.score_delta}</TableCell>
+                                    <TableCell className="text-right text-green-400">+{merit.score_delta}</TableCell>
                                     <TableCell>
                                         {isManual && (
                                             <Button

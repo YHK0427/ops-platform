@@ -106,9 +106,9 @@ async def scan_excuses(
         logger.error(f"Invalid mode '{mode}' — expected PRE or POST")
         return 0
 
-    # 게시판 스캔 (최대 10페이지)
+    # 게시판 스캔 (최대 15페이지)
     articles = []
-    for page in range(1, 11):
+    for page in range(1, 16):
         try:
             data = fetch_board_articles(req_session, menu_id, page=page)
         except Exception as e:

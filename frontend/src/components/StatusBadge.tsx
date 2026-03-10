@@ -30,9 +30,9 @@ const STATUS_LABEL: Record<string, string> = {
     EARLY_LEAVE: "조퇴",
     FINALIZED: "마감",
     SETUP:      "준비중",
-    PREP:       "팀 확정",
-    OPS:        "진행중",
-    POST:       "스캔중",
+    PREP:       "출석",
+    OPS:        "과제 준비",
+    POST:       "과제 검사",
     SETTLEMENT: "정산중",
 };
 

@@ -15,8 +15,8 @@ import { useMembers } from "@/hooks/useMembers";
 
 const TYPE_LABEL: Record<string, string> = {
     PPT: "PPT 게시판",
-    REVIEW: "Review",
-    FEEDBACK: "Feedback",
+    REVIEW: "리뷰",
+    FEEDBACK: "피드백",
 };
 
 const STATUS_OPTIONS = ["PASS", "MISSING", "EXEMPT", "PENDING"] as const;
@@ -101,8 +101,8 @@ export function PostTab() {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex justify-between items-center">
                 <div>
-                    <h2 className="text-xl font-bold tracking-tight text-white/90">Post-Session Management</h2>
-                    <p className="text-sm text-[var(--color-text-muted)]">과제, 리뷰, 피드백 제출 현황을 스캔하고 관리합니다.</p>
+                    <h2 className="text-xl font-bold tracking-tight text-white/90">과제 검사</h2>
+                    <p className="text-sm text-[var(--color-text-muted)]">PPT, 리뷰, 피드백 제출 현황을 스캔하고 관리합니다.</p>
                 </div>
                 <Button
                     onClick={handleScanHomework}
@@ -110,7 +110,7 @@ export function PostTab() {
                     className="bg-[var(--color-primary)] hover:bg-rose-600 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]"
                 >
                     {isPolling ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                    {isPolling ? "Scanning..." : "Scan Homework"}
+                    {isPolling ? "스캔 중..." : "과제 스캔"}
                 </Button>
             </div>
 
@@ -125,7 +125,7 @@ export function PostTab() {
                         ) : (
                             <XCircle className="w-4 h-4 text-red-500" />
                         )}
-                        <span>Task Status: {taskStatus.status} (ID: {taskStatus.task_id})</span>
+                        <span>작업 상태: {taskStatus.status} (ID: {taskStatus.task_id})</span>
                         {taskStatus.result && <span className="text-gray-500 ml-2 text-xs truncate max-w-[300px]">{JSON.stringify(taskStatus.result)}</span>}
                     </div>
                 </div>
@@ -133,7 +133,7 @@ export function PostTab() {
 
             <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                 <CardHeader>
-                    <CardTitle className="text-lg">Assignment Status</CardTitle>
+                    <CardTitle className="text-lg">과제 현황</CardTitle>
                     <CardDescription>드롭다운으로 상태를 직접 변경할 수 있습니다.</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -141,7 +141,7 @@ export function PostTab() {
                         <Table>
                             <TableHeader>
                                 <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
-                                    <TableHead>Member</TableHead>
+                                    <TableHead>멤버</TableHead>
                                     {activeTypes.map((type) => (
                                         <TableHead key={type} className="text-center w-[120px]">
                                             {TYPE_LABEL[type] ?? type}

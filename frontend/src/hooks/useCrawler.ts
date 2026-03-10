@@ -140,6 +140,8 @@ export interface DriveVideoItem {
     name: string;
     presenter: string;
     order: number;
+    group?: number | null;
+    cafe_title: string;
 }
 
 export function useDriveVideos(sessionId: number) {

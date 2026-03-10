@@ -19,7 +19,7 @@ export default function SessionList() {
     return (
         <div className="flex flex-col h-full bg-[var(--color-base)] min-h-screen">
             <PageHeader
-                title="All Sessions"
+                title="전체 세션"
                 subtitle="전체 세션 목록 및 상태 관리"
                 actions={
                     <Button
@@ -28,7 +28,7 @@ export default function SessionList() {
                         size="sm"
                     >
                         <Plus className="w-4 h-4" />
-                        New Session
+                        새 세션
                     </Button>
                 }
             />
@@ -92,16 +92,16 @@ export default function SessionList() {
                                     <div className="space-y-2 text-sm text-[var(--color-text-secondary)]">
                                         <div className="flex items-center gap-2">
                                             <Calendar className="w-4 h-4 text-[var(--color-text-muted)]" />
-                                            <span className="font-mono text-xs">{session.date}</span>
+                                            <span className="text-xs">{session.date}</span>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <Briefcase className="w-4 h-4 text-[var(--color-text-muted)]" />
-                                            <span className="text-xs">{session.type} SESSION</span>
+                                            <span className="text-xs">{session.type === "TEAM" ? "팀" : "개인"} 세션</span>
                                         </div>
                                         {session.type === 'TEAM' && session.teams && (
                                             <div className="flex items-center gap-2">
                                                 <Users className="w-4 h-4 text-[var(--color-text-muted)]" />
-                                                <span className="text-xs">{session.teams.length} Teams Assigned</span>
+                                                <span className="text-xs">{session.teams.length}개 팀 배정됨</span>
                                             </div>
                                         )}
                                     </div>

@@ -7,6 +7,7 @@ export interface AdminUser {
     username: string;
     display_name: string;
     role: "admin" | "manager" | "viewer";
+    department: string | null;
     is_active: boolean;
     has_totp: boolean;
     created_at: string;
@@ -30,7 +31,7 @@ export function useAdminUsers() {
 export function useCreateAdminUser() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async (body: { username: string; password: string; display_name: string; role: string }) => {
+        mutationFn: async (body: { username: string; password: string; display_name: string; role: string; department?: string | null }) => {
             const { data } = await api.post<AdminUser>("/auth/users", body);
             return data;
         },
@@ -47,7 +48,7 @@ export function useCreateAdminUser() {
 export function useUpdateAdminUser() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ userId, ...body }: { userId: number; display_name?: string; role?: string; password?: string; is_active?: boolean }) => {
+        mutationFn: async ({ userId, ...body }: { userId: number; display_name?: string; role?: string; department?: string | null; password?: string; is_active?: boolean }) => {
             const { data } = await api.patch<AdminUser>(`/auth/users/${userId}`, body);
             return data;
         },

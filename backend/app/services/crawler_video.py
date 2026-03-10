@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from playwright.async_api import async_playwright
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,22 +98,97 @@ def list_drive_videos(week_num: int) -> List[dict]:
     files = results.get("files", [])
     
     def sort_key(f):
-        # (N번째) 숫자 기준 정렬. 없으면 뒤로 보냄.
-        m = re.search(r'\((\d+)번째\)', f["name"])
-        return int(m.group(1)) if m else 9999
-        
+        name = f["name"]
+        # 분반 → (분반, 순서) 기준 정렬
+        m = re.search(r'\((\d+)분반\s*(\d+)번째\)', name)
+        if m:
+            return (int(m.group(1)), int(m.group(2)))
+        m = re.search(r'\((\d+)번째\)', name)
+        return (0, int(m.group(1))) if m else (9999, 9999)
+
     return sorted(files, key=sort_key)
 
 
 def parse_presenter_name(filename: str) -> str:
     """
     '김민준(8번째).mp4' → '김민준'
+    '장영진P(2분반 6번째).mp4' → '장영진'
+    '연합UP 32기 12주차 발표-[모의PT면접]-장영진P(2분반 6번째).mp4' → '장영진'
     파싱 실패 시 확장자 제거한 전체 이름 반환
     """
-    m = re.match(r'^(.+?)\s*\(', filename)
-    if m:
-        return m.group(1).strip()
-    return os.path.splitext(filename)[0].strip()
+    # 마지막 ( 앞의 이름 부분을 찾음 — 하이픈 구분자 뒤의 마지막 세그먼트 우선
+    basename = os.path.splitext(filename)[0].strip()
+    # 괄호 앞 부분 추출
+    m = re.match(r'^(.+?)\s*\(', basename)
+    if not m:
+        return basename
+    before_paren = m.group(1).strip()
+    # 하이픈(-) 구분자가 있으면 마지막 세그먼트 사용 (e.g., "연합UP 32기...-장영진P" → "장영진P")
+    if "-" in before_paren:
+        before_paren = before_paren.rsplit("-", 1)[-1].strip()
+    return before_paren or basename
+
+
+def upload_file_to_drive(file_bytes: bytes, filename: str, folder_id: str, mime_type: str = "application/octet-stream") -> str:
+    """Google Drive에 파일 업로드 후 file_id 반환"""
+    import io
+    service = get_drive_service()
+    metadata = {
+        "name": filename,
+        "parents": [folder_id],
+    }
+    media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
+    uploaded = service.files().create(body=metadata, media_body=media, fields="id").execute()
+    return uploaded["id"]
+
+
+def copy_drive_file(source_file_id: str, dest_folder_id: str, new_name: str | None = None) -> str:
+    """Google Drive 파일을 다른 폴더로 복사 후 file_id 반환"""
+    service = get_drive_service()
+    body: dict = {"parents": [dest_folder_id]}
+    if new_name:
+        body["name"] = new_name
+    copied = service.files().copy(fileId=source_file_id, body=body, fields="id").execute()
+    return copied["id"]
+
+
+def download_drive_file_bytes(file_id: str) -> tuple[bytes, str]:
+    """Drive 파일을 메모리로 다운로드, (bytes, filename) 반환"""
+    import io
+    service = get_drive_service()
+    # 파일 메타 조회
+    meta = service.files().get(fileId=file_id, fields="name,mimeType").execute()
+    filename = meta.get("name", "download")
+
+    # Google Workspace 파일은 export, 일반 파일은 get_media
+    mime = meta.get("mimeType", "")
+    if mime.startswith("application/vnd.google-apps."):
+        # Google Slides → pptx export
+        export_map = {
+            "application/vnd.google-apps.presentation": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.google-apps.document": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.google-apps.spreadsheet": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }
+        export_mime = export_map.get(mime, "application/pdf")
+        request = service.files().export_media(fileId=file_id, mimeType=export_mime)
+        ext_map = {
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+            "application/pdf": ".pdf",
+        }
+        ext = ext_map.get(export_mime, "")
+        if not filename.endswith(ext):
+            filename += ext
+    else:
+        request = service.files().get_media(fileId=file_id)
+
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return buf.getvalue(), filename
 
 
 def download_drive_file(file_id: str, dest_path: str) -> None:
@@ -225,7 +300,8 @@ async def upload_all_videos(
         # 사용자가 보낸 videos: [{id, name, presenter, order}, ...]
         drive_files = sorted(videos, key=lambda v: v.get("order", 9999))
     else:
-        drive_folder_id = (session.config or {}).get("drive_folder_id")
+        cfg = session.config or {}
+        drive_folder_id = cfg.get("drive_video_folder_id") or cfg.get("drive_folder_id")
         if drive_folder_id:
             drive_files = list_drive_videos_by_folder(drive_folder_id)
         else:
@@ -268,10 +344,16 @@ async def upload_all_videos(
             presenter = drive_file.get("presenter", parse_presenter_name(raw_name))
             file_id = drive_file.get("id", drive_file.get("file_id"))
 
-            # 게시글 제목: {week}주차_{title}_{presenter}({order}번째)
+            # 게시글 제목: 사용자 지정 제목 또는 자동 생성
             order = drive_file.get("order", 9999)
-            order_suffix = f"({order}번째)" if order != 9999 else ""
-            cafe_title = f"{session.week_num}주차_{session.title}_{presenter}{order_suffix}"
+            cafe_title = drive_file.get("cafe_title")
+            if not cafe_title:
+                group = drive_file.get("group")
+                if group is not None:
+                    order_suffix = f"({group}분반 {order}번째)" if order != 9999 else f"({group}분반)"
+                else:
+                    order_suffix = f"({order}번째)" if order != 9999 else ""
+                cafe_title = f"연합UP 33기 {session.week_num}주차 발표-[{session.title}]-{presenter}{order_suffix}"
             tmp_path = os.path.join(tmp_dir, raw_name)
 
             logger.info(f"Processing video: {raw_name} -> {cafe_title}")

@@ -32,6 +32,8 @@ class VideoOrderItem(BaseModel):
     name: str
     presenter: str
     order: int
+    group: Optional[int] = None        # 분반 번호 (e.g., 2분반 → 2)
+    cafe_title: Optional[str] = None   # 카페 게시글 제목 (없으면 자동 생성)
 
 class VideoUploadRequest(BaseModel):
     session_id: int
@@ -45,7 +47,9 @@ class DriveVideoItem(BaseModel):
     id: str
     name: str
     presenter: str
-    order: int  # parsed from (N번째), 9999 if absent
+    order: int            # parsed from (N번째), 9999 if absent
+    group: Optional[int] = None   # 분반 번호
+    cafe_title: str = ""  # 자동 생성된 카페 게시글 제목
 
 class DriveVideoListResponse(BaseModel):
     videos: list[DriveVideoItem]

@@ -60,8 +60,8 @@ export default function SessionWizard() {
     return (
         <div className="min-h-screen bg-[var(--color-base)] text-[var(--color-text-primary)]">
             <PageHeader
-                title="Create New Session"
-                subtitle={`Step ${displayStep} of ${totalSteps}`}
+                title="새 세션 생성"
+                subtitle={`${totalSteps}단계 중 ${displayStep}단계`}
             />
 
             <div className="container mx-auto px-4 py-8">

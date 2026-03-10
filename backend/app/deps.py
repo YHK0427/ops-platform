@@ -98,5 +98,15 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def require_staff(user: dict = Depends(get_current_user)) -> dict:
+    """admin 또는 manager(운영진) 역할 필수 — viewer 차단"""
+    if user["role"] not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="운영진 이상 권한이 필요합니다",
+        )
+    return user
+
+
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())

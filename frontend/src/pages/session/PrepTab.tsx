@@ -2,10 +2,10 @@ import { useOutletContext, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { AttendanceGrid } from "./AttendanceGrid";
 import { Button } from "@/components/ui/button";
-import { FileSearch, Loader2, CheckCircle2, XCircle, Trash2 } from "lucide-react";
+import { FileSearch, Loader2, CheckCircle2, XCircle, Trash2, Download } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { useScanPPT, useScanExcuses, useMembers } from "@/hooks";
+import { useScanExcuses, useMembers } from "@/hooks";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import type { Session } from "@/hooks/useSessions";
 
@@ -14,23 +14,11 @@ export default function PrepTab() {
     const navigate = useNavigate();
     const { data: members } = useMembers();
 
-    const { mutate: scanPPT, isPending: isScanningPPT } = useScanPPT();
     const { mutate: scanExcuses, isPending: isScanningExcuses } = useScanExcuses();
 
     const queryClient = useQueryClient();
 
-    const { taskId: scanTaskId, setTaskId: setScanTaskId, taskStatus } = useSessionTask(session.id, "ppt-scan");
     const { taskId: excuseTaskId, setTaskId: setExcuseTaskId, taskStatus: excuseTaskStatus } = useSessionTask(session.id, "excuse-scan");
-
-    const handleScanPPT = (mode: "REGULAR" | "LATE") => {
-        scanPPT({ sessionId: session.id, mode }, {
-            onSuccess: (data) => {
-                toast.success("PPT 스캔이 시작되었습니다.");
-                setScanTaskId(data.task_id);
-            },
-            onError: () => toast.error("스캔 요청 실패"),
-        });
-    };
 
     const handleClearExcuses = async () => {
         if (!confirm("사유서 데이터(사전/사후 구분, 사유서 내용)를 모두 초기화합니다. 계속하시겠습니까?")) return;
@@ -51,31 +39,6 @@ export default function PrepTab() {
             },
             onError: () => toast.error("스캔 요청 실패"),
         });
-    };
-
-    // Render task status
-    const renderTaskStatus = () => {
-        if (!scanTaskId || !taskStatus) return null;
-
-        return (
-            <div className="mt-4 p-3 bg-black/20 rounded-lg flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                    {taskStatus.status === "in_progress" || taskStatus.status === "queued" ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-[var(--color-accent)]" />
-                    ) : taskStatus.status === "complete" ? (
-                        <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    ) : (
-                        <XCircle className="w-4 h-4 text-red-500" />
-                    )}
-                    <span className="font-mono">Task ID: {scanTaskId.slice(0, 8)}...</span>
-                </div>
-                <span className={`font-bold ${taskStatus.status === "complete" ? "text-green-500" :
-                    taskStatus.status === "failed" ? "text-red-500" : "text-[var(--color-accent)]"
-                    }`}>
-                    {taskStatus.status.toUpperCase()}
-                </span>
-            </div>
-        );
     };
 
     // Construct teams map with Attendance Injection
@@ -108,7 +71,7 @@ export default function PrepTab() {
             }).sort((a: any, b: any) => a.name.localeCompare(b.name));
 
             displayTeams = [{
-                name: session.type === "TEAM" ? "Unassigned / All Members" : "Individual",
+                name: session.type === "TEAM" ? "미배정 / 전체 멤버" : "개인",
                 members: virtualMembers
             }];
         }
@@ -121,23 +84,28 @@ export default function PrepTab() {
             {/* Action Panel */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {cfg.has_ppt_email !== false && (
-                    <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)]">
+                    <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)] relative">
+                        {/* 비활성 오버레이 — IMAP 연동 미완료 */}
+                        <div className="absolute inset-0 bg-black/50 rounded-xl z-10 flex items-center justify-center backdrop-blur-[1px]">
+                            <span className="text-sm text-gray-400 bg-black/60 px-3 py-1.5 rounded-lg border border-gray-700">
+                                미구현
+                            </span>
+                        </div>
                         <div className="mb-4">
-                            <h3 className="font-bold text-lg">Presentation Scan</h3>
-                            <p className="text-sm text-[var(--color-text-secondary)]">구글 드라이브 발표자료 스캔</p>
+                            <h3 className="font-bold text-lg">PPT 이메일 스캔</h3>
+                            <p className="text-sm text-[var(--color-text-secondary)]">네이버 이메일에서 PPT 제출 확인</p>
                         </div>
                         <div className="flex flex-col gap-2">
                             <div className="flex gap-2">
-                                <Button variant="outline" onClick={() => handleScanPPT("REGULAR")} disabled={isScanningPPT}>
+                                <Button variant="outline" disabled>
                                     <FileSearch className="w-4 h-4 mr-2" />
-                                    Regular Scan
+                                    PPT 이메일 스캔
                                 </Button>
-                                <Button variant="outline" className="text-orange-400 border-orange-400/20 hover:bg-orange-400/10" onClick={() => handleScanPPT("LATE")} disabled={isScanningPPT}>
-                                    <FileSearch className="w-4 h-4 mr-2" />
-                                    Late Scan
+                                <Button variant="outline" disabled className="text-blue-400/50 border-blue-400/10">
+                                    <Download className="w-4 h-4 mr-2" />
+                                    전체 PPT 다운로드
                                 </Button>
                             </div>
-                            {renderTaskStatus()}
                         </div>
                     </div>
                 )}
@@ -185,7 +153,7 @@ export default function PrepTab() {
                                     ) : (
                                         <XCircle className="w-4 h-4 text-red-500" />
                                     )}
-                                    <span className="font-mono">Task: {excuseTaskId.slice(0, 8)}...</span>
+                                    <span className="font-mono">작업: {excuseTaskId.slice(0, 8)}...</span>
                                 </div>
                                 <span className={`font-bold ${excuseTaskStatus.status === "complete" ? "text-green-500" :
                                     excuseTaskStatus.status === "failed" ? "text-red-500" : "text-[var(--color-accent)]"
@@ -201,7 +169,7 @@ export default function PrepTab() {
             {/* Attendance Grid */}
             <section>
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-lg">Attendance Check</h3>
+                    <h3 className="font-bold text-lg">출석 체크</h3>
                     {session.type === "TEAM" && session.status === "PREP" && (
                         <Button
                             size="sm"

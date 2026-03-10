@@ -9,6 +9,7 @@ class LedgerType(str, Enum):
     DEPOSIT_RECHARGE = "DEPOSIT_RECHARGE"
     DEPOSIT_ADJUST = "DEPOSIT_ADJUST"
     DEPOSIT_REFUND = "DEPOSIT_REFUND"
+    DEPOSIT_FORFEIT = "DEPOSIT_FORFEIT"
     MERIT = "MERIT"
     ADJUSTMENT = "ADJUSTMENT"
 
@@ -29,8 +30,12 @@ class LedgerResponse(LedgerBase):
     session_date: str | None = None
     created_at: datetime
     deposit_after: int
+    is_paid: bool | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class MilestonePaidUpdate(BaseModel):
+    is_paid: bool
 
 class MeritRequest(BaseModel):
     member_ids: list[int]
@@ -50,3 +55,13 @@ class LedgerUpdate(BaseModel):
     amount_krw: Optional[int] = None
     score_delta: Optional[int] = None
     description: Optional[str] = Field(None, min_length=1, max_length=500)
+
+class PenaltyRequest(BaseModel):
+    member_id: int
+    score_delta: int = Field(lt=0, description="벌점 (음수)")
+    deposit_delta: int = Field(default=0, description="디파짓 차감 (0이면 없음)")
+    description: str
+
+class TreasuryExpenseCreate(BaseModel):
+    amount_krw: int = Field(gt=0, description="지출 금액 (양수)")
+    description: str = Field(min_length=1, max_length=500)

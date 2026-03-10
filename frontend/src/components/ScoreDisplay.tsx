@@ -7,8 +7,8 @@ interface ScoreDisplayProps {
     className?: string;
 }
 
-const EVICTION_THRESHOLD = -12;
-const WARNING_THRESHOLD = -8;
+const EVICTION_THRESHOLD = -13;
+const WARNING_THRESHOLD = -10;
 
 export function ScoreDisplay({
     totalPlus,
@@ -22,19 +22,19 @@ export function ScoreDisplay({
     return (
         <div className={cn("flex items-center gap-3", className)}>
             {/* Plus */}
-            <span className="font-mono text-sm text-green-400">
+            <span className="text-sm text-green-400">
                 +{totalPlus}
             </span>
 
             {/* Minus */}
-            <span className="font-mono text-sm text-rose-400">
+            <span className="text-sm text-rose-400">
                 {totalMinus}
             </span>
 
             {/* Net */}
             <span
                 className={cn(
-                    "font-mono font-bold text-base",
+                    "font-bold text-base",
                     isEviction
                         ? "text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.7)]"
                         : isWarning

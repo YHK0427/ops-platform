@@ -66,15 +66,15 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                         <Lock className="w-5 h-5" />
                     </div>
                     <div>
-                        <h3 className="font-bold text-white">Naver Session Status</h3>
+                        <h3 className="font-bold text-white">네이버 세션 상태</h3>
                         <p className="text-sm text-[var(--color-text-secondary)]">
                             {naverStatus?.is_valid
                                 ? (() => {
                                     const d = naverStatus.expires_hint ? new Date(naverStatus.expires_hint) : null;
                                     const valid = d && d.getFullYear() > 2000;
-                                    return `Valid (Expires: ${valid ? d!.toLocaleDateString() : 'N/A'})`;
+                                    return `유효 (만료: ${valid ? d!.toLocaleDateString() : '알 수 없음'})`;
                                 })()
-                                : "Invalid / Expired"}
+                                : "만료됨 / 유효하지 않음"}
                         </p>
                     </div>
                 </div>
@@ -93,14 +93,14 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                                     disabled={!!loginTaskId}
                                     className="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-white text-xs font-bold hover:bg-[var(--color-primary-hover)] transition-colors shadow-lg shadow-[var(--color-primary)]/20 disabled:opacity-50"
                                 >
-                                    Naver Login
+                                    네이버 로그인
                                 </button>
                                 <button
                                     onClick={() => setMode("manual")}
                                     disabled={!!loginTaskId}
                                     className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:underline disabled:opacity-50"
                                 >
-                                    Manual Import
+                                    수동 가져오기
                                 </button>
                             </>
                         ) : (
@@ -108,7 +108,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                                 onClick={() => setMode("none")}
                                 className="text-sm text-[var(--color-text-muted)] hover:text-white"
                             >
-                                Cancel
+                                취소
                             </button>
                         )}
                     </div>
@@ -120,14 +120,14 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                     <div className="grid gap-3">
                         <input
                             type="text"
-                            placeholder="Naver ID"
+                            placeholder="네이버 ID"
                             value={credentials.username}
                             onChange={e => setCredentials({ ...credentials, username: e.target.value })}
                             className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-sm text-white focus:outline-none focus:border-[var(--color-accent)]"
                         />
                         <input
                             type="password"
-                            placeholder="Password"
+                            placeholder="비밀번호"
                             value={credentials.password}
                             onChange={e => setCredentials({ ...credentials, password: e.target.value })}
                             className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-sm text-white focus:outline-none focus:border-[var(--color-accent)]"
@@ -139,11 +139,11 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                             disabled={!credentials.username || !credentials.password}
                             className="px-4 py-2 bg-[var(--color-success)] hover:bg-green-600 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-colors flex items-center gap-2"
                         >
-                            Auto Login
+                            자동 로그인
                         </button>
                     </div>
                     <p className="text-[10px] text-[var(--color-text-muted)] text-center">
-                        * Credentials are processed securely by the server and never stored.
+                        * 로그인 정보는 서버에서 안전하게 처리되며 저장되지 않습니다.
                     </p>
                 </div>
             )}
@@ -152,7 +152,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                 <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
                     <textarea
                         className="w-full h-32 px-3 py-2 bg-black/20 border border-[var(--color-border)] rounded-md text-xs font-mono text-gray-300 focus:outline-none focus:border-[var(--color-accent)]"
-                        placeholder='Paste storageState.json content here...'
+                        placeholder='storageState.json 내용을 붙여넣으세요...'
                         value={jsonInput}
                         onChange={(e) => setJsonInput(e.target.value)}
                     />
@@ -162,7 +162,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                             disabled={isImporting || !jsonInput}
                             className="px-4 py-2 bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] text-white text-sm font-medium rounded-md disabled:opacity-50 transition-colors"
                         >
-                            {isImporting ? "Importing..." : "Import JSON"}
+                            {isImporting ? "가져오는 중..." : "JSON 가져오기"}
                         </button>
                     </div>
                 </div>
@@ -204,7 +204,7 @@ export default function Dashboard() {
     return (
         <div className="flex flex-col h-full">
             <PageHeader
-                title="Dashboard"
+                title="대시보드"
                 subtitle="전체 운영 현황 및 리스크 모니터링"
             />
 
@@ -215,7 +215,7 @@ export default function Dashboard() {
                 {/* 2. Current Session Card */}
                 <div className="space-y-4">
                     <h2 className="text-sm font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                        Current Session
+                        현재 세션
                     </h2>
 
                     {session ? (
@@ -238,7 +238,7 @@ export default function Dashboard() {
                                         return isClosed ? (
                                             <div className="flex items-center gap-1.5 text-xs text-orange-400">
                                                 <Lock className="w-3 h-3" />
-                                                <span>Entrance Closed</span>
+                                                <span>입장 마감</span>
                                             </div>
                                         ) : null;
                                     })()}
@@ -247,7 +247,7 @@ export default function Dashboard() {
                                     {session.title}
                                 </h3>
                                 <p className="text-sm text-[var(--color-text-secondary)]">
-                                    {session.type} SESSION
+                                    {session.type === "TEAM" ? "팀" : "개인"} 세션
                                 </p>
                             </div>
 
@@ -278,7 +278,7 @@ export default function Dashboard() {
                                     }}
                                     className="flex items-center justify-center gap-2 rounded-lg bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] hover:text-white transition-colors text-sm font-medium"
                                 >
-                                    Manage Session
+                                    세션 관리
                                 </button>
                             </div>
                         </div>
@@ -299,15 +299,15 @@ export default function Dashboard() {
                 {/* 3. Warning Stack */}
                 <div className="space-y-4">
                     <h2 className="text-sm font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                        Required Actions
+                        필수 조치 사항
                     </h2>
 
                     <div className="space-y-2">
                         {isNaverExpired && (
                             <WarningBanner
                                 level="error"
-                                title="Naver Login Expired"
-                                message="네이버 카페 자동화 기능이 제한됩니다. 상단 Naver Session 카드에서 재로그인해주세요."
+                                title="네이버 로그인 만료"
+                                message="네이버 카페 자동화 기능이 제한됩니다. 상단 네이버 세션 카드에서 재로그인해주세요."
                             />
                         )}
 
@@ -326,7 +326,7 @@ export default function Dashboard() {
                                     <WarningBanner
                                         key={`score-${member.id}`}
                                         level={(member.net_score || 0) <= -12 ? "error" : "warning"}
-                                        title={(member.net_score || 0) <= -12 ? "Eviction Risk" : "Score Warning"}
+                                        title={(member.net_score || 0) <= -12 ? "퇴출 위험" : "점수 경고"}
                                         message={`[점수 경고] ${member.name}님의 점수가 ${member.net_score || 0}점입니다. ${(member.net_score || 0) <= -12 ? "(퇴출 대상)" : "(경고 단계)"}`}
                                         action={{ label: `${member.name} 상세보기`, onClick: () => navigate(`/members/${member.id}`) }}
                                     />
@@ -355,7 +355,7 @@ function StatBox({ label, value, icon: Icon }: { label: string; value: string; i
             </div>
             <div>
                 <p className="text-xs text-[var(--color-text-muted)]">{label}</p>
-                <p className="font-mono font-bold text-lg text-[var(--color-text-primary)]">{value}</p>
+                <p className="font-bold text-lg text-[var(--color-text-primary)]">{value}</p>
             </div>
         </div>
     );
