@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Search, Loader2, CheckCircle2, XCircle, Check, X, MessageSquare } from "lucide-react";
+import { RefreshCw, Search, Loader2, CheckCircle2, XCircle, Check, X, MessageSquare, ExternalLink } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import api from "@/lib/api";
 import { toast } from "sonner";
@@ -12,6 +12,8 @@ import { useScanHomework } from "@/hooks/useCrawler";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import type { Session } from "@/hooks/useSessions";
 import { useMembers } from "@/hooks/useMembers";
+
+const CAFE_ID = "21496489";
 
 const TYPE_LABEL: Record<string, string> = {
     PPT: "PPT 게시판",
@@ -163,26 +165,41 @@ export function PostTab() {
                                             const assignment = getAssignment(m.id, type);
                                             const status = assignment?.status || "—";
                                             const feedbackDetail = type === "FEEDBACK" ? assignment?.raw_data?.feedback_detail : undefined;
+                                            const articleId = (type === "PPT" || type === "REVIEW") ? assignment?.raw_data?.article_id : undefined;
+                                            const menuId = (type === "PPT" || type === "REVIEW") ? assignment?.raw_data?.menu_id : undefined;
 
                                             return (
                                                 <TableCell key={type} className="text-center">
                                                     <div className="flex flex-col items-center gap-1">
                                                         {assignment ? (
-                                                            <Select
-                                                                value={status}
-                                                                onValueChange={(val) => handleStatusChange(assignment.id, val)}
-                                                            >
-                                                                <SelectTrigger className={`h-7 w-[100px] text-xs border-[var(--color-border)] bg-transparent ${STATUS_STYLE[status] ?? "text-gray-500"}`}>
-                                                                    <SelectValue />
-                                                                </SelectTrigger>
-                                                                <SelectContent className="bg-[var(--color-elevated)] border-[var(--color-border)]">
-                                                                    {STATUS_OPTIONS.map((opt) => (
-                                                                        <SelectItem key={opt} value={opt} className={`text-xs ${STATUS_STYLE[opt]}`}>
-                                                                            {STATUS_LABEL[opt] ?? opt}
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
+                                                            <div className="flex items-center gap-1">
+                                                                <Select
+                                                                    value={status}
+                                                                    onValueChange={(val) => handleStatusChange(assignment.id, val)}
+                                                                >
+                                                                    <SelectTrigger className={`h-7 w-[100px] text-xs border-[var(--color-border)] bg-transparent ${STATUS_STYLE[status] ?? "text-gray-500"}`}>
+                                                                        <SelectValue />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent className="bg-[var(--color-elevated)] border-[var(--color-border)]">
+                                                                        {STATUS_OPTIONS.map((opt) => (
+                                                                            <SelectItem key={opt} value={opt} className={`text-xs ${STATUS_STYLE[opt]}`}>
+                                                                                {STATUS_LABEL[opt] ?? opt}
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                                {articleId && menuId && (
+                                                                    <a
+                                                                        href={`https://cafe.naver.com/f-e/cafes/${CAFE_ID}/articles/${articleId}?menuid=${menuId}&referrerAllArticles=false`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="p-0.5 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-green-400 transition-colors"
+                                                                        title="카페 게시글 확인"
+                                                                    >
+                                                                        <ExternalLink className="w-3 h-3" />
+                                                                    </a>
+                                                                )}
+                                                            </div>
                                                         ) : (
                                                             <span className="text-gray-600 text-xs">—</span>
                                                         )}

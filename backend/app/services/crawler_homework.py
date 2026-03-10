@@ -89,9 +89,12 @@ async def scan_homework_all(
             if not member and writer_name:
                 member = match_member_by_name(writer_name, members)
 
+            article_id = article.get("articleId") or article.get("article_id")
+            article_raw = {"article_id": int(article_id), "menu_id": menu_id} if article_id else None
+
             if member:
                 # DB Upsert
-                await upsert_assignment(db, session_id, member.id, assign_type, "PASS")
+                await upsert_assignment(db, session_id, member.id, assign_type, "PASS", raw_data=article_raw)
                 total_processed += 1
             elif assign_type == "PPT" and team_map:
                 # 멤버 매칭 실패 시, 팀명 매칭 시도 (PPT 게시판 업로드: "과제16주차_1팀")
@@ -100,7 +103,7 @@ async def scan_homework_all(
                 if matched_team:
                     mids = team_member_ids.get(matched_team.id, [])
                     for mid in mids:
-                        await upsert_assignment(db, session_id, mid, "PPT", "PASS")
+                        await upsert_assignment(db, session_id, mid, "PPT", "PASS", raw_data=article_raw)
                     total_processed += len(mids)
                     logger.info(f"PPT team match: '{team_name}' → {len(mids)} members")
                 else:

@@ -100,11 +100,11 @@ export default function Treasury() {
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--color-text-muted)]">벌금 수입 (디파짓 차감)</span>
-                                            <span className="text-[var(--color-text-secondary)] font-medium">+{formatKRW(summary?.total_fine_collected ?? 0)}</span>
+                                            <span className="text-[var(--color-text-primary)] font-medium">+{formatKRW(summary?.total_fine_collected ?? 0)}</span>
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--color-text-muted)]">이탈자 디파짓 몰수</span>
-                                            <span className="text-[var(--color-text-secondary)] font-medium">+{formatKRW(summary?.total_forfeit ?? 0)}</span>
+                                            <span className="text-[var(--color-text-primary)] font-medium">+{formatKRW(summary?.total_forfeit ?? 0)}</span>
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--color-text-muted)]">누적벌점 벌금 (납부완료)</span>
@@ -136,11 +136,11 @@ export default function Treasury() {
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--color-text-muted)]">활성 멤버</span>
-                                            <span className="text-[var(--color-text-secondary)] font-medium">{data?.deposit_summary?.active_members ?? 0}명</span>
+                                            <span className="text-[var(--color-text-primary)] font-medium">{data?.deposit_summary?.active_members ?? 0}명</span>
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--color-text-muted)]">1인 평균 잔액</span>
-                                            <span className="text-[var(--color-text-secondary)] font-medium">
+                                            <span className="text-[var(--color-text-primary)] font-medium">
                                                 {(data?.deposit_summary?.active_members ?? 0) > 0
                                                     ? formatKRW(Math.round((data?.deposit_summary?.total_deposits ?? 0) / (data?.deposit_summary?.active_members ?? 1)))
                                                     : "-"}
@@ -216,7 +216,7 @@ export default function Treasury() {
                                                 <TableRow key={s.session_id} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
                                                     <TableCell className="font-medium text-[var(--color-text-primary)]">{s.title}</TableCell>
                                                     <TableCell className="text-[var(--color-text-muted)]">{s.date}</TableCell>
-                                                    <TableCell className="text-right text-[var(--color-text-secondary)]">{formatKRW(s.fine_total)}</TableCell>
+                                                    <TableCell className="text-right text-[var(--color-text-primary)]">{formatKRW(s.fine_total)}</TableCell>
                                                     <TableCell className="text-right text-amber-400">{s.milestone_total > 0 ? formatKRW(s.milestone_total) : "-"}</TableCell>
                                                     <TableCell className="text-right font-bold text-[var(--color-text-primary)]">{formatKRW(s.fine_total + s.milestone_total)}</TableCell>
                                                 </TableRow>
@@ -247,7 +247,7 @@ export default function Treasury() {
                                             data.by_member.map((m: any) => (
                                                 <TableRow key={m.member_id} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
                                                     <TableCell className="font-medium text-[var(--color-text-primary)]">{m.name}</TableCell>
-                                                    <TableCell className="text-right text-[var(--color-text-secondary)]">{formatKRW(m.fine_total)}</TableCell>
+                                                    <TableCell className="text-right text-[var(--color-text-primary)]">{formatKRW(m.fine_total)}</TableCell>
                                                     <TableCell className="text-right text-amber-400">{m.milestone_total > 0 ? formatKRW(m.milestone_total) : "-"}</TableCell>
                                                     <TableCell className="text-right font-bold text-[var(--color-text-primary)]">{formatKRW(m.fine_total + m.milestone_total)}</TableCell>
                                                 </TableRow>
@@ -281,7 +281,7 @@ export default function Treasury() {
                                                     <TableCell className="font-medium text-[var(--color-text-primary)]">{u.member_name}</TableCell>
                                                     <TableCell className="text-[var(--color-text-muted)]">{u.session_title || "-"}</TableCell>
                                                     <TableCell className="text-right text-rose-400 font-bold">{formatKRW(Math.abs(u.amount_krw))}</TableCell>
-                                                    <TableCell className="text-[var(--color-text-secondary)]">{u.description}</TableCell>
+                                                    <TableCell className="text-[var(--color-text-primary)]">{u.description}</TableCell>
                                                     <TableCell className="text-center">
                                                         <button
                                                             onClick={() => togglePaid({ id: u.id, is_paid: true })}
@@ -398,7 +398,7 @@ export default function Treasury() {
                                                         </span>
                                                     </TableCell>
                                                     <TableCell className="text-right font-bold text-rose-400">{formatKRW(Math.abs(e.amount_krw))}</TableCell>
-                                                    <TableCell className="text-[var(--color-text-secondary)]">{e.description}</TableCell>
+                                                    <TableCell className="text-[var(--color-text-primary)]">{e.description}</TableCell>
                                                     <TableCell className="text-[var(--color-text-muted)]">
                                                         {e.created_at ? new Date(e.created_at).toLocaleDateString("ko-KR") : "-"}
                                                     </TableCell>
