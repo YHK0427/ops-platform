@@ -15,7 +15,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            cd /home/ubuntu/ops-platform
+            cd /home/ubuntu/ops-deploy
             git pull origin main
             docker compose build
             docker compose up -d
