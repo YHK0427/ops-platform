@@ -117,23 +117,10 @@ export default function OpsTab() {
         updateConfig({ sessionId: session.id, config: { feedback_presenters: newIds } });
     }, [updateConfig, session.id]);
 
-    // 발표자 추가 시 본인을 피드백 대상에 자동 추가
+    // 발표자 추가 (자기 자신 피드백은 크롤러가 자동 포함하므로 여기서 지정하지 않음)
     const addPresenter = useCallback((memberId: number) => {
-        const newPresenters = [...presenterIds, memberId];
-        savePresenters(newPresenters);
-        // 본인 피드백 영상 자동 포함: 해당 멤버의 FEEDBACK 대상에 자기 자신 추가
-        const assignment = feedbackAssignments.find((a) => a.member_id === memberId);
-        if (assignment) {
-            const currentTargets = assignment.target_member_ids ?? [];
-            if (!currentTargets.includes(memberId)) {
-                setFeedbackTargets({
-                    sessionId: session.id,
-                    memberId,
-                    targetMemberIds: [...currentTargets, memberId],
-                });
-            }
-        }
-    }, [presenterIds, savePresenters, feedbackAssignments, setFeedbackTargets, session.id]);
+        savePresenters([...presenterIds, memberId]);
+    }, [presenterIds, savePresenters]);
 
     const removePresenter = useCallback((memberId: number) => {
         savePresenters(presenterIds.filter((id) => id !== memberId));
