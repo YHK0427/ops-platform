@@ -305,3 +305,25 @@ export function useSetFeedbackTargets() {
         },
     });
 }
+
+export function useRandomAssignFeedback() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({
+            sessionId, extraCountNormal = 1, extraCountAbsent = 2,
+        }: { sessionId: number; extraCountNormal?: number; extraCountAbsent?: number }) => {
+            const { data } = await api.post(
+                `/sessions/${sessionId}/feedback-random-assign`,
+                { extra_count_normal: extraCountNormal, extra_count_absent: extraCountAbsent },
+            );
+            return data;
+        },
+        onSuccess: (data, vars) => {
+            queryClient.invalidateQueries({ queryKey: sessionsKeys.detail(vars.sessionId) });
+            toast.success(`${data.assigned}명 피드백 대상이 랜덤 배정되었습니다.`);
+        },
+        onError: () => {
+            toast.error("랜덤 배정 실패");
+        },
+    });
+}

@@ -1,4 +1,5 @@
 import logging
+import random
 from datetime import datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
@@ -20,6 +21,7 @@ from app.models import (
 )
 from app.schemas.attendance import AttendanceForceUpdate, AttendanceUpdate
 from app.schemas.session import (
+    FeedbackRandomAssignRequest,
     FeedbackTargetUpdate,
     MeritItemResponse,
     SessionConfigUpdate,
@@ -879,6 +881,76 @@ async def set_feedback_targets(
     await db.commit()
     logger.audit(f"feedback_targets session={session_id} member={member_id} targets={body.target_member_ids}")
     return {"member_id": member_id, "target_member_ids": body.target_member_ids}
+
+
+@router.post("/{session_id}/feedback-random-assign")
+async def feedback_random_assign(
+    session_id: int,
+    body: FeedbackRandomAssignRequest,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+):
+    """피드백 대상 랜덤 일괄 배정 (본인은 크롤러가 자동 포함)"""
+    session = await _get_session_or_404(session_id, db)
+    if session.status == "FINALIZED":
+        raise HTTPException(status_code=400, detail="FINALIZED 세션은 수정 불가합니다")
+
+    # 발표자 목록 (config에 저장된 것 또는 출석 멤버 기본값)
+    presenter_ids: list[int] = session.config.get("feedback_presenters", []) if session.config else []
+
+    # 결석/공결 멤버
+    att_stmt = select(Attendance).where(Attendance.session_id == session_id)
+    att_result = await db.execute(att_stmt)
+    attendances = att_result.scalars().all()
+
+    absent_ids = {a.member_id for a in attendances if a.status in ("ABSENT", "EXCUSED")}
+
+    if not presenter_ids:
+        presenter_ids = [a.member_id for a in attendances if a.member_id not in absent_ids]
+
+    # FEEDBACK assignments
+    fb_stmt = select(Assignment).where(
+        Assignment.session_id == session_id,
+        Assignment.type == "FEEDBACK",
+    )
+    fb_result = await db.execute(fb_stmt)
+    fb_assignments = fb_result.scalars().all()
+
+    if not fb_assignments:
+        raise HTTPException(status_code=400, detail="FEEDBACK assignment가 없습니다")
+
+    if len(presenter_ids) < 2:
+        raise HTTPException(status_code=400, detail="발표자가 2명 이상이어야 랜덤 배정이 가능합니다")
+
+    # 균등 분배를 위한 카운터
+    assign_count: dict[int, int] = {pid: 0 for pid in presenter_ids}
+    result_map: list[dict] = []
+
+    # 랜덤 순서로 처리 (선착 편향 방지)
+    shuffled_assignments = list(fb_assignments)
+    random.shuffle(shuffled_assignments)
+
+    for assignment in shuffled_assignments:
+        writer_id = assignment.member_id
+        is_absent = writer_id in absent_ids
+        extra_count = body.extra_count_absent if is_absent else body.extra_count_normal
+
+        # 본인 제외 발표자 중 가장 적게 배정된 순으로
+        candidates = [pid for pid in presenter_ids if pid != writer_id]
+        random.shuffle(candidates)
+        candidates.sort(key=lambda pid: assign_count.get(pid, 0))
+
+        picked = candidates[:extra_count]
+        for pid in picked:
+            assign_count[pid] = assign_count.get(pid, 0) + 1
+
+        assignment.target_member_ids = picked
+        assignment.target_count = len(picked)
+        result_map.append({"member_id": writer_id, "target_member_ids": picked})
+
+    await db.commit()
+    logger.audit(f"feedback_random_assign session={session_id} count={len(result_map)}")
+    return {"assigned": len(result_map), "details": result_map}
 
 
 # ── Settlement & Finalize ─────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Shield, Plus, Pencil, ShieldCheck, ShieldOff, Loader2, RotateCcw, Trash2 } from "lucide-react";
-import { useAdminUsers, useCreateAdminUser, useUpdateAdminUser, useDeleteAdminUser, adminUserKeys } from "@/hooks";
+import { useState, useMemo } from "react";
+import { Shield, Plus, Pencil, ShieldCheck, ShieldOff, Loader2, RotateCcw, Trash2, Users, UserCog, Check, X, KeyRound } from "lucide-react";
+import { useAdminUsers, useCreateAdminUser, useUpdateAdminUser, useDeleteAdminUser, useBulkCreateGeneration, useBulkDeleteGeneration, useBulkResetGenPassword, useResetGenPassword, useDeleteGenAccount, useGenAccounts, adminUserKeys, useMembers } from "@/hooks";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -126,8 +126,9 @@ function CreateUserDialog() {
 
 // ── Edit User Dialog ────────────────────────────────────────────────────────
 
-function EditUserDialog({ user, trigger }: { user: { id: number; display_name: string; role: string; department: string | null; is_active: boolean }; trigger: React.ReactNode }) {
+function EditUserDialog({ user, trigger }: { user: { id: number; username: string; display_name: string; role: string; department: string | null; is_active: boolean }; trigger: React.ReactNode }) {
     const [open, setOpen] = useState(false);
+    const [username, setUsername] = useState(user.username);
     const [displayName, setDisplayName] = useState(user.display_name);
     const [role, setRole] = useState(user.role);
     const [department, setDepartment] = useState(user.department ?? "");
@@ -137,6 +138,7 @@ function EditUserDialog({ user, trigger }: { user: { id: number; display_name: s
 
     const handleSubmit = () => {
         const body: Record<string, any> = { userId: user.id, display_name: displayName, role, is_active: isActive, department: department || null };
+        if (username !== user.username) body.username = username;
         if (password) body.password = password;
         mutate(body as any, { onSuccess: () => setOpen(false) });
     };
@@ -149,6 +151,10 @@ function EditUserDialog({ user, trigger }: { user: { id: number; display_name: s
                     <DialogTitle>사용자 수정</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right">아이디</Label>
+                        <Input value={username} onChange={(e) => setUsername(e.target.value)} className="col-span-3" />
+                    </div>
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label className="text-right">이름</Label>
                         <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="col-span-3" />
@@ -400,9 +406,223 @@ function SemesterResetButton() {
     );
 }
 
+// ── Generation Tab ──────────────────────────────────────────────────────────
+
+function GenerationTab() {
+    const { data: members, isLoading: membersLoading } = useMembers();
+    const { data: accounts, isLoading: accountsLoading } = useGenAccounts();
+    const { mutate: bulkCreate, isPending: isCreating } = useBulkCreateGeneration();
+    const { mutate: bulkDelete, isPending: isDeleting } = useBulkDeleteGeneration();
+    const { mutate: resetPassword } = useResetGenPassword();
+    const { mutate: deleteAccount } = useDeleteGenAccount();
+    const { mutate: bulkResetPw, isPending: isResettingPw } = useBulkResetGenPassword();
+    const [bulkPassword, setBulkPassword] = useState("univpt33");
+    const [resetPwOpen, setResetPwOpen] = useState(false);
+    const [newBulkPw, setNewBulkPw] = useState("");
+
+    const memberAccountStatus = useMemo(() => {
+        if (!members || !accounts) return [];
+        const accountMap = new Map(accounts.map((a) => [a.member_id, a]));
+        return members
+            .filter((m) => m.is_active)
+            .map((m) => ({
+                id: m.id,
+                name: m.name,
+                account: accountMap.get(m.id) ?? null,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    }, [members, accounts]);
+
+    const accountCount = memberAccountStatus.filter((m) => m.account).length;
+    const totalCount = memberAccountStatus.length;
+
+    return (
+        <div className="p-6 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="text-sm text-[var(--color-text-secondary)]">
+                    활성 멤버 {totalCount}명 중 {accountCount}명 계정 보유
+                </div>
+                <div className="flex gap-2">
+                    {accountCount > 0 && (
+                        <Dialog open={resetPwOpen} onOpenChange={(v) => { setResetPwOpen(v); if (!v) setNewBulkPw(""); }}>
+                            <DialogTrigger asChild>
+                                <Button variant="outline">
+                                    <KeyRound className="w-4 h-4 mr-2" />
+                                    일괄 비번 변경
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent className="sm:max-w-[360px]">
+                                <DialogHeader>
+                                    <DialogTitle>일괄 비밀번호 변경</DialogTitle>
+                                    <DialogDescription>기수 계정 {accountCount}개의 비밀번호를 일괄 변경합니다.</DialogDescription>
+                                </DialogHeader>
+                                <div className="grid grid-cols-4 items-center gap-4 py-2">
+                                    <Label className="text-right">새 비번</Label>
+                                    <Input value={newBulkPw} onChange={(e) => setNewBulkPw(e.target.value)} className="col-span-3" placeholder="새 비밀번호 입력" />
+                                </div>
+                                <DialogFooter>
+                                    <Button onClick={() => { bulkResetPw(newBulkPw, { onSuccess: () => setResetPwOpen(false) }); }} disabled={isResettingPw || newBulkPw.length < 4}>
+                                        {isResettingPw && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                        변경
+                                    </Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+                    )}
+                    {accountCount > 0 && (
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="outline" className="text-rose-400 border-rose-500/30 hover:bg-rose-500/10" disabled={isDeleting}>
+                                    {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    일괄 삭제
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>기수 계정 일괄 삭제</AlertDialogTitle>
+                                    <AlertDialogDescription className="space-y-2">
+                                        <span className="block">기수 계정 {accountCount}개를 모두 삭제합니다.</span>
+                                        <span className="block font-bold text-rose-400">이 작업은 되돌릴 수 없습니다.</span>
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>취소</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => bulkDelete()} className="bg-rose-500 hover:bg-rose-600">삭제</AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    )}
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button disabled={isCreating || totalCount === accountCount}>
+                                {isCreating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                <Users className="w-4 h-4 mr-2" />
+                                일괄 생성
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>기수 계정 일괄 생성</AlertDialogTitle>
+                                <AlertDialogDescription className="space-y-2">
+                                    <span className="block">활성 멤버 {totalCount - accountCount}명에 대해 계정을 생성합니다.</span>
+                                    <span className="block">아이디: 멤버 이름 / 이미 계정이 있는 멤버는 건너뜁니다.</span>
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <div className="grid grid-cols-4 items-center gap-4 py-2">
+                                <Label className="text-right">비밀번호</Label>
+                                <Input value={bulkPassword} onChange={(e) => setBulkPassword(e.target.value)} className="col-span-3" placeholder="일괄 비밀번호" />
+                            </div>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>취소</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => bulkCreate(bulkPassword)} disabled={!bulkPassword}>생성</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                </div>
+            </div>
+
+            <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
+                <Table>
+                    <TableHeader>
+                        <TableRow className="border-b border-[var(--color-border-subtle)] hover:bg-transparent">
+                            <TableHead className="text-[var(--color-text-muted)]">이름</TableHead>
+                            <TableHead className="text-[var(--color-text-muted)]">아이디</TableHead>
+                            <TableHead className="text-[var(--color-text-muted)]">계정</TableHead>
+                            <TableHead className="text-right text-[var(--color-text-muted)]" />
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {membersLoading || accountsLoading ? (
+                            Array.from({ length: 5 }).map((_, i) => (
+                                <TableRow key={i}>
+                                    {Array.from({ length: 4 }).map((_, j) => (
+                                        <TableCell key={j}><div className="h-4 rounded bg-[var(--color-surface)] animate-pulse" /></TableCell>
+                                    ))}
+                                </TableRow>
+                            ))
+                        ) : !memberAccountStatus.length ? (
+                            <TableRow>
+                                <TableCell colSpan={4} className="text-center py-8 text-[var(--color-text-muted)]">
+                                    활성 멤버가 없습니다
+                                </TableCell>
+                            </TableRow>
+                        ) : (
+                            memberAccountStatus.map((m) => (
+                                <TableRow key={m.id} className="group/row border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
+                                    <TableCell>{m.name}</TableCell>
+                                    <TableCell className="font-mono text-sm text-[var(--color-text-secondary)]">
+                                        {m.account?.username ?? "-"}
+                                    </TableCell>
+                                    <TableCell>
+                                        {m.account ? (
+                                            <Check className="w-4 h-4 text-green-400" />
+                                        ) : (
+                                            <X className="w-4 h-4 text-[var(--color-text-muted)]" />
+                                        )}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        {m.account && (
+                                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <Button variant="ghost" size="icon" className="h-7 w-7" title="비밀번호 초기화">
+                                                            <KeyRound className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle>비밀번호 초기화</AlertDialogTitle>
+                                                            <AlertDialogDescription>
+                                                                {m.name}의 비밀번호를 univpt33으로 초기화합니다.
+                                                            </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>취소</AlertDialogCancel>
+                                                            <AlertDialogAction onClick={() => resetPassword(m.account!.id)}>
+                                                                초기화
+                                                            </AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-400 hover:text-rose-300" title="계정 삭제">
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle>계정 삭제</AlertDialogTitle>
+                                                            <AlertDialogDescription>
+                                                                {m.name}의 기수 계정을 삭제하시겠습니까?
+                                                            </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>취소</AlertDialogCancel>
+                                                            <AlertDialogAction onClick={() => deleteAccount(m.account!.id)} className="bg-rose-500 hover:bg-rose-600">
+                                                                삭제
+                                                            </AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
+                                            </div>
+                                        )}
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        )}
+                    </TableBody>
+                </Table>
+            </div>
+        </div>
+    );
+}
+
 // ── Main Page ───────────────────────────────────────────────────────────────
 
 export default function AdminUsers() {
+    const [tab, setTab] = useState<"users" | "generation">("users");
     const { data: users, isLoading } = useAdminUsers();
     const { mutate: deleteUser } = useDeleteAdminUser();
     const { user: currentUser } = useAuth();
@@ -410,123 +630,153 @@ export default function AdminUsers() {
     return (
         <div className="flex flex-col h-full">
             <PageHeader
-                title="사용자 관리"
-                subtitle="운영진 계정을 관리합니다"
+                title="관리자"
+                subtitle="사용자 및 기수 계정을 관리합니다"
                 actions={
                     <div className="flex gap-2">
                         {currentUser?.role === "admin" && <SemesterResetButton />}
                         {currentUser?.role === "admin" && <TotpSetupDialog />}
-                        <CreateUserDialog />
+                        {tab === "users" && <CreateUserDialog />}
                     </div>
                 }
             />
 
-            <div className="p-6">
-                <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
-                    <Table>
-                        <TableHeader>
-                            <TableRow className="border-b border-[var(--color-border-subtle)] hover:bg-transparent">
-                                <TableHead className="text-[var(--color-text-muted)]">아이디</TableHead>
-                                <TableHead className="text-[var(--color-text-muted)]">이름</TableHead>
-                                <TableHead className="text-[var(--color-text-muted)]">역할</TableHead>
-                                <TableHead className="text-[var(--color-text-muted)]">부서</TableHead>
-                                <TableHead className="text-[var(--color-text-muted)]">2FA</TableHead>
-                                <TableHead className="text-[var(--color-text-muted)]">상태</TableHead>
-                                <TableHead className="text-[var(--color-text-muted)]">생성일</TableHead>
-                                <TableHead className="text-right text-[var(--color-text-muted)]" />
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {isLoading ? (
-                                Array.from({ length: 3 }).map((_, i) => (
-                                    <TableRow key={i}>
-                                        {Array.from({ length: 8 }).map((_, j) => (
-                                            <TableCell key={j}><div className="h-4 rounded bg-[var(--color-surface)] animate-pulse" /></TableCell>
-                                        ))}
-                                    </TableRow>
-                                ))
-                            ) : !users?.length ? (
-                                <TableRow>
-                                    <TableCell colSpan={8} className="text-center py-8 text-[var(--color-text-muted)]">
-                                        사용자가 없습니다
-                                    </TableCell>
-                                </TableRow>
-                            ) : (
-                                users.map((u) => (
-                                    <TableRow key={u.id} className="group/row border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
-                                        <TableCell className="font-mono text-sm">{u.username}</TableCell>
-                                        <TableCell>{u.display_name}</TableCell>
-                                        <TableCell>
-                                            <Badge variant="outline" className={ROLE_COLORS[u.role] ?? ""}>
-                                                {ROLE_LABELS[u.role] ?? u.role}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            {u.department ? (
-                                                <Badge variant="outline" className={DEPT_COLORS[u.department] ?? "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"}>
-                                                    {u.department}
-                                                </Badge>
-                                            ) : (
-                                                <span className="text-[var(--color-text-muted)]">-</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            {u.has_totp ? (
-                                                <ShieldCheck className="w-4 h-4 text-green-400" />
-                                            ) : (
-                                                <span className="text-[var(--color-text-muted)]">-</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            {u.is_active ? (
-                                                <span className="text-green-400 text-xs">활성</span>
-                                            ) : (
-                                                <span className="text-[var(--color-text-muted)] text-xs">비활성</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-[var(--color-text-muted)] text-xs">
-                                            {new Date(u.created_at).toLocaleDateString("ko-KR")}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                                                <EditUserDialog
-                                                    user={u}
-                                                    trigger={
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7">
-                                                            <Pencil className="w-3.5 h-3.5" />
-                                                        </Button>
-                                                    }
-                                                />
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-400 hover:text-rose-300">
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle>사용자 삭제</AlertDialogTitle>
-                                                            <AlertDialogDescription>
-                                                                {u.display_name} ({u.username})을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>취소</AlertDialogCancel>
-                                                            <AlertDialogAction onClick={() => deleteUser(u.id)} className="bg-rose-500 hover:bg-rose-600">
-                                                                삭제
-                                                            </AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                            </div>
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
+            {/* Tab bar */}
+            <div className="px-6 pt-2 flex gap-1 border-b border-[var(--color-border)]">
+                <button
+                    onClick={() => setTab("users")}
+                    className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+                        tab === "users"
+                            ? "bg-[var(--color-surface)] text-[var(--color-text-primary)] border border-b-0 border-[var(--color-border)]"
+                            : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                    }`}
+                >
+                    <UserCog className="w-4 h-4" />
+                    사용자 관리
+                </button>
+                <button
+                    onClick={() => setTab("generation")}
+                    className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+                        tab === "generation"
+                            ? "bg-[var(--color-surface)] text-[var(--color-text-primary)] border border-b-0 border-[var(--color-border)]"
+                            : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                    }`}
+                >
+                    <Users className="w-4 h-4" />
+                    기수 관리
+                </button>
             </div>
+
+            {tab === "users" ? (
+                <div className="p-6">
+                    <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="border-b border-[var(--color-border-subtle)] hover:bg-transparent">
+                                    <TableHead className="text-[var(--color-text-muted)]">아이디</TableHead>
+                                    <TableHead className="text-[var(--color-text-muted)]">이름</TableHead>
+                                    <TableHead className="text-[var(--color-text-muted)]">역할</TableHead>
+                                    <TableHead className="text-[var(--color-text-muted)]">부서</TableHead>
+                                    <TableHead className="text-[var(--color-text-muted)]">2FA</TableHead>
+                                    <TableHead className="text-[var(--color-text-muted)]">상태</TableHead>
+                                    <TableHead className="text-[var(--color-text-muted)]">생성일</TableHead>
+                                    <TableHead className="text-right text-[var(--color-text-muted)]" />
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {isLoading ? (
+                                    Array.from({ length: 3 }).map((_, i) => (
+                                        <TableRow key={i}>
+                                            {Array.from({ length: 8 }).map((_, j) => (
+                                                <TableCell key={j}><div className="h-4 rounded bg-[var(--color-surface)] animate-pulse" /></TableCell>
+                                            ))}
+                                        </TableRow>
+                                    ))
+                                ) : !users?.length ? (
+                                    <TableRow>
+                                        <TableCell colSpan={8} className="text-center py-8 text-[var(--color-text-muted)]">
+                                            사용자가 없습니다
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    users.map((u) => (
+                                        <TableRow key={u.id} className="group/row border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
+                                            <TableCell className="font-mono text-sm">{u.username}</TableCell>
+                                            <TableCell>{u.display_name}</TableCell>
+                                            <TableCell>
+                                                <Badge variant="outline" className={ROLE_COLORS[u.role] ?? ""}>
+                                                    {ROLE_LABELS[u.role] ?? u.role}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>
+                                                {u.department ? (
+                                                    <Badge variant="outline" className={DEPT_COLORS[u.department] ?? "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"}>
+                                                        {u.department}
+                                                    </Badge>
+                                                ) : (
+                                                    <span className="text-[var(--color-text-muted)]">-</span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>
+                                                {u.has_totp ? (
+                                                    <ShieldCheck className="w-4 h-4 text-green-400" />
+                                                ) : (
+                                                    <span className="text-[var(--color-text-muted)]">-</span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>
+                                                {u.is_active ? (
+                                                    <span className="text-green-400 text-xs">활성</span>
+                                                ) : (
+                                                    <span className="text-[var(--color-text-muted)] text-xs">비활성</span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-[var(--color-text-muted)] text-xs">
+                                                {new Date(u.created_at).toLocaleDateString("ko-KR")}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                    <EditUserDialog
+                                                        user={u}
+                                                        trigger={
+                                                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                                                                <Pencil className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                        }
+                                                    />
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-400 hover:text-rose-300">
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>사용자 삭제</AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    {u.display_name} ({u.username})을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>취소</AlertDialogCancel>
+                                                                <AlertDialogAction onClick={() => deleteUser(u.id)} className="bg-rose-500 hover:bg-rose-600">
+                                                                    삭제
+                                                                </AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </div>
+            ) : (
+                <GenerationTab />
+            )}
         </div>
     );
 }

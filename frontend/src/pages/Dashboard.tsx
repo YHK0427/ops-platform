@@ -325,9 +325,9 @@ export default function Dashboard() {
                                 {riskScoreMembers.map(member => (
                                     <WarningBanner
                                         key={`score-${member.id}`}
-                                        level={(member.net_score || 0) <= -12 ? "error" : "warning"}
-                                        title={(member.net_score || 0) <= -12 ? "퇴출 위험" : "점수 경고"}
-                                        message={`[점수 경고] ${member.name}님의 점수가 ${member.net_score || 0}점입니다. ${(member.net_score || 0) <= -12 ? "(퇴출 대상)" : "(경고 단계)"}`}
+                                        level={(member.net_score || 0) <= -13 ? "error" : "warning"}
+                                        title={(member.net_score || 0) <= -13 ? "퇴출 위험" : "점수 경고"}
+                                        message={`[점수 경고] ${member.name}님의 점수가 ${member.net_score || 0}점입니다. ${(member.net_score || 0) <= -13 ? "(퇴출 대상)" : "(경고 단계)"}`}
                                         action={{ label: `${member.name} 상세보기`, onClick: () => navigate(`/members/${member.id}`) }}
                                     />
                                 ))}

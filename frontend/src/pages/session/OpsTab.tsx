@@ -1,9 +1,9 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink } from "lucide-react";
+import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink, Shuffle, ShieldCheck, RotateCcw } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
-import { useUploadVideos, useSetFeedbackTargets, useDriveVideos, useActiveUploadTask, useUpdateSessionConfig } from "@/hooks";
+import { useUploadVideos, useSetFeedbackTargets, useRandomAssignFeedback, useDriveVideos, useActiveUploadTask, useUpdateSessionConfig } from "@/hooks";
 import type { VideoProgress, DriveVideoItem } from "@/hooks/useCrawler";
 import { crawlerKeys } from "@/hooks/useCrawler";
 import { useMembers } from "@/hooks/useMembers";
@@ -24,6 +24,7 @@ export default function OpsTab() {
     const { mutate: uploadVideos, isPending: isUploading } = useUploadVideos();
     const { refetch: fetchDriveVideos, isFetching: isLoadingDrive, data: driveVideos } = useDriveVideos(session.id);
     const { mutate: setFeedbackTargets, isPending: isSettingTarget } = useSetFeedbackTargets();
+    const { mutate: randomAssign, isPending: isRandomAssigning } = useRandomAssignFeedback();
     const { mutate: updateConfig } = useUpdateSessionConfig();
     const { data: allMembers } = useMembers();
     const { data: activeTask } = useActiveUploadTask(session.id);
@@ -88,6 +89,7 @@ export default function OpsTab() {
         return map;
     }, [allMembers, session.teams]);
 
+    const [hoveredPresenterId, setHoveredPresenterId] = useState<number | null>(null);
     const feedbackAssignments = session.assignments?.filter((a) => a.type === "FEEDBACK") ?? [];
     const sessionMemberIds = session.attendances?.map((a) => a.member_id) ?? [];
 
@@ -150,6 +152,40 @@ export default function OpsTab() {
         });
         return map;
     }, [feedbackAssignments, presenterIds, presenterIdSet]);
+
+    // 랜덤 배정: 백엔드 벌크 API 호출
+    const handleRandomAssign = useCallback(() => {
+        randomAssign({ sessionId: session.id, extraCountNormal: 1, extraCountAbsent: 2 });
+    }, [randomAssign, session.id]);
+
+    // 초기화: 벌크 API에 0/0으로 호출 → 전원 빈 배열
+    const handleResetAssign = useCallback(() => {
+        randomAssign({ sessionId: session.id, extraCountNormal: 0, extraCountAbsent: 0 });
+        setVideoWarnings([]);
+    }, [randomAssign, session.id]);
+
+    // 영상 검증: 발표자 중 드라이브 영상이 없는 사람 찾기
+    const [videoWarnings, setVideoWarnings] = useState<string[]>([]);
+    const handleVerifyVideos = useCallback(() => {
+        if (!driveVideos || driveVideos.length === 0) {
+            toast.error("먼저 '드라이브 확인'을 눌러 영상 목록을 불러와주세요.");
+            return;
+        }
+        const videoPresenterNames = new Set(driveVideos.map(v => v.presenter));
+        const missing: string[] = [];
+        for (const id of presenterIds) {
+            const name = memberNameMap.get(id) ?? `ID:${id}`;
+            if (!videoPresenterNames.has(name)) {
+                missing.push(name);
+            }
+        }
+        setVideoWarnings(missing);
+        if (missing.length === 0) {
+            toast.success("모든 발표자의 영상이 확인되었습니다.");
+        } else {
+            toast.warning(`영상 미확인: ${missing.join(", ")}`);
+        }
+    }, [driveVideos, presenterIds, memberNameMap]);
 
     const handleCafeUpload = () => {
         uploadVideos({ sessionId: session.id, videos: driveVideos ?? undefined }, {
@@ -393,10 +429,48 @@ export default function OpsTab() {
                                 피드백 대상 지정
                             </h3>
                             <p className="text-xs text-[var(--color-text-secondary)]">
-                                각 멤버가 피드백을 작성할 대상을 지정합니다. 본인 영상은 크롤러에서 기본 포함됩니다.
+                                각 멤버가 피드백을 작성할 대상을 지정합니다. 본인 영상은 기본 포함됩니다.
                             </p>
                         </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleResetAssign}
+                                disabled={isSettingTarget || isRandomAssigning}
+                                className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-white/5 text-[var(--color-text-muted)] hover:text-rose-400"
+                            >
+                                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                                초기화
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleVerifyVideos}
+                                className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-white/5"
+                            >
+                                <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                                영상 검증
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={handleRandomAssign}
+                                disabled={isSettingTarget || isRandomAssigning}
+                                className="h-7 px-3 text-xs bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
+                            >
+                                <Shuffle className="w-3.5 h-3.5 mr-1" />
+                                랜덤 배정
+                            </Button>
+                        </div>
                     </div>
+
+                    {/* 영상 미확인 경고 */}
+                    {videoWarnings.length > 0 && (
+                        <div className="mb-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+                            <span className="font-medium">영상 미확인 발표자:</span> {videoWarnings.join(", ")}
+                            <span className="text-amber-400/60 ml-1">— 피드백 대상에서 제거하거나 영상을 확인해주세요.</span>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
                         {/* Left: Assignment table */}
@@ -427,6 +501,7 @@ export default function OpsTab() {
                                                 memberNameMap={memberNameMap}
                                                 disabled={isSettingTarget}
                                                 isAbsent={isAbsent}
+                                                highlightTargetId={hoveredPresenterId}
                                                 onSetTargets={(targetIds) => {
                                                     if (writerId == null) return;
                                                     setFeedbackTargets({
@@ -453,8 +528,19 @@ export default function OpsTab() {
                                     const name = memberNameMap.get(id) ?? `ID:${id}`;
                                     const isUnassigned = count === 0;
                                     return (
-                                        <div key={id} className={`flex items-center justify-between px-3 py-1.5 text-xs ${isUnassigned ? "bg-rose-500/5" : ""}`}>
-                                            <span className={isUnassigned ? "text-rose-400" : "text-[var(--color-text-primary)]"}>
+                                        <div
+                                            key={id}
+                                            className={`flex items-center justify-between px-3 py-1.5 text-xs cursor-default transition-all duration-200 ${
+                                                isUnassigned ? "bg-rose-500/5" : ""
+                                            } ${hoveredPresenterId === id ? "bg-violet-500/10 shadow-[inset_0_0_12px_rgba(139,92,246,0.15)]" : ""}`}
+                                            onMouseEnter={() => setHoveredPresenterId(id)}
+                                            onMouseLeave={() => setHoveredPresenterId(null)}
+                                        >
+                                            <span className={
+                                                hoveredPresenterId === id
+                                                    ? "text-violet-400 font-medium"
+                                                    : isUnassigned ? "text-rose-400" : "text-[var(--color-text-primary)]"
+                                            }>
                                                 {name}
                                             </span>
                                             <div className="flex items-center gap-1.5">
@@ -520,6 +606,7 @@ interface FeedbackTargetRowProps {
     memberNameMap: Map<number, string>;
     disabled: boolean;
     isAbsent?: boolean;
+    highlightTargetId?: number | null;
     onSetTargets: (targetIds: number[]) => void;
 }
 
@@ -531,6 +618,7 @@ function FeedbackTargetRow({
     memberNameMap,
     disabled,
     isAbsent,
+    highlightTargetId,
     onSetTargets,
 }: FeedbackTargetRowProps) {
     const [open, setOpen] = useState(false);
@@ -549,11 +637,19 @@ function FeedbackTargetRow({
         onSetTargets(currentTargetIds.filter((t) => t !== id));
     };
 
+    const isRowHighlighted = highlightTargetId != null && currentTargetIds.includes(highlightTargetId);
+
     return (
-        <TableRow className={cn("hover:bg-white/5 align-top", isAbsent && "bg-rose-500/5")}>
+        <TableRow className={cn(
+            "align-top transition-all duration-200",
+            isRowHighlighted
+                ? "bg-violet-500/10 shadow-[inset_0_0_20px_rgba(139,92,246,0.08)]"
+                : "hover:bg-white/5",
+            isAbsent && !isRowHighlighted && "bg-rose-500/5",
+        )}>
             <TableCell className="font-medium py-1.5 text-sm">
                 <div className="flex items-center gap-1.5">
-                    <span className={isAbsent ? "text-rose-300" : "text-gray-300"}>{writerName}</span>
+                    <span className={isRowHighlighted ? "text-violet-300" : isAbsent ? "text-rose-300" : "text-gray-300"}>{writerName}</span>
                     {isAbsent && (
                         <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
                             <UserMinus className="w-2.5 h-2.5" />
@@ -565,10 +661,16 @@ function FeedbackTargetRow({
             <TableCell className="py-1.5">
                 <div className="flex flex-wrap items-center gap-1 min-h-[24px]">
                     {/* Current target badges */}
-                    {currentTargetIds.map((tid) => (
+                    {currentTargetIds.map((tid) => {
+                        const isHighlighted = highlightTargetId === tid;
+                        return (
                         <span
                             key={tid}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
+                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium transition-all duration-200 ${
+                                isHighlighted
+                                    ? "bg-violet-500/25 text-violet-200 border border-violet-400/50 shadow-[0_0_8px_rgba(139,92,246,0.4)] scale-105"
+                                    : "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
+                            }`}
                         >
                             {memberNameMap.get(tid) ?? `ID:${tid}`}
                             <button
@@ -580,7 +682,8 @@ function FeedbackTargetRow({
                                 <X className="w-3 h-3" />
                             </button>
                         </span>
-                    ))}
+                        );
+                    })}
 
                     {/* Add button combobox */}
                     {addableOptions.length > 0 && (

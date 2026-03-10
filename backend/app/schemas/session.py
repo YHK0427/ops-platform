@@ -109,3 +109,8 @@ class SessionStatsResponse(BaseModel):
 
 class FeedbackTargetUpdate(BaseModel):
     target_member_ids: list[int]
+
+
+class FeedbackRandomAssignRequest(BaseModel):
+    extra_count_normal: int = 1   # 출석자 추가 배정 수 (본인 자동 포함 제외)
+    extra_count_absent: int = 2   # 결석자 추가 배정 수

@@ -30,6 +30,20 @@ class User(Base):
     )
 
 
+class GenerationAccount(Base):
+    """기수 멤버 전용 계정 (ops 시스템과 무관)"""
+    __tablename__ = "generation_accounts"
+
+    id = Column(Integer, primary_key=True)
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    username = Column(String(50), unique=True, nullable=False)
+    password_hash = Column(String(200), nullable=False)
+    is_active = Column(Boolean, default=True, server_default="true", nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    member = relationship("Member", backref="generation_account")
+
+
 class Member(Base):
     __tablename__ = "members"
 

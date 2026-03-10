@@ -48,7 +48,7 @@ export function useCreateAdminUser() {
 export function useUpdateAdminUser() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ userId, ...body }: { userId: number; display_name?: string; role?: string; department?: string | null; password?: string; is_active?: boolean }) => {
+        mutationFn: async ({ userId, ...body }: { userId: number; username?: string; display_name?: string; role?: string; department?: string | null; password?: string; is_active?: boolean }) => {
             const { data } = await api.patch<AdminUser>(`/auth/users/${userId}`, body);
             return data;
         },
@@ -70,10 +70,115 @@ export function useDeleteAdminUser() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: adminUserKeys.all });
-            toast.success("사용자가 비활성화되었습니다.");
+            toast.success("사용자가 삭제되었습니다.");
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.detail ?? "비활성화 실패");
+            toast.error(err?.response?.data?.detail ?? "삭제 실패");
+        },
+    });
+}
+
+// ── Generation Accounts (별도 테이블) ────────────────────────────────────────
+
+export interface GenAccount {
+    id: number;
+    member_id: number;
+    username: string;
+    is_active: boolean;
+}
+
+export const genAccountKeys = {
+    all: ["genAccounts"] as const,
+    lists: () => [...genAccountKeys.all, "list"] as const,
+};
+
+export function useGenAccounts() {
+    return useQuery({
+        queryKey: genAccountKeys.lists(),
+        queryFn: async () => {
+            const { data } = await api.get<GenAccount[]>("/generation/accounts");
+            return data;
+        },
+    });
+}
+
+export function useBulkCreateGeneration() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (password?: string) => {
+            const { data } = await api.post<{ created: number; skipped: number }>("/generation/accounts/bulk-create", password ? { password } : {});
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: genAccountKeys.all });
+            toast.success(`${data.created}명 계정 생성 완료 (${data.skipped}명 스킵)`);
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.detail ?? "일괄 생성 실패");
+        },
+    });
+}
+
+export function useBulkDeleteGeneration() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async () => {
+            const { data } = await api.delete<{ deleted: number }>("/generation/accounts/bulk-delete");
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: genAccountKeys.all });
+            toast.success(`${data.deleted}명 계정 삭제 완료`);
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.detail ?? "일괄 삭제 실패");
+        },
+    });
+}
+
+export function useBulkResetGenPassword() {
+    return useMutation({
+        mutationFn: async (password: string) => {
+            const { data } = await api.post<{ updated: number }>("/generation/accounts/bulk-reset-password", { password });
+            return data;
+        },
+        onSuccess: (data) => {
+            toast.success(`${data.updated}명 비밀번호 변경 완료`);
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.detail ?? "일괄 비밀번호 변경 실패");
+        },
+    });
+}
+
+export function useResetGenPassword() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (accountId: number) => {
+            const { data } = await api.post(`/generation/accounts/${accountId}/reset-password`);
+            return data;
+        },
+        onSuccess: () => {
+            toast.success("비밀번호가 초기화되었습니다.");
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.detail ?? "비밀번호 초기화 실패");
+        },
+    });
+}
+
+export function useDeleteGenAccount() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (accountId: number) => {
+            await api.delete(`/generation/accounts/${accountId}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: genAccountKeys.all });
+            toast.success("계정이 삭제되었습니다.");
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.detail ?? "삭제 실패");
         },
     });
 }

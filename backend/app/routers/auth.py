@@ -67,6 +67,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    username: str | None = Field(None, max_length=50)
     display_name: str | None = None
     role: str | None = Field(None, pattern=r"^(admin|manager|viewer)$")
     password: str | None = Field(None, min_length=6, max_length=128)
@@ -376,6 +377,12 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
 
+    if body.username is not None:
+        # Check uniqueness
+        existing = await db.execute(select(User).where(User.username == body.username, User.id != user_id))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
+        user.username = body.username
     if body.display_name is not None:
         user.display_name = body.display_name
     if body.role is not None:
