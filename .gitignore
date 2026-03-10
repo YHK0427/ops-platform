@@ -10,7 +10,8 @@ redis_data/
 files/
 
 # Google 서비스 어카운트 키
-*.json
+*service-account*.json
+*credentials*.json
 
 # Python
 __pycache__/
