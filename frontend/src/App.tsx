@@ -129,10 +129,12 @@ export default function App() {
                 </Route>
               </Route>
 
+              {/* Root: hostname-aware redirect (must be OUTSIDE AuthGuard) */}
+              <Route path="/" element={<HostnameRedirect />} />
+
               {/* ── Ops protected routes ──────────────────────────── */}
               <Route element={<AuthGuard />}>
                 <Route element={<DashboardLayout />}>
-                  <Route index element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/members" element={<Members />} />
                   <Route path="/members/:id" element={<MemberDetail />} />
