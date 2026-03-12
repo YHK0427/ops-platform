@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
@@ -102,6 +102,12 @@ function HostnameRedirect() {
 }
 
 export default function App() {
+  useEffect(() => {
+    if (window.location.hostname.startsWith("univpt33")) {
+      document.title = "UnivPT 33기 성장 리포트";
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
