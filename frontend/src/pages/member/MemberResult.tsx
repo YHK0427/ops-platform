@@ -384,7 +384,7 @@ export default function MemberResult() {
                                 University Presentation
                             </p>
                             <h2 className="text-lg font-extrabold mt-1">
-                                32기 기수 성장 리포트
+                                33기 기수 성장 리포트
                             </h2>
                             <p className="text-sm text-rose-100 mt-1">
                                 {data.member_name} 님의 발표 역량 분석입니다.
