@@ -9,6 +9,7 @@ import {
     Plus,
     CalendarDays,
     Shield,
+    ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -97,6 +98,38 @@ export function Sidebar() {
                 >
                     <CalendarDays className="w-4 h-4" />
                     전체 세션
+                </NavLink>
+
+                {/* 평가 divider */}
+                <div className="pt-4 pb-1">
+                    <p className="px-3 text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+                        평가
+                    </p>
+                </div>
+                <NavLink
+                    to="/eval"
+                    className={({ isActive }) =>
+                        cn(
+                            "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                            isActive
+                                ? "text-white bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent"
+                                : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-hover)]"
+                        )
+                    }
+                >
+                    {({ isActive }) => (
+                        <>
+                            {isActive && (
+                                <motion.div
+                                    layoutId="active-indicator"
+                                    className="absolute left-0 top-1 bottom-1 w-1 rounded-r-full bg-[var(--color-accent)] shadow-[0_0_10px_var(--color-accent)]"
+                                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                                />
+                            )}
+                            <ClipboardCheck className="w-4 h-4 shrink-0" />
+                            성장리포트
+                        </>
+                    )}
                 </NavLink>
             </nav>
 

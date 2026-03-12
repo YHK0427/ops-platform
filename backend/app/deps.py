@@ -64,7 +64,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    """JWT 검증 의존성 — 유효한 토큰이면 {"username": str, "role": str} 반환"""
+    """JWT 검증 의존성 — 유효한 토큰이면 {"username": str, "role": str} 반환.
+    generation 계정 토큰은 거부한다."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="인증 정보가 유효하지 않습니다",
@@ -81,11 +82,41 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         )
         username: str | None = payload.get("sub")
         role: str | None = payload.get("role")
+        account_type: str | None = payload.get("account_type")
         if username is None:
+            raise credentials_exception
+        # generation 계정 토큰으로 ops 엔드포인트 접근 차단
+        if account_type == "generation":
             raise credentials_exception
     except JWTError:
         raise credentials_exception
     return {"username": username, "role": role or "viewer"}
+
+
+async def get_current_member(token: str = Depends(oauth2_scheme)) -> dict:
+    """JWT 검증 의존성 — generation 계정 토큰이면 {"member_id": int, "username": str} 반환"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="인증 정보가 유효하지 않습니다",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        if await is_token_blacklisted(token):
+            raise credentials_exception
+
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+        username: str | None = payload.get("sub")
+        member_id: int | None = payload.get("member_id")
+        account_type: str | None = payload.get("account_type")
+        if username is None or account_type != "generation" or member_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    return {"member_id": member_id, "username": username}
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:

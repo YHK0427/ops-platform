@@ -16,6 +16,7 @@ from app.deps import (
     blacklist_token,
     check_login_rate,
     clear_login_rate,
+    get_current_member,
     get_current_user,
     get_db,
     oauth2_scheme,
@@ -23,7 +24,7 @@ from app.deps import (
     verify_password,
 )
 from app.models import (
-    User, Member, Session, Team, TeamMember, TeamHistory,
+    User, Member, GenerationAccount, Session, Team, TeamMember, TeamHistory,
     Assignment, Attendance, Ledger, CafePost, TreasuryExpense,
 )
 
@@ -64,6 +65,20 @@ class UserCreate(BaseModel):
     display_name: str = Field(max_length=50)
     role: str = Field(pattern=r"^(admin|manager|viewer)$")
     department: str | None = None
+
+
+class MemberLoginRequest(BaseModel):
+    username: str = Field(max_length=50)
+    password: str = Field(max_length=128)
+
+
+class MemberTokenResponse(BaseModel):
+    access_token: str
+
+
+class MemberMeResponse(BaseModel):
+    member_id: int
+    name: str
 
 
 class UserUpdate(BaseModel):
@@ -240,6 +255,70 @@ async def logout(
     await blacklist_token(token, ttl)
     logger.audit("logout user=%s", current_user["username"])
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── Member (GenerationAccount) Auth ─────────────────────────────────────────
+
+@router.post("/member-login", response_model=MemberTokenResponse)
+async def member_login(
+    body: MemberLoginRequest, request: Request, db: AsyncSession = Depends(get_db),
+):
+    """기수 멤버 계정 로그인 → JWT 반환"""
+    ip = request.client.host if request.client else "unknown"
+
+    await check_login_rate(ip)
+
+    result = await db.execute(
+        select(GenerationAccount).where(
+            GenerationAccount.username == body.username,
+            GenerationAccount.is_active == True,
+        )
+    )
+    account = result.scalar_one_or_none()
+
+    if account is None:
+        # timing-attack 방어: 항상 bcrypt 비교 수행
+        verify_password(body.password, _DUMMY_HASH)
+        logger.warning("member_login_failed user=%s ip=%s reason=not_found", body.username, ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="아이디 또는 비밀번호가 올바르지 않습니다",
+        )
+
+    if not verify_password(body.password, account.password_hash):
+        logger.warning("member_login_failed user=%s ip=%s reason=wrong_password", body.username, ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="아이디 또는 비밀번호가 올바르지 않습니다",
+        )
+
+    await clear_login_rate(ip)
+
+    expire = datetime.now(timezone.utc) + timedelta(minutes=480)
+    payload = {
+        "sub": account.username,
+        "member_id": account.member_id,
+        "account_type": "generation",
+        "exp": expire,
+    }
+    token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    logger.info("member_login_success user=%s member_id=%s ip=%s", account.username, account.member_id, ip)
+    return MemberTokenResponse(access_token=token)
+
+
+@router.get("/member-me", response_model=MemberMeResponse)
+async def member_me(
+    current_member: dict = Depends(get_current_member),
+    db: AsyncSession = Depends(get_db),
+):
+    """현재 로그인된 멤버 정보 반환"""
+    member = await db.get(Member, current_member["member_id"])
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="멤버 정보를 찾을 수 없습니다",
+        )
+    return MemberMeResponse(member_id=member.id, name=member.name)
 
 
 # ── TOTP Setup (admin only) ─────────────────────────────────────────────────

@@ -282,3 +282,68 @@ class CafePost(Base):
             name="ck_cafe_posts_board_type",
         ),
     )
+
+
+# ── 발표 성장 리포트 ──────────────────────────────────────────────────────────
+
+class EvalRound(Base):
+    """평가 라운드 (초기/후기)"""
+    __tablename__ = "eval_rounds"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True)
+    round_type = Column(String(20), nullable=False)
+    title = Column(String(100), nullable=False)
+    is_open = Column(Boolean, default=False, server_default="false", nullable=False)
+    results_open = Column(Boolean, default=False, server_default="false", nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    closed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("round_type IN ('INITIAL','FINAL','COMBINED')", name="ck_eval_rounds_type"),
+    )
+
+    session = relationship("Session")
+    assignments = relationship("EvalAssignment", back_populates="round", cascade="all, delete-orphan")
+
+
+class EvalAssignment(Base):
+    """평가 배정 (자기평가/청중평가)"""
+    __tablename__ = "eval_assignments"
+
+    id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("eval_rounds.id", ondelete="CASCADE"), nullable=False)
+    evaluator_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    presenter_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
+    eval_type = Column(String(20), nullable=False)
+    submitted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("eval_type IN ('SELF','AUDIENCE')", name="ck_eval_assign_type"),
+        UniqueConstraint(
+            "round_id", "evaluator_user_id", "presenter_member_id", "eval_type",
+            name="uq_eval_assignment",
+        ),
+    )
+
+    round = relationship("EvalRound", back_populates="assignments")
+    evaluator = relationship("User")
+    presenter = relationship("Member")
+    responses = relationship("EvalResponse", back_populates="assignment", cascade="all, delete-orphan")
+
+
+class EvalResponse(Base):
+    """평가 응답 (문항별 점수)"""
+    __tablename__ = "eval_responses"
+
+    id = Column(Integer, primary_key=True)
+    assignment_id = Column(Integer, ForeignKey("eval_assignments.id", ondelete="CASCADE"), nullable=False)
+    question_key = Column(String(30), nullable=False)
+    score = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("score >= 1 AND score <= 5", name="ck_eval_response_score"),
+        UniqueConstraint("assignment_id", "question_key", name="uq_eval_response_question"),
+    )
+
+    assignment = relationship("EvalAssignment", back_populates="responses")

@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.logging_config import setup_logging
-from app.routers import assignments, auth, crawler, generation, members, sessions, ledger
+from app.routers import assignments, auth, crawler, evaluation, generation, members, sessions, ledger
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,7 @@ app.include_router(crawler.router, prefix="/api/v1")
 app.include_router(assignments.router, prefix="/api/v1")
 app.include_router(ledger.router, prefix="/api/v1")
 app.include_router(generation.router, prefix="/api/v1")
+app.include_router(evaluation.router, prefix="/api/v1")
 
 
 @app.get("/health")

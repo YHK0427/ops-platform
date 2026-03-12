@@ -2,6 +2,12 @@
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css");
 @import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300..700&display=swap");
 
+@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-4Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-5Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-6SemiBold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-7Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-8ExtraBold.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+
 @import "tailwindcss";
 
 /* ── Theme tokens ─────────────────────────────── */
@@ -114,4 +120,19 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-highlight);
+}
+
+/* ── Member page (light theme + Paperlogy) ───── */
+.member-page {
+  font-family: "Paperlogy", "Pretendard Variable", system-ui, sans-serif;
+  background: #F5F5F7;
+  color: #1A1A2E;
+  min-height: 100vh;
+  background-image: none;
+}
+
+.member-page *,
+.member-page *::before,
+.member-page *::after {
+  font-family: inherit;
 }
