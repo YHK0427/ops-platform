@@ -101,9 +101,11 @@ function HostnameRedirect() {
   return <Navigate to="/dashboard" replace />;
 }
 
+const isMemberPortal = window.location.hostname.startsWith("univpt33");
+
 export default function App() {
   useEffect(() => {
-    if (window.location.hostname.startsWith("univpt33")) {
+    if (isMemberPortal) {
       document.title = "UnivPT 33기 성장 리포트";
     }
   }, []);
@@ -114,9 +116,6 @@ export default function App() {
         <BrowserRouter>
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
-              {/* Public */}
-              <Route path="/login" element={<LoginPage />} />
-
               {/* ── Member portal routes ──────────────────────────── */}
               <Route
                 path="/member"
@@ -135,36 +134,46 @@ export default function App() {
                 </Route>
               </Route>
 
-              {/* Root: hostname-aware redirect (must be OUTSIDE AuthGuard) */}
-              <Route path="/" element={<HostnameRedirect />} />
+              {isMemberPortal ? (
+                /* univpt33: 모든 비-member 경로 → /member로 리다이렉트 */
+                <Route path="*" element={<Navigate to="/member" replace />} />
+              ) : (
+                <>
+                  {/* Public */}
+                  <Route path="/login" element={<LoginPage />} />
 
-              {/* ── Ops protected routes ──────────────────────────── */}
-              <Route element={<AuthGuard />}>
-                <Route element={<DashboardLayout />}>
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/members" element={<Members />} />
-                  <Route path="/members/:id" element={<MemberDetail />} />
-                  <Route path="/sessions" element={<SessionList />} />
-                  <Route path="/sessions/new" element={<SessionWizard />} />
-                  <Route path="/sessions/:id" element={<SessionLayout />}>
-                    <Route index element={<SessionDefaultTab />} />
-                    <Route path="prep" element={<PrepTab />} />
-                    <Route path="ops" element={<OpsTab />} />
-                    <Route path="post" element={<PostTab />} />
-                    <Route path="settlement" element={<SettlementTab />} />
-                    <Route path="team-edit" element={<TeamEditPage />} />
+                  {/* Root: redirect to dashboard */}
+                  <Route path="/" element={<HostnameRedirect />} />
+
+                  {/* ── Ops protected routes ──────────────────────────── */}
+                  <Route element={<AuthGuard />}>
+                    <Route element={<DashboardLayout />}>
+                      <Route path="/dashboard" element={<Dashboard />} />
+                      <Route path="/members" element={<Members />} />
+                      <Route path="/members/:id" element={<MemberDetail />} />
+                      <Route path="/sessions" element={<SessionList />} />
+                      <Route path="/sessions/new" element={<SessionWizard />} />
+                      <Route path="/sessions/:id" element={<SessionLayout />}>
+                        <Route index element={<SessionDefaultTab />} />
+                        <Route path="prep" element={<PrepTab />} />
+                        <Route path="ops" element={<OpsTab />} />
+                        <Route path="post" element={<PostTab />} />
+                        <Route path="settlement" element={<SettlementTab />} />
+                        <Route path="team-edit" element={<TeamEditPage />} />
+                      </Route>
+                      <Route path="/ledger" element={<Ledger />} />
+                      <Route path="/treasury" element={<Treasury />} />
+                      <Route path="/admin/users" element={<AdminUsers />} />
+                      <Route path="/eval" element={<EvalManagement />} />
+                    </Route>
+                    {/* Audience eval form — full-screen (no sidebar) */}
+                    <Route path="/eval/:roundId/audience" element={<EvalAudienceForm />} />
                   </Route>
-                  <Route path="/ledger" element={<Ledger />} />
-                  <Route path="/treasury" element={<Treasury />} />
-                  <Route path="/admin/users" element={<AdminUsers />} />
-                  <Route path="/eval" element={<EvalManagement />} />
-                </Route>
-                {/* Audience eval form — full-screen (no sidebar) */}
-                <Route path="/eval/:roundId/audience" element={<EvalAudienceForm />} />
-              </Route>
 
-              {/* Fallback: hostname-aware redirect */}
-              <Route path="*" element={<HostnameRedirect />} />
+                  {/* Fallback */}
+                  <Route path="*" element={<HostnameRedirect />} />
+                </>
+              )}
             </Routes>
           </Suspense>
         </BrowserRouter>
