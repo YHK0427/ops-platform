@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from jose import jwt
+from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,6 @@ from app.deps import (
     _get_redis_client,
     blacklist_token,
     check_login_rate,
-    clear_login_rate,
     get_current_member,
     get_current_user,
     get_db,
@@ -170,7 +169,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     """DB 기반 로그인 → JWT 반환 (TOTP 필요 시 pending 토큰)"""
     ip = request.client.host if request.client else "unknown"
 
-    await check_login_rate(ip)
+    await check_login_rate(ip, body.username)
 
     result = await db.execute(
         select(User).where(User.username == body.username, User.is_active == True)
@@ -185,8 +184,6 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     if not verify_password(body.password, user.password_hash):
         logger.warning("login_failed user=%s ip=%s reason=wrong_password", body.username, ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
-
-    await clear_login_rate(ip)
 
     # TOTP 확인
     if user.totp_secret:
@@ -266,7 +263,7 @@ async def member_login(
     """기수 멤버 계정 로그인 → JWT 반환"""
     ip = request.client.host if request.client else "unknown"
 
-    await check_login_rate(ip)
+    await check_login_rate(ip, body.username)
 
     result = await db.execute(
         select(GenerationAccount).where(
@@ -292,9 +289,7 @@ async def member_login(
             detail="아이디 또는 비밀번호가 올바르지 않습니다",
         )
 
-    await clear_login_rate(ip)
-
-    expire = datetime.now(timezone.utc) + timedelta(minutes=480)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=120)
     payload = {
         "sub": account.username,
         "member_id": account.member_id,
@@ -319,6 +314,20 @@ async def member_me(
             detail="멤버 정보를 찾을 수 없습니다",
         )
     return MemberMeResponse(member_id=member.id, name=member.name)
+
+
+@router.post("/member-logout")
+async def member_logout(token: str = Depends(oauth2_scheme)):
+    """멤버 토큰 폐기 (블랙리스트 등록)"""
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        exp = payload.get("exp", 0)
+        ttl = max(int(exp - datetime.now(timezone.utc).timestamp()), 0)
+        if ttl > 0:
+            await blacklist_token(token, ttl)
+    except JWTError:
+        pass
+    return {"status": "ok"}
 
 
 # ── TOTP Setup (admin only) ─────────────────────────────────────────────────

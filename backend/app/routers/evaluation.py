@@ -17,7 +17,7 @@ from app.constants.eval_questions import (
     QUESTIONS_BY_DOMAIN,
     VALID_QUESTION_KEYS,
 )
-from app.deps import get_current_member, get_current_user, get_db, require_admin
+from app.deps import get_current_member, get_current_user, get_db, require_admin, require_staff
 from app.models import (
     EvalAssignment,
     EvalResponse,
@@ -777,7 +777,7 @@ async def audience_submit(
 @router.get("/rounds/{round_id}/results", response_model=list[MemberResultSummary])
 async def get_round_results(
     round_id: int,
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_staff),
     db: AsyncSession = Depends(get_db),
 ):
     """라운드 전체 결과 (멤버별 도메인 점수)."""
@@ -842,7 +842,7 @@ async def get_round_results(
 async def get_member_result(
     round_id: int,
     member_id: int,
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_staff),
     db: AsyncSession = Depends(get_db),
 ):
     """단일 멤버 상세 결과 (운영진 조회용)."""

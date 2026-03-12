@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+from sqlalchemy import select
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -34,24 +35,30 @@ async def is_token_blacklisted(token: str) -> bool:
     return await redis.exists(f"blacklist:{token}") > 0
 
 
-async def check_login_rate(ip: str) -> None:
-    """Redis 기반 로그인 시도 횟수 제한 (10회/5분)"""
+async def check_login_rate(ip: str, username: str = "") -> None:
+    """Redis 기반 로그인 시도 횟수 제한 (IP당 10회 + 계정당 10회 / 5분)"""
     redis = _get_redis_client()
-    key = f"login_attempts:{ip}"
-    attempts = await redis.incr(key)
-    if attempts == 1:
-        await redis.expire(key, 300)  # 5분 윈도우
-    if attempts > 10:
+    # IP 기반
+    ip_key = f"login_attempts:{ip}"
+    ip_attempts = await redis.incr(ip_key)
+    if ip_attempts == 1:
+        await redis.expire(ip_key, 300)
+    # 계정 기반 (username이 있는 경우)
+    if username:
+        user_key = f"login_attempts:user:{username}"
+        user_attempts = await redis.incr(user_key)
+        if user_attempts == 1:
+            await redis.expire(user_key, 300)
+        if user_attempts > 10:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="로그인 시도 횟수 초과. 5분 후 다시 시도하세요.",
+            )
+    if ip_attempts > 10:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="로그인 시도 횟수 초과. 5분 후 다시 시도하세요.",
         )
-
-
-async def clear_login_rate(ip: str) -> None:
-    """로그인 성공 시 카운터 초기화"""
-    redis = _get_redis_client()
-    await redis.delete(f"login_attempts:{ip}")
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -93,8 +100,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     return {"username": username, "role": role or "viewer"}
 
 
-async def get_current_member(token: str = Depends(oauth2_scheme)) -> dict:
-    """JWT 검증 의존성 — generation 계정 토큰이면 {"member_id": int, "username": str} 반환"""
+async def get_current_member(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """JWT 검증 의존성 — generation 계정 토큰이면 {"member_id": int, "username": str} 반환.
+    DB에서 계정 활성 상태를 확인한다."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="인증 정보가 유효하지 않습니다",
@@ -116,6 +127,16 @@ async def get_current_member(token: str = Depends(oauth2_scheme)) -> dict:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
+
+    # DB에서 계정 활성 상태 확인
+    from app.models import GenerationAccount
+    result = await db.execute(
+        select(GenerationAccount.is_active).where(GenerationAccount.member_id == member_id)
+    )
+    is_active = result.scalar_one_or_none()
+    if not is_active:
+        raise credentials_exception
+
     return {"member_id": member_id, "username": username}
 
 

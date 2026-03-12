@@ -52,6 +52,7 @@ export function MemberAuthProvider({ children }: { children: React.ReactNode }) 
     }, []);
 
     const logout = useCallback(() => {
+        memberApi.post("/auth/member-logout").catch(() => {});
         setMemberToken(null);
         setMember(null);
         window.location.href = "/member/login";

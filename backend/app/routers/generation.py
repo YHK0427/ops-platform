@@ -58,11 +58,11 @@ async def bulk_create_accounts(
     members = (await db.execute(select(Member).where(Member.is_active == True))).scalars().all()
     existing = {row[0] for row in (await db.execute(select(GenerationAccount.member_id))).all()}
 
-    password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     created = 0
     for member in members:
         if member.id in existing:
             continue
+        password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
         db.add(GenerationAccount(
             member_id=member.id,
             username=member.name,
@@ -98,9 +98,8 @@ async def bulk_reset_password(
 ):
     """기수 계정 전체 비밀번호 일괄 변경"""
     accounts = (await db.execute(select(GenerationAccount))).scalars().all()
-    password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     for account in accounts:
-        account.password_hash = password_hash
+        account.password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     await db.commit()
     logger.audit(f"gen_bulk_reset_password count={len(accounts)}")
     return {"updated": len(accounts)}
