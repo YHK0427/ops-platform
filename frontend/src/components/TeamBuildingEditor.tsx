@@ -140,7 +140,7 @@ function DroppableColumn({
             <div className="flex justify-between items-center mb-4 pb-2 border-b border-[var(--color-border)]">
                 {isEditing && onRename ? (
                     <input
-                        className="font-bold text-sm bg-transparent border-b border-[var(--color-accent)] outline-none text-white w-full mr-2"
+                        className="font-bold text-sm bg-transparent border-b border-[var(--color-accent)] outline-none text-[var(--color-text-primary)] w-full mr-2"
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onBlur={handleSubmitRename}
@@ -162,7 +162,7 @@ function DroppableColumn({
                         {title}
                     </h3>
                 )}
-                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full flex-shrink-0">{items.length}</span>
+                <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full flex-shrink-0">{items.length}</span>
             </div>
             <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
                 <div ref={setNodeRef} className="flex-1 overflow-y-auto">
@@ -389,7 +389,7 @@ export function TeamBuildingEditor({
                                     placeholder="이름 검색..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-2 text-sm rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-white placeholder:text-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent)]/50"
+                                    className="w-full pl-8 pr-3 py-2 text-sm rounded border border-[var(--color-border)] bg-white text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent)]/50"
                                 />
                             </div>
                             <DroppableColumn
@@ -421,7 +421,7 @@ export function TeamBuildingEditor({
                                     <button
                                         type="button"
                                         onClick={() => handleRemoveTeam(teamId)}
-                                        className="absolute top-2 right-2 text-[var(--color-text-muted)] hover:text-rose-400 transition-colors"
+                                        className="absolute top-2 right-2 text-[var(--color-text-muted)] hover:text-rose-500 transition-colors"
                                         title="팀 삭제"
                                     >
                                         <X className="w-3.5 h-3.5" />

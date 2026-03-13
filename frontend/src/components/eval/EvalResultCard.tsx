@@ -53,9 +53,9 @@ const DOMAIN_LABELS: Record<string, string> = {
 };
 
 const DOMAIN_COLORS: Record<string, { bar: string; text: string; border: string }> = {
-    PLANNING: { bar: "#3b82f6", text: "text-blue-400", border: "border-blue-500/30" },
-    DESIGN: { bar: "#10b981", text: "text-emerald-400", border: "border-emerald-500/30" },
-    SPEECH: { bar: "#f59e0b", text: "text-amber-400", border: "border-amber-500/30" },
+    PLANNING: { bar: "#3b82f6", text: "text-blue-600", border: "border-blue-500/30" },
+    DESIGN: { bar: "#10b981", text: "text-emerald-600", border: "border-emerald-500/30" },
+    SPEECH: { bar: "#f59e0b", text: "text-amber-600", border: "border-amber-500/30" },
 };
 
 const DOMAIN_BG_COLORS: Record<string, string> = {
@@ -65,10 +65,10 @@ const DOMAIN_BG_COLORS: Record<string, string> = {
 };
 
 const STAGE_COLORS: Record<string, string> = {
-    "구조 형성": "bg-orange-500/15 text-orange-400 border-orange-500/30",
-    "안정화": "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
-    "정교화": "bg-sky-500/15 text-sky-400 border-sky-500/30",
-    "전달 최적화": "bg-violet-500/15 text-violet-400 border-violet-500/30",
+    "구조 형성": "bg-orange-500/15 text-orange-600 border-orange-500/30",
+    "안정화": "bg-yellow-500/15 text-yellow-600 border-yellow-500/30",
+    "정교화": "bg-sky-500/15 text-sky-600 border-sky-500/30",
+    "전달 최적화": "bg-violet-500/15 text-violet-600 border-violet-500/30",
 };
 
 const STAGE_INFO: Record<string, { range: string; description: string }> = {
@@ -144,9 +144,9 @@ function getGrowthPlan(domain: string, score: number | null): string {
 
 function getPerceptionType(selfAvg: number, audienceAvg: number) {
     const diff = selfAvg - audienceAvg;
-    if (diff > 0.5) return { label: "과대평가형", color: "text-rose-400", description: "의도는 분명했으나 전달이 기대만큼 닿지 않았을 수 있음. '내가 한 것'보다 '상대가 받은 것' 기준으로 점검 필요." };
-    if (diff < -0.5) return { label: "과소평가형", color: "text-blue-400", description: "본인은 부족하다고 느끼지만 외부 평가는 긍정적. 현재 수준을 객관적으로 신뢰하고, 잘된 요소를 다음에도 재현할 것." };
-    return { label: "객관형", color: "text-emerald-400", description: "자기 인식과 외부 인식이 잘 맞는 상태. 강점과 약점을 정확히 파악하고 있어 효율적인 성장이 가능." };
+    if (diff > 0.5) return { label: "과대평가형", color: "text-rose-500", description: "의도는 분명했으나 전달이 기대만큼 닿지 않았을 수 있음. '내가 한 것'보다 '상대가 받은 것' 기준으로 점검 필요." };
+    if (diff < -0.5) return { label: "과소평가형", color: "text-blue-600", description: "본인은 부족하다고 느끼지만 외부 평가는 긍정적. 현재 수준을 객관적으로 신뢰하고, 잘된 요소를 다음에도 재현할 것." };
+    return { label: "객관형", color: "text-emerald-600", description: "자기 인식과 외부 인식이 잘 맞는 상태. 강점과 약점을 정확히 파악하고 있어 효율적인 성장이 가능." };
 }
 
 function avgScores(scores: Record<string, number | null>): number {
@@ -200,13 +200,16 @@ export default function EvalResultCard({
     const typeInfo = TYPE_DESCRIPTIONS[type] ?? TYPE_DESCRIPTIONS["균형형"];
 
     return (
-        <div className="rounded-xl border border-[var(--color-border)] bg-zinc-900/50 backdrop-blur-md overflow-hidden">
+        <div className="rounded-xl border border-[var(--color-border)] bg-white backdrop-blur-md overflow-hidden">
             {/* ── Collapsed header ── */}
             <button
                 onClick={onToggle}
-                className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-white/[0.03] transition-colors text-left"
+                className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-[var(--color-hover)] transition-colors text-left"
             >
-                <span className="font-semibold text-base text-[var(--color-text-primary)] w-28 shrink-0 truncate">
+                <span
+                    className="font-semibold text-base w-28 shrink-0 truncate"
+                    style={{ color: "#1A1A2E" }}
+                >
                     {memberName}
                 </span>
 
@@ -219,7 +222,7 @@ export default function EvalResultCard({
                                 <span className="text-xs text-[var(--color-text-muted)] w-12 shrink-0">
                                     {DOMAIN_LABELS[domain]}
                                 </span>
-                                <div className="flex-1 h-2.5 rounded-full bg-white/5 overflow-hidden">
+                                <div className="flex-1 h-2.5 rounded-full bg-[var(--color-hover)] overflow-hidden">
                                     <motion.div
                                         className={cn("h-full rounded-full", DOMAIN_BG_COLORS[domain])}
                                         initial={{ width: 0 }}
@@ -238,13 +241,13 @@ export default function EvalResultCard({
                 <span
                     className={cn(
                         "inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border shrink-0",
-                        STAGE_COLORS[stage] ?? "bg-white/5 text-white/50 border-white/10"
+                        STAGE_COLORS[stage] ?? "bg-gray-50 text-[var(--color-text-muted)] border-[var(--color-border)]"
                     )}
                 >
                     {stage || "-"}
                 </span>
 
-                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-white/5 border border-white/10 text-[var(--color-text-secondary)] shrink-0">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-50 border border-[var(--color-border)] text-[var(--color-text-secondary)] shrink-0">
                     {type || "-"}
                 </span>
 
@@ -280,9 +283,9 @@ export default function EvalResultCard({
                                     </h4>
                                     <div className="grid grid-cols-4 gap-2 text-sm">
                                         <div className="text-[var(--color-text-muted)]">영역</div>
-                                        <div className="text-center text-blue-400">자기평가</div>
-                                        <div className="text-center text-pink-400">청중평가</div>
-                                        <div className="text-center text-white/80 font-semibold">종합</div>
+                                        <div className="text-center text-blue-600">자기평가</div>
+                                        <div className="text-center text-pink-600">청중평가</div>
+                                        <div className="text-center text-[var(--color-text-secondary)] font-semibold">종합</div>
                                         {DOMAINS.map((d) => (
                                             <Fragment key={d}>
                                                 <div className="text-[var(--color-text-secondary)] py-1.5">
@@ -306,7 +309,7 @@ export default function EvalResultCard({
                             {detail && (
                                 <>
                                     {/* ── 나의 발표 유형 ── */}
-                                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.02] p-5">
+                                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-gray-50 p-5">
                                         <div className="flex items-center gap-2 mb-3">
                                             <Target className="w-4 h-4 text-[var(--color-accent)]" />
                                             <h4 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
@@ -316,25 +319,25 @@ export default function EvalResultCard({
                                         <div className="flex items-start gap-3">
                                             <span className={cn(
                                                 "shrink-0 px-3 py-1.5 rounded-md text-sm font-bold border",
-                                                STAGE_COLORS[stage] ?? "bg-white/5 text-white/50 border-white/10"
+                                                STAGE_COLORS[stage] ?? "bg-gray-50 text-[var(--color-text-muted)] border-[var(--color-border)]"
                                             )}>
                                                 {type || "미정"}
                                             </span>
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
                                                     {type === "강점 집중형" && (
-                                                        <span className="text-blue-400 font-medium">
+                                                        <span className="text-blue-600 font-medium">
                                                             {getStrongestDomain(detail.combined_scores_by_domain)} 강점 —{" "}
                                                         </span>
                                                     )}
                                                     {type === "성장 가능성형" && (
-                                                        <span className="text-amber-400 font-medium">
+                                                        <span className="text-amber-600 font-medium">
                                                             {getWeakestDomain(detail.combined_scores_by_domain)} 보완 —{" "}
                                                         </span>
                                                     )}
                                                     {typeInfo.detail}
                                                 </p>
-                                                <div className="flex items-start gap-2 mt-2.5 p-2.5 rounded-md bg-white/[0.03] border border-white/5">
+                                                <div className="flex items-start gap-2 mt-2.5 p-2.5 rounded-md bg-gray-50 border border-[var(--color-border)]">
                                                     <TrendingUp className="w-4 h-4 text-[var(--color-accent)] mt-0.5 shrink-0" />
                                                     <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
                                                         {typeInfo.action}
@@ -345,7 +348,7 @@ export default function EvalResultCard({
                                     </div>
 
                                     {/* ── 영역별 단계 해석 ── */}
-                                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.02] p-5">
+                                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-gray-50 p-5">
                                         <h4 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-4">
                                             영역별 단계 해석
                                         </h4>
@@ -366,16 +369,16 @@ export default function EvalResultCard({
                                                                 </span>
                                                                 <span className={cn(
                                                                     "px-2 py-0.5 rounded text-xs font-semibold border",
-                                                                    STAGE_COLORS[stageName] ?? "bg-white/5 text-white/50 border-white/10"
+                                                                    STAGE_COLORS[stageName] ?? "bg-gray-50 text-[var(--color-text-muted)] border-[var(--color-border)]"
                                                                 )}>
                                                                     {stageName}
                                                                 </span>
                                                             </div>
-                                                            <span className="text-sm font-bold text-white/70 tabular-nums">
+                                                            <span className="text-sm font-bold text-[var(--color-text-secondary)] tabular-nums">
                                                                 {score != null ? score.toFixed(1) : "-"}
                                                             </span>
                                                         </div>
-                                                        <div className="h-2 bg-white/5 rounded-full overflow-hidden mb-2.5">
+                                                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2.5">
                                                             <motion.div
                                                                 className="h-full rounded-full"
                                                                 style={{ backgroundColor: colors.bar }}
@@ -404,7 +407,7 @@ export default function EvalResultCard({
                                     </div>
 
                                     {/* ── 나 VS 청중 비교 ── */}
-                                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.02] p-5">
+                                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-gray-50 p-5">
                                         <div className="flex items-center gap-2 mb-4">
                                             <Users className="w-4 h-4 text-[var(--color-accent)]" />
                                             <h4 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
@@ -416,17 +419,17 @@ export default function EvalResultCard({
                                         <div className="h-52 mb-4">
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <BarChart data={barChartData} barCategoryGap="25%">
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
                                                     <XAxis
                                                         dataKey="domain"
-                                                        tick={{ fill: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 600 }}
-                                                        axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
+                                                        tick={{ fill: "rgba(0,0,0,0.6)", fontSize: 13, fontWeight: 600 }}
+                                                        axisLine={{ stroke: "rgba(0,0,0,0.1)" }}
                                                         tickLine={false}
                                                     />
                                                     <YAxis
                                                         domain={[0, 5]}
                                                         tickCount={6}
-                                                        tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 12 }}
+                                                        tick={{ fill: "rgba(0,0,0,0.35)", fontSize: 12 }}
                                                         axisLine={false}
                                                         tickLine={false}
                                                         width={24}
@@ -451,21 +454,21 @@ export default function EvalResultCard({
                                         <div className="flex items-center justify-center gap-5 mb-4">
                                             <div className="flex items-center gap-1.5">
                                                 <div className="w-2.5 h-2.5 rounded-sm bg-blue-400" />
-                                                <span className="text-xs text-white/40">자기</span>
+                                                <span className="text-xs text-[var(--color-text-muted)]">자기</span>
                                             </div>
                                             <div className="flex items-center gap-1.5">
                                                 <div className="w-2.5 h-2.5 rounded-sm bg-pink-400" />
-                                                <span className="text-xs text-white/40">청중</span>
+                                                <span className="text-xs text-[var(--color-text-muted)]">청중</span>
                                             </div>
                                             <div className="flex items-center gap-1.5">
                                                 <div className="w-2.5 h-2.5 rounded-sm bg-gray-400" />
-                                                <span className="text-xs text-white/40">종합</span>
+                                                <span className="text-xs text-[var(--color-text-muted)]">종합</span>
                                             </div>
                                         </div>
 
                                         {/* Perception type */}
                                         {perceptionType && (
-                                            <div className="rounded-md bg-white/[0.03] border border-white/5 p-3.5">
+                                            <div className="rounded-md bg-gray-50 border border-[var(--color-border)] p-3.5">
                                                 <div className="flex items-center gap-2 mb-2">
                                                     {["과소평가형", "객관형", "과대평가형"].map((t) => {
                                                         const isActive = perceptionType.label === t;
@@ -474,8 +477,8 @@ export default function EvalResultCard({
                                                                 key={t}
                                                                 className={`px-2.5 py-0.5 rounded text-xs font-semibold transition-all ${
                                                                     isActive
-                                                                        ? "bg-white/10 border border-white/20 text-white/90"
-                                                                        : "text-white/20"
+                                                                        ? "bg-[var(--color-hover)] border border-[var(--color-border)] text-[var(--color-text-primary)]"
+                                                                        : "text-[var(--color-text-muted)]"
                                                                 }`}
                                                             >
                                                                 {t}
@@ -494,7 +497,7 @@ export default function EvalResultCard({
                                     </div>
 
                                     {/* ── 성장 PLAN ── */}
-                                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.02] p-5">
+                                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-gray-50 p-5">
                                         <div className="flex items-center gap-2 mb-4">
                                             <TrendingUp className="w-4 h-4 text-[var(--color-accent)]" />
                                             <h4 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">

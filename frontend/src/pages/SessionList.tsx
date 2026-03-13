@@ -41,7 +41,7 @@ export default function SessionList() {
                         ))}
                     </div>
                 ) : error ? (
-                    <div className="text-center py-20 text-rose-400">
+                    <div className="text-center py-20 text-rose-500">
                         세션 목록을 불러오는 중 오류가 발생했습니다.
                     </div>
                 ) : sortedSessions?.length === 0 ? (
@@ -69,7 +69,7 @@ export default function SessionList() {
                                         </div>
                                         {session.status !== 'FINALIZED' ? (
                                             <button
-                                                className="p-1 rounded text-red-400/60 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
+                                                className="p-1 rounded text-red-500/60 hover:text-red-500 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
                                                 title="세션 삭제"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -84,7 +84,7 @@ export default function SessionList() {
                                             <ArrowRight className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-[var(--color-accent)] transition-colors opacity-0 group-hover:opacity-100 transform -translate-x-2 group-hover:translate-x-0" />
                                         )}
                                     </div>
-                                    <h3 className="text-lg font-bold text-white group-hover:text-[var(--color-accent)] transition-colors line-clamp-1">
+                                    <h3 className="text-lg font-bold text-[var(--color-text-primary)] group-hover:text-[var(--color-accent)] transition-colors line-clamp-1">
                                         {session.title}
                                     </h3>
                                 </CardHeader>

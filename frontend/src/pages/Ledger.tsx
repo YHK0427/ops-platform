@@ -56,7 +56,7 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
         <Dialog open={open} onOpenChange={handleOpen}>
             <DialogTrigger asChild>
                 <button
-                    className="p-0.5 text-gray-600 hover:text-gray-300 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
+                    className="p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
                     onClick={(e) => e.stopPropagation()}
                 >
                     <Pencil className="w-3 h-3" />
@@ -166,7 +166,7 @@ function CreateTransactionDialog() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline" className="text-blue-400 border-blue-400/20 hover:bg-blue-400/10">
+                <Button variant="outline" className="text-blue-600 border-blue-500/20 hover:bg-blue-500/10">
                     <ArrowRightLeft className="mr-2 h-4 w-4" /> 수동 거래
                 </Button>
             </DialogTrigger>
@@ -207,7 +207,7 @@ function CreateTransactionDialog() {
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label className="text-right">{isDeduct ? "차감 금액" : "금액"}</Label>
                         <div className="col-span-3 relative">
-                            <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-medium text-sm ${isDeduct ? "text-rose-400" : "text-green-400"}`}>
+                            <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-medium text-sm ${isDeduct ? "text-rose-500" : "text-green-600"}`}>
                                 {isDeduct ? "-" : "+"}
                             </span>
                             <Input
@@ -364,7 +364,7 @@ export default function Ledger() {
                 <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
                     <Table>
                         <TableHeader>
-                            <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
+                            <TableRow className="bg-gray-50 hover:bg-gray-50">
                                 <TableHead className="w-[120px]">날짜</TableHead>
                                 <TableHead className="w-[100px]">멤버</TableHead>
                                 <TableHead className="w-[140px]">세션</TableHead>
@@ -381,27 +381,27 @@ export default function Ledger() {
                                 Array.from({ length: 5 }).map((_, i) => (
                                     <TableRow key={i}>
                                         {Array.from({ length: 9 }).map((_, j) => (
-                                            <TableCell key={j}><div className="h-4 bg-gray-800 rounded animate-pulse" /></TableCell>
+                                            <TableCell key={j}><div className="h-4 bg-gray-200 rounded animate-pulse" /></TableCell>
                                         ))}
                                     </TableRow>
                                 ))
                             ) : ledgerEntries && ledgerEntries.length > 0 ? (
                                 ledgerEntries.map((entry) => (
-                                    <TableRow key={entry.id} className="group/row hover:bg-white/5 transition-colors">
-                                        <TableCell className="text-gray-400 text-xs whitespace-nowrap">
+                                    <TableRow key={entry.id} className="group/row hover:bg-[var(--color-hover)] transition-colors">
+                                        <TableCell className="text-[var(--color-text-muted)] text-xs whitespace-nowrap">
                                             {new Date(entry.created_at).toLocaleDateString()}
                                         </TableCell>
                                         <TableCell className="font-medium">
                                             {memberMap.get(entry.member_id) || entry.member_id}
                                         </TableCell>
-                                        <TableCell className="text-xs text-gray-400">
+                                        <TableCell className="text-xs text-[var(--color-text-muted)]">
                                             {entry.session_title ? (
                                                 <div>
-                                                    <span className="text-gray-300">{entry.session_title}</span>
-                                                    {entry.session_date && <span className="block text-gray-600">{entry.session_date}</span>}
+                                                    <span className="text-[var(--color-text-secondary)]">{entry.session_title}</span>
+                                                    {entry.session_date && <span className="block text-[var(--color-text-muted)]">{entry.session_date}</span>}
                                                 </div>
                                             ) : (
-                                                <span className="text-gray-600">—</span>
+                                                <span className="text-[var(--color-text-muted)]">—</span>
                                             )}
                                         </TableCell>
                                         <TableCell>
@@ -409,12 +409,12 @@ export default function Ledger() {
                                                 ${entry.type === 'FINE' || entry.type === 'MILESTONE_FINE' ? 'border-red-500/50 text-red-500 bg-red-500/10' :
                                                     entry.type === 'MERIT' ? 'border-green-500/50 text-green-500 bg-green-500/10' :
                                                         entry.type.includes('DEPOSIT') ? 'border-blue-500/50 text-blue-500 bg-blue-500/10' :
-                                                            'border-gray-700 text-gray-400 bg-gray-800'}
+                                                            'border-[var(--color-border)] text-[var(--color-text-muted)] bg-gray-50'}
                                             `}>
                                                 {LEDGER_TYPE_LABELS[entry.type] ?? entry.type}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-gray-300 text-sm max-w-[300px]">
+                                        <TableCell className="text-[var(--color-text-secondary)] text-sm max-w-[300px]">
                                             <div className="flex items-center gap-1">
                                                 <span className="truncate" title={translateDescription(entry.description)}>{translateDescription(entry.description)}</span>
                                                 <EditLedgerDialog
@@ -423,10 +423,10 @@ export default function Ledger() {
                                                 />
                                             </div>
                                         </TableCell>
-                                        <TableCell className={`text-right text-sm ${entry.amount_krw < 0 ? 'text-rose-400' : 'text-gray-300'}`}>
+                                        <TableCell className={`text-right text-sm ${entry.amount_krw < 0 ? 'text-rose-500' : 'text-[var(--color-text-secondary)]'}`}>
                                             {entry.amount_krw !== 0 ? formatNumber(entry.amount_krw) : '-'}
                                         </TableCell>
-                                        <TableCell className={`text-right text-sm ${entry.score_delta < 0 ? 'text-rose-400' : 'text-gray-300'}`}>
+                                        <TableCell className={`text-right text-sm ${entry.score_delta < 0 ? 'text-rose-500' : 'text-[var(--color-text-secondary)]'}`}>
                                             {entry.score_delta !== 0 ? (entry.score_delta > 0 ? `+${entry.score_delta}` : entry.score_delta) : '-'}
                                         </TableCell>
                                         <TableCell className="text-right text-sm text-[var(--color-text-muted)]">
@@ -435,7 +435,7 @@ export default function Ledger() {
                                         <TableCell>
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
-                                                    <button className="p-0.5 text-gray-600 hover:text-rose-400 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                    <button className="p-0.5 text-gray-600 hover:text-rose-500 opacity-0 group-hover/row:opacity-100 transition-opacity">
                                                         <Trash2 className="w-3 h-3" />
                                                     </button>
                                                 </AlertDialogTrigger>

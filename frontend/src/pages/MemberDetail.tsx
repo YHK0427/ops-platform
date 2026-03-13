@@ -107,7 +107,7 @@ export default function MemberDetail() {
                             <>
                                 <Dialog>
                                     <DialogTrigger asChild>
-                                        <Button size="sm" className="bg-emerald-900/50 hover:bg-emerald-800 border-emerald-700 text-emerald-200">
+                                        <Button size="sm" className="bg-emerald-100 hover:bg-emerald-200 border-emerald-300 text-emerald-700">
                                             <GraduationCap className="w-4 h-4 mr-2" /> 수료
                                         </Button>
                                     </DialogTrigger>
@@ -175,7 +175,7 @@ export default function MemberDetail() {
                                     }
                                 }}
                                 disabled={reactivateMutation.isPending}
-                                className="bg-green-900/50 hover:bg-green-800 border-green-700 text-green-200"
+                                className="bg-green-100 hover:bg-green-200 border-green-300 text-green-700"
                             >
                                 {reactivateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
                                 재활성화
@@ -204,14 +204,14 @@ export default function MemberDetail() {
                             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsDepositOpen(true)}>관리</Button>
                         </div>
                         <div>
-                            <span className={`text-3xl font-bold ${(member.current_deposit || 0) < 10000 ? "text-rose-400" : "text-white"}`}>
+                            <span className={`text-3xl font-bold ${(member.current_deposit || 0) < 10000 ? "text-rose-500" : "text-[var(--color-text-primary)]"}`}>
                                 ₩{(member.current_deposit || 0).toLocaleString()}
                             </span>
                         </div>
                         {(member.current_deposit || 0) < 10000 && member.is_active && (
                             <div className="mt-4 pt-4 border-t border-rose-500/20">
                                 <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-xs font-semibold text-rose-400 uppercase tracking-wider">충전 요망</span>
+                                    <span className="text-xs font-semibold text-rose-500 uppercase tracking-wider">충전 요망</span>
                                     <span className="text-[10px] text-[var(--color-text-muted)]">
                                         부족분: ₩{(20000 - (member.current_deposit || 0)).toLocaleString()}
                                     </span>
@@ -256,7 +256,7 @@ export default function MemberDetail() {
                                 <GrantMeritDialog
                                     preselectedMemberId={member.id}
                                     trigger={
-                                        <Button size="sm" variant="outline" className="h-7 text-xs bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20">
+                                        <Button size="sm" variant="outline" className="h-7 text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20">
                                             상점 부여
                                         </Button>
                                     }
@@ -265,7 +265,7 @@ export default function MemberDetail() {
                                     memberId={member.id}
                                     memberName={member.name}
                                     trigger={
-                                        <Button size="sm" variant="outline" className="h-7 text-xs bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20">
+                                        <Button size="sm" variant="outline" className="h-7 text-xs bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500/20">
                                             벌점 부여
                                         </Button>
                                     }
@@ -283,7 +283,7 @@ export default function MemberDetail() {
                         <div className="mt-4 pt-4 border-t border-[var(--color-border)] text-xs text-[var(--color-text-muted)] flex justify-between">
                             <span>태그:</span>
                             <div className="flex gap-2">
-                                {member.tags.map(t => <span key={t} className="px-1.5 py-0.5 bg-white/5 rounded border border-white/10">{t}</span>)}
+                                {member.tags.map(t => <span key={t} className="px-1.5 py-0.5 bg-[var(--color-hover)] rounded border border-[var(--color-border)]">{t}</span>)}
                             </div>
                         </div>
                     </div>
@@ -358,7 +358,7 @@ export default function MemberDetail() {
                         <div className="grid grid-cols-4 items-center gap-4">
                             <Label className="text-right">금액 (원)</Label>
                             <div className="col-span-3 relative">
-                                <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-medium text-sm ${txType === "DEPOSIT_RECHARGE" ? "text-green-400" : "text-rose-400"}`}>
+                                <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-medium text-sm ${txType === "DEPOSIT_RECHARGE" ? "text-green-600" : "text-rose-500"}`}>
                                     {txType === "DEPOSIT_RECHARGE" ? "+" : "-"}
                                 </span>
                                 <Input
@@ -463,10 +463,10 @@ function LedgerRow({
             <TableCell className="text-sm text-[var(--color-text-secondary)]">
                 {translateDescription(entry.description)}
             </TableCell>
-            <TableCell className={`text-right text-sm ${entry.amount_krw > 0 ? "text-green-400" : entry.amount_krw < 0 ? "text-rose-400" : "text-gray-500"}`}>
+            <TableCell className={`text-right text-sm ${entry.amount_krw > 0 ? "text-green-600" : entry.amount_krw < 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
                 {entry.amount_krw !== 0 ? `${entry.amount_krw > 0 ? "+" : ""}${entry.amount_krw.toLocaleString()}` : "-"}
             </TableCell>
-            <TableCell className={`text-right text-sm ${entry.score_delta > 0 ? "text-green-400" : entry.score_delta < 0 ? "text-rose-400" : "text-gray-500"}`}>
+            <TableCell className={`text-right text-sm ${entry.score_delta > 0 ? "text-green-600" : entry.score_delta < 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
                 {entry.score_delta !== 0 ? (entry.score_delta > 0 ? `+${entry.score_delta}` : entry.score_delta) : "-"}
             </TableCell>
             <TableCell className="text-right text-sm text-[var(--color-text-muted)]">
@@ -479,7 +479,7 @@ function LedgerRow({
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 hover:bg-white/10"
+                                className="h-6 w-6 p-0 hover:bg-[var(--color-hover)]"
                                 disabled={isUpdating}
                             >
                                 <Pencil className="w-3 h-3" />
@@ -525,7 +525,7 @@ function LedgerRow({
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 hover:bg-rose-500/10 hover:text-rose-400"
+                                className="h-6 w-6 p-0 hover:bg-rose-500/10 hover:text-rose-500"
                                 disabled={isDeleting}
                             >
                                 <Trash2 className="w-3 h-3" />
@@ -557,17 +557,17 @@ function LedgerRow({
 
 function LedgerTypeBadge({ type }: { type: LedgerEntry["type"] }) {
     const styles: Record<string, string> = {
-        FINE: "bg-rose-500/10 text-rose-400 border-rose-500/20",
-        MILESTONE_FINE: "bg-red-500/10 text-red-400 border-red-500/20",
-        DEPOSIT_RECHARGE: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-        DEPOSIT_ADJUST: "bg-sky-500/10 text-sky-400 border-sky-500/20",
-        DEPOSIT_REFUND: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-        DEPOSIT_FORFEIT: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
-        MERIT: "bg-green-500/10 text-green-400 border-green-500/20",
-        ADJUSTMENT: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+        FINE: "bg-rose-500/10 text-rose-500 border-rose-500/20",
+        MILESTONE_FINE: "bg-red-500/10 text-red-600 border-red-500/20",
+        DEPOSIT_RECHARGE: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+        DEPOSIT_ADJUST: "bg-sky-500/10 text-sky-600 border-sky-500/20",
+        DEPOSIT_REFUND: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+        DEPOSIT_FORFEIT: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+        MERIT: "bg-green-500/10 text-green-600 border-green-500/20",
+        ADJUSTMENT: "bg-orange-500/10 text-orange-600 border-orange-500/20",
     };
     return (
-        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${styles[type] || "bg-white/5 border-white/10"}`}>
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${styles[type] || "bg-[var(--color-hover)] border-[var(--color-border)]"}`}>
             {LEDGER_TYPE_LABELS[type] ?? type}
         </span>
     );

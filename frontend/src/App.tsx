@@ -178,13 +178,13 @@ export default function App() {
           </Suspense>
         </BrowserRouter>
         <Toaster
-          theme="dark"
+          theme="light"
           position="bottom-right"
           toastOptions={{
             style: {
-              background: "rgba(20,20,25,0.9)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              color: "#E8E8F0",
+              background: "rgba(255,255,255,0.95)",
+              border: "1px solid rgba(0,0,0,0.08)",
+              color: "#1A1A2E",
               backdropFilter: "blur(16px)",
             },
           }}

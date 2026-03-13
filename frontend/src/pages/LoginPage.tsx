@@ -59,7 +59,7 @@ export default function LoginPage() {
                 transition={{ duration: 0.4, ease: "easeOut" }}
                 className="w-full max-w-sm"
             >
-                <div className="relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-zinc-900/50 backdrop-blur-md p-8">
+                <div className="relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white backdrop-blur-md p-8">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-24 bg-[var(--color-accent)]/10 blur-3xl pointer-events-none rounded-full" />
 
                     <div className="relative">
@@ -67,7 +67,7 @@ export default function LoginPage() {
                             <p className="text-xs font-bold tracking-widest text-[var(--color-text-muted)] uppercase mb-1">
                                 UnivPT
                             </p>
-                            <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/60">
+                            <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">
                                 운영 플랫폼
                             </h1>
                         </div>
@@ -93,12 +93,12 @@ export default function LoginPage() {
                                         autoFocus
                                         maxLength={6}
                                         placeholder="000000"
-                                        className="w-full px-4 py-2.5 rounded-lg bg-black/40 border border-[var(--color-border)] text-white placeholder:text-[var(--color-text-muted)] text-center text-lg font-mono tracking-[0.3em] outline-none focus:border-[var(--color-accent)] focus:shadow-[0_0_0_2px_rgba(244,63,94,0.15)] transition-all"
+                                        className="w-full px-4 py-2.5 rounded-lg bg-white border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] text-center text-lg font-mono tracking-[0.3em] outline-none focus:border-[var(--color-accent)] focus:shadow-[0_0_0_2px_rgba(244,63,94,0.15)] transition-all"
                                     />
                                 </div>
 
                                 {error && (
-                                    <p className="text-xs text-rose-400 text-center">{error}</p>
+                                    <p className="text-xs text-rose-500 text-center">{error}</p>
                                 )}
 
                                 <motion.button
@@ -138,7 +138,7 @@ export default function LoginPage() {
                                         required
                                         autoComplete="username"
                                         placeholder="아이디"
-                                        className="w-full px-4 py-2.5 rounded-lg bg-black/40 border border-[var(--color-border)] text-white placeholder:text-[var(--color-text-muted)] text-sm outline-none focus:border-[var(--color-accent)] focus:shadow-[0_0_0_2px_rgba(244,63,94,0.15)] transition-all"
+                                        className="w-full px-4 py-2.5 rounded-lg bg-white border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] text-sm outline-none focus:border-[var(--color-accent)] focus:shadow-[0_0_0_2px_rgba(244,63,94,0.15)] transition-all"
                                     />
                                 </div>
 
@@ -152,13 +152,13 @@ export default function LoginPage() {
                                         onChange={(e) => setPassword(e.target.value)}
                                         required
                                         autoComplete="current-password"
-                                        className="w-full px-4 py-2.5 rounded-lg bg-black/40 border border-[var(--color-border)] text-white text-sm outline-none focus:border-[var(--color-accent)] focus:shadow-[0_0_0_2px_rgba(244,63,94,0.15)] transition-all"
+                                        className="w-full px-4 py-2.5 rounded-lg bg-white border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm outline-none focus:border-[var(--color-accent)] focus:shadow-[0_0_0_2px_rgba(244,63,94,0.15)] transition-all"
                                     />
                                 </div>
 
                                 <label className="flex items-center justify-between cursor-pointer select-none group">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+                                        <span className="text-xs text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">
                                             로그인 유지
                                         </span>
                                         <span className="text-[10px] text-[var(--color-text-muted)]">
@@ -172,13 +172,13 @@ export default function LoginPage() {
                                             onChange={(e) => setRemember(e.target.checked)}
                                             className="sr-only peer"
                                         />
-                                        <div className="w-9 h-5 rounded-full bg-white/10 border border-white/10 peer-checked:bg-[var(--color-accent)]/30 peer-checked:border-[var(--color-accent)]/50 transition-all" />
-                                        <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white/40 peer-checked:bg-[var(--color-accent)] peer-checked:translate-x-4 transition-all shadow-sm" />
+                                        <div className="w-9 h-5 rounded-full bg-gray-200 border border-[var(--color-border)] peer-checked:bg-[var(--color-accent)]/30 peer-checked:border-[var(--color-accent)]/50 transition-all" />
+                                        <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-gray-400 peer-checked:bg-[var(--color-accent)] peer-checked:translate-x-4 transition-all shadow-sm" />
                                     </div>
                                 </label>
 
                                 {error && (
-                                    <p className="text-xs text-rose-400 text-center">{error}</p>
+                                    <p className="text-xs text-rose-500 text-center">{error}</p>
                                 )}
 
                                 <motion.button

@@ -22,7 +22,7 @@ export function ExcuseTextDisplay({ text }: { text: string }) {
     return (
         <div className="space-y-1.5">
             {header && (
-                <p className="text-xs font-bold text-white/90 border-b border-[var(--color-border)] pb-1.5 mb-1">
+                <p className="text-xs font-bold text-[var(--color-text-primary)] border-b border-[var(--color-border)] pb-1.5 mb-1">
                     {header}
                 </p>
             )}
@@ -32,7 +32,7 @@ export function ExcuseTextDisplay({ text }: { text: string }) {
                     return (
                         <span
                             key={i}
-                            className={tmpl ? "text-gray-600" : "text-gray-200 font-medium"}
+                            className={tmpl ? "text-gray-400" : "text-[var(--color-text-primary)] font-medium"}
                         >
                             {line}
                             {i < lines.length - 1 && "\n"}

@@ -49,8 +49,8 @@ export default function LikertScale({ value, onChange, disabled = false, variant
                                             ? "border-rose-500 bg-rose-500 text-white shadow-md shadow-rose-500/25"
                                             : "border-[var(--color-accent)] bg-[var(--color-accent)] text-white"
                                         : isLight
-                                            ? "border-gray-200 bg-white text-gray-400 hover:border-rose-300 hover:text-rose-400"
-                                            : "border-white/20 bg-black/40 text-white/50 hover:border-white/40 hover:text-white/80",
+                                            ? "border-gray-200 bg-white text-gray-400 hover:border-rose-300 hover:text-rose-500"
+                                            : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-border-highlight)] hover:text-[var(--color-text-primary)]",
                                 ].join(" ")}
                                 whileTap={disabled ? {} : { scale: 0.9 }}
                                 animate={
@@ -69,7 +69,7 @@ export default function LikertScale({ value, onChange, disabled = false, variant
                         <span
                             className={[
                                 "text-[9px] sm:text-[11px] text-center leading-tight max-w-[52px] select-none",
-                                isLight ? "text-gray-400" : "text-white/40",
+                                isLight ? "text-gray-400" : "text-[var(--color-text-muted)]",
                             ].join(" ")}
                             title={label}
                         >

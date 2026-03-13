@@ -95,19 +95,19 @@ function showForbiddenOverlay() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(0,0,0,0.6)",
+        background: "rgba(255,255,255,0.95)",
         backdropFilter: "blur(6px)",
         animation: "forbid-in 0.25s ease-out",
     });
 
     overlay.innerHTML = `
         <div style="
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: #ffffff;
             border: 2px solid #f43f5e;
             border-radius: 16px;
             padding: 40px 48px;
             text-align: center;
-            box-shadow: 0 0 60px rgba(244,63,94,0.3), 0 20px 40px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 8px 16px rgba(0,0,0,0.08);
             max-width: 400px;
             animation: forbid-pop 0.3s cubic-bezier(0.34,1.56,0.64,1);
         ">
@@ -115,13 +115,13 @@ function showForbiddenOverlay() {
             <div style="
                 font-size: 22px;
                 font-weight: 800;
-                color: #fda4af;
+                color: #e11d48;
                 margin-bottom: 12px;
                 letter-spacing: -0.5px;
             ">총무부 아니면 못하지이롱</div>
             <div style="
                 font-size: 14px;
-                color: #94a3b8;
+                color: #64748b;
                 line-height: 1.5;
             ">이 기능은 운영진(회장단/총무부) 권한이 필요합니다.</div>
         </div>

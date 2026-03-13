@@ -28,7 +28,7 @@ export function PageHeader({ title, subtitle, actions, className, showBackButton
             className={cn(
                 "sticky top-0 z-10 flex items-center justify-between gap-4",
                 "px-6 py-4 border-b border-[var(--color-border-subtle)]",
-                "bg-black/30 backdrop-blur-md",
+                "bg-white/80 backdrop-blur-md",
                 className
             )}
         >
@@ -38,13 +38,13 @@ export function PageHeader({ title, subtitle, actions, className, showBackButton
                         variant="ghost"
                         size="icon"
                         onClick={handleBack}
-                        className="h-8 w-8 text-[var(--color-text-muted)] hover:text-white"
+                        className="h-8 w-8 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                     >
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
                 )}
                 <div>
-                    <h1 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/60">
+                    <h1 className="text-lg font-bold text-[var(--color-text-primary)]">
                         {title}
                     </h1>
                     {subtitle && (

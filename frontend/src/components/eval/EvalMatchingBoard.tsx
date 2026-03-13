@@ -147,7 +147,7 @@ function PoolMember({
                         "text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0",
                         count > 0
                             ? "bg-[var(--color-accent)]/20 text-[var(--color-accent)]"
-                            : "bg-white/10 text-[var(--color-text-muted)]"
+                            : "bg-[var(--color-hover)] text-[var(--color-text-muted)]"
                     )}
                 >
                     {count}명
@@ -158,7 +158,7 @@ function PoolMember({
                     {evaluatorNames.map((name, i) => (
                         <span
                             key={i}
-                            className="text-[10px] bg-white/10 text-[var(--color-text-secondary)] px-1.5 py-0.5 rounded"
+                            className="text-[10px] bg-[var(--color-hover)] text-[var(--color-text-secondary)] px-1.5 py-0.5 rounded"
                         >
                             {name}
                         </span>
@@ -204,7 +204,7 @@ function EvalMember({
         >
             <span className="font-medium truncate">{member?.name ?? uniqueId}</span>
             <button
-                className="w-4 h-4 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500/20 text-rose-400 transition-opacity flex-shrink-0"
+                className="w-4 h-4 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500/20 text-rose-500 transition-opacity flex-shrink-0"
                 onClick={(e) => {
                     e.stopPropagation();
                     onRemove();
@@ -258,7 +258,7 @@ function EvalColumn({
                         <span className="text-[10px] text-[var(--color-text-muted)]">{subtitle}</span>
                     )}
                 </div>
-                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full flex-shrink-0">
+                <span className="text-xs bg-[var(--color-hover)] px-2 py-0.5 rounded-full flex-shrink-0">
                     {itemIds.length}
                 </span>
             </div>
@@ -312,7 +312,7 @@ function PoolColumn({
                 <h3 className="font-bold text-xs uppercase tracking-wider text-[var(--color-text-secondary)]">
                     기수 목록
                 </h3>
-                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">
+                <span className="text-xs bg-[var(--color-hover)] px-2 py-0.5 rounded-full">
                     {members.length}
                 </span>
             </div>
@@ -367,7 +367,7 @@ function EvaluatorSelector({
             {open && (
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-                    <div className="absolute top-full left-0 mt-1 z-50 w-64 max-h-72 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-zinc-900 shadow-xl p-2">
+                    <div className="absolute top-full left-0 mt-1 z-50 w-64 max-h-72 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-white shadow-xl p-2">
                         <div className="flex justify-between items-center px-2 pb-2 mb-1 border-b border-[var(--color-border)]">
                             <span className="text-xs text-[var(--color-text-muted)] font-medium">평가 참여 운영진</span>
                             <button
@@ -386,7 +386,7 @@ function EvaluatorSelector({
                         {users.map((u) => (
                             <label
                                 key={u.id}
-                                className="flex items-center gap-2.5 px-2 py-1.5 rounded hover:bg-white/5 cursor-pointer"
+                                className="flex items-center gap-2.5 px-2 py-1.5 rounded hover:bg-[var(--color-hover)] cursor-pointer"
                             >
                                 <div
                                     className={cn(
@@ -402,7 +402,7 @@ function EvaluatorSelector({
                                     )}
                                 </div>
                                 <div className="min-w-0">
-                                    <span className="text-sm text-white truncate block">{u.display_name}</span>
+                                    <span className="text-sm text-[var(--color-text-primary)] truncate block">{u.display_name}</span>
                                     <span className="text-[10px] text-[var(--color-text-muted)]">{u.username}</span>
                                 </div>
                             </label>
@@ -757,7 +757,7 @@ export function EvalMatchingBoard({
                             max={enabledUsers.length || members.length}
                             value={perMember}
                             onChange={(e) => setPerMember(Math.max(1, Number(e.target.value) || 1))}
-                            className="w-12 px-1.5 py-0.5 text-center text-sm rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-white outline-none focus:border-[var(--color-accent)]/50"
+                            className="w-12 px-1.5 py-0.5 text-center text-sm rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]/50"
                         />
                         <span className="text-[var(--color-text-muted)]">명 평가</span>
                     </div>
@@ -774,7 +774,7 @@ export function EvalMatchingBoard({
                         onClick={handleReset}
                         variant="outline"
                         size="sm"
-                        className="text-rose-400 border-rose-400/30 hover:bg-rose-400/10"
+                        className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10"
                     >
                         <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                         초기화
@@ -785,7 +785,7 @@ export function EvalMatchingBoard({
                     <span>기수 {members.length}명</span>
                     <span>배정 {totalAssigned}건</span>
                     {unassignedCount > 0 && (
-                        <span className="text-amber-400">미배정 {unassignedCount}명</span>
+                        <span className="text-amber-600">미배정 {unassignedCount}명</span>
                     )}
                 </div>
             </div>
@@ -809,7 +809,7 @@ export function EvalMatchingBoard({
                                     placeholder="이름 검색..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-1.5 text-sm rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-white placeholder:text-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent)]/50"
+                                    className="w-full pl-8 pr-3 py-1.5 text-sm rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent)]/50"
                                 />
                             </div>
                             <PoolColumn

@@ -6,9 +6,9 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Send, CheckCircle2 } from "lucide-react";
 
 const DOMAIN_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
-    PLANNING: { label: "기획 (Planning)", color: "text-blue-600", bg: "bg-blue-50", border: "border-l-blue-500" },
-    DESIGN: { label: "디자인 (Design)", color: "text-emerald-600", bg: "bg-emerald-50", border: "border-l-emerald-500" },
-    SPEECH: { label: "스피치 (Speech)", color: "text-amber-600", bg: "bg-amber-50", border: "border-l-amber-500" },
+    PLANNING: { label: "기획", color: "text-blue-600", bg: "bg-blue-50", border: "border-l-blue-500" },
+    DESIGN: { label: "디자인", color: "text-emerald-600", bg: "bg-emerald-50", border: "border-l-emerald-500" },
+    SPEECH: { label: "스피치", color: "text-amber-600", bg: "bg-amber-50", border: "border-l-amber-500" },
 };
 
 const SCALE_LABELS: Record<number, string> = {

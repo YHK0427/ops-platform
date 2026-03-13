@@ -166,14 +166,14 @@ export default function SettlementTab() {
                     <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
                         <CheckCircle2 className="w-8 h-8 text-green-500" />
                     </div>
-                    <h2 className="text-xl font-bold mb-2 text-white">세션 마감 완료</h2>
+                    <h2 className="text-xl font-bold mb-2 text-[var(--color-text-primary)]">세션 마감 완료</h2>
                     <p className="text-[var(--color-text-muted)] mb-6">
                         이 세션은 {new Date(session.finalized_at || "").toLocaleString()}에 마감되었습니다.<br />
                         정산 내역은 <span className="text-[var(--color-accent)]">장부</span> 메뉴에서 확인할 수 있습니다.
                     </p>
                     <Button
                         onClick={() => navigate("/ledger")}
-                        className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white"
+                        className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
                     >
                         <ExternalLink className="w-4 h-4 mr-2" />
                         장부에서 확인
@@ -187,7 +187,7 @@ export default function SettlementTab() {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-bold tracking-tight text-white/90">정산 미리보기</h2>
+                    <h2 className="text-xl font-bold tracking-tight text-[var(--color-text-primary)]">정산 미리보기</h2>
                     <p className="text-sm text-[var(--color-text-secondary)]">
                         이번 세션의 페널티 및 정산 예정 내역입니다. 체크박스를 해제하여 면제할 수 있습니다.
                     </p>
@@ -195,7 +195,7 @@ export default function SettlementTab() {
                 <Button
                     onClick={handleFinalize}
                     disabled={isFinalizing}
-                    className="bg-rose-600 hover:bg-rose-700 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)] transition-all hover:scale-105"
+                    className="bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-100 transition-all hover:scale-105"
                 >
                     {isFinalizing ? "마감 처리 중..." : "세션 마감"}
                 </Button>
@@ -209,7 +209,7 @@ export default function SettlementTab() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className={`text-2xl font-bold ${totalScoreDelta < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
+                        <div className={`text-2xl font-bold ${totalScoreDelta < 0 ? 'text-rose-500' : 'text-[var(--color-text-muted)]'}`}>
                             {totalScoreDelta > 0 ? `+${totalScoreDelta}` : totalScoreDelta}
                         </div>
                     </CardContent>
@@ -221,7 +221,7 @@ export default function SettlementTab() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className={`text-2xl font-bold ${totalDepositDelta < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
+                        <div className={`text-2xl font-bold ${totalDepositDelta < 0 ? 'text-rose-500' : 'text-[var(--color-text-muted)]'}`}>
                             {formatNumber(totalDepositDelta)}원
                         </div>
                     </CardContent>
@@ -233,7 +233,7 @@ export default function SettlementTab() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className={`text-2xl font-bold ${totalMeritScore > 0 ? 'text-green-400' : 'text-gray-400'}`}>
+                        <div className={`text-2xl font-bold ${totalMeritScore > 0 ? 'text-green-600' : 'text-[var(--color-text-muted)]'}`}>
                             +{totalMeritScore}
                         </div>
                     </CardContent>
@@ -273,7 +273,7 @@ export default function SettlementTab() {
             <div className="rounded-xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-surface)]">
                 <Table>
                     <TableHeader>
-                        <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
+                        <TableRow className="bg-gray-50 hover:bg-gray-50">
                             <TableHead className="w-[50px] text-center">적용</TableHead>
                             <TableHead>유형</TableHead>
                             <TableHead>멤버</TableHead>
@@ -299,7 +299,7 @@ export default function SettlementTab() {
                                 return (
                                     <TableRow
                                         key={idx}
-                                        className={`transition-colors hover:bg-white/5 ${isMilestone ? 'bg-yellow-500/5' : ''} ${!isApplied ? 'opacity-50' : ''}`}
+                                        className={`transition-colors hover:bg-gray-50 ${isMilestone ? 'bg-yellow-500/5' : ''} ${!isApplied ? 'opacity-50' : ''}`}
                                     >
                                         <TableCell className="text-center">
                                             <Checkbox
@@ -320,14 +320,14 @@ export default function SettlementTab() {
                                                 </span>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="font-medium text-gray-300">{penalty.member_name}</TableCell>
+                                        <TableCell className="font-medium text-[var(--color-text-secondary)]">{penalty.member_name}</TableCell>
                                         <TableCell className="text-[var(--color-text-secondary)] text-sm max-w-[300px] truncate" title={penalty.description}>
                                             {penalty.description}
                                         </TableCell>
-                                        <TableCell className={`text-right ${penalty.score_delta < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
+                                        <TableCell className={`text-right ${penalty.score_delta < 0 ? 'text-rose-500' : 'text-[var(--color-text-muted)]'}`}>
                                             {penalty.score_delta}
                                         </TableCell>
-                                        <TableCell className={`text-right ${penalty.deposit_delta < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
+                                        <TableCell className={`text-right ${penalty.deposit_delta < 0 ? 'text-rose-500' : 'text-[var(--color-text-muted)]'}`}>
                                             {formatNumber(penalty.deposit_delta)}
                                         </TableCell>
                                     </TableRow>
@@ -403,7 +403,7 @@ function StagedMeritPanel({
                     <Trophy className="w-4 h-4 text-yellow-500" />
                     <h3 className="font-semibold text-sm">상점</h3>
                     {merits.length > 0 && (
-                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-600 border border-yellow-500/20">
                             {merits.length}건
                         </span>
                     )}
@@ -415,7 +415,7 @@ function StagedMeritPanel({
                         memberIds: t.members.map((m: any) => m.id),
                     })) : undefined}
                     trigger={
-                        <Button size="sm" variant="outline" className="h-7 text-xs bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20">
+                        <Button size="sm" variant="outline" className="h-7 text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20">
                             <Trophy className="w-3 h-3 mr-1" />
                             상점 추가
                         </Button>
@@ -445,7 +445,7 @@ function StagedMeritPanel({
 
             <Table>
                 <TableHeader>
-                    <TableRow className="bg-gray-900/30 hover:bg-gray-900/30">
+                    <TableRow className="bg-gray-50 hover:bg-gray-50">
                         <TableHead className="w-[50px] text-center">적용</TableHead>
                         <TableHead className="w-[80px]">구분</TableHead>
                         <TableHead>멤버</TableHead>
@@ -471,7 +471,7 @@ function StagedMeritPanel({
                             return (
                                 <TableRow
                                     key={idx}
-                                    className={`transition-colors hover:bg-white/5 ${!isApplied ? 'opacity-50' : ''}`}
+                                    className={`transition-colors hover:bg-gray-50 ${!isApplied ? 'opacity-50' : ''}`}
                                 >
                                     <TableCell className="text-center">
                                         <Checkbox
@@ -480,21 +480,21 @@ function StagedMeritPanel({
                                         />
                                     </TableCell>
                                     <TableCell>
-                                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border bg-green-500/10 text-green-400 border-green-500/20">
+                                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border bg-green-500/10 text-green-600 border-green-500/20">
                                             상점
                                         </span>
                                     </TableCell>
-                                    <TableCell className="font-medium text-gray-300">{merit.member_name}</TableCell>
+                                    <TableCell className="font-medium text-[var(--color-text-secondary)]">{merit.member_name}</TableCell>
                                     <TableCell className="text-sm text-[var(--color-text-secondary)] max-w-[300px] truncate" title={merit.description}>
                                         {merit.description}
                                     </TableCell>
-                                    <TableCell className="text-right text-green-400">+{merit.score_delta}</TableCell>
+                                    <TableCell className="text-right text-green-600">+{merit.score_delta}</TableCell>
                                     <TableCell>
                                         {isManual && (
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                className="h-6 w-6 p-0 hover:bg-rose-500/10 hover:text-rose-400"
+                                                className="h-6 w-6 p-0 hover:bg-rose-500/10 hover:text-rose-500"
                                                 onClick={() => handleRemoveManual(idx)}
                                                 disabled={isRemoving}
                                             >

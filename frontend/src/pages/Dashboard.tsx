@@ -66,7 +66,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                         <Lock className="w-5 h-5" />
                     </div>
                     <div>
-                        <h3 className="font-bold text-white">네이버 세션 상태</h3>
+                        <h3 className="font-bold text-[var(--color-text-primary)]">네이버 세션 상태</h3>
                         <p className="text-sm text-[var(--color-text-secondary)]">
                             {naverStatus?.is_valid
                                 ? (() => {
@@ -80,7 +80,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                 </div>
                 <div className="flex flex-col items-end gap-1">
                     {loginTaskId && (
-                        <div className="flex items-center gap-2 mt-2 text-xs text-blue-400">
+                        <div className="flex items-center gap-2 mt-2 text-xs text-blue-600">
                             <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
                             <span>네이버 로그인 진행 중...</span>
                         </div>
@@ -106,7 +106,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                         ) : (
                             <button
                                 onClick={() => setMode("none")}
-                                className="text-sm text-[var(--color-text-muted)] hover:text-white"
+                                className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                             >
                                 취소
                             </button>
@@ -116,21 +116,21 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
             </div>
 
             {mode === "login" && (
-                <div className="space-y-3 animate-in fade-in slide-in-from-top-2 bg-black/20 p-4 rounded-lg border border-[var(--color-border)]">
+                <div className="space-y-3 animate-in fade-in slide-in-from-top-2 bg-gray-50 p-4 rounded-lg border border-[var(--color-border)]">
                     <div className="grid gap-3">
                         <input
                             type="text"
                             placeholder="네이버 ID"
                             value={credentials.username}
                             onChange={e => setCredentials({ ...credentials, username: e.target.value })}
-                            className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-sm text-white focus:outline-none focus:border-[var(--color-accent)]"
+                            className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
                         />
                         <input
                             type="password"
                             placeholder="비밀번호"
                             value={credentials.password}
                             onChange={e => setCredentials({ ...credentials, password: e.target.value })}
-                            className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-sm text-white focus:outline-none focus:border-[var(--color-accent)]"
+                            className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
                         />
                     </div>
                     <div className="flex justify-end pt-2">
@@ -151,7 +151,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
             {mode === "manual" && (
                 <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
                     <textarea
-                        className="w-full h-32 px-3 py-2 bg-black/20 border border-[var(--color-border)] rounded-md text-xs font-mono text-gray-300 focus:outline-none focus:border-[var(--color-accent)]"
+                        className="w-full h-32 px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-md text-xs font-mono text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)]"
                         placeholder='storageState.json 내용을 붙여넣으세요...'
                         value={jsonInput}
                         onChange={(e) => setJsonInput(e.target.value)}
@@ -160,7 +160,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                         <button
                             onClick={handleImport}
                             disabled={isImporting || !jsonInput}
-                            className="px-4 py-2 bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] text-white text-sm font-medium rounded-md disabled:opacity-50 transition-colors"
+                            className="px-4 py-2 bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] text-[var(--color-text-primary)] text-sm font-medium rounded-md disabled:opacity-50 transition-colors"
                         >
                             {isImporting ? "가져오는 중..." : "JSON 가져오기"}
                         </button>
@@ -236,14 +236,14 @@ export default function Dashboard() {
                                         const isClosed = isPast || (isToday && new Date().getHours() >= 22);
                                         if (!isToday && !isPast) return null;
                                         return isClosed ? (
-                                            <div className="flex items-center gap-1.5 text-xs text-orange-400">
+                                            <div className="flex items-center gap-1.5 text-xs text-orange-600">
                                                 <Lock className="w-3 h-3" />
                                                 <span>입장 마감</span>
                                             </div>
                                         ) : null;
                                     })()}
                                 </div>
-                                <h3 className="text-2xl font-bold text-white mb-1">
+                                <h3 className="text-2xl font-bold text-[var(--color-text-primary)] mb-1">
                                     {session.title}
                                 </h3>
                                 <p className="text-sm text-[var(--color-text-secondary)]">
@@ -276,7 +276,7 @@ export default function Dashboard() {
                                         const tab = tabMap[session.status] ?? "prep";
                                         navigate(`/sessions/${session.id}/${tab}`);
                                     }}
-                                    className="flex items-center justify-center gap-2 rounded-lg bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] hover:text-white transition-colors text-sm font-medium"
+                                    className="flex items-center justify-center gap-2 rounded-lg bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text-primary)] transition-colors text-sm font-medium"
                                 >
                                     세션 관리
                                 </button>
@@ -335,7 +335,7 @@ export default function Dashboard() {
                         )}
 
                         {!isNaverExpired && lowDepositMembers.length === 0 && riskScoreMembers.length === 0 && (
-                            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-green-500/20 bg-green-500/5 text-green-400 text-sm">
+                            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-green-500/20 bg-green-500/5 text-green-600 text-sm">
                                 <CheckCircle2 className="w-4 h-4" />
                                 <span>현재 조치 필요한 경고 사항이 없습니다.</span>
                             </div>
@@ -350,7 +350,7 @@ export default function Dashboard() {
 function StatBox({ label, value, icon: Icon }: { label: string; value: string; icon: React.ElementType }) {
     return (
         <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-white/5 text-[var(--color-text-secondary)]">
+            <div className="p-2 rounded-lg bg-[var(--color-hover)] text-[var(--color-text-secondary)]">
                 <Icon className="w-4 h-4" />
             </div>
             <div>

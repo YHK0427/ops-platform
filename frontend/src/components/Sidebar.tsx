@@ -32,9 +32,9 @@ export function Sidebar() {
     const navigate = useNavigate();
 
     return (
-        <aside className="flex flex-col w-56 shrink-0 h-full bg-black/50 backdrop-blur-xl border-r border-[var(--color-border-subtle)]">
+        <aside className="flex flex-col w-56 shrink-0 h-full bg-white/80 backdrop-blur-xl border-r border-[var(--color-border-subtle)]">
             {/* Logo */}
-            <NavLink to="/dashboard" className="block px-5 py-5 border-b border-[var(--color-border-subtle)] hover:bg-white/5 transition-colors">
+            <NavLink to="/dashboard" className="block px-5 py-5 border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)] transition-colors">
                 <span className="text-sm font-bold tracking-widest text-[var(--color-text-secondary)] uppercase">
                     UnivPT
                 </span>
@@ -51,8 +51,8 @@ export function Sidebar() {
                             cn(
                                 "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                                 isActive
-                                    ? "text-white bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent"
-                                    : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-hover)]"
+                                    ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
                             )
                         }
                     >
@@ -61,7 +61,7 @@ export function Sidebar() {
                                 {isActive && (
                                     <motion.div
                                         layoutId="active-indicator"
-                                        className="absolute left-0 top-1 bottom-1 w-1 rounded-r-full bg-[var(--color-accent)] shadow-[0_0_10px_var(--color-accent)]"
+                                        className="absolute left-0 top-1 bottom-1 w-1 rounded-r-full bg-[var(--color-accent)] shadow-none"
                                         transition={{ type: "spring", stiffness: 380, damping: 30 }}
                                     />
                                 )}
@@ -80,7 +80,7 @@ export function Sidebar() {
                 </div>
                 <button
                     onClick={() => navigate("/sessions/new")}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-hover)] transition-colors"
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)] transition-colors"
                 >
                     <Plus className="w-4 h-4" />
                     새 세션
@@ -91,8 +91,8 @@ export function Sidebar() {
                         cn(
                             "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                             isActive
-                                ? "text-white bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent"
-                                : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-hover)]"
+                                ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
                         )
                     }
                 >
@@ -112,8 +112,8 @@ export function Sidebar() {
                         cn(
                             "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                             isActive
-                                ? "text-white bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent"
-                                : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-hover)]"
+                                ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
                         )
                     }
                 >
@@ -122,7 +122,7 @@ export function Sidebar() {
                             {isActive && (
                                 <motion.div
                                     layoutId="active-indicator"
-                                    className="absolute left-0 top-1 bottom-1 w-1 rounded-r-full bg-[var(--color-accent)] shadow-[0_0_10px_var(--color-accent)]"
+                                    className="absolute left-0 top-1 bottom-1 w-1 rounded-r-full bg-[var(--color-accent)] shadow-none"
                                     transition={{ type: "spring", stiffness: 380, damping: 30 }}
                                 />
                             )}
@@ -147,8 +147,8 @@ export function Sidebar() {
                             cn(
                                 "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                                 isActive
-                                    ? "text-white bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent"
-                                    : "text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-hover)]"
+                                    ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
                             )
                         }
                     >
@@ -163,7 +163,7 @@ export function Sidebar() {
                 {user && (
                     <button
                         onClick={logout}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-rose-400 hover:bg-rose-500/5 transition-colors"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-rose-600 hover:bg-rose-50 transition-colors"
                     >
                         <LogOut className="w-4 h-4" />
                         로그아웃

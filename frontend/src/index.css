@@ -10,28 +10,30 @@
 
 @import "tailwindcss";
 
-/* ── Theme tokens ─────────────────────────────── */
+/* ── Theme tokens (Light — Growth Report style) ── */
 @theme {
   /* Background */
-  --color-base: #050505;
-  --color-surface: rgb(20 20 25 / 0.6);
-  --color-elevated: rgb(30 30 35 / 0.8);
-  --color-hover: rgb(255 255 255 / 0.05);
+  --color-base: #F5F5F7;
+  --color-surface: rgba(255, 255, 255, 0.8);
+  --color-elevated: rgba(255, 255, 255, 0.95);
+  --color-hover: rgba(0, 0, 0, 0.04);
 
   /* Border */
-  --color-border-subtle: rgb(255 255 255 / 0.08);
-  --color-border: rgb(255 255 255 / 0.12);
-  --color-border-highlight: rgb(255 255 255 / 0.20);
+  --color-border-subtle: rgba(0, 0, 0, 0.06);
+  --color-border: rgba(0, 0, 0, 0.10);
+  --color-border-highlight: rgba(0, 0, 0, 0.18);
 
   /* Accent — Rose-500 (UnivPT brand) */
+  --color-primary: #F43F5E;
+  --color-primary-hover: #E11D48;
   --color-accent: #F43F5E;
   --color-accent-hover: #E11D48;
-  --color-accent-dim: rgb(244 63 94 / 0.10);
+  --color-accent-dim: rgb(244 63 94 / 0.08);
 
   /* Text */
-  --color-text-primary: #E8E8F0;
-  --color-text-secondary: #9090A8;
-  --color-text-muted: #7A7A96;
+  --color-text-primary: #1A1A2E;
+  --color-text-secondary: #64748B;
+  --color-text-muted: #94A3B8;
 
   /* Semantic */
   --color-green: #22C55E;
@@ -39,22 +41,22 @@
   --color-danger: #F43F5E;
 
   /* shadcn/ui token mappings */
-  --color-background: #0A0A0F;
-  --color-foreground: #E8E8F0;
-  --color-card: #14141A;
-  --color-card-foreground: #E8E8F0;
-  --color-popover: #1A1A22;
-  --color-popover-foreground: #E8E8F0;
-  --color-muted: #28282F;
-  --color-muted-foreground: #9090A8;
-  --color-accent-foreground: #E8E8F0;
+  --color-background: #F5F5F7;
+  --color-foreground: #1A1A2E;
+  --color-card: #FFFFFF;
+  --color-card-foreground: #1A1A2E;
+  --color-popover: #FFFFFF;
+  --color-popover-foreground: #1A1A2E;
+  --color-muted: #F1F5F9;
+  --color-muted-foreground: #64748B;
+  --color-accent-foreground: #1A1A2E;
   --color-destructive: #F43F5E;
   --color-destructive-foreground: #FFFFFF;
-  --color-input: rgb(255 255 255 / 0.12);
+  --color-input: rgba(0, 0, 0, 0.10);
   --color-ring: #F43F5E;
 
   /* Font families */
-  --font-sans: "Pretendard Variable", Pretendard, system-ui, sans-serif;
+  --font-sans: "Paperlogy", "Pretendard Variable", system-ui, sans-serif;
   --font-mono: "Geist Mono", "SF Mono", monospace;
 
   /* Radius */
@@ -90,12 +92,6 @@
     color: var(--color-text-primary);
     font-family: var(--font-sans);
     min-height: 100vh;
-
-    /* Ambient spotlight */
-    background-image:
-      radial-gradient(circle at 50% 0%, rgb(244 63 94 / 0.08) 0%, transparent 40%),
-      radial-gradient(circle at 80% 10%, rgb(255 255 255 / 0.03) 0%, transparent 20%);
-    background-attachment: fixed;
   }
 
   #root {
@@ -114,25 +110,15 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: rgba(0, 0, 0, 0.15);
   border-radius: 99px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-highlight);
+  background: rgba(0, 0, 0, 0.25);
 }
 
-/* ── Member page (light theme + Paperlogy) ───── */
+/* ── Member page (inherits light theme) ───────── */
 .member-page {
-  font-family: "Paperlogy", "Pretendard Variable", system-ui, sans-serif;
-  background: #F5F5F7;
-  color: #1A1A2E;
   min-height: 100vh;
-  background-image: none;
-}
-
-.member-page *,
-.member-page *::before,
-.member-page *::after {
-  font-family: inherit;
 }

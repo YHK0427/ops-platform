@@ -30,11 +30,11 @@ const STATUS_LABEL: Record<string, string> = {
     PENDING: "미확인",
 };
 
-const STATUS_STYLE: Record<string, string> = {
-    PASS:    "text-green-500",
-    MISSING: "text-red-500",
-    EXEMPT:  "text-gray-400",
-    PENDING: "text-blue-400",
+const STATUS_COLOR: Record<string, string> = {
+    PASS:    "#16a34a",
+    MISSING: "#dc2626",
+    EXEMPT:  "#94A3B8",
+    PENDING: "#2563eb",
 };
 
 export function PostTab() {
@@ -103,13 +103,13 @@ export function PostTab() {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex justify-between items-center">
                 <div>
-                    <h2 className="text-xl font-bold tracking-tight text-white/90">과제 검사</h2>
+                    <h2 className="text-xl font-bold tracking-tight text-[var(--color-text-primary)]">과제 검사</h2>
                     <p className="text-sm text-[var(--color-text-muted)]">PPT, 리뷰, 피드백 제출 현황을 스캔하고 관리합니다.</p>
                 </div>
                 <Button
                     onClick={handleScanHomework}
                     disabled={isPolling}
-                    className="bg-[var(--color-primary)] hover:bg-rose-600 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]"
+                    className="bg-[var(--color-primary)] hover:bg-rose-600 text-white shadow-md shadow-rose-100"
                 >
                     {isPolling ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                     {isPolling ? "스캔 중..." : "과제 스캔"}
@@ -118,8 +118,8 @@ export function PostTab() {
 
             {/* Task Progress */}
             {taskStatus && (
-                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                    <div className="flex items-center gap-2 text-sm text-gray-300">
+                <div className="bg-gray-50 p-4 rounded-lg border border-[var(--color-border)]">
+                    <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
                         {isPolling ? (
                             <Loader2 className="w-4 h-4 animate-spin text-[var(--color-primary)]" />
                         ) : taskStatus.status === "complete" ? (
@@ -128,7 +128,7 @@ export function PostTab() {
                             <XCircle className="w-4 h-4 text-red-500" />
                         )}
                         <span>작업 상태: {taskStatus.status} (ID: {taskStatus.task_id})</span>
-                        {taskStatus.result && <span className="text-gray-500 ml-2 text-xs truncate max-w-[300px]">{JSON.stringify(taskStatus.result)}</span>}
+                        {taskStatus.result && <span className="text-[var(--color-text-muted)] ml-2 text-xs truncate max-w-[300px]">{JSON.stringify(taskStatus.result)}</span>}
                     </div>
                 </div>
             )}
@@ -142,7 +142,7 @@ export function PostTab() {
                     <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
                         <Table>
                             <TableHeader>
-                                <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
+                                <TableRow className="bg-gray-50 hover:bg-gray-50">
                                     <TableHead>멤버</TableHead>
                                     {activeTypes.map((type) => (
                                         <TableHead key={type} className="text-center w-[120px]">
@@ -153,8 +153,8 @@ export function PostTab() {
                             </TableHeader>
                             <TableBody>
                                 {rows.map((m) => (
-                                    <TableRow key={m.id} className="hover:bg-white/5 transition-colors">
-                                        <TableCell className="font-medium text-gray-300">
+                                    <TableRow key={m.id} className="hover:bg-gray-50 transition-colors">
+                                        <TableCell className="font-medium text-[var(--color-text-secondary)]">
                                             {m.name}
                                             {session.type === "TEAM" && (
                                                 <span className="text-xs text-gray-600 ml-1">({m.teamName})</span>
@@ -177,12 +177,15 @@ export function PostTab() {
                                                                     value={status}
                                                                     onValueChange={(val) => handleStatusChange(assignment.id, val)}
                                                                 >
-                                                                    <SelectTrigger className={`h-7 w-[100px] text-xs border-[var(--color-border)] bg-transparent ${STATUS_STYLE[status] ?? "text-gray-500"}`}>
+                                                                    <SelectTrigger
+                                                                        className="h-7 w-[100px] text-xs border-[var(--color-border)] bg-transparent font-medium"
+                                                                        style={{ color: STATUS_COLOR[status] ?? "#94A3B8" }}
+                                                                    >
                                                                         <SelectValue />
                                                                     </SelectTrigger>
-                                                                    <SelectContent className="bg-[var(--color-elevated)] border-[var(--color-border)]">
+                                                                    <SelectContent className="bg-white border-[var(--color-border)]">
                                                                         {STATUS_OPTIONS.map((opt) => (
-                                                                            <SelectItem key={opt} value={opt} className={`text-xs ${STATUS_STYLE[opt]}`}>
+                                                                            <SelectItem key={opt} value={opt} className="text-xs" style={{ color: STATUS_COLOR[opt] }}>
                                                                                 {STATUS_LABEL[opt] ?? opt}
                                                                             </SelectItem>
                                                                         ))}
@@ -193,7 +196,7 @@ export function PostTab() {
                                                                         href={`https://cafe.naver.com/f-e/cafes/${CAFE_ID}/articles/${articleId}?menuid=${menuId}&referrerAllArticles=false`}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
-                                                                        className="p-0.5 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-green-400 transition-colors"
+                                                                        className="p-0.5 rounded hover:bg-gray-100 text-[var(--color-text-muted)] hover:text-green-500 transition-colors"
                                                                         title="카페 게시글 확인"
                                                                     >
                                                                         <ExternalLink className="w-3 h-3" />
@@ -214,8 +217,8 @@ export function PostTab() {
                                                                                 hasComments ? "cursor-pointer hover:opacity-80" : ""
                                                                             } ${
                                                                                 d.commented
-                                                                                    ? "bg-green-500/10 text-green-400"
-                                                                                    : "bg-red-500/10 text-red-400"
+                                                                                    ? "bg-green-500/10 text-green-600"
+                                                                                    : "bg-red-500/10 text-red-500"
                                                                             }`}
                                                                         >
                                                                             {d.commented ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />}
@@ -236,11 +239,11 @@ export function PostTab() {
                                                                                 align="center"
                                                                             >
                                                                                 <div className="space-y-2">
-                                                                                    <p className="font-medium text-gray-300 text-xs border-b border-gray-700 pb-1">
+                                                                                    <p className="font-medium text-[var(--color-text-secondary)] text-xs border-b border-[var(--color-border)] pb-1">
                                                                                         {m.name} → {d.is_self ? "본인" : d.name} 영상 댓글
                                                                                     </p>
                                                                                     {d.comments!.map((text, i) => (
-                                                                                        <p key={i} className="text-gray-400 text-xs whitespace-pre-wrap break-words leading-relaxed">
+                                                                                        <p key={i} className="text-[var(--color-text-muted)] text-xs whitespace-pre-wrap break-words leading-relaxed">
                                                                                             {text}
                                                                                         </p>
                                                                                     ))}

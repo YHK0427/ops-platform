@@ -105,16 +105,16 @@ export default function SessionLayout() {
                                     }
                                 }}
                                 disabled={isDeleting}
-                                className="bg-red-900/50 hover:bg-red-800 border-red-700 text-red-200"
+                                className="bg-red-50 hover:bg-red-100 border-red-200 text-red-600"
                             >
                                 <Trash2 className="w-3.5 h-3.5 mr-1" />
                                 {isDeleting ? "삭제 중..." : "세션 삭제"}
                             </Button>
                         )}
                         {renderStatusAction()}
-                        <div className="h-6 w-px bg-white/10 mx-2" />
+                        <div className="h-6 w-px bg-gray-200 mx-2" />
                         {typedSession.status === "FINALIZED" && (
-                            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-[var(--color-text-muted)]">
+                            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200 text-xs font-medium text-[var(--color-text-muted)]">
                                 <Lock className="w-3.5 h-3.5" />
                                 세션 확정됨
                             </span>
@@ -254,7 +254,7 @@ function DeadlineBar({ session }: { session: Session }) {
                             <Check className="w-3.5 h-3.5 text-green-500" />
                         </Button>
                         <Button size="sm" variant="ghost" onClick={handleCancel} className="h-7 w-7 p-0">
-                            <X className="w-3.5 h-3.5 text-red-400" />
+                            <X className="w-3.5 h-3.5 text-red-500" />
                         </Button>
                     </div>
                 </>

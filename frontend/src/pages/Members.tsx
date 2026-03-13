@@ -125,29 +125,29 @@ export default function Members() {
                                         <TableCell>
                                             <div className="flex flex-wrap gap-1">
                                                 {member.tags.map((tag) => (
-                                                    <span key={tag} className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] text-[var(--color-text-secondary)]">
+                                                    <span key={tag} className="px-1.5 py-0.5 rounded bg-[var(--color-hover)] border border-[var(--color-border)] text-[10px] text-[var(--color-text-secondary)]">
                                                         {tag}
                                                     </span>
                                                 ))}
                                             </div>
                                         </TableCell>
-                                        <TableCell className={`text-right text-sm ${(member.current_deposit || 0) < 10000 ? "text-rose-400" : "text-[var(--color-text-secondary)]"}`}>
+                                        <TableCell className={`text-right text-sm ${(member.current_deposit || 0) < 10000 ? "text-rose-500" : "text-[var(--color-text-secondary)]"}`}>
                                             <div className="flex items-center justify-end gap-1.5">
                                                 {member.is_active && (member.current_deposit || 0) < 10000 && (
-                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/20">
+                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-500 border border-rose-500/20">
                                                         충전요망
                                                     </span>
                                                 )}
                                                 ₩{(member.current_deposit || 0).toLocaleString()}
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-right text-sm text-green-400">
+                                        <TableCell className="text-right text-sm text-green-600">
                                             {member.total_plus_score || 0 ? `+${member.total_plus_score}` : "-"}
                                         </TableCell>
-                                        <TableCell className="text-right text-sm text-rose-400">
+                                        <TableCell className="text-right text-sm text-rose-500">
                                             {member.total_minus_score ? member.total_minus_score : "-"}
                                         </TableCell>
-                                        <TableCell className={`text-right text-sm font-semibold ${(member.net_score || 0) > 0 ? "text-green-400" : (member.net_score || 0) < 0 ? "text-rose-400" : "text-gray-400"}`}>
+                                        <TableCell className={`text-right text-sm font-semibold ${(member.net_score || 0) > 0 ? "text-green-600" : (member.net_score || 0) < 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
                                             {member.net_score || 0}
                                         </TableCell>
                                         <TableCell className="text-right text-xs text-[var(--color-text-muted)]">

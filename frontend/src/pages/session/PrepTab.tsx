@@ -86,8 +86,8 @@ export default function PrepTab() {
                 {cfg.has_ppt_email !== false && (
                     <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)] relative">
                         {/* 비활성 오버레이 — IMAP 연동 미완료 */}
-                        <div className="absolute inset-0 bg-black/50 rounded-xl z-10 flex items-center justify-center backdrop-blur-[1px]">
-                            <span className="text-sm text-gray-400 bg-black/60 px-3 py-1.5 rounded-lg border border-gray-700">
+                        <div className="absolute inset-0 bg-white/80 rounded-xl z-10 flex items-center justify-center backdrop-blur-[1px]">
+                            <span className="text-sm text-[var(--color-text-muted)] bg-gray-50 px-3 py-1.5 rounded-lg border border-[var(--color-border)]">
                                 미구현
                             </span>
                         </div>
@@ -101,7 +101,7 @@ export default function PrepTab() {
                                     <FileSearch className="w-4 h-4 mr-2" />
                                     PPT 이메일 스캔
                                 </Button>
-                                <Button variant="outline" disabled className="text-blue-400/50 border-blue-400/10">
+                                <Button variant="outline" disabled className="text-blue-600/50 border-blue-500/10">
                                     <Download className="w-4 h-4 mr-2" />
                                     전체 PPT 다운로드
                                 </Button>
@@ -127,7 +127,7 @@ export default function PrepTab() {
                             </Button>
                             <Button
                                 variant="outline"
-                                className="text-orange-400 border-orange-400/20 hover:bg-orange-400/10"
+                                className="text-orange-600 border-orange-500/20 hover:bg-orange-400/10"
                                 onClick={() => handleScanExcuses("POST")}
                                 disabled={isScanningExcuses}
                             >
@@ -136,7 +136,7 @@ export default function PrepTab() {
                             </Button>
                             <Button
                                 variant="outline"
-                                className="text-red-400 border-red-400/20 hover:bg-red-400/10"
+                                className="text-red-500 border-red-500/20 hover:bg-red-400/10"
                                 onClick={handleClearExcuses}
                             >
                                 <Trash2 className="w-4 h-4 mr-2" />
@@ -144,7 +144,7 @@ export default function PrepTab() {
                             </Button>
                         </div>
                         {excuseTaskId && excuseTaskStatus && (
-                            <div className="mt-2 p-3 bg-black/20 rounded-lg flex items-center justify-between text-sm">
+                            <div className="mt-2 p-3 bg-gray-50 rounded-lg flex items-center justify-between text-sm">
                                 <div className="flex items-center gap-2">
                                     {excuseTaskStatus.status === "in_progress" || excuseTaskStatus.status === "queued" ? (
                                         <Loader2 className="w-4 h-4 animate-spin text-[var(--color-accent)]" />
@@ -175,7 +175,7 @@ export default function PrepTab() {
                             size="sm"
                             variant="outline"
                             onClick={() => navigate(`/sessions/${session.id}/team-edit`)}
-                            className="border-[var(--color-border)] hover:bg-white/5"
+                            className="border-[var(--color-border)] hover:bg-gray-50"
                         >
                             팀 수정
                         </Button>

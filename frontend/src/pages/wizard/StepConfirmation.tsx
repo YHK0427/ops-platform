@@ -78,7 +78,7 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                         </div>
                         <div className="col-span-2">
                             <span className="text-[var(--color-text-secondary)]">주제</span>
-                            <p className="text-lg font-bold text-white">{state.title}</p>
+                            <p className="text-lg font-bold text-[var(--color-text-primary)]">{state.title}</p>
                         </div>
                         <div>
                             <span className="text-[var(--color-text-secondary)]">타입</span>

@@ -67,7 +67,7 @@ export function MemberAddSheet() {
             </SheetTrigger>
             <SheetContent className="bg-[var(--color-elevated)] border-l-[var(--color-border)] text-[var(--color-text-primary)]">
                 <SheetHeader>
-                    <SheetTitle className="text-white">새 멤버 추가</SheetTitle>
+                    <SheetTitle className="text-[var(--color-text-primary)]">새 멤버 추가</SheetTitle>
                     <SheetDescription>
                         새로운 멤버를 추가합니다. 초기 디파짓은 0원으로 시작합니다.
                     </SheetDescription>
@@ -106,7 +106,7 @@ export function MemberAddSheet() {
                                     onClick={() => toggleTag(tag)}
                                     className={`px-2 py-1 rounded text-xs border transition-colors ${tags.includes(tag)
                                             ? "bg-[var(--color-accent)] border-[var(--color-accent)] text-white"
-                                            : "bg-white/5 border-white/10 hover:bg-white/10 text-[var(--color-text-secondary)]"
+                                            : "bg-gray-50 border-[var(--color-border)] hover:bg-gray-100 text-[var(--color-text-secondary)]"
                                         }`}
                                 >
                                     {tag}
@@ -129,7 +129,7 @@ export function MemberAddSheet() {
                                 {tags.map(tag => (
                                     <span key={tag} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--color-accent)]/20 text-[var(--color-text-primary)] text-xs">
                                         {tag}
-                                        <button onClick={() => toggleTag(tag)} className="hover:text-white">×</button>
+                                        <button onClick={() => toggleTag(tag)} className="hover:text-[var(--color-text-primary)]">×</button>
                                     </span>
                                 ))}
                             </div>

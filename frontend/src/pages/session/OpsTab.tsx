@@ -226,11 +226,11 @@ export default function OpsTab() {
                         </thead>
                         <tbody className="divide-y divide-[var(--color-border)]">
                             {progress.map((item, idx) => (
-                                <tr key={idx} className="hover:bg-white/5">
+                                <tr key={idx} className="hover:bg-gray-50">
                                     <td className="px-4 py-1.5 text-xs tabular-nums text-[var(--color-text-muted)]">
                                         {item.order === 9999 ? "-" : item.order}
                                     </td>
-                                    <td className="px-4 py-1.5 text-gray-300 text-xs">{item.presenter}</td>
+                                    <td className="px-4 py-1.5 text-[var(--color-text-secondary)] text-xs">{item.presenter}</td>
                                     <td className="px-4 py-1.5">
                                         <VideoStatusBadge status={item.status} error={item.error} />
                                     </td>
@@ -243,10 +243,10 @@ export default function OpsTab() {
                 {/* Final result summary */}
                 {taskStatus.status === "complete" && result && Array.isArray(result) && (
                     <div className="px-4 py-2.5 border-t border-[var(--color-border)] text-xs">
-                        <span className="text-green-400">{result.filter((r: any) => r.success).length}</span>
+                        <span className="text-green-600">{result.filter((r: any) => r.success).length}</span>
                         <span className="text-[var(--color-text-muted)]">/{result.length} 업로드 성공</span>
                         {result.some((r: any) => !r.success) && (
-                            <span className="text-rose-400 ml-2">
+                            <span className="text-rose-500 ml-2">
                                 ({result.filter((r: any) => !r.success).length}건 실패)
                             </span>
                         )}
@@ -263,7 +263,7 @@ export default function OpsTab() {
                     level="warning"
                     title="영상 업로드 마감 경고"
                     message="오늘은 세션 다음 날입니다. 자정 전까지 영상 업로드를 완료해주세요."
-                    icon={<AlertTriangle className="w-5 h-5 text-orange-400" />}
+                    icon={<AlertTriangle className="w-5 h-5 text-orange-600" />}
                 />
             )}
 
@@ -294,7 +294,7 @@ export default function OpsTab() {
                             variant="outline"
                             onClick={() => fetchDriveVideos()}
                             disabled={isLoadingDrive}
-                            className="border-[var(--color-border)] hover:bg-white/5"
+                            className="border-[var(--color-border)] hover:bg-gray-50"
                         >
                             {isLoadingDrive
                                 ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -311,7 +311,7 @@ export default function OpsTab() {
                 {/* Drive Video List */}
                 {driveVideos && driveVideos.length > 0 && (
                     <div className="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
-                        <div className="flex items-center gap-2 px-4 py-2 bg-gray-900/40 border-b border-[var(--color-border)]">
+                        <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[var(--color-border)]">
                             <Film className="w-4 h-4 text-[var(--color-accent)]" />
                             <span className="text-sm font-medium">드라이브 영상 목록</span>
                             <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20">
@@ -319,12 +319,12 @@ export default function OpsTab() {
                             </span>
                         </div>
                         {/* Title Prefix + Apply */}
-                        <div className="px-4 py-2.5 bg-gray-900/20 border-b border-[var(--color-border)] space-y-2">
+                        <div className="px-4 py-2.5 bg-gray-50/80 border-b border-[var(--color-border)] space-y-2">
                             <div className="flex items-center gap-2">
                                 <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">제목 접두어</span>
                                 <input
                                     type="text"
-                                    className="flex-1 bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2.5 py-1 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
+                                    className="flex-1 bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2.5 py-1 text-xs text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
                                     value={titlePrefix}
                                     onChange={(e) => setTitlePrefix(e.target.value)}
                                 />
@@ -332,13 +332,13 @@ export default function OpsTab() {
                                     variant="outline"
                                     size="sm"
                                     onClick={applyTemplate}
-                                    className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-white/5 whitespace-nowrap"
+                                    className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-gray-50 whitespace-nowrap"
                                 >
                                     일괄 적용
                                 </Button>
                             </div>
                             <div className="text-[10px] text-[var(--color-text-muted)]">
-                                미리보기: <span className="text-gray-400">{driveVideos[0] ? buildTitle(driveVideos[0]) : ""}</span>
+                                미리보기: <span className="text-[var(--color-text-muted)]">{driveVideos[0] ? buildTitle(driveVideos[0]) : ""}</span>
                             </div>
                         </div>
                         <table className="w-full text-sm">
@@ -357,7 +357,7 @@ export default function OpsTab() {
                                         return a.order - b.order;
                                     })
                                     .map((v) => (
-                                        <tr key={v.id} className="hover:bg-white/5 group/vrow">
+                                        <tr key={v.id} className="hover:bg-gray-50 group/vrow">
                                             <td className="px-4 py-1.5">
                                                 <input
                                                     type="number"
@@ -372,9 +372,9 @@ export default function OpsTab() {
                                                 />
                                             </td>
                                             <td className="px-4 py-1.5 whitespace-nowrap">
-                                                <span className="font-medium text-gray-200">{v.presenter}</span>
+                                                <span className="font-medium text-[var(--color-text-primary)]">{v.presenter}</span>
                                                 {v.group != null && (
-                                                    <span className="ml-1 text-[10px] text-blue-400 bg-blue-500/10 px-1 py-0.5 rounded border border-blue-500/20">
+                                                    <span className="ml-1 text-[10px] text-blue-600 bg-blue-500/10 px-1 py-0.5 rounded border border-blue-500/20">
                                                         {v.group}분반
                                                     </span>
                                                 )}
@@ -382,7 +382,7 @@ export default function OpsTab() {
                                             <td className="px-4 py-1.5">
                                                 <input
                                                     type="text"
-                                                    className="w-full bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
+                                                    className="w-full bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
                                                     value={v.cafe_title}
                                                     onChange={(e) => updateVideoTitle(v.id, e.target.value)}
                                                     title={`원본: ${v.name}`}
@@ -392,7 +392,7 @@ export default function OpsTab() {
                                     ))}
                             </tbody>
                         </table>
-                        <div className="px-4 py-1.5 bg-gray-900/20 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)]">
+                        <div className="px-4 py-1.5 bg-gray-50/80 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)]">
                             접두어 수정 후 "일괄 적용"을 누르면 전체 제목이 변경됩니다. 개별 제목도 직접 수정 가능합니다.
                         </div>
                     </div>
@@ -425,7 +425,7 @@ export default function OpsTab() {
                                 size="sm"
                                 onClick={handleResetAssign}
                                 disabled={isSettingTarget || isRandomAssigning}
-                                className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-white/5 text-[var(--color-text-muted)] hover:text-rose-400"
+                                className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-gray-50 text-[var(--color-text-muted)] hover:text-rose-500"
                             >
                                 <RotateCcw className="w-3.5 h-3.5 mr-1" />
                                 초기화
@@ -434,7 +434,7 @@ export default function OpsTab() {
                                 variant="outline"
                                 size="sm"
                                 onClick={handleVerifyVideos}
-                                className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-white/5"
+                                className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-gray-50"
                             >
                                 <ShieldCheck className="w-3.5 h-3.5 mr-1" />
                                 영상 검증
@@ -453,9 +453,9 @@ export default function OpsTab() {
 
                     {/* 영상 미확인 경고 */}
                     {videoWarnings.length > 0 && (
-                        <div className="mb-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+                        <div className="mb-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600">
                             <span className="font-medium">영상 미확인 발표자:</span> {videoWarnings.join(", ")}
-                            <span className="text-amber-400/60 ml-1">— 피드백 대상에서 제거하거나 영상을 확인해주세요.</span>
+                            <span className="text-amber-600/60 ml-1">— 피드백 대상에서 제거하거나 영상을 확인해주세요.</span>
                         </div>
                     )}
 
@@ -464,7 +464,7 @@ export default function OpsTab() {
                         <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
                             <Table>
                                 <TableHeader>
-                                    <TableRow className="bg-gray-900/50 hover:bg-gray-900/50">
+                                    <TableRow className="bg-gray-50 hover:bg-gray-50">
                                         <TableHead className="w-[140px]">피드백 작성자</TableHead>
                                         <TableHead>피드백 대상 (추가 지정)</TableHead>
                                     </TableRow>
@@ -506,7 +506,7 @@ export default function OpsTab() {
 
                         {/* Right: Receiver status panel (editable presenter list) */}
                         <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
-                            <div className="bg-gray-900/50 px-3 py-2 text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider border-b border-[var(--color-border)]">
+                            <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider border-b border-[var(--color-border)]">
                                 발표자 (피드백 수신)
                             </div>
                             <div className="divide-y divide-[var(--color-border)]">
@@ -519,27 +519,27 @@ export default function OpsTab() {
                                             key={id}
                                             className={`flex items-center justify-between px-3 py-1.5 text-xs cursor-default transition-all duration-200 ${
                                                 isUnassigned ? "bg-rose-500/5" : ""
-                                            } ${hoveredPresenterId === id ? "bg-violet-500/10 shadow-[inset_0_0_12px_rgba(139,92,246,0.15)]" : ""}`}
+                                            } ${hoveredPresenterId === id ? "bg-violet-500/10 shadow-sm" : ""}`}
                                             onMouseEnter={() => setHoveredPresenterId(id)}
                                             onMouseLeave={() => setHoveredPresenterId(null)}
                                         >
                                             <span className={
                                                 hoveredPresenterId === id
-                                                    ? "text-violet-400 font-medium"
-                                                    : isUnassigned ? "text-rose-400" : "text-[var(--color-text-primary)]"
+                                                    ? "text-violet-600 font-medium"
+                                                    : isUnassigned ? "text-rose-500" : "text-[var(--color-text-primary)]"
                                             }>
                                                 {name}
                                             </span>
                                             <div className="flex items-center gap-1.5">
                                                 <span className={`tabular-nums px-1.5 py-0.5 rounded border ${isUnassigned
-                                                    ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                                                    : "bg-green-500/10 text-green-400 border-green-500/20"
+                                                    ? "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                                                    : "bg-green-500/10 text-green-600 border-green-500/20"
                                                 }`}>
                                                     {count}명
                                                 </span>
                                                 <button
                                                     onClick={() => removePresenter(id)}
-                                                    className="text-[var(--color-text-muted)] hover:text-rose-400 transition-colors"
+                                                    className="text-[var(--color-text-muted)] hover:text-rose-500 transition-colors"
                                                     title="발표자에서 제거"
                                                 >
                                                     <X className="w-3 h-3" />
@@ -567,11 +567,11 @@ export default function OpsTab() {
 
 function VideoStatusBadge({ status, error }: { status: VideoProgress["status"]; error?: string | null }) {
     const config: Record<string, { label: string; className: string; icon?: React.ReactNode }> = {
-        pending:     { label: "대기",       className: "bg-gray-500/10 text-gray-400 border-gray-500/20" },
-        downloading: { label: "다운로드 중", className: "bg-blue-500/10 text-blue-400 border-blue-500/20", icon: <Download className="w-3 h-3 animate-pulse" /> },
-        uploading:   { label: "업로드 중",   className: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20", icon: <Upload className="w-3 h-3 animate-pulse" /> },
-        done:        { label: "완료",       className: "bg-green-500/10 text-green-400 border-green-500/20", icon: <CheckCircle2 className="w-3 h-3" /> },
-        failed:      { label: "실패",       className: "bg-red-500/10 text-red-400 border-red-500/20", icon: <XCircle className="w-3 h-3" /> },
+        pending:     { label: "대기",       className: "bg-gray-100 text-gray-500 border-gray-200" },
+        downloading: { label: "다운로드 중", className: "bg-blue-500/10 text-blue-600 border-blue-500/20", icon: <Download className="w-3 h-3 animate-pulse" /> },
+        uploading:   { label: "업로드 중",   className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20", icon: <Upload className="w-3 h-3 animate-pulse" /> },
+        done:        { label: "완료",       className: "bg-green-500/10 text-green-600 border-green-500/20", icon: <CheckCircle2 className="w-3 h-3" /> },
+        failed:      { label: "실패",       className: "bg-red-500/10 text-red-500 border-red-500/20", icon: <XCircle className="w-3 h-3" /> },
     };
     const c = config[status] ?? config.pending;
     return (
@@ -630,15 +630,15 @@ function FeedbackTargetRow({
         <TableRow className={cn(
             "align-top transition-all duration-200",
             isRowHighlighted
-                ? "bg-violet-500/10 shadow-[inset_0_0_20px_rgba(139,92,246,0.08)]"
-                : "hover:bg-white/5",
+                ? "bg-violet-500/10 shadow-sm"
+                : "hover:bg-gray-50",
             isAbsent && !isRowHighlighted && "bg-rose-500/5",
         )}>
             <TableCell className="font-medium py-1.5 text-sm">
                 <div className="flex items-center gap-1.5">
-                    <span className={isRowHighlighted ? "text-violet-300" : isAbsent ? "text-rose-300" : "text-gray-300"}>{writerName}</span>
+                    <span className={isRowHighlighted ? "text-violet-500" : isAbsent ? "text-rose-500" : "text-[var(--color-text-secondary)]"}>{writerName}</span>
                     {isAbsent && (
-                        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-500 border border-rose-500/20">
                             <UserMinus className="w-2.5 h-2.5" />
                             결석 · 2개
                         </span>
@@ -655,7 +655,7 @@ function FeedbackTargetRow({
                             key={tid}
                             className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium transition-all duration-200 ${
                                 isHighlighted
-                                    ? "bg-violet-500/25 text-violet-200 border border-violet-400/50 shadow-[0_0_8px_rgba(139,92,246,0.4)] scale-105"
+                                    ? "bg-violet-500/25 text-violet-600 border border-violet-400/50 shadow-sm scale-105"
                                     : "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
                             }`}
                         >
@@ -664,7 +664,7 @@ function FeedbackTargetRow({
                                 type="button"
                                 onClick={() => handleRemove(tid)}
                                 disabled={disabled}
-                                className="ml-0.5 hover:text-white disabled:opacity-50 transition-colors"
+                                className="ml-0.5 hover:text-[var(--color-text-primary)] disabled:opacity-50 transition-colors"
                             >
                                 <X className="w-3 h-3" />
                             </button>
@@ -680,7 +680,7 @@ function FeedbackTargetRow({
                                     variant="outline"
                                     size="sm"
                                     disabled={disabled}
-                                    className="h-6 px-2 text-xs border-dashed border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-white/5 hover:border-[var(--color-border)]"
+                                    className="h-6 px-2 text-xs border-dashed border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-gray-50 hover:border-[var(--color-border)]"
                                 >
                                     <Plus className="w-3 h-3 mr-1" />
                                     추가
@@ -751,7 +751,7 @@ function PresenterAddButton({
                     <Button
                         variant="outline"
                         size="sm"
-                        className="w-full h-7 text-xs border-dashed border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-white/5"
+                        className="w-full h-7 text-xs border-dashed border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-gray-50"
                     >
                         <Plus className="w-3 h-3 mr-1" />
                         발표자 추가
@@ -773,7 +773,7 @@ function PresenterAddButton({
                                         <Check className={cn("mr-2 h-3 w-3 opacity-0")} />
                                         {opt.name}
                                         {opt.isAbsent && (
-                                            <span className="ml-auto text-[10px] text-rose-400">결석</span>
+                                            <span className="ml-auto text-[10px] text-rose-500">결석</span>
                                         )}
                                     </CommandItem>
                                 ))}

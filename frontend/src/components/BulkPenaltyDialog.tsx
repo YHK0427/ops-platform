@@ -82,7 +82,7 @@ export function BulkPenaltyDialog({ trigger }: BulkPenaltyDialogProps) {
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setActivePreset(null); }}>
             <DialogTrigger asChild>
                 {trigger || (
-                    <Button variant="outline" className="text-rose-400 border-rose-500/20 hover:bg-rose-500/10">
+                    <Button variant="outline" className="text-rose-500 border-rose-500/20 hover:bg-rose-500/10">
                         <AlertTriangle className="w-4 h-4 mr-2" />
                         벌점 부여
                     </Button>
@@ -107,7 +107,7 @@ export function BulkPenaltyDialog({ trigger }: BulkPenaltyDialogProps) {
                                     onClick={() => selectPreset(idx)}
                                     className={`px-2.5 py-1.5 text-xs rounded-lg border transition-colors ${
                                         activePreset === idx
-                                            ? "bg-rose-500/15 border-rose-500/40 text-rose-400"
+                                            ? "bg-rose-500/15 border-rose-500/40 text-rose-500"
                                             : "bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-rose-500/30"
                                     }`}
                                 >
@@ -120,7 +120,7 @@ export function BulkPenaltyDialog({ trigger }: BulkPenaltyDialogProps) {
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label className="text-right">벌점</Label>
                         <div className="col-span-3 relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-rose-400 font-medium text-sm">-</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-rose-500 font-medium text-sm">-</span>
                             <Input
                                 type="number"
                                 value={score}
@@ -168,7 +168,7 @@ export function BulkPenaltyDialog({ trigger }: BulkPenaltyDialogProps) {
                         <div className="rounded-lg bg-rose-500/5 border border-rose-500/20 px-4 py-3 text-sm">
                             <div className="flex justify-between">
                                 <span className="text-[var(--color-text-muted)]">{selectedMembers.length}명 × -{score}점</span>
-                                <span className="text-rose-400 font-medium">"{reason}"</span>
+                                <span className="text-rose-500 font-medium">"{reason}"</span>
                             </div>
                         </div>
                     )}

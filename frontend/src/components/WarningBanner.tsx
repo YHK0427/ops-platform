@@ -23,20 +23,20 @@ const CONFIG: Record<
     error: {
         icon: AlertCircle,
         containerClass:
-            "border-rose-500/40 bg-rose-500/10 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.08)]",
-        iconClass: "text-rose-400",
+            "border-rose-500/40 bg-rose-500/10 text-rose-700",
+        iconClass: "text-rose-500",
     },
     warning: {
         icon: AlertTriangle,
         containerClass:
-            "border-yellow-500/40 bg-yellow-500/10 text-yellow-300",
-        iconClass: "text-yellow-400",
+            "border-amber-500/40 bg-amber-500/10 text-amber-800",
+        iconClass: "text-amber-600",
     },
     info: {
         icon: Info,
         containerClass:
-            "border-blue-500/40 bg-blue-500/10 text-blue-300",
-        iconClass: "text-blue-400",
+            "border-blue-500/40 bg-blue-500/10 text-blue-700",
+        iconClass: "text-blue-600",
     },
 };
 

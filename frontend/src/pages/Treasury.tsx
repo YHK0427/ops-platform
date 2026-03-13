@@ -94,8 +94,8 @@ export default function Treasury() {
                             <Card className="bg-[var(--color-surface)] border-blue-500/30">
                                 <CardContent className="pt-6 pb-5 px-6">
                                     <div className="flex items-center justify-between mb-4">
-                                        <p className="text-sm font-semibold text-blue-400 uppercase tracking-wider">금고 (운영 자금)</p>
-                                        <p className={`text-3xl font-bold ${netTreasury >= 0 ? "text-blue-400" : "text-rose-400"}`}>{formatKRW(netTreasury)}</p>
+                                        <p className="text-sm font-semibold text-blue-600 uppercase tracking-wider">금고 (운영 자금)</p>
+                                        <p className={`text-3xl font-bold ${netTreasury >= 0 ? "text-blue-600" : "text-rose-500"}`}>{formatKRW(netTreasury)}</p>
                                     </div>
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">
@@ -108,18 +108,18 @@ export default function Treasury() {
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--color-text-muted)]">누적벌점 벌금 (납부완료)</span>
-                                            <span className="text-emerald-400 font-medium">+{formatKRW(summary?.milestone_paid ?? 0)}</span>
+                                            <span className="text-emerald-600 font-medium">+{formatKRW(summary?.milestone_paid ?? 0)}</span>
                                         </div>
                                         {(summary?.milestone_unpaid ?? 0) > 0 && (
                                             <div className="flex justify-between items-center px-2 py-1.5 -mx-2 rounded-lg bg-rose-500/8 border border-rose-500/20">
-                                                <span className="text-rose-400 font-medium">누적벌점 미납</span>
-                                                <span className="text-rose-400 font-bold">{formatKRW(summary?.milestone_unpaid ?? 0)}</span>
+                                                <span className="text-rose-500 font-medium">누적벌점 미납</span>
+                                                <span className="text-rose-500 font-bold">{formatKRW(summary?.milestone_unpaid ?? 0)}</span>
                                             </div>
                                         )}
                                         {totalExpenses > 0 && (
                                             <div className="flex justify-between items-center">
                                                 <span className="text-[var(--color-text-muted)]">지출</span>
-                                                <span className="text-rose-400 font-medium">-{formatKRW(totalExpenses)}</span>
+                                                <span className="text-rose-500 font-medium">-{formatKRW(totalExpenses)}</span>
                                             </div>
                                         )}
                                     </div>
@@ -130,8 +130,8 @@ export default function Treasury() {
                             <Card className="bg-[var(--color-surface)] border-cyan-500/30">
                                 <CardContent className="pt-6 pb-5 px-6">
                                     <div className="flex items-center justify-between mb-4">
-                                        <p className="text-sm font-semibold text-cyan-400 uppercase tracking-wider">기수 자금 (멤버 디파짓)</p>
-                                        <p className="text-3xl font-bold text-cyan-400">{formatKRW(data?.deposit_summary?.total_deposits ?? 0)}</p>
+                                        <p className="text-sm font-semibold text-cyan-600 uppercase tracking-wider">기수 자금 (멤버 디파짓)</p>
+                                        <p className="text-3xl font-bold text-cyan-600">{formatKRW(data?.deposit_summary?.total_deposits ?? 0)}</p>
                                     </div>
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">
@@ -148,7 +148,7 @@ export default function Treasury() {
                                         </div>
                                         <div className="flex justify-between items-center pt-2 border-t border-[var(--color-border-subtle)]">
                                             <span className="text-[var(--color-text-muted)]">수료 시 환급 예정</span>
-                                            <span className="text-cyan-400 font-medium">{formatKRW(data?.deposit_summary?.total_deposits ?? 0)}</span>
+                                            <span className="text-cyan-600 font-medium">{formatKRW(data?.deposit_summary?.total_deposits ?? 0)}</span>
                                         </div>
                                         <p className="text-xs text-[var(--color-text-muted)] pt-1">
                                             기수 종료 시 수료자에 한해 잔여 디파짓 환급
@@ -176,14 +176,14 @@ export default function Treasury() {
                             <div className="ml-auto pb-1 flex gap-2">
                                 <button
                                     onClick={() => setShowExpenseDialog(true)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-rose-400 border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-rose-500 border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20"
                                 >
                                     <MinusCircle className="w-3.5 h-3.5" />
                                     지출 기록
                                 </button>
                                 <button
                                     onClick={() => setShowAddDialog(true)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-amber-400 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-amber-600 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20"
                                 >
                                     <Plus className="w-3.5 h-3.5" />
                                     누적벌점 벌금
@@ -217,7 +217,7 @@ export default function Treasury() {
                                                     <TableCell className="font-medium text-[var(--color-text-primary)]">{s.title}</TableCell>
                                                     <TableCell className="text-[var(--color-text-muted)]">{s.date}</TableCell>
                                                     <TableCell className="text-right text-[var(--color-text-primary)]">{formatKRW(s.fine_total)}</TableCell>
-                                                    <TableCell className="text-right text-amber-400">{s.milestone_total > 0 ? formatKRW(s.milestone_total) : "-"}</TableCell>
+                                                    <TableCell className="text-right text-amber-600">{s.milestone_total > 0 ? formatKRW(s.milestone_total) : "-"}</TableCell>
                                                     <TableCell className="text-right font-bold text-[var(--color-text-primary)]">{formatKRW(s.fine_total + s.milestone_total)}</TableCell>
                                                 </TableRow>
                                             ))
@@ -248,7 +248,7 @@ export default function Treasury() {
                                                 <TableRow key={m.member_id} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
                                                     <TableCell className="font-medium text-[var(--color-text-primary)]">{m.name}</TableCell>
                                                     <TableCell className="text-right text-[var(--color-text-primary)]">{formatKRW(m.fine_total)}</TableCell>
-                                                    <TableCell className="text-right text-amber-400">{m.milestone_total > 0 ? formatKRW(m.milestone_total) : "-"}</TableCell>
+                                                    <TableCell className="text-right text-amber-600">{m.milestone_total > 0 ? formatKRW(m.milestone_total) : "-"}</TableCell>
                                                     <TableCell className="text-right font-bold text-[var(--color-text-primary)]">{formatKRW(m.fine_total + m.milestone_total)}</TableCell>
                                                 </TableRow>
                                             ))
@@ -271,7 +271,7 @@ export default function Treasury() {
                                     <TableBody>
                                         {!data?.unpaid_milestones?.length ? (
                                             <TableRow>
-                                                <TableCell colSpan={5} className="text-center py-8 text-emerald-400">
+                                                <TableCell colSpan={5} className="text-center py-8 text-emerald-600">
                                                     미납 내역 없음
                                                 </TableCell>
                                             </TableRow>
@@ -280,13 +280,13 @@ export default function Treasury() {
                                                 <TableRow key={u.id} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
                                                     <TableCell className="font-medium text-[var(--color-text-primary)]">{u.member_name}</TableCell>
                                                     <TableCell className="text-[var(--color-text-muted)]">{u.session_title || "-"}</TableCell>
-                                                    <TableCell className="text-right text-rose-400 font-bold">{formatKRW(Math.abs(u.amount_krw))}</TableCell>
+                                                    <TableCell className="text-right text-rose-500 font-bold">{formatKRW(Math.abs(u.amount_krw))}</TableCell>
                                                     <TableCell className="text-[var(--color-text-primary)]">{u.description}</TableCell>
                                                     <TableCell className="text-center">
                                                         <button
                                                             onClick={() => togglePaid({ id: u.id, is_paid: true })}
                                                             disabled={isPending}
-                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors text-emerald-400 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors text-emerald-600 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20"
                                                         >
                                                             <Check className="w-3 h-3" />
                                                             납부 확인
@@ -324,14 +324,14 @@ export default function Treasury() {
                                                         {e.created_at ? new Date(e.created_at).toLocaleDateString("ko-KR") : "-"}
                                                     </TableCell>
                                                     <TableCell className="font-medium text-[var(--color-text-primary)]">{e.description}</TableCell>
-                                                    <TableCell className="text-right font-bold text-rose-400">{formatKRW(e.amount_krw)}</TableCell>
+                                                    <TableCell className="text-right font-bold text-rose-500">{formatKRW(e.amount_krw)}</TableCell>
                                                     <TableCell className="text-[var(--color-text-muted)]">{e.created_by || "-"}</TableCell>
                                                     <TableCell>
                                                         <AlertDialog>
                                                             <AlertDialogTrigger asChild>
                                                                 <button
                                                                     disabled={isDeletingExpense}
-                                                                    className="p-1 rounded hover:bg-rose-500/10 hover:text-rose-400 transition-colors text-[var(--color-text-muted)]"
+                                                                    className="p-1 rounded hover:bg-rose-500/10 hover:text-rose-500 transition-colors text-[var(--color-text-muted)]"
                                                                 >
                                                                     <Trash2 className="w-3.5 h-3.5" />
                                                                 </button>
@@ -389,15 +389,15 @@ export default function Treasury() {
                                                     <TableCell>
                                                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                                                             e.type === "FINE"
-                                                                ? "bg-blue-500/10 text-blue-400"
+                                                                ? "bg-blue-500/10 text-blue-600"
                                                                 : e.type === "DEPOSIT_FORFEIT"
-                                                                    ? "bg-yellow-500/10 text-yellow-400"
-                                                                    : "bg-amber-500/10 text-amber-400"
+                                                                    ? "bg-yellow-500/10 text-yellow-600"
+                                                                    : "bg-amber-500/10 text-amber-600"
                                                         }`}>
                                                             {e.type === "FINE" ? "벌금" : e.type === "DEPOSIT_FORFEIT" ? "이탈 몰수" : "누적벌점"}
                                                         </span>
                                                     </TableCell>
-                                                    <TableCell className="text-right font-bold text-rose-400">{formatKRW(Math.abs(e.amount_krw))}</TableCell>
+                                                    <TableCell className="text-right font-bold text-rose-500">{formatKRW(Math.abs(e.amount_krw))}</TableCell>
                                                     <TableCell className="text-[var(--color-text-primary)]">{e.description}</TableCell>
                                                     <TableCell className="text-[var(--color-text-muted)]">
                                                         {e.created_at ? new Date(e.created_at).toLocaleDateString("ko-KR") : "-"}
@@ -464,7 +464,7 @@ export default function Treasury() {
                         <button
                             onClick={handleAddFine}
                             disabled={!newFine.member_id || !newFine.amount || isCreating}
-                            className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 disabled:opacity-50 transition-colors"
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-600 border border-amber-500/30 hover:bg-amber-500/30 disabled:opacity-50 transition-colors"
                         >
                             {isCreating ? "처리 중..." : "추가"}
                         </button>
@@ -510,7 +510,7 @@ export default function Treasury() {
                         <button
                             onClick={handleAddExpense}
                             disabled={!newExpense.amount || !newExpense.description || isCreatingExpense}
-                            className="px-4 py-2 rounded-lg text-sm font-medium bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 disabled:opacity-50 transition-colors"
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-rose-500/20 text-rose-500 border border-rose-500/30 hover:bg-rose-500/30 disabled:opacity-50 transition-colors"
                         >
                             {isCreatingExpense ? "처리 중..." : "기록"}
                         </button>

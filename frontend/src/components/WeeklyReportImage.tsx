@@ -601,7 +601,7 @@ export function WeeklyReportButton() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline" className="text-violet-400 border-violet-500/20 hover:bg-violet-500/10">
+                <Button variant="outline" className="text-violet-600 border-violet-500/20 hover:bg-violet-500/10">
                     <Camera className="mr-2 h-4 w-4" /> 현황 이미지
                 </Button>
             </DialogTrigger>

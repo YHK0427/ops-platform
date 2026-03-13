@@ -15,70 +15,127 @@ interface RadarChartProps {
 }
 
 const DOMAIN_LABELS: Record<string, string> = {
-    PLANNING: "기획 (Planning)",
-    DESIGN: "디자인 (Design)",
-    SPEECH: "스피치 (Speech)",
+    PLANNING: "기획",
+    DESIGN: "디자인",
+    SPEECH: "스피치",
 };
+
+const DOMAIN_COLORS: Record<string, string> = {
+    기획: "#3b82f6",
+    디자인: "#10b981",
+    스피치: "#f59e0b",
+};
+
+const SELF_COLOR = "#6366f1";
+const AUD_COLOR = "#ec4899";
 
 export { RadarChart };
 export default function RadarChart({
     selfScores,
     audienceScores,
-    size = 300,
-    variant = "dark",
+    size = 320,
+    variant = "light",
 }: RadarChartProps) {
     const isLight = variant === "light";
 
     const chartData = (["PLANNING", "DESIGN", "SPEECH"] as const).map((domain) => ({
         domain: DOMAIN_LABELS[domain],
+        fullMark: 5,
         self: selfScores[domain],
         ...(audienceScores ? { audience: audienceScores[domain] } : {}),
     }));
 
+    // Custom label for each axis with domain-colored text and colored scores
+    const renderAxisTick = ({ x, y, payload }: { x: number; y: number; payload: { value: string } }) => {
+        const label = payload.value;
+        const color = DOMAIN_COLORS[label] ?? (isLight ? "#374151" : "#fff");
+        const entry = chartData.find((d) => d.domain === label);
+        const selfVal = entry?.self;
+        const audVal = entry && "audience" in entry ? (entry as { audience?: number }).audience : undefined;
+
+        const isTop = y < size / 2 - 20;
+        const yOff = isTop ? -4 : 4;
+
+        return (
+            <g transform={`translate(${x},${y + yOff})`}>
+                <text
+                    textAnchor="middle"
+                    fill={color}
+                    fontSize={14}
+                    fontWeight={700}
+                    dy={isTop ? -6 : 2}
+                >
+                    {label}
+                </text>
+                {/* Self score in self color, audience score in audience color */}
+                <text
+                    textAnchor="middle"
+                    fontSize={11}
+                    fontWeight={600}
+                    dy={isTop ? 10 : 18}
+                >
+                    <tspan fill={SELF_COLOR}>
+                        {selfVal != null ? selfVal.toFixed(1) : "-"}
+                    </tspan>
+                    {audVal != null && (
+                        <>
+                            <tspan fill={isLight ? "#9ca3af" : "rgba(255,255,255,0.4)"}> / </tspan>
+                            <tspan fill={AUD_COLOR}>{audVal.toFixed(1)}</tspan>
+                        </>
+                    )}
+                </text>
+            </g>
+        );
+    };
+
     return (
-        <div style={{ width: "100%", height: size }}>
+        <div style={{ width: "100%", height: size, margin: "-8px 0" }}>
             <ResponsiveContainer width="100%" height="100%">
-                <RechartsRadarChart data={chartData} cx="50%" cy="50%" outerRadius="70%">
+                <RechartsRadarChart data={chartData} cx="50%" cy="50%" outerRadius="72%">
+                    <defs>
+                        <linearGradient id="selfGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
+                            <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.08} />
+                        </linearGradient>
+                        <linearGradient id="audGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#ec4899" stopOpacity={0.35} />
+                            <stop offset="100%" stopColor="#f472b6" stopOpacity={0.05} />
+                        </linearGradient>
+                    </defs>
                     <PolarGrid
-                        stroke={isLight ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.15)"}
+                        stroke={isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.1)"}
                         gridType="polygon"
                     />
                     <PolarAngleAxis
                         dataKey="domain"
-                        tick={{
-                            fill: isLight ? "#374151" : "rgba(255,255,255,0.8)",
-                            fontSize: 12,
-                            fontWeight: 600,
-                        }}
+                        tick={renderAxisTick as never}
                     />
                     <PolarRadiusAxis
                         angle={90}
                         domain={[0, 5]}
                         tickCount={6}
                         tick={{
-                            fill: isLight ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.35)",
-                            fontSize: 10,
+                            fill: isLight ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.25)",
+                            fontSize: 9,
                         }}
                         axisLine={false}
                     />
                     <Radar
                         name="자기평가"
                         dataKey="self"
-                        stroke="#60a5fa"
-                        fill="#60a5fa"
-                        fillOpacity={isLight ? 0.15 : 0.25}
-                        strokeWidth={2}
-                        dot={{ r: 4, fill: "#60a5fa" }}
+                        stroke={SELF_COLOR}
+                        fill="url(#selfGrad)"
+                        strokeWidth={2.5}
+                        dot={{ r: 3, fill: SELF_COLOR }}
                     />
                     {audienceScores && (
                         <Radar
                             name="청중평가"
                             dataKey="audience"
-                            stroke="#f472b6"
-                            fill="#f472b6"
-                            fillOpacity={isLight ? 0.15 : 0.2}
-                            strokeWidth={2}
-                            dot={{ r: 4, fill: "#f472b6" }}
+                            stroke={AUD_COLOR}
+                            fill="url(#audGrad)"
+                            strokeWidth={2.5}
+                            dot={{ r: 3, fill: AUD_COLOR }}
                         />
                     )}
                 </RechartsRadarChart>

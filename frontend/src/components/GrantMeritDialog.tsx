@@ -150,7 +150,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                                     onClick={() => selectPreset(idx)}
                                     className={`px-2.5 py-1.5 text-xs rounded-lg border transition-colors ${
                                         activePreset === idx
-                                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
+                                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-600"
                                             : "bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-emerald-500/30"
                                     }`}
                                 >
@@ -165,7 +165,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                             점수
                         </Label>
                         <div className="col-span-3 relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400 font-medium text-sm">+</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-medium text-sm">+</span>
                             <Input
                                 id="score"
                                 type="number"
@@ -234,7 +234,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                         <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 px-4 py-3 text-sm">
                             <div className="flex justify-between">
                                 <span className="text-[var(--color-text-muted)]">{effectiveMembers.length}명 × +{score}점</span>
-                                <span className="text-emerald-400 font-medium">"{reason}"</span>
+                                <span className="text-emerald-600 font-medium">"{reason}"</span>
                             </div>
                         </div>
                     )}

@@ -102,9 +102,9 @@ const DOMAIN_LABELS: Record<string, string> = {
 };
 
 const DOMAIN_COLORS: Record<string, string> = {
-    PLANNING: "text-blue-400",
-    DESIGN: "text-emerald-400",
-    SPEECH: "text-amber-400",
+    PLANNING: "text-blue-600",
+    DESIGN: "text-emerald-600",
+    SPEECH: "text-amber-600",
 };
 
 // Group questions by domain
@@ -188,7 +188,7 @@ export default function EvalAudienceForm() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-black">
+            <div className="min-h-screen flex items-center justify-center bg-[var(--color-base)]">
                 <Loader2 className="w-8 h-8 animate-spin text-[var(--color-text-muted)]" />
             </div>
         );
@@ -196,7 +196,7 @@ export default function EvalAudienceForm() {
 
     if (!assignments?.length) {
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center bg-black p-6 text-center">
+            <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-base)] p-6 text-center">
                 <p className="text-[var(--color-text-muted)] mb-4">
                     배정된 청중 평가가 없습니다.
                 </p>
@@ -215,21 +215,21 @@ export default function EvalAudienceForm() {
     const submittedAll = assignments.every((a) => a.submitted);
 
     return (
-        <div className="min-h-screen bg-black">
+        <div className="min-h-screen bg-[var(--color-base)]">
             {/* Header */}
-            <header className="sticky top-0 z-20 bg-black/80 backdrop-blur-xl border-b border-[var(--color-border-subtle)]">
+            <header className="sticky top-0 z-20 bg-[var(--color-base)]/90 backdrop-blur-xl border-b border-[var(--color-border-subtle)]">
                 <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-[var(--color-text-muted)] hover:text-white"
+                            className="h-8 w-8 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                             onClick={() => navigate("/eval")}
                         >
                             <ArrowLeft className="w-5 h-5" />
                         </Button>
                         <div>
-                            <h1 className="text-sm font-bold text-white">청중 평가</h1>
+                            <h1 className="text-sm font-bold text-[var(--color-text-primary)]">청중 평가</h1>
                             <p className="text-[10px] text-[var(--color-text-muted)]">
                                 {round?.title ?? `라운드 #${roundId}`}
                             </p>
@@ -256,14 +256,14 @@ export default function EvalAudienceForm() {
                                     className={cn(
                                         "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors text-left",
                                         selectedMemberId === a.presenter_member_id
-                                            ? "bg-[var(--color-accent)]/15 text-white border border-[var(--color-accent)]/30"
-                                            : "text-[var(--color-text-secondary)] hover:bg-white/5 border border-transparent"
+                                            ? "bg-[var(--color-accent)]/15 text-[var(--color-text-primary)] border border-[var(--color-accent)]/30"
+                                            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] border border-transparent"
                                     )}
                                 >
                                     {a.submitted ? (
-                                        <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                                        <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
                                     ) : (
-                                        <Circle className="w-4 h-4 text-white/20 shrink-0" />
+                                        <Circle className="w-4 h-4 text-[var(--color-text-muted)] shrink-0" />
                                     )}
                                     <span className="truncate flex-1">
                                         {a.presenter_name ?? `멤버 #${a.presenter_member_id}`}
@@ -277,8 +277,8 @@ export default function EvalAudienceForm() {
 
                         {submittedAll && (
                             <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
-                                <CheckCircle2 className="w-5 h-5 text-green-400 mx-auto mb-1" />
-                                <p className="text-xs text-green-400 font-medium">모든 평가 완료</p>
+                                <CheckCircle2 className="w-5 h-5 text-green-600 mx-auto mb-1" />
+                                <p className="text-xs text-green-600 font-medium">모든 평가 완료</p>
                             </div>
                         )}
                     </div>
@@ -307,11 +307,11 @@ export default function EvalAudienceForm() {
                                 >
                                     {/* Member header */}
                                     <div className="flex items-center justify-between">
-                                        <h2 className="text-lg font-bold text-white">
+                                        <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
                                             {selectedAssignment?.presenter_name ?? ""}
                                         </h2>
                                         {selectedAssignment?.submitted && (
-                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-green-500/15 text-green-400 border border-green-500/30">
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-green-500/15 text-green-600 border border-green-500/30">
                                                 <CheckCircle2 className="w-3 h-3" />
                                                 제출완료
                                             </span>
@@ -321,7 +321,7 @@ export default function EvalAudienceForm() {
                                     {/* Previous submission banner */}
                                     {selectedAssignment?.submitted && Object.keys(scores).length > 0 && (
                                         <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
-                                            <p className="text-xs text-emerald-400">
+                                            <p className="text-xs text-emerald-600">
                                                 이전 제출 내역이 표시되어 있습니다. 수정 후 재제출할 수 있습니다.
                                             </p>
                                         </div>
@@ -333,7 +333,7 @@ export default function EvalAudienceForm() {
                                             <span>응답 진행</span>
                                             <span>{answeredCount}/{totalQuestions}</span>
                                         </div>
-                                        <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                                        <div className="h-1.5 rounded-full bg-[var(--color-hover)] overflow-hidden">
                                             <motion.div
                                                 className="h-full rounded-full bg-[var(--color-accent)]"
                                                 animate={{
@@ -373,10 +373,10 @@ export default function EvalAudienceForm() {
                                             {group.questions.map((q) => (
                                                 <div
                                                     key={q.key}
-                                                    className="rounded-xl border border-[var(--color-border)] bg-zinc-900/50 backdrop-blur-md p-4 space-y-3"
+                                                    className="rounded-xl border border-[var(--color-border)] bg-white backdrop-blur-md p-4 space-y-3"
                                                 >
                                                     <div className="flex items-start gap-2">
-                                                        <span className="text-[10px] font-semibold text-[var(--color-text-muted)] bg-white/5 px-1.5 py-0.5 rounded shrink-0">
+                                                        <span className="text-[10px] font-semibold text-[var(--color-text-muted)] bg-[var(--color-hover)] px-1.5 py-0.5 rounded shrink-0">
                                                             {q.label}
                                                         </span>
                                                         <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
@@ -401,7 +401,7 @@ export default function EvalAudienceForm() {
                                                 "w-full py-3 text-sm font-semibold rounded-xl transition-all",
                                                 allAnswered
                                                     ? "bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/80 text-white shadow-lg shadow-[var(--color-accent)]/20"
-                                                    : "bg-white/5 text-white/30 cursor-not-allowed"
+                                                    : "bg-[var(--color-hover)] text-[var(--color-text-muted)] cursor-not-allowed"
                                             )}
                                         >
                                             {submitEval.isPending ? (

@@ -120,7 +120,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
             <div className="flex justify-end">
                 <button
                     onClick={handleBatchPresent}
-                    className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-md text-sm font-bold hover:bg-rose-600 transition-colors flex items-center shadow-[0_0_15px_rgba(244,63,94,0.4)]"
+                    className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-md text-sm font-bold hover:bg-rose-600 transition-colors flex items-center shadow-md shadow-rose-100"
                 >
                     <CheckCircle2 className="w-4 h-4 mr-2" />
                     일괄 출석 처리
@@ -142,12 +142,12 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                         {teams.flatMap(team =>
                             team.members.map((member: any) => (
                                 <TableRow key={member.member_id}>
-                                    <TableCell className="font-medium text-gray-300">
+                                    <TableCell className="font-medium text-[var(--color-text-secondary)]">
                                         {team.name}
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-2">
-                                            <span className={member.is_active ? "text-white" : "text-gray-500"}>
+                                            <span className={member.is_active ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]"}>
                                                 {member.name}
                                             </span>
                                             {!member.is_active && <span className="text-[10px] bg-red-500/10 text-red-500 px-1 rounded">비활성</span>}
@@ -161,30 +161,32 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                                 disabled={updating[member.member_id]}
                                             >
                                                 <SelectTrigger
-                                                    className={`h-8 w-[160px] border-gray-600 bg-gray-800 ${(member.attendance?.status === "PRESENT") ? "text-green-400 font-bold" :
-                                                        (member.attendance?.status === "LATE_UNDER10") ? "text-yellow-400 font-bold" :
-                                                            (member.attendance?.status === "LATE_OVER10") ? "text-orange-400 font-bold" :
-                                                                (member.attendance?.status === "ABSENT") ? "text-red-400 font-bold" :
-                                                                    (member.attendance?.status === "EARLY_LEAVE") ? "text-purple-400 font-bold" :
-                                                                        (member.attendance?.status === "EXCUSED") ? "text-blue-400 font-bold" :
-                                                                            "text-gray-400"
-                                                        }`}
+                                                    className="h-8 w-[160px] border-[var(--color-border)] bg-white font-bold"
+                                                    style={{
+                                                        color: member.attendance?.status === "PRESENT" ? "#16a34a"
+                                                            : member.attendance?.status === "LATE_UNDER10" ? "#ca8a04"
+                                                            : member.attendance?.status === "LATE_OVER10" ? "#ea580c"
+                                                            : member.attendance?.status === "ABSENT" ? "#dc2626"
+                                                            : member.attendance?.status === "EARLY_LEAVE" ? "#9333ea"
+                                                            : member.attendance?.status === "EXCUSED" ? "#2563eb"
+                                                            : "#94A3B8"
+                                                    }}
                                                 >
                                                     <SelectValue />
                                                 </SelectTrigger>
-                                                <SelectContent className="bg-gray-800 text-white border-gray-700">
-                                                    <SelectItem value="PENDING">미처리</SelectItem>
-                                                    <SelectItem value="PRESENT">출석</SelectItem>
-                                                    <SelectItem value="LATE_UNDER10">지각 (10분 미만)</SelectItem>
-                                                    <SelectItem value="LATE_OVER10">지각 (10분 초과)</SelectItem>
-                                                    <SelectItem value="EARLY_LEAVE">조퇴</SelectItem>
-                                                    <SelectItem value="ABSENT">결석</SelectItem>
-                                                    <SelectItem value="EXCUSED">공결</SelectItem>
+                                                <SelectContent className="bg-white border-[var(--color-border)]">
+                                                    <SelectItem value="PENDING" className="text-gray-500">미처리</SelectItem>
+                                                    <SelectItem value="PRESENT" style={{ color: "#16a34a" }}>출석</SelectItem>
+                                                    <SelectItem value="LATE_UNDER10" style={{ color: "#ca8a04" }}>지각 (10분 미만)</SelectItem>
+                                                    <SelectItem value="LATE_OVER10" style={{ color: "#ea580c" }}>지각 (10분 초과)</SelectItem>
+                                                    <SelectItem value="EARLY_LEAVE" style={{ color: "#9333ea" }}>조퇴</SelectItem>
+                                                    <SelectItem value="ABSENT" style={{ color: "#dc2626" }}>결석</SelectItem>
+                                                    <SelectItem value="EXCUSED" style={{ color: "#2563eb" }}>공결</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                             {updating[member.member_id] && (
                                                 <div className="absolute right-8 top-2">
-                                                    <RefreshCw className="w-3 h-3 animate-spin text-gray-400" />
+                                                    <RefreshCw className="w-3 h-3 animate-spin text-[var(--color-text-muted)]" />
                                                 </div>
                                             )}
                                         </div>
@@ -197,10 +199,10 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                                 onValueChange={(val) => handleExcuseChange(member.member_id, val)}
                                                 disabled={updating[member.member_id]}
                                             >
-                                                <SelectTrigger className="h-8 w-[100px] text-xs text-white border-gray-600 bg-gray-800">
+                                                <SelectTrigger className="h-8 w-[100px] text-xs text-[var(--color-text-primary)] border-[var(--color-border)] bg-white">
                                                     <SelectValue placeholder="유형" />
                                                 </SelectTrigger>
-                                                <SelectContent className="bg-gray-800 text-white border-gray-700">
+                                                <SelectContent className="bg-white text-[var(--color-text-primary)] border-[var(--color-border)]">
                                                     <SelectItem value="NONE">-</SelectItem>
                                                     <SelectItem value="PRE">사전 통보</SelectItem>
                                                     <SelectItem value="POST">사후 제출</SelectItem>
@@ -211,7 +213,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                             {member.attendance?.excuse_text && (
                                                 <Popover>
                                                     <PopoverTrigger asChild>
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-400 hover:text-blue-300 hover:bg-blue-400/10">
+                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:text-blue-500 hover:bg-blue-400/10">
                                                             <FileText className="w-3.5 h-3.5" />
                                                         </Button>
                                                     </PopoverTrigger>
@@ -224,7 +226,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                     </TableCell>
                                     <TableCell>
                                         {(() => {
-                                            if (!assignments) return <span className="text-gray-600 text-xs">-</span>;
+                                            if (!assignments) return <span className="text-[var(--color-text-muted)] text-xs">-</span>;
 
                                             let pptAssignment: any = null;
                                             let isToggleable = true;
@@ -236,24 +238,24 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                                 pptAssignment = assignments.find((a: any) => a.type === "PPT_EMAIL" && a.member_id === member.member_id);
                                             }
 
-                                            if (!pptAssignment) return <span className="text-gray-600 text-xs">-</span>;
+                                            if (!pptAssignment) return <span className="text-[var(--color-text-muted)] text-xs">-</span>;
 
                                             const pptKey = `ppt_${pptAssignment.id}`;
                                             const isUpdating = updating[pptKey];
                                             const currentStatus = pptAssignment.status;
 
                                             const buttons = [
-                                                { value: "PASS", label: "제출", color: "text-green-400 border-green-500/40 bg-green-500/10", activeColor: "bg-green-500/30 border-green-400 text-green-300 ring-1 ring-green-400/30" },
-                                                { value: "LATE", label: "지각", color: "text-orange-400 border-orange-500/40 bg-orange-500/10", activeColor: "bg-orange-500/30 border-orange-400 text-orange-300 ring-1 ring-orange-400/30" },
-                                                { value: "MISSING", label: "미제출", color: "text-red-400 border-red-500/40 bg-red-500/10", activeColor: "bg-red-500/30 border-red-400 text-red-300 ring-1 ring-red-400/30" },
-                                                { value: "EXEMPT", label: "면제", color: "text-blue-400 border-blue-500/40 bg-blue-500/10", activeColor: "bg-blue-500/30 border-blue-400 text-blue-300 ring-1 ring-blue-400/30" },
+                                                { value: "PASS", label: "제출", color: "text-green-600 border-green-500/40 bg-green-500/10", activeColor: "bg-green-500/30 border-green-500 text-green-700 ring-1 ring-green-400/30" },
+                                                { value: "LATE", label: "지각", color: "text-orange-600 border-orange-500/40 bg-orange-500/10", activeColor: "bg-orange-500/30 border-orange-500 text-orange-700 ring-1 ring-orange-400/30" },
+                                                { value: "MISSING", label: "미제출", color: "text-red-500 border-red-500/40 bg-red-500/10", activeColor: "bg-red-500/30 border-red-500 text-red-700 ring-1 ring-red-400/30" },
+                                                { value: "EXEMPT", label: "면제", color: "text-blue-600 border-blue-500/40 bg-blue-500/10", activeColor: "bg-blue-500/30 border-blue-500 text-blue-700 ring-1 ring-blue-400/30" },
                                             ];
 
                                             if (!isToggleable) {
                                                 const active = buttons.find(b => b.value === currentStatus);
-                                                if (currentStatus === "PENDING") return <span className="text-gray-500 text-[10px]">미검사</span>;
+                                                if (currentStatus === "PENDING") return <span className="text-[var(--color-text-muted)] text-[10px]">미검사</span>;
                                                 return (
-                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${active?.activeColor || "text-gray-400"}`}>
+                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${active?.activeColor || "text-[var(--color-text-muted)]"}`}>
                                                         {active?.label || currentStatus}
                                                     </span>
                                                 );

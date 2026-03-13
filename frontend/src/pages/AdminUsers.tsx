@@ -32,19 +32,19 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<string, string> = {
-    admin: "bg-rose-500/15 text-rose-400 border-rose-500/30",
-    manager: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-    viewer: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+    admin: "bg-rose-500/15 text-rose-600 border-rose-500/30",
+    manager: "bg-blue-500/15 text-blue-600 border-blue-500/30",
+    viewer: "bg-zinc-500/15 text-zinc-600 border-zinc-500/30",
 };
 
 const DEPARTMENTS = ["회장단", "인홍부", "학술부", "기획부", "총무부"] as const;
 
 const DEPT_COLORS: Record<string, string> = {
-    "회장단": "bg-rose-500/10 text-rose-400 border-rose-500/20",
-    "인홍부": "bg-purple-500/10 text-purple-400 border-purple-500/20",
-    "학술부": "bg-blue-500/10 text-blue-400 border-blue-500/20",
-    "기획부": "bg-green-500/10 text-green-400 border-green-500/20",
-    "총무부": "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    "회장단": "bg-rose-500/10 text-rose-600 border-rose-500/20",
+    "인홍부": "bg-purple-500/10 text-purple-600 border-purple-500/20",
+    "학술부": "bg-blue-500/10 text-blue-600 border-blue-500/20",
+    "기획부": "bg-green-500/10 text-green-600 border-green-500/20",
+    "총무부": "bg-amber-500/10 text-amber-600 border-amber-500/20",
 };
 
 // ── Create User Dialog ──────────────────────────────────────────────────────
@@ -289,11 +289,11 @@ function TotpSetupDialog() {
                 ) : totpEnabled && step !== "qr" ? (
                     <div className="space-y-4 py-4">
                         <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                            <ShieldCheck className="w-5 h-5 text-green-400" />
-                            <span className="text-sm text-green-400">2FA 활성화됨</span>
+                            <ShieldCheck className="w-5 h-5 text-green-600" />
+                            <span className="text-sm text-green-600">2FA 활성화됨</span>
                         </div>
                         <DialogFooter>
-                            <Button variant="outline" onClick={handleDisable} disabled={loading} className="text-rose-400 hover:text-rose-300">
+                            <Button variant="outline" onClick={handleDisable} disabled={loading} className="text-rose-500 hover:text-rose-600">
                                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                                 <ShieldOff className="w-4 h-4 mr-2" />2FA 해제
                             </Button>
@@ -345,8 +345,8 @@ function TotpSetupDialog() {
                 ) : (
                     <div className="space-y-4 py-4">
                         <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                            <ShieldCheck className="w-5 h-5 text-green-400" />
-                            <span className="text-sm text-green-400">2FA가 성공적으로 활성화되었습니다.</span>
+                            <ShieldCheck className="w-5 h-5 text-green-600" />
+                            <span className="text-sm text-green-600">2FA가 성공적으로 활성화되었습니다.</span>
                         </div>
                         <DialogFooter>
                             <Button onClick={() => setOpen(false)}>완료</Button>
@@ -380,7 +380,7 @@ function SemesterResetButton() {
     return (
         <AlertDialog>
             <AlertDialogTrigger asChild>
-                <Button variant="outline" className="text-rose-400 border-rose-500/30 hover:bg-rose-500/10">
+                <Button variant="outline" className="text-rose-600 border-rose-500/30 hover:bg-rose-500/10">
                     <RotateCcw className="w-4 h-4 mr-2" />
                     기수 초기화
                 </Button>
@@ -391,7 +391,7 @@ function SemesterResetButton() {
                     <AlertDialogDescription className="space-y-2">
                         <span className="block">모든 세션, 장부, 출석, 과제 기록이 삭제됩니다.</span>
                         <span className="block">멤버 명단은 유지되며 디파짓이 2만원으로 초기화됩니다.</span>
-                        <span className="block font-bold text-rose-400">이 작업은 되돌릴 수 없습니다.</span>
+                        <span className="block font-bold text-rose-600">이 작업은 되돌릴 수 없습니다.</span>
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -472,7 +472,7 @@ function GenerationTab() {
                     {accountCount > 0 && (
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
-                                <Button variant="outline" className="text-rose-400 border-rose-500/30 hover:bg-rose-500/10" disabled={isDeleting}>
+                                <Button variant="outline" className="text-rose-600 border-rose-500/30 hover:bg-rose-500/10" disabled={isDeleting}>
                                     {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                                     <Trash2 className="w-4 h-4 mr-2" />
                                     일괄 삭제
@@ -483,7 +483,7 @@ function GenerationTab() {
                                     <AlertDialogTitle>기수 계정 일괄 삭제</AlertDialogTitle>
                                     <AlertDialogDescription className="space-y-2">
                                         <span className="block">기수 계정 {accountCount}개를 모두 삭제합니다.</span>
-                                        <span className="block font-bold text-rose-400">이 작업은 되돌릴 수 없습니다.</span>
+                                        <span className="block font-bold text-rose-600">이 작업은 되돌릴 수 없습니다.</span>
                                     </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
@@ -556,7 +556,7 @@ function GenerationTab() {
                                     </TableCell>
                                     <TableCell>
                                         {m.account ? (
-                                            <Check className="w-4 h-4 text-green-400" />
+                                            <Check className="w-4 h-4 text-green-600" />
                                         ) : (
                                             <X className="w-4 h-4 text-[var(--color-text-muted)]" />
                                         )}
@@ -587,7 +587,7 @@ function GenerationTab() {
                                                 </AlertDialog>
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild>
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-400 hover:text-rose-300" title="계정 삭제">
+                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-500 hover:text-rose-600" title="계정 삭제">
                                                             <Trash2 className="w-3.5 h-3.5" />
                                                         </Button>
                                                     </AlertDialogTrigger>
@@ -710,7 +710,7 @@ export default function AdminUsers() {
                                             </TableCell>
                                             <TableCell>
                                                 {u.department ? (
-                                                    <Badge variant="outline" className={DEPT_COLORS[u.department] ?? "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"}>
+                                                    <Badge variant="outline" className={DEPT_COLORS[u.department] ?? "bg-zinc-500/10 text-zinc-600 border-zinc-500/20"}>
                                                         {u.department}
                                                     </Badge>
                                                 ) : (
@@ -719,14 +719,14 @@ export default function AdminUsers() {
                                             </TableCell>
                                             <TableCell>
                                                 {u.has_totp ? (
-                                                    <ShieldCheck className="w-4 h-4 text-green-400" />
+                                                    <ShieldCheck className="w-4 h-4 text-green-600" />
                                                 ) : (
                                                     <span className="text-[var(--color-text-muted)]">-</span>
                                                 )}
                                             </TableCell>
                                             <TableCell>
                                                 {u.is_active ? (
-                                                    <span className="text-green-400 text-xs">활성</span>
+                                                    <span className="text-green-600 text-xs">활성</span>
                                                 ) : (
                                                     <span className="text-[var(--color-text-muted)] text-xs">비활성</span>
                                                 )}
@@ -746,7 +746,7 @@ export default function AdminUsers() {
                                                     />
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-400 hover:text-rose-300">
+                                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-500 hover:text-rose-600">
                                                                 <Trash2 className="w-3.5 h-3.5" />
                                                             </Button>
                                                         </AlertDialogTrigger>

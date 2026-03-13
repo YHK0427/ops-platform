@@ -245,10 +245,12 @@ function Section({ title, icon, children, delay = 0 }: {
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay, duration: 0.4, ease: "easeOut" }}
-            className="rounded-xl bg-white border border-gray-200 p-4 sm:p-5 shadow-sm"
+            className="rounded-2xl bg-white border border-gray-100 p-5 sm:p-6 shadow-sm"
         >
-            <div className="flex items-center gap-2 mb-4">
-                {icon}
+            <div className="flex items-center gap-2.5 mb-5">
+                <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center">
+                    {icon}
+                </div>
                 <h3 className="text-sm font-bold text-gray-900">{title}</h3>
             </div>
             {children}
@@ -377,34 +379,30 @@ export default function MemberResult() {
                 className="mx-auto w-full max-w-2xl px-4 py-6 space-y-5"
             >
                 {/* ─── Title Card ─── */}
-                <div className="rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 p-5 text-white shadow-lg shadow-rose-500/20">
-                    <div className="flex items-start justify-between">
-                        <div>
-                            <p className="text-[11px] font-medium text-rose-200 uppercase tracking-wider">
-                                University Presentation
-                            </p>
-                            <h2 className="text-lg font-extrabold mt-1">
-                                33기 기수 성장 리포트
-                            </h2>
-                            <p className="text-sm text-rose-100 mt-1">
-                                {data.member_name} 님의 발표 역량 분석입니다.
-                            </p>
+                <div className="rounded-2xl bg-gradient-to-br from-rose-500 via-rose-500 to-pink-600 p-6 text-white shadow-xl shadow-rose-500/25 relative overflow-hidden">
+                    {/* Decorative circles */}
+                    <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/10" />
+                    <div className="absolute -bottom-4 -left-4 w-20 h-20 rounded-full bg-white/5" />
+
+                    <div className="relative">
+                        <p className="text-[11px] font-semibold text-rose-200 tracking-widest mb-2">
+                            UnivPT 성장 리포트
+                        </p>
+                        <h2 className="text-xl font-extrabold leading-tight">
+                            {data.member_name}님의<br />발표 역량 분석
+                        </h2>
+                        <div className="flex items-center gap-2 mt-4">
+                            {data.stage && (
+                                <span className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-xs font-bold">
+                                    {data.stage}
+                                </span>
+                            )}
+                            {data.type && (
+                                <span className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-xs font-bold">
+                                    {data.type}
+                                </span>
+                            )}
                         </div>
-                        <span className="px-3 py-1 rounded-lg bg-white/20 text-xs font-bold shrink-0">
-                            초기 분석지
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-3">
-                        {data.stage && (
-                            <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-xs font-semibold">
-                                {data.stage}
-                            </span>
-                        )}
-                        {data.type && (
-                            <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-xs font-semibold">
-                                {data.type}
-                            </span>
-                        )}
                     </div>
                 </div>
 
@@ -417,45 +415,55 @@ export default function MemberResult() {
                     <RadarChart
                         selfScores={selfScores}
                         audienceScores={audienceScores}
+                        size={460}
                         variant="light"
                     />
-                    <div className="flex items-center justify-center gap-6 mt-3">
+                    {/* Legend */}
+                    <div className="flex items-center justify-center gap-6 -mt-2 mb-4">
                         <div className="flex items-center gap-1.5">
-                            <div className="w-2.5 h-2.5 rounded-full bg-blue-400" />
-                            <span className="text-xs text-gray-500">자기 평가</span>
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#6366f1" }} />
+                            <span className="text-xs text-gray-500">자기평가</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                            <div className="w-2.5 h-2.5 rounded-full bg-pink-400" />
-                            <span className="text-xs text-gray-500">청중 평가</span>
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#ec4899" }} />
+                            <span className="text-xs text-gray-500">청중평가</span>
                         </div>
                     </div>
 
                     {/* Score table */}
-                    <div className="mt-4 rounded-lg border border-gray-100 overflow-hidden">
+                    <div className="overflow-hidden rounded-xl border border-gray-200">
                         <table className="w-full text-sm">
                             <thead>
-                                <tr className="bg-gray-50">
-                                    <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2">영역</th>
-                                    <th className="text-center text-xs font-semibold text-blue-500 px-2 py-2">자기</th>
-                                    <th className="text-center text-xs font-semibold text-pink-500 px-2 py-2">청중</th>
-                                    <th className="text-center text-xs font-semibold text-gray-700 px-2 py-2">종합</th>
+                                <tr className="bg-gray-50 text-gray-500">
+                                    <th className="py-2.5 px-3 text-left font-semibold text-xs">영역</th>
+                                    <th className="py-2.5 px-3 text-center font-semibold text-xs">자기</th>
+                                    <th className="py-2.5 px-3 text-center font-semibold text-xs">청중</th>
+                                    <th className="py-2.5 px-3 text-center font-semibold text-xs">종합</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {DOMAINS.map((domain) => (
-                                    <tr key={domain} className="border-t border-gray-100">
-                                        <td className="text-gray-900 font-semibold px-3 py-2.5">{DOMAIN_LABELS[domain]}</td>
-                                        <td className="text-center text-blue-600 font-medium tabular-nums px-2 py-2.5">
-                                            {data.self_scores_by_domain[domain] != null ? Number(data.self_scores_by_domain[domain]).toFixed(1) : "-"}
-                                        </td>
-                                        <td className="text-center text-pink-600 font-medium tabular-nums px-2 py-2.5">
-                                            {data.audience_scores_by_domain[domain] != null ? Number(data.audience_scores_by_domain[domain]).toFixed(1) : "-"}
-                                        </td>
-                                        <td className="text-center text-gray-900 font-bold tabular-nums px-2 py-2.5">
-                                            {data.combined_scores_by_domain[domain] != null ? Number(data.combined_scores_by_domain[domain]).toFixed(1) : "-"}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {DOMAINS.map((domain) => {
+                                    const selfVal = data.self_scores_by_domain[domain];
+                                    const audVal = data.audience_scores_by_domain[domain];
+                                    const combVal = data.combined_scores_by_domain[domain];
+                                    const colors = DOMAIN_COLORS[domain];
+                                    return (
+                                        <tr key={domain} className="border-t border-gray-100">
+                                            <td className={`py-2.5 px-3 font-bold ${colors.text}`}>
+                                                {DOMAIN_LABELS[domain]}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center tabular-nums text-gray-700 font-medium">
+                                                {selfVal != null ? Number(selfVal).toFixed(1) : "-"}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center tabular-nums text-gray-700 font-medium">
+                                                {audVal != null ? Number(audVal).toFixed(1) : "-"}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center tabular-nums text-gray-900 font-extrabold">
+                                                {combVal != null ? combVal.toFixed(1) : "-"}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -492,26 +500,26 @@ export default function MemberResult() {
                     </div>
 
                     {/* Active type details */}
-                    <div className="rounded-lg bg-gray-50 p-4">
-                        <p className="text-sm font-bold text-gray-900 mb-1">
+                    <div className="rounded-xl bg-gradient-to-br from-gray-50 to-white border border-gray-100 p-4">
+                        <p className="text-sm font-bold text-gray-900 mb-2">
                             {data.type ?? "분석 중"}
                             {data.type === "강점 집중형" && (
-                                <span className="text-rose-500 ml-1">
+                                <span className="text-blue-600 ml-1">
                                     — {getStrongestDomain(data.combined_scores_by_domain)} 강점
                                 </span>
                             )}
                             {data.type === "성장 가능성형" && (
-                                <span className="text-amber-500 ml-1">
+                                <span className="text-amber-600 ml-1">
                                     — {getWeakestDomain(data.combined_scores_by_domain)} 보완 필요
                                 </span>
                             )}
                         </p>
-                        <p className="text-xs text-gray-600 leading-relaxed mb-2">
+                        <p className="text-xs text-gray-600 leading-relaxed mb-3">
                             {typeInfo.detail}
                         </p>
-                        <div className="flex items-start gap-2 mt-2 p-2.5 rounded-md bg-white border border-gray-200">
-                            <TrendingUp className="w-3.5 h-3.5 text-rose-400 mt-0.5 shrink-0" />
-                            <p className="text-xs text-gray-600 leading-relaxed">
+                        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-50/50 border border-rose-100">
+                            <TrendingUp className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+                            <p className="text-xs text-gray-700 leading-relaxed font-medium">
                                 {typeInfo.action}
                             </p>
                         </div>
@@ -524,6 +532,22 @@ export default function MemberResult() {
                     icon={<BarChart3 className="w-4 h-4 text-rose-500" />}
                     delay={0.15}
                 >
+                    {/* Stage progress overview */}
+                    <div className="flex items-center gap-1 mb-4 px-1">
+                        {Object.values(STAGES).map((s, i) => (
+                            <div key={s.label} className="flex-1 flex flex-col items-center gap-1">
+                                <div className={`w-full h-1.5 rounded-full ${s.bgColor} ${
+                                    data.stage === s.label ? "ring-2 ring-offset-1 ring-rose-300" : "opacity-50"
+                                }`} />
+                                <span className={`text-[9px] font-semibold ${
+                                    data.stage === s.label ? s.color : "text-gray-300"
+                                }`}>
+                                    {s.label}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+
                     <div className="space-y-3">
                         {DOMAINS.map((domain) => {
                             const score = data.combined_scores_by_domain[domain];
@@ -533,24 +557,23 @@ export default function MemberResult() {
                             const colors = DOMAIN_COLORS[domain];
 
                             return (
-                                <div key={domain} className={`rounded-lg border ${colors.border} p-3`}>
+                                <div key={domain} className={`rounded-xl border ${colors.border} ${colors.bg} p-3.5`}>
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="flex items-center gap-2">
                                             <span className={`text-sm font-bold ${colors.text}`}>
                                                 {DOMAIN_LABELS[domain]}
                                             </span>
                                             {stageInfo && (
-                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${stageInfo.bgColor} ${stageInfo.color}`}>
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${stageInfo.bgColor} ${stageInfo.color} border border-current/10`}>
                                                     {stageInfo.label}
                                                 </span>
                                             )}
                                         </div>
-                                        <span className="text-sm font-bold text-gray-700 tabular-nums">
+                                        <span className="text-base font-extrabold text-gray-900 tabular-nums">
                                             {score != null ? score.toFixed(1) : "-"}
                                         </span>
                                     </div>
-                                    {/* Progress bar */}
-                                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
+                                    <div className="h-2 bg-white/80 rounded-full overflow-hidden mb-2.5">
                                         <motion.div
                                             className="h-full rounded-full"
                                             style={{ backgroundColor: colors.bar }}
@@ -560,23 +583,13 @@ export default function MemberResult() {
                                         />
                                     </div>
                                     {stageInfo && (
-                                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                                        <p className="text-[11px] text-gray-600 leading-relaxed">
                                             {stageInfo.description}
                                         </p>
                                     )}
                                 </div>
                             );
                         })}
-                    </div>
-
-                    {/* Stage legend */}
-                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {Object.values(STAGES).map((s) => (
-                            <div key={s.label} className={`px-2 py-1.5 rounded-md ${s.bgColor} text-center`}>
-                                <p className={`text-[10px] font-bold ${s.color}`}>{s.label}</p>
-                                <p className="text-[9px] text-gray-400">{s.range}</p>
-                            </div>
-                        ))}
                     </div>
                 </Section>
 
@@ -645,15 +658,14 @@ export default function MemberResult() {
 
                     {/* Perception type */}
                     {perceptionType && (
-                        <div className="rounded-lg bg-gray-50 p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                                {/* Type selector */}
+                        <div className="rounded-xl bg-gradient-to-br from-gray-50 to-white border border-gray-100 p-4">
+                            <div className="flex items-center gap-1.5 mb-3">
                                 {["과소평가형", "객관형", "과대평가형"].map((t) => {
                                     const isActive = perceptionType.label === t;
                                     return (
                                         <span
                                             key={t}
-                                            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                                            className={`flex-1 text-center px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
                                                 isActive
                                                     ? "bg-white shadow-sm border border-gray-200 text-gray-900"
                                                     : "text-gray-300"
@@ -664,7 +676,7 @@ export default function MemberResult() {
                                     );
                                 })}
                             </div>
-                            <p className={`text-sm font-bold mb-1 ${perceptionType.color}`}>
+                            <p className={`text-sm font-bold mb-1.5 ${perceptionType.color}`}>
                                 {perceptionType.label}
                             </p>
                             <p className="text-xs text-gray-600 leading-relaxed">
@@ -684,17 +696,23 @@ export default function MemberResult() {
                         {DOMAINS.map((domain) => {
                             const score = data.combined_scores_by_domain[domain];
                             const plan = getGrowthPlan(domain, score);
+                            const colors = DOMAIN_COLORS[domain];
 
                             return (
-                                <div key={domain} className="flex items-start gap-3">
-                                    <span className={`shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-bold text-white ${
-                                        domain === "PLANNING" ? "bg-blue-500"
-                                        : domain === "DESIGN" ? "bg-emerald-500"
-                                        : "bg-amber-500"
-                                    }`}>
-                                        {DOMAIN_LABELS[domain]}
-                                    </span>
-                                    <p className="text-xs text-gray-600 leading-relaxed pt-0.5">
+                                <div key={domain} className={`rounded-xl border ${colors.border} ${colors.bg} p-3.5`}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold text-white ${
+                                            domain === "PLANNING" ? "bg-blue-500"
+                                            : domain === "DESIGN" ? "bg-emerald-500"
+                                            : "bg-amber-500"
+                                        }`}>
+                                            {DOMAIN_LABELS[domain]}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400 font-medium">
+                                            {getDomainStage(score)}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-gray-700 leading-relaxed">
                                         {plan}
                                     </p>
                                 </div>
@@ -705,7 +723,7 @@ export default function MemberResult() {
 
                 {/* ─── Footer ─── */}
                 <p className="text-center text-[11px] text-gray-300 py-4">
-                    Bloom UP, 당신의 가능성을 꽃피우기 위해
+                    당신의 가능성을 꽃피우기 위해 — UnivPT
                 </p>
             </motion.main>
         </div>

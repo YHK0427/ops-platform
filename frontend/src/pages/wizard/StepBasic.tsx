@@ -97,7 +97,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    className="rounded border-gray-600 bg-gray-800 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                    className="rounded border-[var(--color-border)] bg-white text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
                                     checked={state.has_ppt_email}
                                     onChange={(e) => onChange({ has_ppt_email: e.target.checked })}
                                 />
@@ -106,7 +106,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    className="rounded border-gray-600 bg-gray-800 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                    className="rounded border-[var(--color-border)] bg-white text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
                                     checked={state.has_ppt}
                                     onChange={(e) => onChange({ has_ppt: e.target.checked })}
                                 />
@@ -115,7 +115,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    className="rounded border-gray-600 bg-gray-800 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                    className="rounded border-[var(--color-border)] bg-white text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
                                     checked={state.has_review}
                                     onChange={(e) => onChange({ has_review: e.target.checked })}
                                 />
@@ -124,7 +124,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    className="rounded border-gray-600 bg-gray-800 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                    className="rounded border-[var(--color-border)] bg-white text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
                                     checked={state.has_feedback}
                                     onChange={(e) => onChange({ has_feedback: e.target.checked })}
                                 />
@@ -133,11 +133,11 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    className="rounded border-gray-600 bg-gray-800 text-red-500 focus:ring-red-500"
+                                    className="rounded border-[var(--color-border)] bg-white text-red-500 focus:ring-red-500"
                                     checked={state.is_holiday}
                                     onChange={(e) => onChange({ is_holiday: e.target.checked })}
                                 />
-                                <span className="text-sm text-red-400">휴일 (벌점 면제)</span>
+                                <span className="text-sm text-red-500">휴일 (벌점 면제)</span>
                             </label>
                         </div>
                     </div>
