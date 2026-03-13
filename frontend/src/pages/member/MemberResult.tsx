@@ -534,7 +534,7 @@ export default function MemberResult() {
                 >
                     {/* Stage progress overview */}
                     <div className="flex items-center gap-1 mb-4 px-1">
-                        {Object.values(STAGES).map((s, i) => (
+                        {Object.values(STAGES).map((s) => (
                             <div key={s.label} className="flex-1 flex flex-col items-center gap-1">
                                 <div className={`w-full h-1.5 rounded-full ${s.bgColor} ${
                                     data.stage === s.label ? "ring-2 ring-offset-1 ring-rose-300" : "opacity-50"
