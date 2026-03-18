@@ -73,35 +73,35 @@ const STAGE_COLORS: Record<string, string> = {
 
 const STAGE_INFO: Record<string, { range: string; description: string }> = {
     "구조 형성": {
-        range: "0 ~ 2.5",
+        range: "1.0 ~ 1.5",
         description: "현재는 발표의 기본 구조를 만드는 단계입니다. 한 영역에 집중해서 정비하면 전체 완성도가 빠르게 올라갈 수 있습니다.",
     },
     "안정화": {
-        range: "2.6 ~ 3.5",
+        range: "1.6 ~ 3.0",
         description: "발표의 기본 구조는 갖춰진 상태입니다. 이제는 전달의 선명도와 흐름을 다듬는 단계입니다.",
     },
     "정교화": {
-        range: "3.6 ~ 4.2",
+        range: "3.1 ~ 4.5",
         description: "발표가 충분히 안정된 수준입니다. 이제는 디테일과 정교함을 다듬는 단계입니다.",
     },
     "전달 최적화": {
-        range: "4.3 ~ 5.0",
+        range: "4.6 ~ 5.0",
         description: "높은 완성도를 갖춘 발표입니다. 이제는 '잘하는 발표'가 아니라 '영향을 남기는 발표'를 설계하는 단계입니다.",
     },
 };
 
 const TYPE_DESCRIPTIONS: Record<string, { detail: string; action: string }> = {
     "균형형": {
-        detail: "세 영역이 고르게 분포되어 있습니다. 큰 약점 없이 안정적인 발표를 하는 유형입니다. 강점 하나를 의도적으로 더 키워 자신만의 대표 이미지를 만들 수 있습니다.",
-        action: "가장 반응이 좋았던 요소 1가지를 선정하여 다음 발표에서 의도적으로 강조해보세요.",
+        detail: "세 영역의 점수가 고르게 분포되어 정삼각형에 가까운 형태를 띠고 있습니다. 어떤 주제든 기복 없이 안정적인 발표를 할 수 있음을 의미합니다.",
+        action: "삼각형의 크기가 큰 경우 자신 있는 부분을 필살기로 키우고, 작다면 세 영역을 동시에 한 단계씩 끌어올려 보세요.",
     },
     "강점 집중형": {
-        detail: "특정 영역이 두드러지게 높습니다. 강점을 유지하면서 나머지 영역도 함께 끌어올리면 전체 완성도가 크게 높아질 수 있습니다.",
-        action: "강점 영역의 노하우를 다른 영역에도 적용해보세요.",
+        detail: "세 영역 중 한 개의 꼭짓점이 다른 영역에 비해 뻗어 나간 비대칭적인 형태입니다. 특정 영역에서 두드러지는 잠재력이 나타나고 있습니다.",
+        action: "강점 영역을 더 발전시키면서 점수가 가장 낮은 영역의 기초 역량을 함께 보완해보세요.",
     },
-    "성장 가능성형": {
-        detail: "특정 영역에서 성장 여지가 큽니다. 약한 영역을 집중적으로 보완하면 전체 발표 완성도가 빠르게 향상될 수 있는 유형입니다.",
-        action: "약점 영역의 기본기부터 점검하세요. 작은 개선이 전체 인상을 크게 바꿀 수 있습니다.",
+    "보완점 명확형": {
+        detail: "세 영역 중 특정 영역의 점수가 상대적으로 낮은 형태입니다. 집중적으로 보완해야 할 성장 방향이 명확하게 드러나 있는 긍정적인 신호입니다.",
+        action: "균형을 깨고 있는 영역을 중심으로 보완하면 발표의 완성도가 빠르게 높아질 수 있습니다.",
     },
 };
 
@@ -127,9 +127,9 @@ const GROWTH_PLANS: Record<string, { low: string; mid: string; high: string }> =
 
 function getDomainStage(score: number | null): string {
     if (score == null) return "데이터 부족";
-    if (score <= 2.5) return "구조 형성";
-    if (score <= 3.5) return "안정화";
-    if (score <= 4.2) return "정교화";
+    if (score <= 1.5) return "구조 형성";
+    if (score <= 3.0) return "안정화";
+    if (score <= 4.5) return "정교화";
     return "전달 최적화";
 }
 
@@ -137,16 +137,16 @@ function getGrowthPlan(domain: string, score: number | null): string {
     if (score == null) return "데이터 부족";
     const plans = GROWTH_PLANS[domain];
     if (!plans) return "";
-    if (score <= 2.5) return plans.low;
-    if (score <= 3.5) return plans.mid;
+    if (score <= 1.5) return plans.low;
+    if (score <= 3.0) return plans.mid;
     return plans.high;
 }
 
 function getPerceptionType(selfAvg: number, audienceAvg: number) {
     const diff = selfAvg - audienceAvg;
-    if (diff > 0.5) return { label: "과대평가형", color: "text-rose-500", description: "의도는 분명했으나 전달이 기대만큼 닿지 않았을 수 있음. '내가 한 것'보다 '상대가 받은 것' 기준으로 점검 필요." };
-    if (diff < -0.5) return { label: "과소평가형", color: "text-blue-600", description: "본인은 부족하다고 느끼지만 외부 평가는 긍정적. 현재 수준을 객관적으로 신뢰하고, 잘된 요소를 다음에도 재현할 것." };
-    return { label: "객관형", color: "text-emerald-600", description: "자기 인식과 외부 인식이 잘 맞는 상태. 강점과 약점을 정확히 파악하고 있어 효율적인 성장이 가능." };
+    if (diff > 0.5) return { label: "[B유형] 자기>청중", color: "text-rose-500", description: "의도는 분명했으나 전달이 기대만큼 닿지 않았을 수 있음. '내가 한 것'보다 '상대가 받은 것' 기준으로 점검 필요." };
+    if (diff < -0.5) return { label: "[A유형] 자기<청중", color: "text-blue-600", description: "본인은 부족하다고 느끼지만 외부 평가는 긍정적. 현재 수준을 객관적으로 신뢰하고, 잘된 요소를 다음에도 재현할 것." };
+    return { label: "[C유형] 자기=청중", color: "text-emerald-600", description: "자기 인식과 외부 인식이 잘 맞는 상태. 강점과 약점을 정확히 파악하고 있어 효율적인 성장이 가능." };
 }
 
 function avgScores(scores: Record<string, number | null>): number {
@@ -313,7 +313,7 @@ export default function EvalResultCard({
                                         <div className="flex items-center gap-2 mb-3">
                                             <Target className="w-4 h-4 text-[var(--color-accent)]" />
                                             <h4 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
-                                                나의 발표 유형
+                                                발표 유형 해석
                                             </h4>
                                         </div>
                                         <div className="flex items-start gap-3">
@@ -330,7 +330,7 @@ export default function EvalResultCard({
                                                             {getStrongestDomain(detail.combined_scores_by_domain)} 강점 —{" "}
                                                         </span>
                                                     )}
-                                                    {type === "성장 가능성형" && (
+                                                    {type === "보완점 명확형" && (
                                                         <span className="text-amber-600 font-medium">
                                                             {getWeakestDomain(detail.combined_scores_by_domain)} 보완 —{" "}
                                                         </span>
@@ -411,7 +411,7 @@ export default function EvalResultCard({
                                         <div className="flex items-center gap-2 mb-4">
                                             <Users className="w-4 h-4 text-[var(--color-accent)]" />
                                             <h4 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
-                                                나 VS 청중 비교
+                                                자기 vs 청중 인식 비교
                                             </h4>
                                         </div>
 
@@ -470,7 +470,7 @@ export default function EvalResultCard({
                                         {perceptionType && (
                                             <div className="rounded-md bg-gray-50 border border-[var(--color-border)] p-3.5">
                                                 <div className="flex items-center gap-2 mb-2">
-                                                    {["과소평가형", "객관형", "과대평가형"].map((t) => {
+                                                    {["[A유형] 자기<청중", "[C유형] 자기=청중", "[B유형] 자기>청중"].map((t) => {
                                                         const isActive = perceptionType.label === t;
                                                         return (
                                                             <span

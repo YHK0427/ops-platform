@@ -29,6 +29,17 @@ const DOMAIN_COLORS: Record<string, string> = {
 const SELF_COLOR = "#6366f1";
 const AUD_COLOR = "#ec4899";
 
+/** 소수점 둘째 자리에서 반올림하여 첫째 자리까지 표시 (IEEE 754 안전) */
+function roundScore(val: number | null): string {
+    if (val == null) return "-";
+    const [int, dec = "00"] = val.toFixed(2).split(".");
+    let d0 = +dec[0];
+    const d1 = +dec[1];
+    if (d1 >= 5) d0++;
+    if (d0 >= 10) return `${+int + 1}.0`;
+    return `${int}.${d0}`;
+}
+
 export { RadarChart };
 export default function RadarChart({
     selfScores,
@@ -74,13 +85,13 @@ export default function RadarChart({
                     fontWeight={600}
                     dy={isTop ? 10 : 18}
                 >
-                    <tspan fill={SELF_COLOR}>
-                        {selfVal != null ? selfVal.toFixed(1) : "-"}
+                    <tspan fill={audVal != null ? SELF_COLOR : color}>
+                        {roundScore(selfVal ?? null)}
                     </tspan>
                     {audVal != null && (
                         <>
                             <tspan fill={isLight ? "#9ca3af" : "rgba(255,255,255,0.4)"}> / </tspan>
-                            <tspan fill={AUD_COLOR}>{audVal.toFixed(1)}</tspan>
+                            <tspan fill={AUD_COLOR}>{roundScore(audVal)}</tspan>
                         </>
                     )}
                 </text>

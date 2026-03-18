@@ -73,8 +73,12 @@ api.interceptors.response.use(
     },
     (error) => {
         if (error.response?.status === 401) {
-            setToken(null);
-            window.location.href = "/login";
+            // /member 경로에서는 리다이렉트 방지 (멤버 포털은 토큰 미사용)
+            const isMemberPath = window.location.pathname.startsWith("/member");
+            if (!isMemberPath) {
+                setToken(null);
+                window.location.href = "/login";
+            }
         }
         if (error.response?.status === 403) {
             showForbiddenOverlay();

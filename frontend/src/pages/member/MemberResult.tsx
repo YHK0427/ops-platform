@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMemberOwnResult } from "@/hooks/useMemberEvaluation";
 import { RadarChart } from "@/components/eval/RadarChart";
 import { motion } from "framer-motion";
+// html-to-image, jspdf: 동적 import로 PDF 생성 시에만 로드
 import {
     BarChart,
     Bar,
@@ -13,7 +14,7 @@ import {
     Cell,
     LabelList,
 } from "recharts";
-import { ArrowLeft, Lock, BarChart3, TrendingUp, Users, Target } from "lucide-react";
+import { ArrowLeft, Lock, BarChart3, TrendingUp, Users, Target, Download } from "lucide-react";
 
 // ── Constants ───────────────────────────────────────────────────────────
 
@@ -37,37 +38,54 @@ interface StageInfo {
     range: string;
     color: string;
     bgColor: string;
-    description: string;
 }
 
 const STAGES: Record<string, StageInfo> = {
     "구조 형성": {
         label: "구조 형성",
-        range: "0 ~ 2.5",
+        range: "1.0 ~ 1.5",
         color: "text-orange-600",
         bgColor: "bg-orange-50",
-        description: "현재는 발표의 기본 구조를 만드는 단계입니다. 한 영역에 집중해서 정비하면 전체 완성도가 빠르게 올라갈 수 있습니다.",
     },
     "안정화": {
         label: "안정화",
-        range: "2.6 ~ 3.5",
+        range: "1.6 ~ 3.0",
         color: "text-yellow-600",
         bgColor: "bg-yellow-50",
-        description: "발표의 기본 구조는 갖춰진 상태입니다. 이제는 전달의 선명도와 흐름을 다듬는 단계입니다.",
     },
     "정교화": {
         label: "정교화",
-        range: "3.6 ~ 4.2",
+        range: "3.1 ~ 4.5",
         color: "text-sky-600",
         bgColor: "bg-sky-50",
-        description: "발표가 충분히 안정된 수준입니다. 이제는 디테일과 정교함을 다듬는 단계입니다.",
     },
     "전달 최적화": {
         label: "전달 최적화",
-        range: "4.3 ~ 5.0",
+        range: "4.6 ~ 5.0",
         color: "text-violet-600",
         bgColor: "bg-violet-50",
-        description: "높은 완성도를 갖춘 발표입니다. 이제는 '잘하는 발표'가 아니라 '영향을 남기는 발표'를 설계하는 단계입니다.",
+    },
+};
+
+// 도메인별 단계 설명
+const DOMAIN_STAGE_DESCRIPTIONS: Record<string, Record<string, string>> = {
+    PLANNING: {
+        "구조 형성": "핵심 메시지를 중심으로 발표의 기본 흐름을 세워가는 단계입니다.",
+        "안정화": "기본 구조를 바탕으로 내용의 연결성과 흐름을 다듬는 단계입니다.",
+        "정교화": "안정된 구조 위에 메시지의 밀도와 설계 의도를 더 선명하게 만드는 단계입니다.",
+        "전달 최적화": "청중의 기억에 남는 관점과 여운까지 설계하는 단계입니다.",
+    },
+    DESIGN: {
+        "구조 형성": "정보의 우선순위와 시선 흐름을 정리해 전달 기반을 만드는 단계입니다.",
+        "안정화": "가독성과 구성은 갖춰져 있으며, 강조와 덜어내기를 다듬는 단계입니다.",
+        "정교화": "메시지를 안정적으로 뒷받침하며, 인상과 분위기까지 확장해가는 단계입니다.",
+        "전달 최적화": "디자인이 전달 전략으로 기능하며 발표 전체의 몰입감을 높이는 단계입니다.",
+    },
+    SPEECH: {
+        "구조 형성": "말의 흐름을 안정적으로 이어가는 기본 스피치 역량을 만드는 단계입니다.",
+        "안정화": "전달은 안정적이며, 강조와 리듬을 더해 전달력을 높이는 단계입니다.",
+        "정교화": "감정 전달과 연결감을 더해 발표 몰입도를 높이는 단계입니다.",
+        "전달 최적화": "분위기와 여운까지 설계하는 높은 수준의 전달 단계입니다.",
     },
 };
 
@@ -76,20 +94,20 @@ const TYPE_DESCRIPTIONS: Record<string, { emoji: string; summary: string; detail
     "균형형": {
         emoji: "triangle-balanced",
         summary: "세 영역이 고르게 분포되어 있습니다",
-        detail: "큰 약점 없이 안정적인 발표를 하는 유형입니다. 다만 '무난함'으로 남을 수 있으므로, 강점 하나를 의도적으로 더 키워 자신만의 대표 이미지를 만들어보세요.",
-        action: "가장 반응이 좋았던 요소 1가지를 선정하여 다음 발표에서 의도적으로 강조해보세요.",
+        detail: "세 영역의 점수가 고르게 분포되어 정삼각형에 가까운 형태를 띠고 있습니다. 어떤 주제든 기복 없이 안정적인 발표를 할 수 있음을 의미합니다. 이 유형의 강점은 발표 전반의 안정감과 균형 잡힌 전달력입니다.",
+        action: "삼각형의 크기가 큰 경우, 앞으로 이 균형을 유지하면서 가장 자신 있는 부분을 깊게 파고들어, 나만의 필살기로 키워보세요. 만약 삼각형의 크기가 작다면, 현재의 균형을 유지한 채 세 영역의 수준을 동시에 한 단계씩 끌어올리는 것을 목표로 삼아보세요.",
     },
     "강점 집중형": {
         emoji: "triangle-strong",
         summary: "특정 영역이 두드러지게 높습니다",
-        detail: "해당 영역의 역량이 돋보이는 유형입니다. 강점을 유지하면서 나머지 영역도 함께 끌어올리면 전체 완성도가 크게 높아질 수 있습니다.",
-        action: "강점 영역의 노하우를 다른 영역에도 적용해보세요. 예: 기획이 강하다면 디자인과 스피치도 같은 메시지 중심으로 정렬해보세요.",
+        detail: "세 영역 중 한 개의 꼭짓점이 다른 영역에 비해 뻗어 나간 비대칭적인 형태를 띠고 있습니다. 이는 현재 자신의 발표 역량 중 특정 영역에서 가장 두드러지는 잠재력이 나타나고 있음을 의미합니다. 이 유형의 강점은 특정 영역에서 돋보이는 역량이 청중에게 인상적으로 전달될 수 있다는 점입니다.",
+        action: "앞으로는 강점 영역을 더욱 발전시키는 동시에, 점수가 가장 낮은 영역의 기초 역량을 함께 보완해보세요. 강점을 중심으로 약점을 보완하는 전략을 활용하면 발표 전체의 완성도를 더욱 안정적으로 높일 수 있습니다.",
     },
-    "성장 가능성형": {
+    "보완점 명확형": {
         emoji: "triangle-growth",
-        summary: "특정 영역에서 성장 여지가 큽니다",
-        detail: "약한 영역을 집중적으로 보완하면 전체 발표 완성도가 빠르게 향상될 수 있는 유형입니다. 약점을 인식하는 것 자체가 성장의 첫걸음입니다.",
-        action: "약점 영역의 기본기부터 점검해보세요. 작은 개선이 전체 인상을 크게 바꿀 수 있습니다.",
+        summary: "특정 영역에서 보완 방향이 명확합니다",
+        detail: "세 영역 중 특정 영역의 점수가 상대적으로 낮은 형태를 갖추고 있습니다. 이는 집중적으로 보완해야 할 성장 방향이 명확하게 드러나 있는 긍정적인 신호입니다.",
+        action: "현재 균형을 깨고 있는 이 영역을 중심으로 보완해 나가면, 발표의 완성도가 빠르게 높아지는 효과를 경험할 수 있습니다. 앞으로 진행될 강의를 주의 깊게 듣고, 당장 실천할 수 있는 작은 변화부터 다음 세션의 발표에 차근차근 적용해 보세요.",
     },
 };
 
@@ -99,21 +117,21 @@ function getPerceptionType(selfAvg: number, audienceAvg: number): { type: string
     if (diff > 0.5) {
         return {
             type: "overestimate",
-            label: "과대평가형",
+            label: "[B유형] 자기>청중",
             color: "text-rose-600",
             description: "의도는 분명했으나 전달이 기대만큼 닿지 않았을 수 있습니다. '내가 한 것'보다 '상대가 받은 것' 기준으로 점검해보세요.",
         };
     } else if (diff < -0.5) {
         return {
             type: "underestimate",
-            label: "과소평가형",
+            label: "[A유형] 자기<청중",
             color: "text-blue-600",
             description: "본인은 부족하다고 느끼지만 외부 평가는 긍정적입니다. 현재 수준을 객관적으로 신뢰하고, 잘된 요소를 다음에도 재현해보세요.",
         };
     }
     return {
         type: "objective",
-        label: "객관형",
+        label: "[C유형] 자기=청중",
         color: "text-emerald-600",
         description: "자기 인식과 외부 인식이 잘 맞는 상태입니다. 자신의 강점과 약점을 정확히 파악하고 있어 효율적인 성장이 가능합니다.",
     };
@@ -142,20 +160,31 @@ function getGrowthPlan(domain: string, score: number | null): string {
     if (score == null) return "데이터가 부족합니다.";
     const plans = GROWTH_PLANS[domain];
     if (!plans) return "";
-    if (score <= 2.5) return plans.low;
-    if (score <= 3.5) return plans.mid;
+    if (score <= 1.5) return plans.low;
+    if (score <= 3.0) return plans.mid;
     return plans.high;
 }
 
 function getDomainStage(score: number | null): string {
     if (score == null) return "데이터 부족";
-    if (score <= 2.5) return "구조 형성";
-    if (score <= 3.5) return "안정화";
-    if (score <= 4.2) return "정교화";
+    if (score <= 1.5) return "구조 형성";
+    if (score <= 3.0) return "안정화";
+    if (score <= 4.5) return "정교화";
     return "전달 최적화";
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+/** 소수점 둘째 자리에서 반올림하여 첫째 자리까지 표시 (IEEE 754 안전) */
+function roundDisplay(val: number | null): string {
+    if (val == null) return "-";
+    const [int, dec = "00"] = val.toFixed(2).split(".");
+    let d0 = +dec[0];
+    const d1 = +dec[1];
+    if (d1 >= 5) d0++;
+    if (d0 >= 10) return `${+int + 1}.0`;
+    return `${int}.${d0}`;
+}
 
 function avg(scores: Record<string, number | null>): number {
     const vals = Object.values(scores).filter((v): v is number => v != null);
@@ -194,7 +223,7 @@ function TriangleIcon({ type, className }: { type: string; className?: string })
     const cx = size / 2;
 
     if (type === "triangle-balanced") {
-        // Equilateral triangle
+        // Equilateral triangle - 정삼각형
         return (
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={className}>
                 <polygon
@@ -207,11 +236,11 @@ function TriangleIcon({ type, className }: { type: string; className?: string })
         );
     }
     if (type === "triangle-strong") {
-        // Tall/narrow triangle (one vertex stretched)
+        // Very tall/narrow triangle - 한쪽 꼭짓점이 매우 뾰족하게 과장
         return (
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={className}>
                 <polygon
-                    points={`${cx},${pad - 2} ${size - pad + 4},${size - pad} ${pad - 4},${size - pad}`}
+                    points={`${cx},${pad - 3} ${cx + 8},${size - pad} ${cx - 8},${size - pad}`}
                     fill="rgba(59,130,246,0.15)"
                     stroke="#3b82f6"
                     strokeWidth="2"
@@ -219,11 +248,11 @@ function TriangleIcon({ type, className }: { type: string; className?: string })
             </svg>
         );
     }
-    // triangle-growth: flat/wide triangle
+    // triangle-growth: very flat/wide triangle - 매우 납작한 삼각형
     return (
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={className}>
             <polygon
-                points={`${cx},${pad + 10} ${size - pad},${size - pad} ${pad},${size - pad}`}
+                points={`${cx},${size / 2 + 6} ${size - pad + 2},${size - pad} ${pad - 2},${size - pad}`}
                 fill="rgba(245,158,11,0.15)"
                 stroke="#f59e0b"
                 strokeWidth="2"
@@ -245,7 +274,7 @@ function Section({ title, icon, children, delay = 0 }: {
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay, duration: 0.4, ease: "easeOut" }}
-            className="rounded-2xl bg-white border border-gray-100 p-5 sm:p-6 shadow-sm"
+            className="rounded-2xl bg-white border border-gray-100 px-6 py-5 sm:px-7 sm:py-6 shadow-sm"
         >
             <div className="flex items-center gap-2.5 mb-5">
                 <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center">
@@ -270,23 +299,56 @@ export default function MemberResult() {
     const isForbidden =
         isError && (error as { response?: { status?: number } })?.response?.status === 403;
 
-    const selfScores = useMemo(() => {
-        if (!data?.self_scores_by_domain) return { PLANNING: 0, DESIGN: 0, SPEECH: 0 };
-        return {
-            PLANNING: data.self_scores_by_domain.PLANNING ?? 0,
-            DESIGN: data.self_scores_by_domain.DESIGN ?? 0,
-            SPEECH: data.self_scores_by_domain.SPEECH ?? 0,
-        };
-    }, [data?.self_scores_by_domain]);
+    const pdfRef = useRef<HTMLDivElement>(null);
+    const [pdfLoading, setPdfLoading] = useState(false);
+    const [showPdf, setShowPdf] = useState(false);
 
-    const audienceScores = useMemo(() => {
-        if (!data?.audience_scores_by_domain) return { PLANNING: 0, DESIGN: 0, SPEECH: 0 };
+    const handleDownloadPdf = useCallback(async () => {
+        if (!data) return;
+        setPdfLoading(true);
+        setShowPdf(true);
+        await new Promise(r => setTimeout(r, 600));
+        const el = pdfRef.current;
+        if (!el) { setPdfLoading(false); setShowPdf(false); return; }
+        try {
+            const { toPng } = await import("html-to-image");
+            const { jsPDF } = await import("jspdf");
+            const dataUrl = await toPng(el, { pixelRatio: 2, backgroundColor: "#ffffff" });
+            const img = new Image();
+            img.src = dataUrl;
+            await new Promise<void>(r => { img.onload = () => r(); });
+            const pdf = new jsPDF("p", "mm", "a4");
+            const pw = pdf.internal.pageSize.getWidth();
+            const ph = pdf.internal.pageSize.getHeight();
+            const m = 3;
+            const cw = pw - m * 2;
+            const ch = ph - m * 2;
+            const ratio = img.width / img.height;
+            let w: number, h: number;
+            if (ratio > cw / ch) { w = cw; h = cw / ratio; } else { h = ch; w = ch * ratio; }
+            pdf.addImage(dataUrl, "PNG", m + (cw - w) / 2, m, w, h);
+            pdf.save(`${data.member_name}_성장리포트.pdf`);
+        } finally {
+            setShowPdf(false);
+            setPdfLoading(false);
+        }
+    }, [data]);
+
+    const combinedScores = useMemo(() => {
+        if (!data?.combined_scores_by_domain) return { PLANNING: 0, DESIGN: 0, SPEECH: 0 };
         return {
-            PLANNING: data.audience_scores_by_domain.PLANNING ?? 0,
-            DESIGN: data.audience_scores_by_domain.DESIGN ?? 0,
-            SPEECH: data.audience_scores_by_domain.SPEECH ?? 0,
+            PLANNING: data.combined_scores_by_domain.PLANNING ?? 0,
+            DESIGN: data.combined_scores_by_domain.DESIGN ?? 0,
+            SPEECH: data.combined_scores_by_domain.SPEECH ?? 0,
         };
-    }, [data?.audience_scores_by_domain]);
+    }, [data?.combined_scores_by_domain]);
+
+    const stageMap = useMemo(() => {
+        if (!data?.combined_scores_by_domain) return {} as Record<string, string>;
+        return Object.fromEntries(
+            DOMAINS.map(d => [d, getDomainStage(data.combined_scores_by_domain[d])])
+        ) as Record<string, string>;
+    }, [data?.combined_scores_by_domain]);
 
     const perceptionType = useMemo(() => {
         if (!data) return null;
@@ -354,8 +416,14 @@ export default function MemberResult() {
     // ── Main Result ─────────────────────────────────────────────────────
     return (
         <div className="member-page">
+            <style>{`
+                @keyframes petal-float-1 { 0%, 100% { transform: translateY(0) rotate(-15deg); } 50% { transform: translateY(-6px) rotate(-5deg); } }
+                @keyframes petal-float-2 { 0%, 100% { transform: translateY(0) rotate(20deg); } 50% { transform: translateY(-8px) rotate(30deg); } }
+                @keyframes petal-float-3 { 0%, 100% { transform: translateY(0) rotate(45deg); } 50% { transform: translateY(-5px) rotate(55deg); } }
+            `}</style>
+
             {/* Header */}
-            <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200">
+            <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200 print:hidden">
                 <div className="mx-auto max-w-2xl flex items-center gap-3 px-4 py-3">
                     <button
                         onClick={() => navigate("/member")}
@@ -368,6 +436,18 @@ export default function MemberResult() {
                             발표 성장 리포트
                         </h1>
                     </div>
+                    <button
+                        onClick={handleDownloadPdf}
+                        disabled={pdfLoading}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    >
+                        {pdfLoading ? (
+                            <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                        ) : (
+                            <Download className="w-3.5 h-3.5" />
+                        )}
+                        {pdfLoading ? "생성 중..." : "PDF 다운로드"}
+                    </button>
                 </div>
             </header>
 
@@ -376,7 +456,7 @@ export default function MemberResult() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, ease: "easeOut" }}
-                className="mx-auto w-full max-w-2xl px-4 py-6 space-y-5"
+                className="mx-auto w-full max-w-2xl px-5 py-6 space-y-5"
             >
                 {/* ─── Title Card ─── */}
                 <div className="rounded-2xl bg-gradient-to-br from-rose-500 via-rose-500 to-pink-600 p-6 text-white shadow-xl shadow-rose-500/25 relative overflow-hidden">
@@ -384,21 +464,36 @@ export default function MemberResult() {
                     <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/10" />
                     <div className="absolute -bottom-4 -left-4 w-20 h-20 rounded-full bg-white/5" />
 
+                    {/* 초기 분석지 라벨 */}
+                    <div className="absolute top-4 right-4">
+                        <span className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-sm text-[10px] font-bold tracking-wide">
+                            초기 분석지
+                        </span>
+                    </div>
+
                     <div className="relative">
                         <p className="text-[11px] font-semibold text-rose-200 tracking-widest mb-2">
-                            UnivPT 성장 리포트
+                            UnivPT 33기
                         </p>
                         <h2 className="text-xl font-extrabold leading-tight">
-                            {data.member_name}님의<br />발표 역량 분석
+                            {data.member_name}님의 발표 성장 리포트
                         </h2>
-                        <div className="flex items-center gap-2 mt-4">
-                            {data.stage && (
-                                <span className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-xs font-bold">
-                                    {data.stage}
-                                </span>
-                            )}
+                        <p className="text-xs text-rose-100 mt-2 leading-[1.8]">
+                            현재 발표 역량을 확인하고, 다음 성장을 위한 방향을 살펴보세요.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 mt-4">
+                            {DOMAINS.map((d) => {
+                                const badgeBg =
+                                    d === "PLANNING" ? "bg-blue-500" :
+                                    d === "DESIGN" ? "bg-emerald-500" : "bg-amber-500";
+                                return (
+                                    <span key={d} className={`px-3 py-1 rounded-full ${badgeBg} text-white text-xs font-bold shadow-sm`}>
+                                        [{DOMAIN_LABELS[d]}]{stageMap[d] ?? ""}
+                                    </span>
+                                );
+                            })}
                             {data.type && (
-                                <span className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-xs font-bold">
+                                <span className="px-3 py-1 rounded-full bg-white text-rose-600 text-xs font-bold shadow-sm">
                                     {data.type}
                                 </span>
                             )}
@@ -406,29 +501,31 @@ export default function MemberResult() {
                     </div>
                 </div>
 
-                {/* ─── 0. 방사형 그래프 ─── */}
+                {/* ─── 0.5 리포트 소개 ─── */}
+                <div className="rounded-2xl bg-gray-50 border border-gray-100 px-5 py-4">
+                    <p className="text-xs text-gray-500 leading-[1.8] break-keep-all text-pretty">
+                        본 리포트는 프레젠테이션의 핵심 요소인 기획, 디자인, 스피치 세 영역을 기준으로 현재 발표 역량을 진단하고, 앞으로의 성장 방향을 제시하기 위해 작성되었습니다. 본 평가는 경쟁을 위한 평가가 아니라 여러분의 발표 성장 과정을 기록하기 위한 진단입니다.
+                    </p>
+                </div>
+
+                {/* ─── 1. 발표 역량 방사형 그래프 ─── */}
                 <Section
-                    title="발표 성장 방사형 그래프"
+                    title="발표 역량 방사형 그래프"
                     icon={<BarChart3 className="w-4 h-4 text-rose-500" />}
                     delay={0.05}
                 >
                     <RadarChart
-                        selfScores={selfScores}
-                        audienceScores={audienceScores}
+                        selfScores={combinedScores}
                         size={460}
                         variant="light"
                     />
-                    {/* Legend */}
-                    <div className="flex items-center justify-center gap-6 -mt-2 mb-4">
-                        <div className="flex items-center gap-1.5">
-                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#6366f1" }} />
-                            <span className="text-xs text-gray-500">자기평가</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#ec4899" }} />
-                            <span className="text-xs text-gray-500">청중평가</span>
-                        </div>
-                    </div>
+
+                    {/* 설명 문구 */}
+                    <p className="text-xs text-gray-400 leading-[1.8] mb-4 -mt-2 break-keep-all text-pretty">
+                        이 그래프는 발표 역량의 세 영역(기획, 디자인, 스피치)을 시각적으로 나타낸 것입니다.
+                        각 영역별 점수는 자기 평가와 청중 평가를 1:1로 반영한 평균 점수이며,
+                        소수점 둘째 자리에서 반올림하여 표시됩니다.
+                    </p>
 
                     {/* Score table */}
                     <div className="overflow-hidden rounded-xl border border-gray-200">
@@ -453,13 +550,13 @@ export default function MemberResult() {
                                                 {DOMAIN_LABELS[domain]}
                                             </td>
                                             <td className="py-2.5 px-3 text-center tabular-nums text-gray-700 font-medium">
-                                                {selfVal != null ? Number(selfVal).toFixed(1) : "-"}
+                                                {roundDisplay(selfVal)}
                                             </td>
                                             <td className="py-2.5 px-3 text-center tabular-nums text-gray-700 font-medium">
-                                                {audVal != null ? Number(audVal).toFixed(1) : "-"}
+                                                {roundDisplay(audVal)}
                                             </td>
                                             <td className="py-2.5 px-3 text-center tabular-nums text-gray-900 font-extrabold">
-                                                {combVal != null ? combVal.toFixed(1) : "-"}
+                                                {roundDisplay(combVal)}
                                             </td>
                                         </tr>
                                     );
@@ -469,15 +566,21 @@ export default function MemberResult() {
                     </div>
                 </Section>
 
-                {/* ─── 1. 나의 발표 유형 ─── */}
+                {/* ─── 2. 발표 유형 해석 ─── */}
                 <Section
-                    title="나의 발표 유형"
+                    title="발표 유형 해석"
                     icon={<Target className="w-4 h-4 text-rose-500" />}
                     delay={0.1}
                 >
+                    {/* 삼각형 설명 */}
+                    <p className="text-[11px] text-gray-400 text-center mb-3">
+                        삼각형의 형태는 세 영역의 균형을,
+                        크기는 전체 수준을 의미합니다.
+                    </p>
+
                     {/* Type icons row */}
                     <div className="flex items-center justify-center gap-4 sm:gap-8 mb-4">
-                        {(["균형형", "강점 집중형", "성장 가능성형"] as const).map((t) => {
+                        {(["균형형", "강점 집중형", "보완점 명확형"] as const).map((t) => {
                             const isActive = data.type === t;
                             const emoji =
                                 t === "균형형" ? "triangle-balanced"
@@ -508,25 +611,25 @@ export default function MemberResult() {
                                     — {getStrongestDomain(data.combined_scores_by_domain)} 강점
                                 </span>
                             )}
-                            {data.type === "성장 가능성형" && (
+                            {data.type === "보완점 명확형" && (
                                 <span className="text-amber-600 ml-1">
                                     — {getWeakestDomain(data.combined_scores_by_domain)} 보완 필요
                                 </span>
                             )}
                         </p>
-                        <p className="text-xs text-gray-600 leading-relaxed mb-3">
+                        <p className="text-xs text-gray-600 leading-[1.8] mb-3 break-keep-all text-pretty">
                             {typeInfo.detail}
                         </p>
                         <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-50/50 border border-rose-100">
                             <TrendingUp className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
-                            <p className="text-xs text-gray-700 leading-relaxed font-medium">
+                            <p className="text-xs text-gray-700 leading-[1.8] font-medium break-keep-all text-pretty">
                                 {typeInfo.action}
                             </p>
                         </div>
                     </div>
                 </Section>
 
-                {/* ─── 2. 영역별 단계 해석 ─── */}
+                {/* ─── 3. 영역별 단계 해석 ─── */}
                 <Section
                     title="영역별 단계 해석"
                     icon={<BarChart3 className="w-4 h-4 text-rose-500" />}
@@ -555,6 +658,7 @@ export default function MemberResult() {
                             const stageInfo = STAGES[stageName];
                             const pct = score != null ? (score / 5) * 100 : 0;
                             const colors = DOMAIN_COLORS[domain];
+                            const domainDesc = DOMAIN_STAGE_DESCRIPTIONS[domain]?.[stageName];
 
                             return (
                                 <div key={domain} className={`rounded-xl border ${colors.border} ${colors.bg} p-3.5`}>
@@ -570,7 +674,7 @@ export default function MemberResult() {
                                             )}
                                         </div>
                                         <span className="text-base font-extrabold text-gray-900 tabular-nums">
-                                            {score != null ? score.toFixed(1) : "-"}
+                                            {roundDisplay(score)}
                                         </span>
                                     </div>
                                     <div className="h-2 bg-white/80 rounded-full overflow-hidden mb-2.5">
@@ -582,9 +686,9 @@ export default function MemberResult() {
                                             transition={{ delay: 0.3, duration: 0.6, ease: "easeOut" }}
                                         />
                                     </div>
-                                    {stageInfo && (
-                                        <p className="text-[11px] text-gray-600 leading-relaxed">
-                                            {stageInfo.description}
+                                    {domainDesc && (
+                                        <p className="text-xs text-gray-600 leading-[1.8] break-keep-all text-pretty">
+                                            {domainDesc}
                                         </p>
                                     )}
                                 </div>
@@ -593,9 +697,9 @@ export default function MemberResult() {
                     </div>
                 </Section>
 
-                {/* ─── 3. 나 VS 청중 비교 ─── */}
+                {/* ─── 4. 자기 vs 청중 인식 비교 ─── */}
                 <Section
-                    title="나 VS 청중 비교"
+                    title="자기 vs 청중 인식 비교"
                     icon={<Users className="w-4 h-4 text-rose-500" />}
                     delay={0.2}
                 >
@@ -622,26 +726,26 @@ export default function MemberResult() {
                                     {barChartData.map((_, i) => (
                                         <Cell key={i} fill="#60a5fa" />
                                     ))}
-                                    <LabelList dataKey="자기" position="top" fontSize={10} fill="#60a5fa" formatter={(v: unknown) => Number(v).toFixed(1)} />
+                                    <LabelList dataKey="자기" position="top" fontSize={10} fill="#60a5fa" formatter={(v: unknown) => roundDisplay(Number(v))} />
                                 </Bar>
                                 <Bar dataKey="청중" radius={[3, 3, 0, 0]} maxBarSize={28}>
                                     {barChartData.map((_, i) => (
                                         <Cell key={i} fill="#f472b6" />
                                     ))}
-                                    <LabelList dataKey="청중" position="top" fontSize={10} fill="#f472b6" formatter={(v: unknown) => Number(v).toFixed(1)} />
+                                    <LabelList dataKey="청중" position="top" fontSize={10} fill="#f472b6" formatter={(v: unknown) => roundDisplay(Number(v))} />
                                 </Bar>
                                 <Bar dataKey="종합" radius={[3, 3, 0, 0]} maxBarSize={28}>
                                     {barChartData.map((_, i) => (
                                         <Cell key={i} fill="#6b7280" />
                                     ))}
-                                    <LabelList dataKey="종합" position="top" fontSize={10} fill="#6b7280" formatter={(v: unknown) => Number(v).toFixed(1)} />
+                                    <LabelList dataKey="종합" position="top" fontSize={10} fill="#6b7280" formatter={(v: unknown) => roundDisplay(Number(v))} />
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
 
                     {/* Legend */}
-                    <div className="flex items-center justify-center gap-5 mb-4">
+                    <div className="flex items-center justify-center gap-5 mb-3">
                         <div className="flex items-center gap-1.5">
                             <div className="w-2.5 h-2.5 rounded-sm bg-blue-400" />
                             <span className="text-xs text-gray-500">자기</span>
@@ -656,16 +760,25 @@ export default function MemberResult() {
                         </div>
                     </div>
 
+                    {/* 보완 설명 */}
+                    <p className="text-xs text-gray-400 mb-4 break-keep-all">
+                        ※ 종합 = 자기·청중 평가 1:1 평균, 소수점 둘째 자리에서 반올림
+                    </p>
+
                     {/* Perception type */}
                     {perceptionType && (
                         <div className="rounded-xl bg-gradient-to-br from-gray-50 to-white border border-gray-100 p-4">
                             <div className="flex items-center gap-1.5 mb-3">
-                                {["과소평가형", "객관형", "과대평가형"].map((t) => {
+                                {[
+                                    "[A유형] 자기<청중",
+                                    "[C유형] 자기=청중",
+                                    "[B유형] 자기>청중",
+                                ].map((t) => {
                                     const isActive = perceptionType.label === t;
                                     return (
                                         <span
                                             key={t}
-                                            className={`flex-1 text-center px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+                                            className={`flex-1 text-center px-1 py-1.5 rounded-lg text-[10px] font-semibold transition-all whitespace-nowrap ${
                                                 isActive
                                                     ? "bg-white shadow-sm border border-gray-200 text-gray-900"
                                                     : "text-gray-300"
@@ -679,14 +792,14 @@ export default function MemberResult() {
                             <p className={`text-sm font-bold mb-1.5 ${perceptionType.color}`}>
                                 {perceptionType.label}
                             </p>
-                            <p className="text-xs text-gray-600 leading-relaxed">
+                            <p className="text-xs text-gray-600 leading-[1.8] break-keep-all text-pretty">
                                 {perceptionType.description}
                             </p>
                         </div>
                     )}
                 </Section>
 
-                {/* ─── 4. 성장 PLAN ─── */}
+                {/* ─── 5. 성장 PLAN ─── */}
                 <Section
                     title="성장 PLAN"
                     icon={<TrendingUp className="w-4 h-4 text-rose-500" />}
@@ -712,7 +825,7 @@ export default function MemberResult() {
                                             {getDomainStage(score)}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-gray-700 leading-relaxed">
+                                    <p className="text-xs text-gray-700 leading-[1.8] break-keep-all text-pretty">
                                         {plan}
                                     </p>
                                 </div>
@@ -721,11 +834,196 @@ export default function MemberResult() {
                     </div>
                 </Section>
 
-                {/* ─── Footer ─── */}
-                <p className="text-center text-[11px] text-gray-300 py-4">
-                    당신의 가능성을 꽃피우기 위해 — UnivPT
-                </p>
+                {/* ─── Footer (Cherry Blossom) ─── */}
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-white to-[#FFF0F3] py-8 px-6">
+                    {/* Petal SVGs */}
+                    <svg className="absolute top-2 left-8 w-5 h-5 text-pink-200 opacity-60" viewBox="0 0 20 20" style={{ animation: "petal-float-1 4s ease-in-out infinite" }}>
+                        <ellipse cx="10" cy="8" rx="5" ry="8" fill="currentColor" transform="rotate(-15 10 8)" />
+                    </svg>
+                    <svg className="absolute top-4 right-12 w-4 h-4 text-pink-300 opacity-50" viewBox="0 0 20 20" style={{ animation: "petal-float-2 5s ease-in-out infinite 0.5s" }}>
+                        <ellipse cx="10" cy="8" rx="5" ry="8" fill="currentColor" transform="rotate(20 10 8)" />
+                    </svg>
+                    <svg className="absolute bottom-3 left-1/3 w-3.5 h-3.5 text-pink-200 opacity-40" viewBox="0 0 20 20" style={{ animation: "petal-float-3 6s ease-in-out infinite 1s" }}>
+                        <ellipse cx="10" cy="8" rx="5" ry="8" fill="currentColor" transform="rotate(45 10 8)" />
+                    </svg>
+
+                    <p className="text-center text-sm font-medium text-rose-400/80 relative">
+                        Bloom UP — 당신의 가능성을 꽃피우기 위해
+                    </p>
+                    <p className="text-center text-[10px] text-gray-300 mt-1 relative">
+                        UnivPT
+                    </p>
+                </div>
             </motion.main>
+
+            {/* ══════ PDF용 오버레이: 동일 박스, 2단 그리드 재배치 ══════ */}
+            {showPdf && (
+                <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#fff", overflow: "auto" }}>
+                    <div style={{ position: "fixed", top: 12, right: 16, zIndex: 10000, background: "#f43f5e", color: "#fff", padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600 }}>
+                        PDF 생성 중...
+                    </div>
+                    <div ref={pdfRef} style={{ width: 860, height: 1216, padding: "20px 24px", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#1f2937", display: "flex", flexDirection: "column" }}>
+
+                        {/* ── 제목 카드 ── */}
+                        <div style={{ background: "linear-gradient(135deg, #f43f5e, #ec4899)", borderRadius: 12, padding: "18px 22px", color: "#fff", marginBottom: 14, position: "relative" }}>
+                            <span style={{ position: "absolute", top: 14, right: 16, fontSize: 10, background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: 10, fontWeight: 600 }}>초기 분석지</span>
+                            <div style={{ fontSize: 11, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>UnivPT 33기</div>
+                            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>{data.member_name}님의 발표 성장 리포트</div>
+                            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>{data.member_name}님의 현재 발표 역량을 확인하고, 다음 성장을 위한 방향을 살펴보세요.</div>
+                            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                                {DOMAINS.map(d => (
+                                    <span key={d} style={{ background: d === "PLANNING" ? "#3b82f6" : d === "DESIGN" ? "#10b981" : "#f59e0b", color: "#fff", fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 10 }}>
+                                        [{DOMAIN_LABELS[d]}]{stageMap[d]}
+                                    </span>
+                                ))}
+                                {data.type && <span style={{ background: "#fff", color: "#e11d48", fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 10 }}>{data.type}</span>}
+                            </div>
+                        </div>
+
+                        {/* ── 소개 ── */}
+                        <div style={{ fontSize: 10, color: "#6b7280", padding: "8px 12px", background: "#f9fafb", borderRadius: 8, marginBottom: 14, border: "1px solid #f3f4f6", lineHeight: 1.5 }}>
+                            본 리포트는 프레젠테이션의 핵심 요소인 기획, 디자인, 스피치 세 영역을 기준으로 현재 발표 역량을 진단하고, 앞으로의 성장 방향을 제시하기 위해 작성되었습니다. 본 평가는 경쟁을 위한 평가가 아니라 여러분의 발표 성장 과정을 기록하기 위한 진단입니다.
+                        </div>
+
+                        {/* ══ ROW 1: 레이더(좌) + 점수표(우) | 발표 유형 해석 ══ */}
+                        <div style={{ display: "flex", gap: 14, marginBottom: 14, alignItems: "stretch", flex: 1 }}>
+                            {/* 레이더 + 점수표: 가로 배치 */}
+                            <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>발표 역량 방사형 그래프</div>
+                                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                    <div style={{ width: 190, height: 190, flexShrink: 0 }}>
+                                        <RadarChart selfScores={combinedScores} size={190} variant="light" />
+                                    </div>
+                                    <div style={{ flex: 1, fontSize: 11 }}>
+                                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                            <thead><tr style={{ background: "#f9fafb" }}>
+                                                {["영역", "자기", "청중", "종합"].map(h => <th key={h} style={{ padding: "5px 6px", textAlign: h === "영역" ? "left" : "center", fontWeight: 600, borderBottom: "1px solid #e5e7eb", fontSize: 10 }}>{h}</th>)}
+                                            </tr></thead>
+                                            <tbody>{DOMAINS.map(d => (
+                                                <tr key={d}>
+                                                    <td style={{ padding: "5px 6px", fontWeight: 700, color: DOMAIN_COLORS[d].bar }}>{DOMAIN_LABELS[d]}</td>
+                                                    <td style={{ padding: "5px 6px", textAlign: "center" }}>{roundDisplay(data.self_scores_by_domain[d])}</td>
+                                                    <td style={{ padding: "5px 6px", textAlign: "center" }}>{roundDisplay(data.audience_scores_by_domain[d])}</td>
+                                                    <td style={{ padding: "5px 6px", textAlign: "center", fontWeight: 800 }}>{roundDisplay(data.combined_scores_by_domain[d])}</td>
+                                                </tr>
+                                            ))}</tbody>
+                                        </table>
+                                        <div style={{ fontSize: 8, color: "#9ca3af", marginTop: 6, lineHeight: 1.4 }}>자기·청중 평가 1:1 평균, 소수점 둘째 자리 반올림</div>
+                                    </div>
+                                </div>
+                            </div>
+                            {/* 발표 유형 해석 */}
+                            <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>발표 유형 해석</div>
+                                <div style={{ fontSize: 8, color: "#9ca3af", marginBottom: 6 }}>삼각형의 형태는 세 영역의 균형을, 크기는 현재 발표 역량의 전체 수준을 의미합니다.</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: "#111827" }}>
+                                    {data.type ?? "분석 중"}
+                                    {data.type === "강점 집중형" && <span style={{ color: "#3b82f6" }}> — {getStrongestDomain(data.combined_scores_by_domain)} 강점</span>}
+                                    {data.type === "보완점 명확형" && <span style={{ color: "#f59e0b" }}> — {getWeakestDomain(data.combined_scores_by_domain)} 보완 필요</span>}
+                                </div>
+                                <p style={{ fontSize: 10, color: "#374151", margin: "0 0 8px 0", lineHeight: 1.6, flex: 1 }}>{typeInfo.detail}</p>
+                                <div style={{ fontSize: 9, color: "#4b5563", background: "#fff1f2", borderRadius: 8, padding: "8px 10px", border: "1px solid #fecdd3", lineHeight: 1.5 }}>
+                                    {typeInfo.action}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* ══ ROW 2: 영역별 단계 해석 | 자기 vs 청중 비교(바 그래프) ══ */}
+                        <div style={{ display: "flex", gap: 14, marginBottom: 14, alignItems: "stretch", flex: 1 }}>
+                            {/* 영역별 단계 해석 */}
+                            <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>영역별 단계 해석</div>
+                                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                                    {DOMAINS.map(d => {
+                                        const score = data.combined_scores_by_domain[d];
+                                        const stage = getDomainStage(score);
+                                        const desc = DOMAIN_STAGE_DESCRIPTIONS[d]?.[stage] ?? "";
+                                        const barColor = DOMAIN_COLORS[d].bar;
+                                        const pct = score != null ? (score / 5) * 100 : 0;
+                                        return (
+                                            <div key={d} style={{ flex: 1, padding: "6px 10px", border: `1px solid ${barColor}33`, borderRadius: 8, background: `${barColor}08` }}>
+                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, marginBottom: 2 }}>
+                                                    <span style={{ fontWeight: 700, color: barColor }}>{DOMAIN_LABELS[d]} <span style={{ fontWeight: 600, color: "#6b7280", fontSize: 9 }}>{stage}</span></span>
+                                                    <span style={{ fontWeight: 800, fontSize: 12 }}>{roundDisplay(score)}</span>
+                                                </div>
+                                                <div style={{ height: 4, background: "#e5e7eb", borderRadius: 2, overflow: "hidden", marginBottom: 3 }}>
+                                                    <div style={{ height: "100%", width: `${pct}%`, background: barColor, borderRadius: 2 }} />
+                                                </div>
+                                                <div style={{ fontSize: 8, color: "#9ca3af", lineHeight: 1.3 }}>{desc}</div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            {/* 자기 vs 청중 인식 비교 — 세로 바 그래프 */}
+                            <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>자기 vs 청중 인식 비교</div>
+                                {/* 바 차트 영역 */}
+                                <div style={{ flex: 1, display: "flex", justifyContent: "space-around", alignItems: "flex-end", padding: "0 6px 0", borderBottom: "1px solid #e5e7eb", marginBottom: 6, minHeight: 0 }}>
+                                    {DOMAINS.map(d => {
+                                        const s = data.self_scores_by_domain[d] ?? 0;
+                                        const a = data.audience_scores_by_domain[d] ?? 0;
+                                        const c = data.combined_scores_by_domain[d] ?? 0;
+                                        return (
+                                            <div key={d} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, height: "100%", justifyContent: "flex-end" }}>
+                                                <div style={{ display: "flex", alignItems: "flex-end", gap: 4, flex: 1, paddingTop: 4 }}>
+                                                    {[{ v: s, color: "#60a5fa" }, { v: a, color: "#f472b6" }, { v: c, color: "#6b7280" }].map((bar, i) => (
+                                                        <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 28, height: "100%", justifyContent: "flex-end" }}>
+                                                            <span style={{ fontSize: 8, fontWeight: 600, color: bar.color, marginBottom: 2 }}>{roundDisplay(bar.v)}</span>
+                                                            <div style={{ width: "100%", height: `${(bar.v / 5) * 100}%`, background: bar.color, borderRadius: "4px 4px 0 0", minHeight: 3 }} />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <span style={{ fontSize: 10, fontWeight: 600, color: DOMAIN_COLORS[d].bar, paddingTop: 4, paddingBottom: 2 }}>{DOMAIN_LABELS[d]}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {/* 범례 + 인식 유형 */}
+                                <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 6, fontSize: 9 }}>
+                                    {[{ l: "자기", c: "#60a5fa" }, { l: "청중", c: "#f472b6" }, { l: "종합", c: "#6b7280" }].map(x => (
+                                        <div key={x.l} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                            <div style={{ width: 8, height: 8, borderRadius: 2, background: x.c }} />
+                                            <span style={{ color: "#6b7280" }}>{x.l}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {perceptionType && (
+                                    <div style={{ background: "#f9fafb", borderRadius: 6, padding: "6px 8px", border: "1px solid #e5e7eb" }}>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: perceptionType.type === "overestimate" ? "#e11d48" : perceptionType.type === "underestimate" ? "#2563eb" : "#059669", marginBottom: 1 }}>{perceptionType.label}</div>
+                                        <div style={{ fontSize: 8, color: "#6b7280", lineHeight: 1.3 }}>{perceptionType.description}</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* ══ ROW 3: 성장 PLAN (3열) ══ */}
+                        <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>성장 PLAN</div>
+                            <div style={{ display: "flex", gap: 10 }}>
+                                {DOMAINS.map(d => {
+                                    const score = data.combined_scores_by_domain[d];
+                                    return (
+                                        <div key={d} style={{ flex: 1, background: `${DOMAIN_COLORS[d].bar}08`, border: `1px solid ${DOMAIN_COLORS[d].bar}33`, borderRadius: 8, padding: "8px 10px" }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+                                                <span style={{ background: DOMAIN_COLORS[d].bar, color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{DOMAIN_LABELS[d]}</span>
+                                                <span style={{ fontSize: 9, color: "#9ca3af" }}>{getDomainStage(score)}</span>
+                                            </div>
+                                            <div style={{ fontSize: 10, color: "#4b5563", lineHeight: 1.5 }}>{getGrowthPlan(d, score)}</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* 푸터 */}
+                        <div style={{ textAlign: "center", padding: "10px 0" }}>
+                            <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — 당신의 가능성을 꽃피우기 위해</span>
+                            <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>UnivPT</span>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

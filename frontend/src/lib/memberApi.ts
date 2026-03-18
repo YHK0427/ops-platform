@@ -29,13 +29,15 @@ memberApi.interceptors.request.use((config) => {
     return config;
 });
 
-// Handle 401 -> redirect to member login
+// Handle 401 -> redirect to member login (skip if already on login page)
 memberApi.interceptors.response.use(
     (res) => res,
     (error) => {
         if (error.response?.status === 401) {
             setMemberToken(null);
-            window.location.href = "/member/login";
+            if (!window.location.pathname.startsWith("/member/login")) {
+                window.location.href = "/member/login";
+            }
         }
         return Promise.reject(error);
     },

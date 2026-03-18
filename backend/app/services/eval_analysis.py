@@ -78,16 +78,16 @@ def compute_avg_question_scores(all_responses: list[list]) -> dict:
 def determine_stage(score: float) -> str:
     """종합 점수로 발표 단계 판별.
 
-    0~2.5: 구조 형성
-    2.6~3.5: 안정화
-    3.6~4.2: 정교화
-    4.3~5.0: 전달 최적화
+    1.0~1.5: 구조 형성
+    1.6~3.0: 안정화
+    3.1~4.5: 정교화
+    4.6~5.0: 전달 최적화
     """
-    if score <= 2.5:
+    if score <= 1.5:
         return "구조 형성"
-    elif score <= 3.5:
+    elif score <= 3.0:
         return "안정화"
-    elif score <= 4.2:
+    elif score <= 4.5:
         return "정교화"
     else:
         return "전달 최적화"
@@ -116,7 +116,7 @@ def determine_type(domain_scores: dict) -> str:
     if max_val - avg_others >= 1.0:
         return "강점 집중형"
 
-    return "성장 가능성형"
+    return "보완점 명확형"
 
 
 def compute_combined_domain_scores(
