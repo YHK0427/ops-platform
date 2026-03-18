@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     NAVER_CAFE_MENU_REVIEW: int = 2
     NAVER_CAFE_MENU_PPT: int = 3
     NAVER_CAFE_MENU_EXCUSE: int = 0
+    NAVER_ID: str = ""
+    NAVER_PWD: str = ""
 
     # Google Drive
     GOOGLE_DRIVE_FOLDER_ID: str = ""

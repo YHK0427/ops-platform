@@ -114,6 +114,19 @@ async def task_naver_login(ctx, username: str, password: str):
         raise
 
 
+async def _naver_auto_login():
+    """네이버 자동 로그인 시도 (env 크레덴셜 사용)"""
+    username = settings.NAVER_ID or "bleach4738"
+    password = settings.NAVER_PWD or "youngheon633005!"
+    async with AsyncSessionLocal() as db:
+        result = await login_with_credentials(db, username, password)
+    if result.get("status") == "complete":
+        logger.log(25, f"네이버 자동 로그인 성공 (만료: {result.get('expires_hint')})")
+    else:
+        logger.warning(f"네이버 자동 로그인 실패 — {result.get('reason', 'unknown')}")
+    return result
+
+
 async def task_naver_health_check(ctx):
     """네이버 세션 헬스체크 — 30분마다 API 1회 호출로 세션 유효성 확인"""
     import asyncio
@@ -121,20 +134,27 @@ async def task_naver_health_check(ctx):
         async with AsyncSessionLocal() as db:
             req_session = await get_valid_requests_session(db)
             if not req_session:
-                logger.warning("naver_health_check: no valid session")
-                return {"status": "no_session"}
+                logger.warning("네이버 세션 없음 — 자동 로그인 시도")
+                return await _naver_auto_login()
 
             # 게시판 1페이지 1건만 조회 (최소 비용)
-            await asyncio.to_thread(
+            data = await asyncio.to_thread(
                 fetch_board_articles, req_session, settings.NAVER_CAFE_MENU_REVIEW, page=1, per_page=1
             )
-        logger.info("naver_health_check: ok")
+            # 최신 게시글 정보 추출
+            articles = data.get("message", {}).get("result", {}).get("articleList", [])
+            if articles:
+                a = articles[0]
+                article_info = f"\n최신글: [{a.get('subject', '?')}] by {a.get('nickname', '?')}"
+            else:
+                article_info = "\n게시글 없음"
+        logger.log(25, f"네이버 세션 체크: 정상 (menu={settings.NAVER_CAFE_MENU_REVIEW}){article_info}")
         return {"status": "ok"}
     except NaverSessionExpiredError:
-        logger.warning("naver_health_check: session expired — 네이버 재로그인 필요")
-        return {"status": "expired"}
+        logger.warning("네이버 세션 만료 — 자동 로그인 시도")
+        return await _naver_auto_login()
     except Exception as e:
-        logger.error(f"naver_health_check failed: {e}", exc_info=True)
+        logger.error(f"네이버 세션 체크 실패: {e}", exc_info=True)
         raise
 
 
