@@ -166,6 +166,21 @@ export function useResetGenPassword() {
     });
 }
 
+export function useUpdateGenAccount() {
+    return useMutation({
+        mutationFn: async ({ id, password }: { id: number; password: string }) => {
+            const { data } = await api.patch(`/generation/accounts/${id}`, { password });
+            return data;
+        },
+        onSuccess: () => {
+            toast.success("비밀번호가 변경되었습니다");
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.detail ?? "비밀번호 변경 실패");
+        },
+    });
+}
+
 export function useDeleteGenAccount() {
     const queryClient = useQueryClient();
     return useMutation({

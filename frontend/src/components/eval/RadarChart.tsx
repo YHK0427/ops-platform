@@ -26,7 +26,7 @@ const DOMAIN_COLORS: Record<string, string> = {
     스피치: "#f59e0b",
 };
 
-const SELF_COLOR = "#6366f1";
+const SELF_COLOR = "#f43f5e";
 const AUD_COLOR = "#ec4899";
 
 /** 소수점 둘째 자리에서 반올림하여 첫째 자리까지 표시 (IEEE 754 안전) */
@@ -105,8 +105,8 @@ export default function RadarChart({
                 <RechartsRadarChart data={chartData} cx="50%" cy="50%" outerRadius="72%">
                     <defs>
                         <linearGradient id="selfGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
-                            <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.08} />
+                            <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
+                            <stop offset="100%" stopColor="#fda4af" stopOpacity={0.08} />
                         </linearGradient>
                         <linearGradient id="audGrad" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#ec4899" stopOpacity={0.35} />
@@ -137,7 +137,7 @@ export default function RadarChart({
                         stroke={SELF_COLOR}
                         fill="url(#selfGrad)"
                         strokeWidth={2.5}
-                        dot={{ r: 3, fill: SELF_COLOR }}
+                        dot={{ r: 1.5, fill: SELF_COLOR }}
                     />
                     {audienceScores && (
                         <Radar
@@ -146,7 +146,7 @@ export default function RadarChart({
                             stroke={AUD_COLOR}
                             fill="url(#audGrad)"
                             strokeWidth={2.5}
-                            dot={{ r: 3, fill: AUD_COLOR }}
+                            dot={{ r: 1.5, fill: AUD_COLOR }}
                         />
                     )}
                 </RechartsRadarChart>

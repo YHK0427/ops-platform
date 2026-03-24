@@ -322,11 +322,43 @@ async def create_round(
             )
         )
 
+    # 가장 최근 라운드의 AUDIENCE 배정 자동 복사
+    audience_copied = 0
+    prev_round_q = await db.execute(
+        select(EvalRound)
+        .where(EvalRound.id != round_.id)
+        .order_by(EvalRound.id.desc())
+        .limit(1)
+    )
+    prev_round = prev_round_q.scalar_one_or_none()
+
+    if prev_round:
+        prev_q = await db.execute(
+            select(EvalAssignment).where(
+                EvalAssignment.round_id == prev_round.id,
+                EvalAssignment.eval_type == "AUDIENCE",
+            )
+        )
+        active_member_ids = {m.id for m in members}
+        for pa in prev_q.scalars().all():
+            if pa.presenter_member_id not in active_member_ids:
+                continue
+            db.add(
+                EvalAssignment(
+                    round_id=round_.id,
+                    evaluator_user_id=pa.evaluator_user_id,
+                    presenter_member_id=pa.presenter_member_id,
+                    eval_type="AUDIENCE",
+                )
+            )
+            audience_copied += 1
+
     await db.commit()
     await db.refresh(round_)
     logger.audit(  # type: ignore[attr-defined]
         f"eval_round_create id={round_.id} session={body.session_id} "
-        f"type={body.round_type} self_assignments={len(members)}"
+        f"type={body.round_type} self_assignments={len(members)} "
+        f"audience_copied={audience_copied}"
     )
     return round_
 
@@ -428,6 +460,71 @@ async def auto_assign_audience(
         f"eval_auto_assign round={round_id} created={created}"
     )
     return {"created": created}
+
+
+@router.post("/rounds/{round_id}/copy-assignments/{source_round_id}")
+async def copy_audience_assignments(
+    round_id: int,
+    source_round_id: int,
+    _: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """다른 라운드의 AUDIENCE 배정을 현재 라운드로 복사 (기존 배정 유지, 중복 스킵)."""
+    await _get_round_or_404(db, round_id)
+    await _get_round_or_404(db, source_round_id)
+
+    # 소스 라운드의 AUDIENCE 배정 조회
+    source_q = await db.execute(
+        select(EvalAssignment).where(
+            EvalAssignment.round_id == source_round_id,
+            EvalAssignment.eval_type == "AUDIENCE",
+        )
+    )
+    source_assignments = source_q.scalars().all()
+    if not source_assignments:
+        raise HTTPException(status_code=400, detail="소스 라운드에 청중평가 배정이 없습니다")
+
+    # 현재 라운드의 기존 AUDIENCE 배정 (중복 방지)
+    existing_q = await db.execute(
+        select(EvalAssignment.evaluator_user_id, EvalAssignment.presenter_member_id).where(
+            EvalAssignment.round_id == round_id,
+            EvalAssignment.eval_type == "AUDIENCE",
+        )
+    )
+    existing_pairs = {(r[0], r[1]) for r in existing_q.all()}
+
+    # 활성 멤버만 복사
+    active_members_q = await db.execute(
+        select(Member.id).where(Member.is_active == True)
+    )
+    active_member_ids = {r[0] for r in active_members_q.all()}
+
+    created = 0
+    skipped = 0
+    for sa in source_assignments:
+        if sa.presenter_member_id not in active_member_ids:
+            skipped += 1
+            continue
+        pair = (sa.evaluator_user_id, sa.presenter_member_id)
+        if pair in existing_pairs:
+            skipped += 1
+            continue
+        db.add(
+            EvalAssignment(
+                round_id=round_id,
+                evaluator_user_id=sa.evaluator_user_id,
+                presenter_member_id=sa.presenter_member_id,
+                eval_type="AUDIENCE",
+            )
+        )
+        created += 1
+
+    await db.commit()
+    logger.audit(  # type: ignore[attr-defined]
+        f"eval_copy_assignments target={round_id} source={source_round_id} "
+        f"created={created} skipped={skipped}"
+    )
+    return {"created": created, "skipped": skipped}
 
 
 @router.post("/rounds/{round_id}/assignments/bulk")

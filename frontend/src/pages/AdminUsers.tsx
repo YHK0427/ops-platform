@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Shield, Plus, Pencil, ShieldCheck, ShieldOff, Loader2, RotateCcw, Trash2, Users, UserCog, Check, X, KeyRound } from "lucide-react";
-import { useAdminUsers, useCreateAdminUser, useUpdateAdminUser, useDeleteAdminUser, useBulkCreateGeneration, useBulkDeleteGeneration, useBulkResetGenPassword, useResetGenPassword, useDeleteGenAccount, useGenAccounts, adminUserKeys, useMembers } from "@/hooks";
+import { useAdminUsers, useCreateAdminUser, useUpdateAdminUser, useDeleteAdminUser, useBulkCreateGeneration, useBulkDeleteGeneration, useBulkResetGenPassword, useUpdateGenAccount, useDeleteGenAccount, useGenAccounts, adminUserKeys, useMembers } from "@/hooks";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -413,12 +413,14 @@ function GenerationTab() {
     const { data: accounts, isLoading: accountsLoading } = useGenAccounts();
     const { mutate: bulkCreate, isPending: isCreating } = useBulkCreateGeneration();
     const { mutate: bulkDelete, isPending: isDeleting } = useBulkDeleteGeneration();
-    const { mutate: resetPassword } = useResetGenPassword();
     const { mutate: deleteAccount } = useDeleteGenAccount();
     const { mutate: bulkResetPw, isPending: isResettingPw } = useBulkResetGenPassword();
+    const updateAccount = useUpdateGenAccount();
     const [bulkPassword, setBulkPassword] = useState("univpt33");
     const [resetPwOpen, setResetPwOpen] = useState(false);
     const [newBulkPw, setNewBulkPw] = useState("");
+    const [editPwAccountId, setEditPwAccountId] = useState<number | null>(null);
+    const [editPwValue, setEditPwValue] = useState("");
 
     const memberAccountStatus = useMemo(() => {
         if (!members || !accounts) return [];
@@ -564,27 +566,10 @@ function GenerationTab() {
                                     <TableCell className="text-right">
                                         {m.account && (
                                             <div className="flex items-center justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7" title="비밀번호 초기화">
-                                                            <KeyRound className="w-3.5 h-3.5" />
-                                                        </Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle>비밀번호 초기화</AlertDialogTitle>
-                                                            <AlertDialogDescription>
-                                                                {m.name}의 비밀번호를 univpt33으로 초기화합니다.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>취소</AlertDialogCancel>
-                                                            <AlertDialogAction onClick={() => resetPassword(m.account!.id)}>
-                                                                초기화
-                                                            </AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
+                                                <Button variant="ghost" size="icon" className="h-7 w-7" title="비밀번호 변경"
+                                                    onClick={() => { setEditPwAccountId(m.account!.id); setEditPwValue(""); }}>
+                                                    <KeyRound className="w-3.5 h-3.5" />
+                                                </Button>
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild>
                                                         <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-500 hover:text-rose-600" title="계정 삭제">
@@ -615,6 +600,38 @@ function GenerationTab() {
                     </TableBody>
                 </Table>
             </div>
+
+            <Dialog open={editPwAccountId !== null} onOpenChange={(open) => { if (!open) setEditPwAccountId(null); }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>비밀번호 변경</DialogTitle>
+                        <DialogDescription>
+                            새 비밀번호를 입력하세요. 비워두면 기본값(univpt33)으로 설정됩니다.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Input
+                        type="password"
+                        placeholder="비워두면 univpt33"
+                        value={editPwValue}
+                        onChange={(e) => setEditPwValue(e.target.value)}
+                    />
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditPwAccountId(null)}>취소</Button>
+                        <Button
+                            disabled={editPwValue.length > 0 && editPwValue.length < 4 || updateAccount.isPending}
+                            onClick={() => {
+                                if (editPwAccountId == null) return;
+                                const pw = editPwValue.trim() || "univpt33";
+                                updateAccount.mutate({ id: editPwAccountId, password: pw }, {
+                                    onSuccess: () => setEditPwAccountId(null),
+                                });
+                            }}
+                        >
+                            {updateAccount.isPending ? "변경 중..." : "변경"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

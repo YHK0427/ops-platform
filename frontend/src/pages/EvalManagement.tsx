@@ -13,6 +13,7 @@ import {
     ClipboardEdit,
     CheckCircle2,
     Circle,
+    Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -53,7 +54,7 @@ import {
     useDeleteRound,
     useEvalAssignments,
     useReplaceAudienceAssignments,
-    useBulkAssign,
+    useCopyAssignments,
     useMyAssignments,
     useEvalResults,
     useMemberResult,
@@ -505,14 +506,22 @@ function CreateRoundDialog({
     const { data: sessions } = useSessions();
     const { data: users } = useAdminUsers();
     const { data: membersData } = useMembers(true);
+    const { data: rounds } = useEvalRounds();
     const createRound = useCreateRound();
-    const bulkAssign = useBulkAssign();
+    const replaceAssignments = useReplaceAudienceAssignments();
 
     const [step, setStep] = useState<1 | 2>(1);
     const [sessionId, setSessionId] = useState<string>("");
     const [roundType, setRoundType] = useState<string>("INITIAL");
     const [title, setTitle] = useState("");
     const [isCreating, setIsCreating] = useState(false);
+
+    // 가장 최근 라운드의 배정을 가져와서 보드 프리로드
+    const latestRoundId = useMemo(
+        () => (rounds && rounds.length > 0 ? rounds[0].id : null),
+        [rounds]
+    );
+    const { data: prevAssignments } = useEvalAssignments(latestRoundId ?? 0);
 
     const activeUsers = useMemo(
         () =>
@@ -528,10 +537,19 @@ function CreateRoundDialog({
         [membersData]
     );
     const initialBoard = useMemo(() => {
+        // 이전 라운드 배정이 있으면 프리로드
+        if (prevAssignments && prevAssignments.length > 0) {
+            return assignmentsToBoard(
+                prevAssignments,
+                activeUsers.map((u) => u.id),
+                matchingMembers.map((m) => m.id)
+            );
+        }
+        // 없으면 빈 보드
         const b: Record<string, number[]> = {};
         for (const u of activeUsers) b[String(u.id)] = [];
         return b;
-    }, [activeUsers]);
+    }, [activeUsers, matchingMembers, prevAssignments]);
 
     function handleClose() {
         onOpenChange(false);
@@ -559,12 +577,11 @@ function CreateRoundDialog({
                 round_type: roundType,
                 title: title.trim(),
             });
-            if (assignments.length > 0) {
-                await bulkAssign.mutateAsync({
-                    roundId: round.id,
-                    assignments,
-                });
-            }
+            // 보드에 있는 배정으로 덮어쓰기 (auto-copy 결과 대체)
+            await replaceAssignments.mutateAsync({
+                roundId: round.id,
+                assignments,
+            });
             handleClose();
         } catch {
             // errors handled by mutation onError
@@ -696,6 +713,13 @@ function AssignmentsTab({
     const { data: membersData } = useMembers(true);
 
     const replaceAssignments = useReplaceAudienceAssignments();
+    const copyAssignments = useCopyAssignments();
+
+    // 현재 라운드 외 다른 라운드 목록 (복사 소스용)
+    const otherRounds = useMemo(
+        () => (rounds ?? []).filter((r) => r.id !== selectedRoundId),
+        [rounds, selectedRoundId]
+    );
 
     const activeUsers = useMemo(
         () =>
@@ -760,6 +784,34 @@ function AssignmentsTab({
                         <ClipboardEdit className="w-3.5 h-3.5 mr-1.5" />
                         청중 평가하기
                     </Button>
+                )}
+
+                {/* 이전 라운드에서 배정 복사 */}
+                {selectedRoundId && otherRounds.length > 0 && (
+                    <Select
+                        onValueChange={(sourceId) => {
+                            if (!selectedRoundId) return;
+                            copyAssignments.mutate({
+                                roundId: selectedRoundId,
+                                sourceRoundId: Number(sourceId),
+                            });
+                        }}
+                    >
+                        <SelectTrigger
+                            className="w-auto h-8 gap-1.5 px-3 text-xs border-[var(--color-border)] bg-transparent"
+                            disabled={copyAssignments.isPending}
+                        >
+                            <Copy className="w-3.5 h-3.5" />
+                            {copyAssignments.isPending ? "복사 중..." : "배정 복사"}
+                        </SelectTrigger>
+                        <SelectContent>
+                            {otherRounds.map((r) => (
+                                <SelectItem key={r.id} value={String(r.id)}>
+                                    {r.title} ({ROUND_TYPE_LABELS[r.round_type] ?? r.round_type})
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 )}
             </div>
 

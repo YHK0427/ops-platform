@@ -8,6 +8,8 @@ import {
     Loader2,
     Send,
     ChevronRight,
+    ClipboardList,
+    Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -49,7 +51,7 @@ const EVAL_QUESTIONS: EvalQuestion[] = [
         domain: "PLANNING",
         order: 3,
         label: "특수성",
-        text: "발표자는 본인만의 관점과 해석이 드러난 차별화된 메시지를 전달했다",
+        text: "발표자는 나만의 관점과 해석이 드러난 차별화된 메시지를 전달했다",
     },
     {
         key: "design_readability",
@@ -69,8 +71,8 @@ const EVAL_QUESTIONS: EvalQuestion[] = [
         key: "design_creativity",
         domain: "DESIGN",
         order: 6,
-        label: "창의성",
-        text: "발표자는 파워포인트의 다양한 기능과 디자인 요소를 발표의 분위기와 목적에 맞게 의도적으로 활용했다",
+        label: "통일성",
+        text: "나는 파워포인트의 기능과 디자인 요소를 발표의 분위기와 목적에 맞게 의도적으로 활용했다",
     },
     {
         key: "speech_expression",
@@ -127,6 +129,8 @@ export default function EvalAudienceForm() {
     const { data: assignments, isLoading: assignLoading } = useMyAssignments(numRoundId);
     const submitEval = useSubmitAudienceEval();
 
+    const [showIntro, setShowIntro] = useState(true);
+    const [showCompleteModal, setShowCompleteModal] = useState(false);
     const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
     const [scores, setScores] = useState<Record<string, number>>({});
 
@@ -179,8 +183,10 @@ export default function EvalAudienceForm() {
                     if (nextUnsubmitted) {
                         setSelectedMemberId(nextUnsubmitted.presenter_member_id);
                         setScores({});
+                    } else {
+                        // 마지막 멤버 — 완료 팝업
+                        setShowCompleteModal(true);
                     }
-                    // If no more unsubmitted, stay on current member (scores kept for review)
                 },
             }
         );
@@ -214,8 +220,148 @@ export default function EvalAudienceForm() {
 
     const submittedAll = assignments.every((a) => a.submitted);
 
+    if (showIntro) {
+        return (
+            <div className="min-h-screen bg-[var(--color-base)]">
+                {/* Header */}
+                <header className="sticky top-0 z-20 bg-[var(--color-base)]/90 backdrop-blur-xl border-b border-[var(--color-border-subtle)]">
+                    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                            onClick={() => navigate("/eval")}
+                        >
+                            <ArrowLeft className="w-5 h-5" />
+                        </Button>
+                        <div>
+                            <h1 className="text-sm font-bold text-[var(--color-text-primary)]">청중 평가</h1>
+                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                                {round?.title ?? `라운드 #${roundId}`}
+                            </p>
+                        </div>
+                    </div>
+                </header>
+
+                <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+                    {/* Title area */}
+                    <div className="relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-base)] to-[var(--color-hover)] p-6 sm:p-8">
+                        <div className="absolute top-3 right-6 w-20 h-20 rounded-full bg-[var(--color-accent)]/5 blur-2xl" />
+                        <span className="inline-block px-2.5 py-1 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] text-[11px] font-semibold tracking-wide mb-3">
+                            UnivPT 33기
+                        </span>
+                        <h2 className="text-xl sm:text-2xl font-extrabold text-[var(--color-text-primary)] mb-1.5">
+                            청중 평가
+                        </h2>
+                        <p className="text-sm text-[var(--color-text-muted)]">
+                            {round?.title ?? `라운드 #${roundId}`}
+                        </p>
+                    </div>
+
+                    {/* Intro card */}
+                    <div className="rounded-xl border border-[var(--color-border)] bg-white p-6 sm:p-7">
+                        <div className="text-sm text-[var(--color-text-secondary)] leading-[2.0] space-y-5 [word-break:keep-all]">
+                            <p>
+                                유니브피티 33기 운영진 여러분 안녕하세요.
+                            </p>
+                            <p>
+                                본 평가는 유니브피티 교육과정 전후의 변화를 함께 확인하기 위한 <strong className="text-[var(--color-text-primary)]">성장 기록</strong>의 한 과정입니다.
+                            </p>
+                            <p>
+                                운영진 여러분의 평가는 기수들의 자기평가와 함께 정리되어, 한 사람의 발표 여정을 보다 <strong className="text-[var(--color-text-primary)]">입체적으로 보여주는 소중한 기준</strong>이 됩니다.
+                                평가는 개인 1 세션 발표와 최종 개인 발표를 기준으로 <strong className="text-[var(--color-text-primary)]">총 두 차례</strong> 진행됩니다.
+                            </p>
+                            <p>
+                                운영진 평가는 우열을 가리기 위한 절대적 잣대가 아니라, 발표자가 인지하지 못했을 수 있는 <strong className="text-[var(--color-text-primary)]">강점과 보완점</strong>을 외부의 시각으로 비춰주는 역할을 합니다.
+                                이를 통해 기수들의 현재 위치를 보다 선명하게 확인하고, 다음 단계로 나아갈 방향을 제시하게 됩니다.
+                            </p>
+                            <p className="font-medium text-[var(--color-text-primary)]">
+                                따라서 개인적 호불호보다는 평가 문항의 기준에 따라 <span className="text-[var(--color-accent)]">일관되고 객관적인 시각</span>으로 판단해 주시기 바랍니다.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Question intro section */}
+                    <div className="rounded-xl border border-[var(--color-accent)]/15 bg-[var(--color-accent)]/[0.03] p-5 sm:p-6">
+                        <div className="flex items-start gap-3">
+                            <div className="shrink-0 mt-0.5 w-7 h-7 rounded-lg bg-[var(--color-accent)]/10 flex items-center justify-center">
+                                <ClipboardList className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                            </div>
+                            <div className="space-y-2">
+                                <h3 className="text-sm font-bold text-[var(--color-text-primary)]">평가 문항 소개</h3>
+                                <p className="text-sm text-[var(--color-text-secondary)] leading-[1.8] [word-break:keep-all]">
+                                    본 평가는 프레젠테이션의 3요소인 <strong className="text-[var(--color-text-primary)]">기획, 디자인, 스피치</strong> 세 영역으로 구성되어 있습니다.
+                                    각 문항을 읽고 현재 발표자의 발표 역량 수준에 가장 가깝다고 생각되는 점수를 선택해 주세요.
+                                </p>
+                                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                                    (1점: 매우 그렇지 않다 / 2점: 그렇지 않다 / 3점: 보통이다 / 4점: 그렇다 / 5점: 매우 그렇다)
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Start button */}
+                    <Button
+                        onClick={() => setShowIntro(false)}
+                        className="w-full py-3 text-sm font-semibold rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/80 text-white shadow-lg shadow-[var(--color-accent)]/20"
+                    >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        평가 시작하기
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-[var(--color-base)]">
+            {/* 완료 팝업 모달 */}
+            <AnimatePresence>
+                {showCompleteModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+                        onClick={() => setShowCompleteModal(false)}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                            transition={{ duration: 0.3, ease: [0.34, 1.56, 0.64, 1] }}
+                            className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 text-center"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="mx-auto mb-5 w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+                                <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                            </div>
+                            <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-3">
+                                모든 평가가 완료되었습니다!
+                            </h2>
+                            <p className="text-sm text-[var(--color-text-secondary)] mb-2 [word-break:keep-all]">
+                                평가에 참여해 주셔서 감사합니다.
+                            </p>
+                            <p className="text-sm text-[var(--color-text-muted)] mb-2 [word-break:keep-all]">
+                                본 결과는 기수들에게 개인별 성장 리포트로 정리되어 제공될 예정입니다.
+                            </p>
+                            <p className="text-sm text-[var(--color-text-muted)] mb-2 [word-break:keep-all]">
+                                여러분의 소중한 평가가 33기 기수들의 성장 기록에 의미 있는 기준으로 남게 됩니다.
+                            </p>
+                            <p className="text-sm text-[var(--color-text-secondary)] font-medium mb-6 [word-break:keep-all]">
+                                33기 기수들의 성장에 함께해 주신 운영진 여러분께 진심으로 감사드립니다 🌼💗
+                            </p>
+                            <Button
+                                onClick={() => setShowCompleteModal(false)}
+                                className="w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/80 text-white py-3 rounded-xl font-semibold"
+                            >
+                                확인
+                            </Button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Header */}
             <header className="sticky top-0 z-20 bg-[var(--color-base)]/90 backdrop-blur-xl border-b border-[var(--color-border-subtle)]">
                 <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
@@ -276,9 +422,13 @@ export default function EvalAudienceForm() {
                         </div>
 
                         {submittedAll && (
-                            <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
-                                <CheckCircle2 className="w-5 h-5 text-green-600 mx-auto mb-1" />
-                                <p className="text-xs text-green-600 font-medium">모든 평가 완료</p>
+                            <div className="mt-4 p-5 rounded-xl bg-emerald-50 border border-emerald-200 text-center space-y-2">
+                                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                                <p className="text-sm font-bold text-emerald-700">모든 평가가 완료되었습니다!</p>
+                                <p className="text-xs text-emerald-600">평가에 참여해 주셔서 감사합니다.</p>
+                                <p className="text-xs text-emerald-600">본 결과는 기수들에게 개인별 성장 리포트로 정리되어 제공될 예정입니다.</p>
+                                <p className="text-xs text-emerald-600">여러분의 소중한 평가가 33기 기수들의 성장 기록에 의미 있는 기준으로 남게 됩니다.</p>
+                                <p className="text-xs text-emerald-600">33기 기수들의 성장에 함께해 주신 운영진 여러분께 진심으로 감사드립니다 🌼💗</p>
                             </div>
                         )}
                     </div>
@@ -379,7 +529,7 @@ export default function EvalAudienceForm() {
                                                         <span className="text-[10px] font-semibold text-[var(--color-text-muted)] bg-[var(--color-hover)] px-1.5 py-0.5 rounded shrink-0">
                                                             {q.label}
                                                         </span>
-                                                        <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+                                                        <p className="text-sm text-[var(--color-text-secondary)] leading-[1.8] [word-break:keep-all]">
                                                             {q.text}
                                                         </p>
                                                     </div>

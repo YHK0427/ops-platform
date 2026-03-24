@@ -202,6 +202,32 @@ export function useAutoAssign() {
     });
 }
 
+export function useCopyAssignments() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({
+            roundId,
+            sourceRoundId,
+        }: {
+            roundId: number;
+            sourceRoundId: number;
+        }) => {
+            const { data } = await api.post<{ created: number; skipped: number }>(
+                `/evaluations/rounds/${roundId}/copy-assignments/${sourceRoundId}`
+            );
+            return data;
+        },
+        onSuccess: (data, { roundId }) => {
+            qc.invalidateQueries({ queryKey: evalKeys.assignments(roundId) });
+            qc.invalidateQueries({ queryKey: evalKeys.rounds() });
+            toast.success(`${data.created}건 배정 복사 완료 (${data.skipped}건 스킵)`);
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.detail ?? "배정 복사 실패");
+        },
+    });
+}
+
 export function useBulkAssign() {
     const qc = useQueryClient();
     return useMutation({
