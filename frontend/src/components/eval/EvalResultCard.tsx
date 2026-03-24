@@ -56,8 +56,6 @@ const STAGE_COLORS: Record<string, string> = {
 
 export default function EvalResultCard({
     memberName,
-    selfScores,
-    audienceScores,
     combinedScores,
     stage,
     type,
