@@ -1,5 +1,5 @@
 import { useOutletContext, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AttendanceGrid } from "./AttendanceGrid";
 import { Button } from "@/components/ui/button";
 import { FileSearch, Loader2, CheckCircle2, XCircle, Trash2, Download } from "lucide-react";
@@ -70,14 +70,37 @@ export default function PrepTab() {
                 };
             }).sort((a: any, b: any) => a.name.localeCompare(b.name));
 
-            displayTeams = [{
-                name: session.type === "TEAM" ? "미배정 / 전체 멤버" : "개인",
-                members: virtualMembers
-            }];
+            // 분반이 있으면 그룹별로 나누기
+            if (session.type === "INDIVIDUAL" && session.config?.has_groups) {
+                const group1 = virtualMembers.filter((m: any) => m.attendance?.group_num === 1);
+                const group2 = virtualMembers.filter((m: any) => m.attendance?.group_num === 2);
+                const unassigned = virtualMembers.filter((m: any) => !m.attendance?.group_num);
+
+                displayTeams = [];
+                if (group1.length > 0) displayTeams.push({ name: "1분반", members: group1 });
+                if (group2.length > 0) displayTeams.push({ name: "2분반", members: group2 });
+                if (unassigned.length > 0) displayTeams.push({ name: "미배정", members: unassigned });
+            } else {
+                displayTeams = [{
+                    name: session.type === "TEAM" ? "미배정 / 전체 멤버" : "개인",
+                    members: virtualMembers
+                }];
+            }
         }
     }
 
     const cfg = session.config || {};
+
+    // 분반 운영진 데이터 (has_groups일 때만)
+    const { data: groupData } = useQuery({
+        queryKey: ["sessions", session.id, "groups"],
+        queryFn: async () => {
+            const { data } = await api.get(`/sessions/${session.id}/groups`);
+            return data as { staff_groups: Record<string, { user_id: number; display_name: string }[]> };
+        },
+        enabled: !!cfg.has_groups,
+    });
+    const staffGroups = groupData?.staff_groups;
 
     return (
         <div className="space-y-8">
@@ -180,8 +203,18 @@ export default function PrepTab() {
                             팀 수정
                         </Button>
                     )}
+                    {session.type === "INDIVIDUAL" && session.config?.has_groups && ["SETUP", "PREP"].includes(session.status) && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/sessions/${session.id}/group-edit`)}
+                            className="border-[var(--color-border)] hover:bg-gray-50"
+                        >
+                            분반 수정
+                        </Button>
+                    )}
                 </div>
-                <AttendanceGrid sessionId={session.id} teams={displayTeams} assignments={session.assignments} sessionType={session.type} />
+                <AttendanceGrid sessionId={session.id} teams={displayTeams} assignments={session.assignments} sessionType={session.type} staffGroups={staffGroups} />
             </section>
 
         </div>

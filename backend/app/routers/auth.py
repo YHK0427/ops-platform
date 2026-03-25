@@ -20,6 +20,7 @@ from app.deps import (
     get_db,
     oauth2_scheme,
     require_admin,
+    require_staff,
     verify_password,
 )
 from app.models import (
@@ -413,6 +414,21 @@ async def totp_status(
     )
     user = result.scalar_one_or_none()
     return {"enabled": bool(user and user.totp_secret)}
+
+
+# ── Staff list (for group building etc.) ─────────────────────────────────────
+
+@router.get("/staff-list")
+async def list_staff(
+    _: dict = Depends(require_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    """운영진 목록 (staff 이상 접근 가능) — 분반 배치 등에 사용"""
+    result = await db.execute(select(User).where(User.is_active == True).order_by(User.id))
+    return [
+        {"id": u.id, "display_name": u.display_name, "department": u.department}
+        for u in result.scalars().all()
+    ]
 
 
 # ── User Management (admin only) ────────────────────────────────────────────

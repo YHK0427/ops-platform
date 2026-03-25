@@ -24,6 +24,16 @@ class AttendanceResponse(BaseModel):
     status: str
     excuse_type: Optional[str]
     excuse_text: Optional[str]
+    group_num: Optional[int] = None
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class GroupAssignment(BaseModel):
+    groups: dict[str, list[int]]  # {"1": [member_ids...], "2": [member_ids...]}
+    staff_groups: dict[str, list[int]] | None = None  # {"1": [user_ids...], "2": [user_ids...]}
+
+
+class GroupGenerateRequest(BaseModel):
+    method: str = "random"  # "random" | "balanced"

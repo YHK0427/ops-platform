@@ -18,6 +18,7 @@ from app.models import (
     Session as SessionModel,
     Team,
     TeamMember,
+    User,
 )
 from app.schemas.attendance import AttendanceForceUpdate, AttendanceUpdate
 from app.schemas.session import (
@@ -36,8 +37,9 @@ from app.schemas.session import (
     StagedMeritCreate,
 )
 from app.schemas.team import TeamCreateRequest, TeamGenerateRequest, TeamResponse
-from app.schemas.attendance import AttendanceResponse
+from app.schemas.attendance import AttendanceResponse, GroupAssignment, GroupGenerateRequest
 from app.services.team_builder import TeamBuilder
+from app.services.group_builder import build_groups
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -840,6 +842,170 @@ async def confirm_teams(
     logger.audit(f"teams_confirmed session={session_id} teams={len(body.teams)} members={len(all_assigned_member_ids)}")
 
 
+# ─── 분반 (Groups) ─────────────────────────────────────────────────
+
+async def _guard_group_session(session: SessionModel):
+    """분반 엔드포인트 공통 가드"""
+    if session.type != "INDIVIDUAL":
+        raise HTTPException(status_code=400, detail="분반은 개인(INDIVIDUAL) 세션에서만 사용 가능합니다")
+    cfg = session.config or {}
+    if not cfg.get("has_groups"):
+        raise HTTPException(status_code=400, detail="이 세션은 분반이 활성화되어 있지 않습니다")
+    if session.status not in ("SETUP", "PREP"):
+        raise HTTPException(status_code=400, detail="분반 수정은 SETUP/PREP 상태에서만 가능합니다")
+
+
+@router.post("/{session_id}/groups/generate")
+async def generate_groups(
+    session_id: int,
+    body: GroupGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+):
+    """분반 자동 생성 (저장 안 함, 미리보기)"""
+    session = await _get_session_or_404(session_id, db)
+    await _guard_group_session(session)
+
+    result = await db.execute(select(Member).where(Member.is_active == True))
+    members = result.scalars().all()
+
+    groups = build_groups(members, method=body.method)
+    # member 이름 포함해서 반환
+    member_map = {m.id: m.name for m in members}
+    return {
+        "groups": {
+            str(k): [{"id": mid, "name": member_map.get(mid, "?")} for mid in ids]
+            for k, ids in groups.items()
+        }
+    }
+
+
+@router.get("/{session_id}/groups")
+async def get_groups(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """현재 분반 현황 조회"""
+    session = await _get_session_or_404(session_id, db)
+
+    att_result = await db.execute(
+        select(Attendance, Member.name)
+        .join(Member, Attendance.member_id == Member.id)
+        .where(Attendance.session_id == session_id)
+    )
+    rows = att_result.all()
+
+    groups: dict[str, list[dict]] = {"1": [], "2": [], "unassigned": []}
+    for att, name in rows:
+        entry = {"member_id": att.member_id, "name": name, "group_num": att.group_num}
+        if att.group_num == 1:
+            groups["1"].append(entry)
+        elif att.group_num == 2:
+            groups["2"].append(entry)
+        else:
+            groups["unassigned"].append(entry)
+
+    # staff_groups: config에 저장된 운영진 분반 배정
+    cfg = session.config or {}
+    staff_groups_raw = cfg.get("staff_groups", {})
+
+    # users 목록 조회 (운영진 배정용)
+    users_result = await db.execute(
+        select(User).where(User.is_active == True).order_by(User.id)
+    )
+    all_users = [
+        {"id": u.id, "display_name": u.display_name, "department": u.department, "role": u.role}
+        for u in users_result.scalars().all()
+    ]
+
+    # staff_groups에 이름 붙여서 반환
+    user_name_map = {u["id"]: u["display_name"] for u in all_users}
+    staff_groups: dict[str, list[dict]] = {"1": [], "2": [], "unassigned": []}
+    assigned_staff_ids: set[int] = set()
+    for gk in ("1", "2"):
+        for uid in staff_groups_raw.get(gk, []):
+            staff_groups[gk].append({"user_id": uid, "display_name": user_name_map.get(uid, f"ID:{uid}")})
+            assigned_staff_ids.add(uid)
+    for u in all_users:
+        if u["id"] not in assigned_staff_ids:
+            staff_groups["unassigned"].append({"user_id": u["id"], "display_name": u["display_name"]})
+
+    return {"groups": groups, "staff_groups": staff_groups, "users": all_users}
+
+
+@router.patch("/{session_id}/groups")
+async def save_groups(
+    session_id: int,
+    body: GroupAssignment,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+):
+    """분반 저장 (벌크 업데이트)"""
+    session = await _get_session_or_404(session_id, db)
+    await _guard_group_session(session)
+
+    # 검증: 중복 없는지
+    all_ids: list[int] = []
+    for group_key, member_ids in body.groups.items():
+        if group_key not in ("1", "2"):
+            raise HTTPException(status_code=400, detail=f"잘못된 분반 키: {group_key} (1 또는 2만 허용)")
+        for mid in member_ids:
+            if mid in all_ids:
+                raise HTTPException(status_code=400, detail=f"중복된 멤버 ID: {mid}")
+            all_ids.append(mid)
+
+    # 해당 세션 attendance 조회
+    att_result = await db.execute(
+        select(Attendance).where(Attendance.session_id == session_id)
+    )
+    att_map = {a.member_id: a for a in att_result.scalars().all()}
+
+    # 검증: 모든 ID가 해당 세션에 존재하는지
+    invalid = set(all_ids) - set(att_map.keys())
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"이 세션에 없는 멤버 ID: {sorted(invalid)}")
+
+    # 전체 초기화 후 배정
+    for att in att_map.values():
+        att.group_num = None
+
+    for group_key, member_ids in body.groups.items():
+        group_num = int(group_key)
+        for mid in member_ids:
+            att_map[mid].group_num = group_num
+
+    # staff_groups를 config에 저장
+    if body.staff_groups is not None:
+        cfg = dict(session.config or {})
+        cfg["staff_groups"] = body.staff_groups
+        session.config = cfg
+
+    await db.commit()
+    logger.audit(f"groups_saved session={session_id} g1={len(body.groups.get('1', []))} g2={len(body.groups.get('2', []))}")
+    return {"status": "ok", "groups": {k: len(v) for k, v in body.groups.items()}}
+
+
+@router.delete("/{session_id}/groups")
+async def clear_groups(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+):
+    """분반 초기화 (전체 NULL)"""
+    session = await _get_session_or_404(session_id, db)
+    await _guard_group_session(session)
+
+    await db.execute(
+        update(Attendance)
+        .where(Attendance.session_id == session_id)
+        .values(group_num=None)
+    )
+    await db.commit()
+    logger.audit(f"groups_cleared session={session_id}")
+    return {"status": "ok"}
+
+
 @router.patch("/{session_id}/assignments/{member_id}/feedback-targets")
 async def set_feedback_targets(
     session_id: int,
@@ -904,6 +1070,8 @@ async def feedback_random_assign(
     attendances = att_result.scalars().all()
 
     absent_ids = {a.member_id for a in attendances if a.status in ("ABSENT", "EXCUSED")}
+    member_group_map = {a.member_id: a.group_num for a in attendances}
+    session_has_groups = bool((session.config or {}).get("has_groups"))
 
     if not presenter_ids:
         presenter_ids = [a.member_id for a in attendances if a.member_id not in absent_ids]
@@ -938,7 +1106,15 @@ async def feedback_random_assign(
         # 본인 제외 발표자 중 가장 적게 배정된 순으로
         candidates = [pid for pid in presenter_ids if pid != writer_id]
         random.shuffle(candidates)
-        candidates.sort(key=lambda pid: assign_count.get(pid, 0))
+        writer_group = member_group_map.get(writer_id)
+        if session_has_groups and writer_group:
+            # 교차 분반 우선: 다른 분반 → 같은 분반, 그 안에서 균등 분배
+            candidates.sort(key=lambda pid: (
+                0 if member_group_map.get(pid) != writer_group else 1,
+                assign_count.get(pid, 0),
+            ))
+        else:
+            candidates.sort(key=lambda pid: assign_count.get(pid, 0))
 
         picked = candidates[:extra_count]
         for pid in picked:

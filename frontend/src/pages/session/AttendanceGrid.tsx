@@ -27,9 +27,10 @@ interface AttendanceGridProps {
     teams: any[];
     assignments?: any[];     // session.assignments
     sessionType?: string;    // "INDIVIDUAL" | "TEAM"
+    staffGroups?: Record<string, { display_name: string }[]>;  // {"1": [...], "2": [...]}
 }
 
-export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: AttendanceGridProps) {
+export function AttendanceGrid({ sessionId, teams, assignments, sessionType, staffGroups }: AttendanceGridProps) {
     const queryClient = useQueryClient();
     const [updating, setUpdating] = useState<Record<string, boolean>>({});
 
@@ -127,11 +128,38 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                 </button>
             </div>
 
-            <div className="rounded-xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-surface)]">
+            {teams.map((team) => {
+                const groupColor = team.name === "1분반" ? "border-blue-400" : team.name === "2분반" ? "border-emerald-400" : "border-[var(--color-border)]";
+                const groupDot = team.name === "1분반" ? "bg-blue-500" : team.name === "2분반" ? "bg-emerald-500" : "bg-gray-400";
+                const showGroupHeader = teams.length > 1;
+
+                return (
+                <div key={team.name} className="space-y-1">
+                    {showGroupHeader && (() => {
+                        const groupKey = team.name === "1분반" ? "1" : team.name === "2분반" ? "2" : null;
+                        const staff = groupKey && staffGroups ? staffGroups[groupKey] ?? [] : [];
+                        return (
+                        <div className="flex items-center gap-2 px-1">
+                            <div className={`w-2.5 h-2.5 rounded-full ${groupDot}`} />
+                            <span className="font-bold text-sm text-[var(--color-text-secondary)]">
+                                {team.name}
+                            </span>
+                            <span className="text-xs text-[var(--color-text-muted)]">
+                                ({team.members.length}명)
+                            </span>
+                            {staff.length > 0 && (
+                                <span className="text-[11px] text-[var(--color-text-muted)] ml-1">
+                                    · 운영진: {staff.map((s) => s.display_name).join(", ")}
+                                </span>
+                            )}
+                        </div>
+                        );
+                    })()}
+                    <div className={`rounded-xl border overflow-hidden bg-[var(--color-surface)] ${showGroupHeader ? groupColor : "border-[var(--color-border)]"}`}>
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead className="w-[100px]">팀</TableHead>
+                            {!showGroupHeader && <TableHead className="w-[100px]">팀</TableHead>}
                             <TableHead>멤버</TableHead>
                             <TableHead className="w-[180px]">출결</TableHead>
                             <TableHead className="w-[200px]">사유서</TableHead>
@@ -139,12 +167,13 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {teams.flatMap(team =>
-                            team.members.map((member: any) => (
+                        {team.members.map((member: any) => (
                                 <TableRow key={member.member_id}>
+                                    {!showGroupHeader && (
                                     <TableCell className="font-medium text-[var(--color-text-secondary)]">
                                         {team.name}
                                     </TableCell>
+                                    )}
                                     <TableCell>
                                         <div className="flex items-center gap-2">
                                             <span className={member.is_active ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]"}>
@@ -284,11 +313,13 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType }: A
                                         })()}
                                     </TableCell>
                                 </TableRow>
-                            ))
-                        )}
+                        ))}
                     </TableBody>
                 </Table>
-            </div>
+                    </div>
+                </div>
+                );
+            })}
         </div>
     );
 }

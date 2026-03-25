@@ -25,6 +25,7 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                     has_ppt: state.has_ppt,
                     has_review: state.has_review,
                     has_feedback: state.has_feedback,
+                    has_groups: state.has_groups,
                     is_holiday: state.is_holiday,
                     deadline_ppt_email: state.deadline_ppt_email || null,
                     deadline_ppt_email_late: state.deadline_ppt_email_late || null,
@@ -47,6 +48,23 @@ export function StepConfirmation({ state, onBack }: StepProps) {
 
                 if (teamsList.length > 0) {
                     await api.patch(`/sessions/${sessionId}/teams`, { teams: teamsList });
+                }
+            }
+
+            // 3. Assign Groups (if INDIVIDUAL + has_groups)
+            if (state.type === "INDIVIDUAL" && state.has_groups && Object.keys(state.groups).length > 0) {
+                const groupPayload: Record<string, number[]> = {};
+                for (const [key, ids] of Object.entries(state.groups)) {
+                    if (key === "unassigned" || ids.length === 0) continue;
+                    // "1분반" → "1", "2분반" → "2"
+                    const num = key.replace(/분반/, "").trim();
+                    groupPayload[num] = ids;
+                }
+                if (Object.keys(groupPayload).length > 0) {
+                    await api.patch(`/sessions/${sessionId}/groups`, {
+                        groups: groupPayload,
+                        staff_groups: state.staff_groups ?? {},
+                    });
                 }
             }
 
@@ -88,6 +106,14 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                             <div>
                                 <span className="text-[var(--color-text-secondary)]">배정된 팀 수</span>
                                 <p className="text-lg tabular-nums">{Object.keys(state.teams).filter(k => k !== "unassigned").length}팀</p>
+                            </div>
+                        )}
+                        {state.type === "INDIVIDUAL" && state.has_groups && (
+                            <div>
+                                <span className="text-[var(--color-text-secondary)]">분반</span>
+                                <p className="text-lg tabular-nums">
+                                    1분반 {state.groups["1분반"]?.length ?? 0}명 / 2분반 {state.groups["2분반"]?.length ?? 0}명
+                                </p>
                             </div>
                         )}
                     </div>

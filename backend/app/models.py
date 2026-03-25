@@ -202,6 +202,7 @@ class Attendance(Base):
     status = Column(String(20), server_default="PENDING")
     excuse_type = Column(String(10))
     excuse_text = Column(Text)
+    group_num = Column(Integer)  # 분반: 1 or 2, NULL = 분반 없음
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
@@ -212,6 +213,10 @@ class Attendance(Base):
         CheckConstraint(
             "excuse_type IN ('PRE','POST') OR excuse_type IS NULL",
             name="ck_attendance_excuse_type",
+        ),
+        CheckConstraint(
+            "group_num IN (1, 2) OR group_num IS NULL",
+            name="ck_attendance_group_num",
         ),
         UniqueConstraint("session_id", "member_id", name="uq_attendance"),
     )

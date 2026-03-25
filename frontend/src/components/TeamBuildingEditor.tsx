@@ -38,6 +38,8 @@ export interface TeamBuildingEditorProps {
     isSaving?: boolean;
     saveLabel?: string;
     cancelLabel?: string;
+    fixedColumns?: boolean; // true면 팀 추가/삭제/이름변경 숨김 (분반 모드)
+    autoGenerateFn?: (members: TeamMember[]) => Record<string, number[]>; // 자동 생성 오버라이드
 }
 
 // ─── DraggableMember ───────────────────────────────────────────────
@@ -197,6 +199,8 @@ export function TeamBuildingEditor({
     isSaving = false,
     saveLabel = "저장",
     cancelLabel = "취소",
+    fixedColumns = false,
+    autoGenerateFn,
 }: TeamBuildingEditorProps) {
     const [teams, setTeams] = useState<Record<string, number[]>>(initialTeams);
     const [draggedIds, setDraggedIds] = useState<Set<number>>(new Set());
@@ -325,6 +329,12 @@ export function TeamBuildingEditor({
     };
 
     const handleAutoGenerate = () => {
+        if (autoGenerateFn) {
+            const result = autoGenerateFn(members);
+            setTeams(result);
+            toast.success("자동 분배 완료");
+            return;
+        }
         const active = members.filter((m) => m.is_active);
         const shuffled = [...active].sort(() => 0.5 - Math.random());
         const numTeams = Math.ceil(shuffled.length / 4);
@@ -350,10 +360,12 @@ export function TeamBuildingEditor({
             {/* Toolbar */}
             <div className="flex justify-between items-center">
                 <div className="flex items-center gap-3">
+                    {!fixedColumns && (
                     <Button onClick={handleAddTeam} size="sm" variant="secondary">
                         <UserPlus className="w-4 h-4 mr-2" />
                         팀 추가
                     </Button>
+                    )}
                     {selectedIds.size > 0 && (
                         <span className="text-xs text-[var(--color-accent)] bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 px-2 py-1 rounded-full">
                             {selectedIds.size}명 선택됨 — 드래그로 이동
@@ -366,7 +378,7 @@ export function TeamBuildingEditor({
                     className="text-[var(--color-accent)] border-[var(--color-accent)]"
                 >
                     <Wand2 className="w-4 h-4 mr-2" />
-                    자동 생성
+                    {fixedColumns ? "자동 분배" : "자동 생성"}
                 </Button>
             </div>
 
@@ -416,8 +428,9 @@ export function TeamBuildingEditor({
                                         selectedIds={selectedIds}
                                         conflicts={conflicts}
                                         onToggleSelect={toggleSelect}
-                                        onRename={(newName) => handleRenameTeam(teamId, newName)}
+                                        onRename={fixedColumns ? undefined : (newName) => handleRenameTeam(teamId, newName)}
                                     />
+                                    {!fixedColumns && (
                                     <button
                                         type="button"
                                         onClick={() => handleRemoveTeam(teamId)}
@@ -426,6 +439,7 @@ export function TeamBuildingEditor({
                                     >
                                         <X className="w-3.5 h-3.5" />
                                     </button>
+                                    )}
                                 </div>
                             ))}
                     </div>

@@ -20,6 +20,7 @@ import OpsTab from "@/pages/session/OpsTab";
 import { PostTab } from "@/pages/session/PostTab";
 import SettlementTab from "@/pages/session/SettlementTab";
 import TeamEditPage from "@/pages/session/TeamEditPage";
+import GroupEditPage from "@/pages/session/GroupEditPage";
 import AdminUsers from "@/pages/AdminUsers";
 import Treasury from "@/pages/Treasury";
 
@@ -160,6 +161,7 @@ export default function App() {
                         <Route path="post" element={<PostTab />} />
                         <Route path="settlement" element={<SettlementTab />} />
                         <Route path="team-edit" element={<TeamEditPage />} />
+                        <Route path="group-edit" element={<GroupEditPage />} />
                       </Route>
                       <Route path="/ledger" element={<Ledger />} />
                       <Route path="/treasury" element={<Treasury />} />

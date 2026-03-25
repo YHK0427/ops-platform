@@ -76,7 +76,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                         <Label>세션 타입</Label>
                         <Select
                             value={state.type}
-                            onValueChange={(val: any) => onChange({ type: val })}
+                            onValueChange={(val: any) => onChange({ type: val, has_groups: false })}
                         >
                             <SelectTrigger>
                                 <SelectValue />
@@ -130,6 +130,17 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                 />
                                 <span className="text-sm">영상 피드백 포함</span>
                             </label>
+                            {state.type === "INDIVIDUAL" && (
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="rounded border-[var(--color-border)] bg-white text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                    checked={state.has_groups}
+                                    onChange={(e) => onChange({ has_groups: e.target.checked })}
+                                />
+                                <span className="text-sm">분반 나누기 (2개 그룹)</span>
+                            </label>
+                            )}
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
                                     type="checkbox"

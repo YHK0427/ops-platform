@@ -102,6 +102,16 @@ export default function OpsTab() {
         );
     }, [session.attendances]);
 
+    // 분반 맵 (has_groups일 때만 사용)
+    const memberGroupMap = useMemo(() => {
+        if (!session.config?.has_groups) return undefined;
+        const map = new Map<number, number | null>();
+        (session.attendances ?? []).forEach((a: any) => {
+            map.set(a.member_id, a.group_num ?? null);
+        });
+        return map;
+    }, [session.attendances, session.config?.has_groups]);
+
     // 발표자 (피드백 수신 가능) 목록 — config에 저장, 없으면 출석 멤버 기본값
     const presenterIds: number[] = useMemo(() => {
         const saved = session.config?.feedback_presenters as number[] | undefined;
@@ -459,13 +469,13 @@ export default function OpsTab() {
                         </div>
                     )}
 
-                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
                         {/* Left: Assignment table */}
                         <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
                             <Table>
                                 <TableHeader>
                                     <TableRow className="bg-gray-50 hover:bg-gray-50">
-                                        <TableHead className="w-[140px]">피드백 작성자</TableHead>
+                                        <TableHead className="w-[200px]">피드백 작성자</TableHead>
                                         <TableHead>피드백 대상 (추가 지정)</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -486,6 +496,7 @@ export default function OpsTab() {
                                                 currentTargetIds={currentTargetIds}
                                                 sessionMemberIds={presenterIds}
                                                 memberNameMap={memberNameMap}
+                                                memberGroupMap={memberGroupMap}
                                                 disabled={isSettingTarget}
                                                 isAbsent={isAbsent}
                                                 highlightTargetId={hoveredPresenterId}
@@ -523,12 +534,13 @@ export default function OpsTab() {
                                             onMouseEnter={() => setHoveredPresenterId(id)}
                                             onMouseLeave={() => setHoveredPresenterId(null)}
                                         >
-                                            <span className={
+                                            <span className={`flex items-center gap-1 whitespace-nowrap ${
                                                 hoveredPresenterId === id
                                                     ? "text-violet-600 font-medium"
                                                     : isUnassigned ? "text-rose-500" : "text-[var(--color-text-primary)]"
-                                            }>
+                                            }`}>
                                                 {name}
+                                                {memberGroupMap && <GroupBadge groupNum={memberGroupMap.get(id)} />}
                                             </span>
                                             <div className="flex items-center gap-1.5">
                                                 <span className={`tabular-nums px-1.5 py-0.5 rounded border ${isUnassigned
@@ -591,10 +603,23 @@ interface FeedbackTargetRowProps {
     currentTargetIds: number[];
     sessionMemberIds: number[];
     memberNameMap: Map<number, string>;
+    memberGroupMap?: Map<number, number | null>;
     disabled: boolean;
     isAbsent?: boolean;
     highlightTargetId?: number | null;
     onSetTargets: (targetIds: number[]) => void;
+}
+
+function GroupBadge({ groupNum }: { groupNum?: number | null }) {
+    if (!groupNum) return null;
+    const colors = groupNum === 1
+        ? "bg-blue-500/10 text-blue-600 border-blue-500/20"
+        : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20";
+    return (
+        <span className={`text-[10px] px-1 rounded border font-medium ${colors}`}>
+            {groupNum}분반
+        </span>
+    );
 }
 
 function FeedbackTargetRow({
@@ -603,6 +628,7 @@ function FeedbackTargetRow({
     currentTargetIds,
     sessionMemberIds,
     memberNameMap,
+    memberGroupMap,
     disabled,
     isAbsent,
     highlightTargetId,
@@ -634,9 +660,10 @@ function FeedbackTargetRow({
                 : "hover:bg-gray-50",
             isAbsent && !isRowHighlighted && "bg-rose-500/5",
         )}>
-            <TableCell className="font-medium py-1.5 text-sm">
+            <TableCell className="font-medium py-1.5 text-sm whitespace-nowrap">
                 <div className="flex items-center gap-1.5">
                     <span className={isRowHighlighted ? "text-violet-500" : isAbsent ? "text-rose-500" : "text-[var(--color-text-secondary)]"}>{writerName}</span>
+                    {memberGroupMap && writerId != null && <GroupBadge groupNum={memberGroupMap.get(writerId)} />}
                     {isAbsent && (
                         <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-500 border border-rose-500/20">
                             <UserMinus className="w-2.5 h-2.5" />
@@ -660,6 +687,7 @@ function FeedbackTargetRow({
                             }`}
                         >
                             {memberNameMap.get(tid) ?? `ID:${tid}`}
+                            {memberGroupMap && <GroupBadge groupNum={memberGroupMap.get(tid)} />}
                             <button
                                 type="button"
                                 onClick={() => handleRemove(tid)}
