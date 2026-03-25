@@ -19,6 +19,7 @@ from app.constants.eval_questions import (
 )
 from app.deps import get_current_member, get_current_user, get_db, require_admin, require_staff
 from app.models import (
+    Attendance,
     EvalAssignment,
     EvalResponse,
     EvalRound,
@@ -411,7 +412,8 @@ async def auto_assign_audience(
     _: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """활성 운영진 유저를 활성 멤버에 라운드로빈 배분하여 AUDIENCE 배정 생성."""
+    """활성 운영진 유저를 활성 멤버에 라운드로빈 배분하여 AUDIENCE 배정 생성.
+    세션 연결 + 분반이 있으면 같은 분반끼리 배정."""
     round_ = await _get_round_or_404(db, round_id)
 
     # 활성 ops 유저
@@ -439,21 +441,66 @@ async def auto_assign_audience(
     )
     existing_pairs = {(r[0], r[1]) for r in existing_q.all()}
 
+    def _add_assignment(uid: int, mid: int) -> int:
+        if (uid, mid) in existing_pairs:
+            return 0
+        db.add(EvalAssignment(
+            round_id=round_id, evaluator_user_id=uid,
+            presenter_member_id=mid, eval_type="AUDIENCE",
+        ))
+        return 1
+
     created = 0
-    for idx, member in enumerate(members):
-        user = users[idx % len(users)]
-        pair = (user.id, member.id)
-        if pair in existing_pairs:
-            continue
-        db.add(
-            EvalAssignment(
-                round_id=round_id,
-                evaluator_user_id=user.id,
-                presenter_member_id=member.id,
-                eval_type="AUDIENCE",
-            )
+
+    # 분반 로직: 세션 연결 + has_groups일 때
+    session = await db.get(Session, round_.session_id) if round_.session_id else None
+    cfg = (session.config or {}) if session else {}
+
+    if session and cfg.get("has_groups"):
+        # 멤버를 분반별로 분리
+        att_result = await db.execute(
+            select(Attendance).where(Attendance.session_id == session.id)
         )
-        created += 1
+        member_group: dict[int, int | None] = {}
+        for att in att_result.scalars():
+            member_group[att.member_id] = att.group_num
+
+        group_members: dict[int | None, list] = {1: [], 2: [], None: []}
+        for m in members:
+            gn = member_group.get(m.id)
+            group_members.setdefault(gn, []).append(m)
+
+        # 운영진을 분반별로 분리
+        staff_groups_cfg = cfg.get("staff_groups", {})
+        user_group: dict[int, int | None] = {}
+        for gk in ("1", "2"):
+            for uid in staff_groups_cfg.get(gk, []):
+                user_group[uid] = int(gk)
+
+        group_users: dict[int | None, list] = {1: [], 2: [], None: []}
+        for u in users:
+            gn = user_group.get(u.id)
+            group_users.setdefault(gn, []).append(u)
+
+        # 각 분반별 라운드로빈
+        for gnum in (1, 2):
+            g_users = group_users.get(gnum, [])
+            g_members = group_members.get(gnum, [])
+            if not g_users or not g_members:
+                continue
+            for idx, m in enumerate(g_members):
+                created += _add_assignment(g_users[idx % len(g_users)].id, m.id)
+
+        # 미배정 멤버 → 미배정 운영진 + 전체 운영진 풀
+        ungrouped_members = group_members.get(None, [])
+        ungrouped_users = group_users.get(None, []) or users
+        for idx, m in enumerate(ungrouped_members):
+            created += _add_assignment(ungrouped_users[idx % len(ungrouped_users)].id, m.id)
+    else:
+        # 기존 로직: 전체 라운드로빈
+        for idx, member in enumerate(members):
+            user = users[idx % len(users)]
+            created += _add_assignment(user.id, member.id)
 
     await db.commit()
     logger.audit(  # type: ignore[attr-defined]

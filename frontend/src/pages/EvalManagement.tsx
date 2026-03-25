@@ -1,6 +1,8 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
+import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
     Plus,
@@ -523,6 +525,35 @@ function CreateRoundDialog({
     );
     const { data: prevAssignments } = useEvalAssignments(latestRoundId ?? 0);
 
+    // 분반 데이터 (세션 연결 시)
+    const numericSessionId = sessionId && sessionId !== "none" ? Number(sessionId) : null;
+    const { data: groupData } = useQuery({
+        queryKey: ["sessions", numericSessionId, "groups"],
+        queryFn: async () => {
+            const { data } = await api.get(`/sessions/${numericSessionId}/groups`);
+            return data as {
+                groups: Record<string, { member_id: number; group_num: number | null }[]>;
+                staff_groups: Record<string, { user_id: number }[]>;
+            };
+        },
+        enabled: !!numericSessionId,
+    });
+
+    const { memberGroupMap, userGroupMap } = useMemo(() => {
+        if (!groupData) return { memberGroupMap: undefined, userGroupMap: undefined };
+        const mgm = new Map<number, number | null>();
+        for (const [gk, arr] of Object.entries(groupData.groups)) {
+            const gn = gk === "1" ? 1 : gk === "2" ? 2 : null;
+            for (const m of arr) mgm.set(m.member_id, gn);
+        }
+        const ugm = new Map<number, number | null>();
+        for (const [gk, arr] of Object.entries(groupData.staff_groups)) {
+            const gn = gk === "1" ? 1 : gk === "2" ? 2 : null;
+            for (const s of arr) ugm.set(s.user_id, gn);
+        }
+        return { memberGroupMap: mgm.size > 0 ? mgm : undefined, userGroupMap: ugm.size > 0 ? ugm : undefined };
+    }, [groupData]);
+
     const activeUsers = useMemo(
         () =>
             (users?.filter((u) => u.is_active) ?? []).map((u) => ({
@@ -686,6 +717,8 @@ function CreateRoundDialog({
                                 isSaving={isCreating}
                                 saveLabel="생성"
                                 cancelLabel="이전"
+                                memberGroupMap={memberGroupMap}
+                                userGroupMap={userGroupMap}
                             />
                         </div>
                     </>
@@ -744,6 +777,39 @@ function AssignmentsTab({
             matchingMembers.map((m) => m.id)
         );
     }, [users, membersData, assignments, activeUsers, matchingMembers]);
+
+    // 분반 데이터 (선택된 라운드에 세션이 연결되어 있으면)
+    const selectedRound = useMemo(
+        () => (rounds ?? []).find((r) => r.id === selectedRoundId),
+        [rounds, selectedRoundId]
+    );
+    const linkedSessionId = selectedRound?.session_id ?? null;
+    const { data: groupData } = useQuery({
+        queryKey: ["sessions", linkedSessionId, "groups"],
+        queryFn: async () => {
+            const { data } = await api.get(`/sessions/${linkedSessionId}/groups`);
+            return data as {
+                groups: Record<string, { member_id: number; group_num: number | null }[]>;
+                staff_groups: Record<string, { user_id: number }[]>;
+            };
+        },
+        enabled: !!linkedSessionId,
+    });
+
+    const { memberGroupMap, userGroupMap } = useMemo(() => {
+        if (!groupData) return { memberGroupMap: undefined, userGroupMap: undefined };
+        const mgm = new Map<number, number | null>();
+        for (const [gk, arr] of Object.entries(groupData.groups)) {
+            const gn = gk === "1" ? 1 : gk === "2" ? 2 : null;
+            for (const m of arr) mgm.set(m.member_id, gn);
+        }
+        const ugm = new Map<number, number | null>();
+        for (const [gk, arr] of Object.entries(groupData.staff_groups)) {
+            const gn = gk === "1" ? 1 : gk === "2" ? 2 : null;
+            for (const s of arr) ugm.set(s.user_id, gn);
+        }
+        return { memberGroupMap: mgm.size > 0 ? mgm : undefined, userGroupMap: ugm.size > 0 ? ugm : undefined };
+    }, [groupData]);
 
     function handleSaveMatching(
         newAssignments: { evaluator_user_id: number; presenter_member_id: number }[]
@@ -834,6 +900,8 @@ function AssignmentsTab({
                         onSave={handleSaveMatching}
                         isSaving={replaceAssignments.isPending}
                         saveLabel="저장"
+                        memberGroupMap={memberGroupMap}
+                        userGroupMap={userGroupMap}
                     />
                 </div>
             )}

@@ -45,6 +45,8 @@ export interface EvalMatchingBoardProps {
     isSaving?: boolean;
     saveLabel?: string;
     cancelLabel?: string;
+    memberGroupMap?: Map<number, number | null>;  // member_id → group_num (1|2|null)
+    userGroupMap?: Map<number, number | null>;     // user_id → group_num (1|2|null)
 }
 
 // ── ID helpers (composite unique IDs for dnd-kit) ───────────────────────────
@@ -99,6 +101,20 @@ export function boardToAssignments(
     return result;
 }
 
+// ── GroupBadge ───────────────────────────────────────────────────────────────
+
+function GroupBadge({ groupNum }: { groupNum?: number | null }) {
+    if (!groupNum) return null;
+    const colors = groupNum === 1
+        ? "bg-blue-500/10 text-blue-600 border-blue-500/20"
+        : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20";
+    return (
+        <span className={`text-[10px] px-1 rounded border font-medium flex-shrink-0 ${colors}`}>
+            {groupNum}분반
+        </span>
+    );
+}
+
 // ── PoolMember ───────────────────────────────────────────────────────────────
 
 function PoolMember({
@@ -108,6 +124,7 @@ function PoolMember({
     isSelected,
     evaluatorNames,
     onClick,
+    groupNum,
 }: {
     member: MatchingMember;
     uniqueId: string;
@@ -115,6 +132,7 @@ function PoolMember({
     isSelected: boolean;
     evaluatorNames: string[];
     onClick: () => void;
+    groupNum?: number | null;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: uniqueId });
     const style = {
@@ -141,7 +159,10 @@ function PoolMember({
             }}
         >
             <div className="flex items-center justify-between gap-1.5">
-                <span className="font-medium truncate">{member.name}</span>
+                <span className="font-medium truncate flex items-center gap-1">
+                    {member.name}
+                    <GroupBadge groupNum={groupNum} />
+                </span>
                 <span
                     className={cn(
                         "text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0",
@@ -228,6 +249,7 @@ function EvalColumn({
     onRemove,
     isHighlighted,
     selectedMemberId,
+    groupNum,
 }: {
     id: string;
     title: string;
@@ -237,6 +259,7 @@ function EvalColumn({
     onRemove: (memberId: number) => void;
     isHighlighted?: boolean;
     selectedMemberId?: number | null;
+    groupNum?: number | null;
 }) {
     const { setNodeRef } = useSortable({ id });
 
@@ -251,8 +274,9 @@ function EvalColumn({
         >
             <div className="flex justify-between items-center mb-3 pb-2 border-b border-[var(--color-border)]">
                 <div className="min-w-0">
-                    <h3 className="font-bold text-xs uppercase tracking-wider text-[var(--color-text-secondary)] truncate">
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-[var(--color-text-secondary)] truncate flex items-center gap-1">
                         {title}
+                        <GroupBadge groupNum={groupNum} />
                     </h3>
                     {subtitle && (
                         <span className="text-[10px] text-[var(--color-text-muted)]">{subtitle}</span>
@@ -296,6 +320,7 @@ function PoolColumn({
     selectedMemberId,
     evaluatorNamesMap,
     onMemberClick,
+    memberGroupMap,
 }: {
     members: MatchingMember[];
     poolItemIds: string[];
@@ -303,6 +328,7 @@ function PoolColumn({
     selectedMemberId: number | null;
     evaluatorNamesMap: Map<number, string[]>;
     onMemberClick: (memberId: number) => void;
+    memberGroupMap?: Map<number, number | null>;
 }) {
     const { setNodeRef } = useSortable({ id: "pool" });
 
@@ -331,6 +357,7 @@ function PoolColumn({
                                 isSelected={selectedMemberId === mid}
                                 evaluatorNames={evaluatorNamesMap.get(mid) ?? []}
                                 onClick={() => onMemberClick(mid)}
+                                groupNum={memberGroupMap?.get(mid)}
                             />
                         );
                     })}
@@ -425,6 +452,8 @@ export function EvalMatchingBoard({
     isSaving = false,
     saveLabel = "저장",
     cancelLabel = "취소",
+    memberGroupMap,
+    userGroupMap,
 }: EvalMatchingBoardProps) {
     const [board, setBoard] = useState<Record<string, number[]>>(() => {
         const b: Record<string, number[]> = {};
@@ -598,10 +627,7 @@ export function EvalMatchingBoard({
             setBoard((prev) => {
                 const destItems = prev[destKey] ?? [];
                 if (destItems.includes(memberId)) {
-                    return {
-                        ...prev,
-                        [srcKey]: prev[srcKey].filter((id) => id !== memberId),
-                    };
+                    return prev; // 대상에 이미 있으면 아무것도 안 함
                 }
                 return {
                     ...prev,
@@ -636,15 +662,15 @@ export function EvalMatchingBoard({
                 const key = activeContainer;
                 const activeParsed = parseId(String(active.id));
                 const overParsed = parseId(String(over.id));
-                const items = board[key] ?? [];
-                const ai = items.indexOf(activeParsed.memberId);
-                const oi = items.indexOf(overParsed.memberId);
-                if (ai !== -1 && oi !== -1 && ai !== oi) {
-                    setBoard((prev) => ({
-                        ...prev,
-                        [key]: arrayMove(prev[key], ai, oi),
-                    }));
-                }
+                setBoard((prev) => {
+                    const items = prev[key] ?? [];
+                    const ai = items.indexOf(activeParsed.memberId);
+                    const oi = items.indexOf(overParsed.memberId);
+                    if (ai !== -1 && oi !== -1 && ai !== oi) {
+                        return { ...prev, [key]: arrayMove(items, ai, oi) };
+                    }
+                    return prev;
+                });
             }
         }
         setActiveDragId(null);
@@ -697,11 +723,21 @@ export function EvalMatchingBoard({
         // Shuffle members for randomness
         const shuffled = [...members].sort(() => 0.5 - Math.random());
 
+        // 분반 로직: memberGroupMap/userGroupMap이 있으면 같은 분반 우선
+        const hasGroups = memberGroupMap && userGroupMap && memberGroupMap.size > 0;
+
         // For each member, assign perMember evaluators (pick those with lowest load)
         for (const member of shuffled) {
-            const sorted = [...enabledUsers].sort(
-                (a, b) => (evalLoad.get(a.id) ?? 0) - (evalLoad.get(b.id) ?? 0)
-            );
+            const memberGroup = hasGroups ? memberGroupMap.get(member.id) : null;
+            const sorted = [...enabledUsers].sort((a, b) => {
+                // 분반이 있으면 같은 분반 우선
+                if (hasGroups && memberGroup) {
+                    const aMatch = userGroupMap.get(a.id) === memberGroup ? 0 : 1;
+                    const bMatch = userGroupMap.get(b.id) === memberGroup ? 0 : 1;
+                    if (aMatch !== bMatch) return aMatch - bMatch;
+                }
+                return (evalLoad.get(a.id) ?? 0) - (evalLoad.get(b.id) ?? 0);
+            });
             for (let i = 0; i < perMember && i < sorted.length; i++) {
                 const u = sorted[i];
                 newBoard[String(u.id)].push(member.id);
@@ -819,6 +855,7 @@ export function EvalMatchingBoard({
                                 selectedMemberId={selectedMemberId}
                                 evaluatorNamesMap={evaluatorNamesMap}
                                 onMemberClick={handleMemberClick}
+                                memberGroupMap={memberGroupMap}
                             />
                         </div>
                         <div className="w-px bg-[var(--color-border)] opacity-50" />
@@ -837,6 +874,7 @@ export function EvalMatchingBoard({
                                         (board[String(user.id)] ?? []).includes(selectedMemberId)
                                     }
                                     selectedMemberId={selectedMemberId}
+                                    groupNum={userGroupMap?.get(user.id)}
                                 />
                             </div>
                         ))}
