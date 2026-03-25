@@ -319,7 +319,6 @@ def _is_match_week(title: str, week_num: int) -> bool:
     """제목이 해당 주차인지 확인"""
     # "3주차", "03주차", "3 주차", "Week 3", "Week3" 등
     # 0-padded 형식(01주차)도 매칭하되, 21주차가 1주차에 잘못 매칭되지 않도록 함
-    padded = str(week_num).zfill(2)  # 1 → "01"
     pattern = rf"(?<!\d)0*{week_num}(?!\d)\s*주차|Week\s*0*{week_num}(?!\d)"
     return bool(re.search(pattern, title, re.IGNORECASE))
 
