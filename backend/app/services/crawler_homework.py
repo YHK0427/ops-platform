@@ -317,10 +317,10 @@ def _extract_team_from_title(title: str) -> str | None:
 
 def _is_match_week(title: str, week_num: int) -> bool:
     """제목이 해당 주차인지 확인"""
-    # "3주차", "3 주차", "Week 3", "Week3", "03주차" 등
-    # 정규식으로 엄격하게 체크
-    # 부정 후방탐색/전방탐색으로 숫자의 일부가 아닌 경우만 매칭
-    pattern = rf"(?<!\d){week_num}(?!\d)\s*주차|Week\s*{week_num}(?!\d)"
+    # "3주차", "03주차", "3 주차", "Week 3", "Week3" 등
+    # 0-padded 형식(01주차)도 매칭하되, 21주차가 1주차에 잘못 매칭되지 않도록 함
+    padded = str(week_num).zfill(2)  # 1 → "01"
+    pattern = rf"(?<!\d)0*{week_num}(?!\d)\s*주차|Week\s*0*{week_num}(?!\d)"
     return bool(re.search(pattern, title, re.IGNORECASE))
 
 
