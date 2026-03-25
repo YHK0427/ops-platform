@@ -52,13 +52,17 @@ async def task_scan_homework(ctx, session_id: int):
 
             cfg = session.config or {}
 
+            # deadline_post 파싱
+            from app.services.crawler_homework import _parse_deadline
+            deadline_post = _parse_deadline(cfg.get("deadline_post"))
+
             # REVIEW + HOMEWORK scan
-            hw_count = await scan_homework_all(session.id, session.week_num, members, db)
+            hw_count = await scan_homework_all(session.id, session.week_num, members, db, deadline_post=deadline_post)
 
             # FEEDBACK scan (댓글 방식)
             fb_count = 0
             if cfg.get("has_feedback", True):
-                fb_count = await scan_feedback_comments(session.id, session.week_num, members, db)
+                fb_count = await scan_feedback_comments(session.id, session.week_num, members, db, deadline_post=deadline_post)
 
             result = {"status": "complete", "homework_count": hw_count, "feedback_count": fb_count}
         logger.info(f"task_scan_homework complete session={session_id}")

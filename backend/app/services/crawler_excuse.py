@@ -46,7 +46,8 @@ def _strip_html(html: str) -> str:
 
 
 def _is_match_week(title: str, week_num: int) -> bool:
-    pattern = rf"(?<!\d){week_num}(?!\d)\s*주차|Week\s*{week_num}(?!\d)"
+    # 0-padded 형식(01주차)도 매칭하되, 21주차가 1주차에 잘못 매칭되지 않도록 함
+    pattern = rf"(?<!\d)0*{week_num}(?!\d)\s*주차|Week\s*0*{week_num}(?!\d)"
     return bool(re.search(pattern, title, re.IGNORECASE))
 
 
@@ -81,12 +82,21 @@ async def scan_excuses(
     - POST 모드: PRE 마감 이후에 작성된 글만 처리. 결석/지각 중 excuse_type 미설정 멤버 대상.
     - PRE 마감: 세션 전날 21:59:59 KST (= UTC 12:59:59)
     """
-    # PRE 마감 기준 계산 (ms 단위)
+    # PRE 마감: 세션 전날 21:59:59 KST (= UTC 12:59:59)
+    # POST 마감: 세션 다음날 21:59:59 KST (= UTC 12:59:59)
     pre_deadline_ms: int | None = None
+    post_deadline_ms: int | None = None
     if session_date is not None:
         pre_deadline_ms = int(
             datetime.combine(
                 session_date - timedelta(days=1),
+                time(12, 59, 59),
+                tzinfo=timezone.utc,
+            ).timestamp() * 1000
+        )
+        post_deadline_ms = int(
+            datetime.combine(
+                session_date + timedelta(days=1),
                 time(12, 59, 59),
                 tzinfo=timezone.utc,
             ).timestamp() * 1000
@@ -128,14 +138,17 @@ async def scan_excuses(
         if not _is_match_week(title, week_num):
             continue
 
-        # 시간 기반 필터링: PRE 모드는 마감 전 글만, POST 모드는 마감 후 글만
+        # 시간 기반 필터링: PRE는 PRE 마감 전, POST는 PRE 마감 후 ~ POST 마감 이내
         write_ts_ms = article.get("writeDateTimestamp", 0)
         if pre_deadline_ms is not None and write_ts_ms:
             is_pre_article = write_ts_ms <= pre_deadline_ms
             if mode == "PRE" and not is_pre_article:
                 continue  # PRE 스캔인데 마감 후 작성된 글 → 스킵
-            if mode == "POST" and is_pre_article:
-                continue  # POST 스캔인데 마감 전 작성된 글 → 스킵
+            if mode == "POST":
+                if is_pre_article:
+                    continue  # POST 스캔인데 마감 전 작성된 글 → 스킵
+                if post_deadline_ms is not None and write_ts_ms > post_deadline_ms:
+                    continue  # POST 마감(세션 다음날 21:59:59) 이후 글 → 스킵
 
         # 멤버 매칭 (제목 → 닉네임 순서로 시도)
         extracted = extract_name_from_title(title)

@@ -1,6 +1,7 @@
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,11 +24,25 @@ BOARD_TYPE_TO_MENU = {
     "PPT":    settings.NAVER_CAFE_MENU_PPT,
 }
 
+def _parse_deadline(raw: str | None) -> datetime | None:
+    """ISO datetime 문자열 → aware datetime (None이면 None)"""
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
+        return dt
+    except Exception:
+        return None
+
+
 async def scan_homework_all(
     session_id: int,
     week_num: int,
     members: list[Member],
     db: AsyncSession,
+    deadline_post: Optional[datetime] = None,
 ) -> int:
     """
     특정 세션(주차)에 해당하는 과제/리뷰 게시글을 스캔하여 Assignments 테이블 업데이트
@@ -92,10 +107,20 @@ async def scan_homework_all(
             article_id = article.get("articleId") or article.get("article_id")
             article_raw = {"article_id": int(article_id), "menu_id": menu_id} if article_id else None
 
+            # 마감 기한 체크: deadline 이후 게시글은 MISSING 처리
+            write_ts_ms = article.get("writeDateTimestamp", 0)
+            is_late = False
+            if deadline_post and write_ts_ms:
+                write_dt = datetime.fromtimestamp(write_ts_ms / 1000, tz=timezone.utc)
+                is_late = write_dt > deadline_post
+            status = "MISSING" if is_late else "PASS"
+
             if member:
                 # DB Upsert
-                await upsert_assignment(db, session_id, member.id, assign_type, "PASS", raw_data=article_raw)
+                await upsert_assignment(db, session_id, member.id, assign_type, status, raw_data=article_raw)
                 total_processed += 1
+                if is_late:
+                    logger.info(f"Late {assign_type}: {member.name} (written after deadline)")
             elif assign_type == "PPT" and team_map:
                 # 멤버 매칭 실패 시, 팀명 매칭 시도 (PPT 게시판 업로드: "과제16주차_1팀")
                 team_name = _extract_team_from_title(title)
@@ -103,9 +128,9 @@ async def scan_homework_all(
                 if matched_team:
                     mids = team_member_ids.get(matched_team.id, [])
                     for mid in mids:
-                        await upsert_assignment(db, session_id, mid, "PPT", "PASS", raw_data=article_raw)
+                        await upsert_assignment(db, session_id, mid, "PPT", status, raw_data=article_raw)
                     total_processed += len(mids)
-                    logger.info(f"PPT team match: '{team_name}' → {len(mids)} members")
+                    logger.info(f"PPT team match: '{team_name}' → {len(mids)} members{' (LATE)' if is_late else ''}")
                 else:
                     logger.warning(f"Member/team not found for article: {title} (writer: {writer_name})")
             else:
@@ -159,6 +184,7 @@ async def scan_feedback_comments(
     week_num: int,
     members: list[Member],
     db: AsyncSession,
+    deadline_post: Optional[datetime] = None,
 ) -> int:
     """
     영상 게시판에서 week_num 주차 영상들의 댓글을 스캔하여
@@ -228,6 +254,13 @@ async def scan_feedback_comments(
             )
             commenters_for_article: set[int] = set()
             for comment in comments:
+                # 마감 기한 체크: deadline 이후 댓글은 무시
+                comment_ts_ms = comment.get("updateDate", 0)
+                if deadline_post and comment_ts_ms:
+                    comment_dt = datetime.fromtimestamp(comment_ts_ms / 1000, tz=timezone.utc)
+                    if comment_dt > deadline_post:
+                        continue
+
                 nick = comment.get("writer", {}).get("nick", "")
                 commenter = match_member_by_name(nick, members)
                 if commenter:
