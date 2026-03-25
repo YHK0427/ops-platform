@@ -197,11 +197,13 @@ function EvalMember({
     uniqueId,
     onRemove,
     isHighlighted,
+    groupNum,
 }: {
     member: MatchingMember | undefined;
     uniqueId: string;
     onRemove: () => void;
     isHighlighted?: boolean;
+    groupNum?: number | null;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: uniqueId });
     const style = {
@@ -223,7 +225,10 @@ function EvalMember({
             {...attributes}
             {...listeners}
         >
-            <span className="font-medium truncate">{member?.name ?? uniqueId}</span>
+            <span className="font-medium truncate flex items-center gap-1">
+                {member?.name ?? uniqueId}
+                <GroupBadge groupNum={groupNum} />
+            </span>
             <button
                 className="w-4 h-4 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500/20 text-rose-500 transition-opacity flex-shrink-0"
                 onClick={(e) => {
@@ -250,6 +255,7 @@ function EvalColumn({
     isHighlighted,
     selectedMemberId,
     groupNum,
+    memberGroupMap,
 }: {
     id: string;
     title: string;
@@ -260,6 +266,7 @@ function EvalColumn({
     isHighlighted?: boolean;
     selectedMemberId?: number | null;
     groupNum?: number | null;
+    memberGroupMap?: Map<number, number | null>;
 }) {
     const { setNodeRef } = useSortable({ id });
 
@@ -297,6 +304,7 @@ function EvalColumn({
                                 member={members.find((m) => m.id === parsed.memberId)}
                                 onRemove={() => onRemove(parsed.memberId)}
                                 isHighlighted={selectedMemberId != null && parsed.memberId === selectedMemberId}
+                                groupNum={memberGroupMap?.get(parsed.memberId)}
                             />
                         );
                     })}
@@ -591,90 +599,73 @@ export function EvalMatchingBoard({
         setActiveDragId(String(event.active.id));
     };
 
-    const handleDragOver = (event: DragOverEvent) => {
-        const { active, over } = event;
-        if (!over) return;
-
-        const activeContainer = findContainer(active.id);
-        let overContainer = findContainer(over.id);
-
-        const overStr = String(over.id);
-        if (overStr === "pool" || enabledUsers.some((u) => String(u.id) === overStr)) {
-            overContainer = overStr;
-        }
-
-        if (!activeContainer || !overContainer) return;
-        if (activeContainer === overContainer) return;
-
-        const dragParsed = parseId(String(active.id));
-        const memberId = dragParsed.memberId;
-
-        // Pool → Evaluator: COPY
-        if (activeContainer === "pool" && overContainer !== "pool") {
-            const destKey = overContainer;
-            setBoard((prev) => {
-                const destItems = prev[destKey] ?? [];
-                if (destItems.includes(memberId)) return prev;
-                return { ...prev, [destKey]: [...destItems, memberId] };
-            });
-            return;
-        }
-
-        // Evaluator → Evaluator: MOVE
-        if (activeContainer !== "pool" && overContainer !== "pool") {
-            const srcKey = activeContainer;
-            const destKey = overContainer;
-            setBoard((prev) => {
-                const destItems = prev[destKey] ?? [];
-                if (destItems.includes(memberId)) {
-                    return prev; // 대상에 이미 있으면 아무것도 안 함
-                }
-                return {
-                    ...prev,
-                    [srcKey]: prev[srcKey].filter((id) => id !== memberId),
-                    [destKey]: [...destItems, memberId],
-                };
-            });
-            return;
-        }
-
-        // Evaluator → Pool: REMOVE from evaluator
-        if (activeContainer !== "pool" && overContainer === "pool") {
-            const srcKey = activeContainer;
-            setBoard((prev) => ({
-                ...prev,
-                [srcKey]: prev[srcKey].filter((id) => id !== memberId),
-            }));
-        }
+    const handleDragOver = (_event: DragOverEvent) => {
+        // 의도적으로 비움 — 모든 이동은 handleDragEnd에서 처리
+        // handleDragOver에서 상태를 변경하면 드래그 중 마우스가 지나가기만 해도
+        // 아이템이 복사/이동되는 문제가 발생함
     };
 
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
         if (over) {
-            const activeContainer = findContainer(active.id);
-            const overContainer = findContainer(over.id);
-            if (
-                activeContainer &&
-                overContainer &&
-                activeContainer === overContainer &&
-                activeContainer !== "pool"
-            ) {
-                const key = activeContainer;
-                const activeParsed = parseId(String(active.id));
-                const overParsed = parseId(String(over.id));
-                setBoard((prev) => {
-                    const items = prev[key] ?? [];
-                    const ai = items.indexOf(activeParsed.memberId);
-                    const oi = items.indexOf(overParsed.memberId);
-                    if (ai !== -1 && oi !== -1 && ai !== oi) {
-                        return { ...prev, [key]: arrayMove(items, ai, oi) };
-                    }
-                    return prev;
-                });
+            let activeContainer = findContainer(active.id);
+            let overContainer = findContainer(over.id);
+
+            // over가 컬럼 자체(빈 영역)인 경우
+            const overStr = String(over.id);
+            if (overStr === "pool" || enabledUsers.some((u) => String(u.id) === overStr)) {
+                overContainer = overStr;
+            }
+
+            if (activeContainer && overContainer) {
+                const dragParsed = parseId(String(active.id));
+                const memberId = dragParsed.memberId;
+
+                if (activeContainer === overContainer && activeContainer !== "pool") {
+                    // 같은 컬럼 내 순서 변경
+                    const key = activeContainer;
+                    const overParsed = parseId(String(over.id));
+                    setBoard((prev) => {
+                        const items = prev[key] ?? [];
+                        const ai = items.indexOf(dragParsed.memberId);
+                        const oi = items.indexOf(overParsed.memberId);
+                        if (ai !== -1 && oi !== -1 && ai !== oi) {
+                            return { ...prev, [key]: arrayMove(items, ai, oi) };
+                        }
+                        return prev;
+                    });
+                } else if (activeContainer === "pool" && overContainer !== "pool") {
+                    // Pool → Evaluator: COPY
+                    const destKey = overContainer;
+                    setBoard((prev) => {
+                        const destItems = prev[destKey] ?? [];
+                        if (destItems.includes(memberId)) return prev;
+                        return { ...prev, [destKey]: [...destItems, memberId] };
+                    });
+                } else if (activeContainer !== "pool" && overContainer !== "pool") {
+                    // Evaluator → Evaluator: MOVE
+                    const srcKey = activeContainer;
+                    const destKey = overContainer;
+                    setBoard((prev) => {
+                        const destItems = prev[destKey] ?? [];
+                        if (destItems.includes(memberId)) return prev;
+                        return {
+                            ...prev,
+                            [srcKey]: prev[srcKey].filter((id) => id !== memberId),
+                            [destKey]: [...destItems, memberId],
+                        };
+                    });
+                } else if (activeContainer !== "pool" && overContainer === "pool") {
+                    // Evaluator → Pool: REMOVE
+                    const srcKey = activeContainer;
+                    setBoard((prev) => ({
+                        ...prev,
+                        [srcKey]: prev[srcKey].filter((id) => id !== memberId),
+                    }));
+                }
             }
         }
         setActiveDragId(null);
-        // Reset drag flag after a short delay so click handler can check it
         setTimeout(() => {
             dragOccurred.current = false;
         }, 100);
@@ -875,6 +866,7 @@ export function EvalMatchingBoard({
                                     }
                                     selectedMemberId={selectedMemberId}
                                     groupNum={userGroupMap?.get(user.id)}
+                                    memberGroupMap={memberGroupMap}
                                 />
                             </div>
                         ))}

@@ -82,7 +82,7 @@ export default function Members() {
                     <Table>
                         <TableHeader className="bg-[var(--color-surface)] hover:bg-[var(--color-surface)]">
                             <TableRow className="border-b-[var(--color-border)] hover:bg-transparent">
-                                <TableHead className="w-[60px] text-[var(--color-text-muted)]">ID</TableHead>
+                                <TableHead className="w-[60px] text-[var(--color-text-muted)]">No.</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">이름 / 이메일</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">태그</TableHead>
                                 <TableHead className="text-right text-[var(--color-text-muted)]">디파짓</TableHead>
@@ -106,13 +106,13 @@ export default function Members() {
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredMembers?.map((member) => (
+                                filteredMembers?.map((member, index) => (
                                     <TableRow
                                         key={member.id}
                                         className="cursor-pointer border-b-[var(--color-border-subtle)] hover:bg-[var(--color-hover)] transition-colors"
                                         onClick={() => navigate(`/members/${member.id}`)}
                                     >
-                                        <TableCell className="text-[var(--color-text-muted)]">#{member.id}</TableCell>
+                                        <TableCell className="text-[var(--color-text-muted)]">{index + 1}</TableCell>
                                         <TableCell>
                                             <div className="flex flex-col">
                                                 <span className="font-medium text-[var(--color-text-primary)] flex items-center gap-2">
