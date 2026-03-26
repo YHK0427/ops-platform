@@ -72,7 +72,7 @@ export default function MemberResult() {
                 pdf.addImage(url2, "PNG", 0, 0, pw, ph);
             }
 
-            pdf.save(`${data.member_name}_성장리포트.pdf`);
+            pdf.save(`${data.member_name}_발표 성장 리포트.pdf`);
         } finally {
             setShowPdf(false);
             setPdfLoading(false);
@@ -219,7 +219,7 @@ export default function MemberResult() {
                             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                                 {DOMAINS.map(d => (
                                     <span key={d} style={{ background: d === "PLANNING" ? "#3b82f6" : d === "DESIGN" ? "#10b981" : "#f59e0b", color: "#fff", fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 10 }}>
-                                        [{DOMAIN_LABELS[d]}]{stageMap[d]}
+                                        [{DOMAIN_LABELS[d]}] {stageMap[d]}
                                     </span>
                                 ))}
                                 {data.type && <span style={{ background: "#fff", color: "#e11d48", fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 10 }}>{data.type}</span>}
@@ -357,8 +357,12 @@ export default function MemberResult() {
                                 </div>
                                 {perceptionType && (
                                     <div style={{ background: "#f9fafb", borderRadius: 6, padding: "6px 8px", border: "1px solid #e5e7eb" }}>
-                                        <div style={{ fontSize: 10, fontWeight: 700, color: perceptionType.type === "overestimate" ? "#e11d48" : perceptionType.type === "underestimate" ? "#2563eb" : "#059669", marginBottom: 1 }}>{perceptionType.label}</div>
-                                        <div style={{ fontSize: 8, color: "#6b7280", lineHeight: 1.3 }}>{perceptionType.description}</div>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: perceptionType.type === "overestimate" ? "#e11d48" : perceptionType.type === "underestimate" ? "#2563eb" : "#059669", marginBottom: 2 }}>{perceptionType.label}</div>
+                                        <div style={{ fontSize: 8, color: "#6b7280", lineHeight: 1.5, marginBottom: 4 }}>{perceptionType.description}</div>
+                                        <div style={{ background: "#f3f4f6", borderRadius: 4, padding: "4px 6px", border: "1px solid #e5e7eb" }}>
+                                            <div style={{ fontSize: 7, fontWeight: 700, color: "#6b7280", marginBottom: 1 }}>피드백</div>
+                                            <div style={{ fontSize: 8, color: "#374151", lineHeight: 1.5 }}>{perceptionType.feedback}</div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -383,12 +387,12 @@ export default function MemberResult() {
                                             {qInfo && subtitle && (
                                                 <div style={{ fontSize: 11, fontWeight: 700, color: DOMAIN_COLORS[d].bar, marginBottom: 5 }}>[{qInfo.label} : {subtitle}]</div>
                                             )}
-                                            {paragraphs.map((p, i) => (
-                                                <div key={i} style={{
-                                                    fontSize: 10, color: i === 0 ? "#9ca3af" : "#4b5563", lineHeight: 1.6,
-                                                    ...(i > 0 ? { borderLeft: `2px solid ${DOMAIN_COLORS[d].bar}44`, paddingLeft: 7, marginTop: 5 } : { marginBottom: 4 }),
-                                                }}>{p}</div>
-                                            ))}
+                                            {paragraphs[0] && (
+                                                <div style={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.6, marginBottom: 4 }}>{paragraphs[0]}</div>
+                                            )}
+                                            {paragraphs.length > 1 && (
+                                                <div style={{ fontSize: 8, color: "#9ca3af", fontStyle: "italic" }}>▸ 상세 피드백은 2페이지 참고</div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -423,32 +427,48 @@ export default function MemberResult() {
                             나의 성장 방향에 맞는 멘토링 참여와 꿀팁 활용법을 안내합니다. 아래 내용을 참고하여 다음 발표에서 한 단계 더 나아가 보세요.
                         </div>
 
-                        {/* 도메인별 멘토링 + 꿀팁 */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative", zIndex: 1 }}>
+                        {/* 도메인별 피드백 + 멘토링 + 꿀팁 */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10, position: "relative", zIndex: 1, flex: 1 }}>
                             {DOMAINS.map(d => {
                                 const common = DOMAIN_COMMON_FEEDBACK[d];
-                                if (!common) return null;
+                                const lowestKey = getLowestQuestionInDomain(d, data.self_scores_by_question, data.audience_scores_by_question);
+                                const qInfo = lowestKey ? QUESTION_BY_KEY[lowestKey] : null;
+                                const subtitle = lowestKey ? QUESTION_SUBTITLES[lowestKey] : null;
+                                const feedback = lowestKey ? QUESTION_GROWTH_FEEDBACK[lowestKey] : null;
                                 const barColor = DOMAIN_COLORS[d].bar;
                                 return (
-                                    <div key={d} style={{ border: `1px solid ${barColor}33`, borderRadius: 10, overflow: "hidden" }}>
+                                    <div key={d} style={{ flex: 1, border: `1px solid ${barColor}33`, borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                                         {/* 도메인 헤더 */}
-                                        <div style={{ background: `${barColor}10`, padding: "8px 14px", display: "flex", alignItems: "center", gap: 8, borderBottom: `1px solid ${barColor}22` }}>
-                                            <span style={{ background: barColor, color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 10px", borderRadius: 6 }}>{DOMAIN_LABELS[d]}</span>
-                                            <span style={{ fontSize: 9, color: "#9ca3af", fontWeight: 500 }}>{getDomainStage(data.combined_scores_by_domain[d])}</span>
+                                        <div style={{ background: `${barColor}10`, padding: "6px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: `1px solid ${barColor}22` }}>
+                                            <span style={{ background: barColor, color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{DOMAIN_LABELS[d]}</span>
+                                            {qInfo && subtitle && (
+                                                <span style={{ fontSize: 9, fontWeight: 700, color: barColor }}>[{qInfo.label} : {subtitle}]</span>
+                                            )}
                                         </div>
 
-                                        <div style={{ padding: "10px 14px", display: "flex", gap: 10 }}>
-                                            {/* 멘토링 */}
-                                            <div style={{ flex: 2, background: `${barColor}06`, borderRadius: 8, padding: "12px 14px", border: `1px solid ${barColor}15`, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                                                <div style={{ fontSize: 10, fontWeight: 700, color: barColor, marginBottom: 6 }}>💡 멘토링의 도움을 받아보자</div>
-                                                <div style={{ fontSize: 9, color: "#4b5563", lineHeight: 1.7 }}>{common.mentoring}</div>
+                                        <div style={{ padding: "6px 12px", display: "flex", gap: 8, flex: 1 }}>
+                                            {/* 피드백 + 멘토링 (왼쪽) */}
+                                            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                                                {feedback && feedback.split("\n\n").map((p, i) => (
+                                                    <div key={i} style={{
+                                                        fontSize: 9, lineHeight: 1.6, marginBottom: 3,
+                                                        color: i === 0 ? "#9ca3af" : "#4b5563",
+                                                        ...(i > 0 ? { borderLeft: `2px solid ${barColor}44`, paddingLeft: 6 } : {}),
+                                                    }}>{p}</div>
+                                                ))}
+                                                {common && (
+                                                    <div style={{ background: `${barColor}06`, borderRadius: 5, padding: "5px 8px", border: `1px solid ${barColor}15`, marginTop: 4 }}>
+                                                        <div style={{ fontSize: 9, fontWeight: 700, color: barColor, marginBottom: 2 }}>💡 멘토링</div>
+                                                        <div style={{ fontSize: 8, color: "#4b5563", lineHeight: 1.6 }}>{common.mentoring}</div>
+                                                    </div>
+                                                )}
                                             </div>
 
-                                            {/* 꿀팁 */}
-                                            <div style={{ flex: 3, display: "flex", flexDirection: "column", gap: 6 }}>
+                                            {/* 꿀팁 (오른쪽) */}
+                                            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
                                                 <div style={{ fontSize: 10, fontWeight: 700, color: "#374151" }}>📌 그 외 꿀팁</div>
-                                                {common.tips.map((tip, i) => (
-                                                    <div key={i} style={{ background: "#f9fafb", borderRadius: 6, padding: "8px 10px", border: "1px solid #f3f4f6" }}>
+                                                {common && common.tips.map((tip, i) => (
+                                                    <div key={i} style={{ background: "#f9fafb", borderRadius: 4, padding: "5px 8px", border: "1px solid #f3f4f6", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
                                                         <div style={{ fontSize: 9, fontWeight: 700, color: "#374151", marginBottom: 2 }}>{tip.title}</div>
                                                         <div style={{ fontSize: 8, color: "#6b7280", lineHeight: 1.6 }}>{tip.body}</div>
                                                     </div>

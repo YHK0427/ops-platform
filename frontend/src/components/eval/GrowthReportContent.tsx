@@ -136,28 +136,32 @@ export const TYPE_DESCRIPTIONS: Record<string, { emoji: string; summary: string;
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 // 자기 vs 청중 비교 유형
-export function getPerceptionType(selfAvg: number, audienceAvg: number): { type: string; label: string; color: string; description: string } {
+export function getPerceptionType(selfAvg: number, audienceAvg: number): { type: string; label: string; color: string; description: string; feedback: string } {
     const diff = selfAvg - audienceAvg;
+    if (diff < -0.5) {
+        return {
+            type: "underestimate",
+            label: "[A유형] 자기<청중",
+            color: "text-blue-600",
+            description: "본인은 아직 부족하다고 느끼고 있지만, 청중은 이미 긍정적인 발표 역량을 확인하고 있습니다. 이는 자신의 기준이 높거나, 스스로를 엄격하게 평가하는 경우에 자주 나타나는 유형입니다.",
+            feedback: "자신감을 더 가져보는 것은 어떨까요? 이미 청중에게는 충분한 강점이 전달되고 있습니다. 이제는 \"부족한 점을 찾는 것\"보다 \"잘하고 있는 부분을 인식하고 확장하는 것\"이 중요합니다. 클라썸과 노션에 남겨진 서술형 피드백을 참고하여, 청중이 특히 긍정적으로 평가한 강점을 1가지 찾아 다음 발표에서 더 의도적으로 활용해 보세요. 청중은 이미 당신의 강점을 보고 있습니다. 이제는 그 강점을 믿고 더 선명하게 드러내 보세요!",
+        };
+    }
     if (diff > 0.5) {
         return {
             type: "overestimate",
             label: "[C유형] 자기>청중",
             color: "text-rose-600",
-            description: "의도는 분명했으나 전달이 기대만큼 닿지 않았을 수 있습니다. '내가 한 것'보다 '상대가 받은 것' 기준으로 점검해보세요.",
-        };
-    } else if (diff < -0.5) {
-        return {
-            type: "underestimate",
-            label: "[A유형] 자기<청중",
-            color: "text-blue-600",
-            description: "본인은 부족하다고 느끼지만 외부 평가는 긍정적입니다. 현재 수준을 객관적으로 신뢰하고, 잘된 요소를 다음에도 재현해보세요.",
+            description: "발표자가 의도한 메시지와 전달 방식이 청중에게는 충분히 전달되지 않았을 가능성이 있습니다. 이는 발표 역량이 부족하다기보다는 \"전달 방식과 청중 인식 사이에 간격이 있는 상태\"로 볼 수 있습니다.",
+            feedback: "발표는 준비한 내용만큼이나 청중에게 어떻게 전달되는지가 중요합니다. 기획, 디자인, 스피치 중 어디에서 간격이 생겼는지 점검하면 발표의 완성도를 빠르게 높일 수 있습니다. 기수와 운영진이 남긴 서술형 피드백을 참고하여 청중이 특히 어려움을 느낀 지점을 한 가지 선택해 다음 발표에서 먼저 보완해 보세요. 전달 방식만 조금 조정해도 발표의 인상은 크게 달라질 수 있습니다.",
         };
     }
     return {
         type: "objective",
         label: "[B유형] 자기=청중",
         color: "text-emerald-600",
-        description: "자기 인식과 외부 인식이 잘 맞는 상태입니다. 자신의 강점과 약점을 정확히 파악하고 있어 효율적인 성장이 가능합니다.",
+        description: "본인이 인식한 발표 수준과 청중의 평가가 비교적 일치합니다. 이는 자신의 발표를 객관적으로 바라보고 있다는 의미이며, 현재의 역량을 정확히 파악하고 있다는 강점이 있습니다.",
+        feedback: "스스로의 발표를 잘 분석하고 있는 만큼 이번 결과를 다음 성장 전략을 설계하는 기준으로 활용해 보세요. 강점은 더욱 살리고, 상대적으로 아쉬운 부분은 보완한다면 발표 역량의 균형과 완성도를 동시에 높일 수 있습니다. 가장 높은 점수의 강점은 유지하고, 가장 낮은 영역 하나를 정해 다음 발표의 우선 과제로 설정해 보세요.",
     };
 }
 
@@ -358,7 +362,7 @@ export default function GrowthReportContent({
                                     d === "DESIGN" ? "bg-emerald-500" : "bg-amber-500";
                                 return (
                                     <span key={d} className={`px-3 py-1 rounded-full ${badgeBg} text-white text-xs font-bold shadow-sm`}>
-                                        [{DOMAIN_LABELS[d]}]{stageMap[d] ?? ""}
+                                        [{DOMAIN_LABELS[d]}] {stageMap[d] ?? ""}
                                     </span>
                                 );
                             })}
@@ -394,10 +398,11 @@ export default function GrowthReportContent({
                 />
 
                 {/* 설명 문구 */}
-                <p className="text-xs text-gray-400 leading-[1.8] mb-4 -mt-2 [word-break:keep-all] text-pretty">
+                <p className="text-xs text-gray-400 leading-[1.8] mb-2 -mt-2 [word-break:keep-all] text-pretty">
                     이 그래프는 발표 역량의 세 영역(기획, 디자인, 스피치)을 시각적으로 나타낸 것입니다.
-                    각 영역별 점수는 자기 평가와 청중 평가를 1:1로 반영한 평균 점수이며,
-                    소수점 둘째 자리에서 반올림하여 표시됩니다.
+                </p>
+                <p className="text-xs text-gray-400 leading-[1.8] mb-4 [word-break:keep-all] text-pretty">
+                    각 영역별 점수는 자기 평가와 청중 평가를 1:1로 반영한 평균 점수이며, 소수점 둘째 자리에서 반올림하여 표시됩니다.
                 </p>
 
                 {/* Score table */}
@@ -519,6 +524,11 @@ export default function GrowthReportContent({
                                 data.stage === s.label ? s.color : "text-gray-300"
                             }`}>
                                 {s.label}
+                            </span>
+                            <span className={`text-[7px] ${
+                                data.stage === s.label ? "text-gray-400" : "text-gray-200"
+                            }`}>
+                                {s.range}
                             </span>
                         </div>
                     ))}
@@ -662,12 +672,18 @@ export default function GrowthReportContent({
                                 );
                             })}
                         </div>
-                        <p className={`text-sm font-bold mb-1.5 ${perceptionType.color}`}>
+                        <p className={`text-sm font-bold mb-2 ${perceptionType.color}`}>
                             {perceptionType.label}
                         </p>
-                        <p className="text-xs text-gray-600 leading-[1.8] [word-break:keep-all] text-pretty">
+                        <p className="text-sm text-gray-600 leading-[2.0] [word-break:keep-all] text-pretty mb-3">
                             {perceptionType.description}
                         </p>
+                        <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
+                            <p className="text-xs font-bold text-gray-500 mb-1.5">피드백</p>
+                            <p className="text-sm text-gray-700 leading-[2.0] [word-break:keep-all] text-pretty">
+                                {perceptionType.feedback}
+                            </p>
+                        </div>
                     </div>
                 )}
             </Section>

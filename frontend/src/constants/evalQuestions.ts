@@ -63,7 +63,7 @@ export const EVAL_QUESTIONS: EvalQuestion[] = [
         order: 6,
         label: "통일성",
         selfText: "나는 파워포인트의 기능과 디자인 요소를 발표의 분위기와 목적에 맞게 의도적으로 활용했다",
-        audienceText: "나는 파워포인트의 기능과 디자인 요소를 발표의 분위기와 목적에 맞게 의도적으로 활용했다",
+        audienceText: "발표자는 파워포인트의 기능과 디자인 요소를 발표의 분위기와 목적에 맞게 의도적으로 활용했다",
     },
     // ── 스피치 ──
     {
