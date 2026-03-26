@@ -7,6 +7,7 @@ import {
     Circle,
     Loader2,
     Send,
+    ChevronLeft,
     ChevronRight,
     ClipboardList,
     Sparkles,
@@ -145,6 +146,19 @@ export default function EvalAudienceForm() {
     const answeredCount = Object.keys(scores).length;
     const totalQuestions = EVAL_QUESTIONS.length;
     const allAnswered = answeredCount === totalQuestions;
+
+    const currentMemberIndex = useMemo(() => {
+        if (!assignments || !selectedMemberId) return -1;
+        return assignments.findIndex(a => a.presenter_member_id === selectedMemberId);
+    }, [assignments, selectedMemberId]);
+
+    function navigateMember(direction: number) {
+        if (!assignments) return;
+        const newIndex = currentMemberIndex + direction;
+        if (newIndex >= 0 && newIndex < assignments.length) {
+            handleSelectMember(assignments[newIndex].presenter_member_id);
+        }
+    }
 
     function handleScore(key: string, value: number) {
         setScores((prev) => ({ ...prev, [key]: value }));
@@ -389,8 +403,8 @@ export default function EvalAudienceForm() {
 
             <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
                 <div className="flex flex-col lg:flex-row gap-6">
-                    {/* Left: member list */}
-                    <div className="lg:w-56 shrink-0">
+                    {/* Left: member list (hidden on mobile) */}
+                    <div className="hidden lg:block lg:w-56 shrink-0">
                         <h2 className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-3">
                             평가 대상
                         </h2>
@@ -433,6 +447,51 @@ export default function EvalAudienceForm() {
                         )}
                     </div>
 
+                    {/* Mobile member navigation - hidden on desktop */}
+                    {selectedMemberId && (
+                        <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-[var(--color-border-subtle)] bg-[var(--color-base)]">
+                            <button
+                                onClick={() => navigateMember(-1)}
+                                disabled={currentMemberIndex <= 0}
+                                className="p-1.5 rounded-lg hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] disabled:opacity-30"
+                            >
+                                <ChevronLeft className="w-5 h-5" />
+                            </button>
+                            <div className="text-center">
+                                <p className="text-sm font-bold text-[var(--color-text-primary)]">
+                                    {selectedAssignment?.presenter_name}
+                                </p>
+                                <p className="text-[10px] text-[var(--color-text-muted)]">
+                                    {assignments.filter(a => a.submitted).length}/{assignments.length} 완료
+                                    {submittedAll && " ✓"}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => navigateMember(1)}
+                                disabled={currentMemberIndex >= (assignments?.length ?? 1) - 1}
+                                className="p-1.5 rounded-lg hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] disabled:opacity-30"
+                            >
+                                <ChevronRight className="w-5 h-5" />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Mobile member select prompt - when no member selected */}
+                    {!selectedMemberId && (
+                        <div className="lg:hidden flex flex-col items-center justify-center py-12 px-4">
+                            <p className="text-[var(--color-text-muted)] mb-4 text-sm">평가할 멤버를 선택하세요</p>
+                            <div className="space-y-1 w-full max-w-xs">
+                                {assignments?.map(a => (
+                                    <button key={a.id} onClick={() => handleSelectMember(a.presenter_member_id)}
+                                        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-left hover:bg-[var(--color-hover)] border border-[var(--color-border-subtle)]">
+                                        {a.submitted ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Circle className="w-4 h-4 text-[var(--color-text-muted)]" />}
+                                        <span>{a.presenter_name}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Right: evaluation form */}
                     <div className="flex-1 min-w-0">
                         <AnimatePresence mode="wait">
@@ -442,7 +501,7 @@ export default function EvalAudienceForm() {
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
-                                    className="flex items-center justify-center py-20 text-[var(--color-text-muted)]"
+                                    className="hidden lg:flex items-center justify-center py-20 text-[var(--color-text-muted)]"
                                 >
                                     왼쪽에서 평가할 멤버를 선택하세요.
                                 </motion.div>

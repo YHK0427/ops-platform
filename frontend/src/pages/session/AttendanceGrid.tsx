@@ -17,7 +17,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { RefreshCw, CheckCircle2, FileText } from "lucide-react";
+import { RefreshCw, CheckCircle2, FileText, ChevronDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
@@ -155,7 +155,9 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                         </div>
                         );
                     })()}
-                    <div className={`rounded-xl border overflow-hidden bg-[var(--color-surface)] ${showGroupHeader ? groupColor : "border-[var(--color-border)]"}`}>
+
+                    {/* Desktop table - hidden on mobile */}
+                    <div className={`hidden md:block rounded-xl border overflow-hidden bg-[var(--color-surface)] ${showGroupHeader ? groupColor : "border-[var(--color-border)]"}`}>
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -317,9 +319,229 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                     </TableBody>
                 </Table>
                     </div>
+
+                    {/* Mobile list - hidden on desktop */}
+                    <div className="md:hidden space-y-1.5">
+                        {team.members.map((member: any) => (
+                            <MobileAttendanceRow
+                                key={member.member_id}
+                                member={member}
+                                team={team}
+                                sessionType={sessionType}
+                                assignments={assignments}
+                                updating={updating}
+                                onStatusChange={handleStatusChange}
+                                onExcuseChange={handleExcuseChange}
+                                onPptEmailChange={handlePptEmailChange}
+                            />
+                        ))}
+                    </div>
                 </div>
                 );
             })}
+        </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Mobile row – one per member, tap to expand excuse / PPT controls  */
+/* ------------------------------------------------------------------ */
+
+const STATUS_COLOR_MAP: Record<string, string> = {
+    PRESENT: "bg-green-500",
+    LATE_UNDER10: "bg-yellow-500",
+    LATE_OVER10: "bg-orange-500",
+    ABSENT: "bg-red-500",
+    EARLY_LEAVE: "bg-purple-500",
+    EXCUSED: "bg-blue-500",
+    PENDING: "bg-gray-300",
+};
+
+const STATUS_TEXT_COLOR_MAP: Record<string, string> = {
+    PRESENT: "#16a34a",
+    LATE_UNDER10: "#ca8a04",
+    LATE_OVER10: "#ea580c",
+    ABSENT: "#dc2626",
+    EARLY_LEAVE: "#9333ea",
+    EXCUSED: "#2563eb",
+    PENDING: "#94A3B8",
+};
+
+const PPT_BUTTONS = [
+    { value: "PASS", label: "제출", color: "text-green-600 border-green-500/40 bg-green-500/10", activeColor: "bg-green-500/30 border-green-500 text-green-700 ring-1 ring-green-400/30" },
+    { value: "LATE", label: "지각", color: "text-orange-600 border-orange-500/40 bg-orange-500/10", activeColor: "bg-orange-500/30 border-orange-500 text-orange-700 ring-1 ring-orange-400/30" },
+    { value: "MISSING", label: "미제출", color: "text-red-500 border-red-500/40 bg-red-500/10", activeColor: "bg-red-500/30 border-red-500 text-red-700 ring-1 ring-red-400/30" },
+    { value: "EXEMPT", label: "면제", color: "text-blue-600 border-blue-500/40 bg-blue-500/10", activeColor: "bg-blue-500/30 border-blue-500 text-blue-700 ring-1 ring-blue-400/30" },
+];
+
+interface MobileAttendanceRowProps {
+    member: any;
+    team: any;
+    sessionType?: string;
+    assignments?: any[];
+    updating: Record<string, boolean>;
+    onStatusChange: (memberId: number, status: string) => void;
+    onExcuseChange: (memberId: number, excuseType: string) => void;
+    onPptEmailChange: (assignmentId: number, newStatus: string) => void;
+}
+
+function MobileAttendanceRow({
+    member,
+    team,
+    sessionType,
+    assignments,
+    updating,
+    onStatusChange,
+    onExcuseChange,
+    onPptEmailChange,
+}: MobileAttendanceRowProps) {
+    const [expanded, setExpanded] = useState(false);
+
+    const status = member.attendance?.status || "PENDING";
+    const dotColor = STATUS_COLOR_MAP[status] || "bg-gray-300";
+    const textColor = STATUS_TEXT_COLOR_MAP[status] || "#94A3B8";
+
+    // Resolve PPT assignment for this member
+    let pptAssignment: any = null;
+    let isToggleable = true;
+    if (assignments) {
+        if (sessionType === "TEAM" && team.id) {
+            pptAssignment = assignments.find((a: any) => a.type === "PPT_EMAIL" && a.team_id === team.id);
+            isToggleable = team.members[0]?.member_id === member.member_id;
+        } else {
+            pptAssignment = assignments.find((a: any) => a.type === "PPT_EMAIL" && a.member_id === member.member_id);
+        }
+    }
+
+    return (
+        <div className="border border-[var(--color-border-subtle)] rounded-lg overflow-hidden">
+            {/* Main row: name + attendance + excuse */}
+            <div
+                className="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-[var(--color-hover)]"
+                onClick={() => setExpanded(!expanded)}
+            >
+                <div className="flex items-center gap-2 min-w-0">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                    <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">
+                        {member.name}
+                    </span>
+                    {!member.is_active && (
+                        <span className="text-[10px] bg-red-500/10 text-red-500 px-1 rounded shrink-0">비활성</span>
+                    )}
+                    {updating[member.member_id] && (
+                        <RefreshCw className="w-3 h-3 animate-spin text-[var(--color-text-muted)] shrink-0" />
+                    )}
+                    {/* 사유서 아이콘 (excuse_text 있을 때) */}
+                    {member.attendance?.excuse_text && (
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <button onClick={(e) => e.stopPropagation()} className="text-blue-600 hover:text-blue-500">
+                                    <FileText className="w-3.5 h-3.5" />
+                                </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-72 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm" align="start">
+                                <ExcuseTextDisplay text={member.attendance.excuse_text} />
+                            </PopoverContent>
+                        </Popover>
+                    )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                    {/* 사유서 유형 */}
+                    <div onClick={(e) => e.stopPropagation()}>
+                        <Select
+                            value={member.attendance?.excuse_type || "NONE"}
+                            onValueChange={(val) => onExcuseChange(member.member_id, val)}
+                            disabled={updating[member.member_id]}
+                        >
+                            <SelectTrigger className="h-7 w-16 text-[10px] text-[var(--color-text-secondary)] border-[var(--color-border)] bg-white">
+                                <SelectValue placeholder="-" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white text-[var(--color-text-primary)] border-[var(--color-border)]">
+                                <SelectItem value="NONE">-</SelectItem>
+                                <SelectItem value="PRE">사전</SelectItem>
+                                <SelectItem value="POST">사후</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {/* 출결 셀렉트 */}
+                    <div onClick={(e) => e.stopPropagation()}>
+                        <Select
+                            value={status}
+                            onValueChange={(val) => onStatusChange(member.member_id, val)}
+                            disabled={updating[member.member_id]}
+                        >
+                            <SelectTrigger
+                                className="w-[80px] h-7 text-xs font-bold border-[var(--color-border)] bg-white"
+                                style={{ color: textColor }}
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white border-[var(--color-border)]">
+                                <SelectItem value="PENDING" className="text-gray-500">미처리</SelectItem>
+                                <SelectItem value="PRESENT" style={{ color: "#16a34a" }}>출석</SelectItem>
+                                <SelectItem value="LATE_UNDER10" style={{ color: "#ca8a04" }}>지각(&lt;10)</SelectItem>
+                                <SelectItem value="LATE_OVER10" style={{ color: "#ea580c" }}>지각(&gt;10)</SelectItem>
+                                <SelectItem value="EARLY_LEAVE" style={{ color: "#9333ea" }}>조퇴</SelectItem>
+                                <SelectItem value="ABSENT" style={{ color: "#dc2626" }}>결석</SelectItem>
+                                <SelectItem value="EXCUSED" style={{ color: "#2563eb" }}>공결</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <ChevronDown
+                        className={`w-3.5 h-3.5 text-[var(--color-text-muted)] transition-transform ${expanded ? "rotate-180" : ""}`}
+                    />
+                </div>
+            </div>
+
+            {/* Expanded section: PPT only */}
+            {expanded && (
+                <div className="px-3 py-2 border-t border-[var(--color-border-subtle)] bg-[var(--color-hover)]/50">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-[var(--color-text-muted)] w-10 shrink-0">PPT</span>
+                        {(() => {
+                            if (!pptAssignment) return <span className="text-[var(--color-text-muted)] text-xs">-</span>;
+
+                            const pptKey = `ppt_${pptAssignment.id}`;
+                            const isUpdating = updating[pptKey];
+                            const currentStatus = pptAssignment.status;
+
+                            if (!isToggleable) {
+                                const active = PPT_BUTTONS.find(b => b.value === currentStatus);
+                                if (currentStatus === "PENDING") return <span className="text-[var(--color-text-muted)] text-[10px]">미검사</span>;
+                                return (
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${active?.activeColor || "text-[var(--color-text-muted)]"}`}>
+                                        {active?.label || currentStatus}
+                                    </span>
+                                );
+                            }
+
+                            return (
+                                <div className="flex items-center gap-1 flex-wrap">
+                                    {PPT_BUTTONS.map(btn => {
+                                        const isActive = currentStatus === btn.value;
+                                        return (
+                                            <button
+                                                key={btn.value}
+                                                disabled={isUpdating}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onPptEmailChange(pptAssignment.id, isActive ? "PENDING" : btn.value);
+                                                }}
+                                                className={`px-1.5 py-0.5 rounded text-[10px] font-medium border transition-all ${
+                                                    isActive ? btn.activeColor : `${btn.color} opacity-40 hover:opacity-80`
+                                                }`}
+                                                title={isActive ? "클릭하면 미검사로 초기화" : btn.label}
+                                            >
+                                                {btn.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

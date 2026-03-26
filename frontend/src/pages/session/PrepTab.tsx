@@ -139,31 +139,34 @@ export default function PrepTab() {
                         <p className="text-sm text-[var(--color-text-secondary)]">네이버 카페 사유서 게시판 스캔</p>
                     </div>
                     <div className="flex flex-col gap-2">
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
+                                size="sm"
                                 onClick={() => handleScanExcuses("PRE")}
                                 disabled={isScanningExcuses}
                             >
-                                <FileSearch className="w-4 h-4 mr-2" />
-                                사전사유서 받아오기
+                                <FileSearch className="w-4 h-4 mr-1.5" />
+                                사전사유서
                             </Button>
                             <Button
                                 variant="outline"
+                                size="sm"
                                 className="text-orange-600 border-orange-500/20 hover:bg-orange-400/10"
                                 onClick={() => handleScanExcuses("POST")}
                                 disabled={isScanningExcuses}
                             >
-                                <FileSearch className="w-4 h-4 mr-2" />
-                                사후사유서 받아오기
+                                <FileSearch className="w-4 h-4 mr-1.5" />
+                                사후사유서
                             </Button>
                             <Button
                                 variant="outline"
+                                size="sm"
                                 className="text-red-500 border-red-500/20 hover:bg-red-400/10"
                                 onClick={handleClearExcuses}
                             >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                전체 삭제
+                                <Trash2 className="w-4 h-4 mr-1.5" />
+                                삭제
                             </Button>
                         </div>
                         {excuseTaskId && excuseTaskStatus && (

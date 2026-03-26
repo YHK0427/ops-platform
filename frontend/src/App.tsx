@@ -84,7 +84,7 @@ function DashboardLayout() {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto pt-[45px] md:pt-0">
         <Outlet />
       </div>
     </div>
