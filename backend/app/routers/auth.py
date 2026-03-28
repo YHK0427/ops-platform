@@ -18,6 +18,7 @@ from app.deps import (
     get_current_member,
     get_current_user,
     get_db,
+    get_real_ip,
     oauth2_scheme,
     require_admin,
     require_staff,
@@ -168,7 +169,7 @@ async def _check_totp_rate(token: str) -> None:
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """DB 기반 로그인 → JWT 반환 (TOTP 필요 시 pending 토큰)"""
-    ip = request.client.host if request.client else "unknown"
+    ip = get_real_ip(request)
 
     await check_login_rate(ip, body.username)
 
@@ -262,9 +263,9 @@ async def member_login(
     body: MemberLoginRequest, request: Request, db: AsyncSession = Depends(get_db),
 ):
     """기수 멤버 계정 로그인 → JWT 반환"""
-    ip = request.client.host if request.client else "unknown"
+    ip = get_real_ip(request)
 
-    await check_login_rate(ip, body.username)
+    # NOTE: 멤버 로그인은 레이트 리밋 해제 (동시 다수 접속 허용)
 
     result = await db.execute(
         select(GenerationAccount).where(

@@ -2,7 +2,7 @@ from typing import AsyncGenerator
 
 import bcrypt
 import redis.asyncio as aioredis
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,15 @@ async def blacklist_token(token: str, ttl_seconds: int) -> None:
 async def is_token_blacklisted(token: str) -> bool:
     redis = _get_redis_client()
     return await redis.exists(f"blacklist:{token}") > 0
+
+
+def get_real_ip(request: Request) -> str:
+    """X-Forwarded-For 헤더에서 실제 클라이언트 IP 추출 (Nginx 프록시 대응)"""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        # 첫 번째 IP가 실제 클라이언트
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 async def check_login_rate(ip: str, username: str = "") -> None:
