@@ -96,9 +96,10 @@ def determine_stage(score: float) -> str:
 def determine_type(domain_scores: dict) -> str:
     """도메인별 점수로 발표 유형 판별.
 
-    max - min <= 0.8: 균형형
-    max - avg(other two) >= 1.0: 강점 집중형
-    else: 성장 가능성형
+    각 영역 편차 = 해당 영역 - 나머지 2개 평균
+    max - min <= 0.5: 균형형
+    가장 큰 |편차| 영역이 양수: 강점 집중형
+    가장 큰 |편차| 영역이 음수: 보완점 명확형
     """
     values = [v for v in domain_scores.values() if v is not None]
     if len(values) < 3:
@@ -107,13 +108,20 @@ def determine_type(domain_scores: dict) -> str:
     max_val = max(values)
     min_val = min(values)
 
-    if max_val - min_val <= 0.8:
+    if max_val - min_val <= 0.5:
         return "균형형"
 
-    # 최고 영역 제외한 나머지 2개 평균
-    sorted_vals = sorted(values, reverse=True)
-    avg_others = (sorted_vals[1] + sorted_vals[2]) / 2
-    if max_val - avg_others >= 1.0:
+    # 각 영역의 편차(나머지 2개 평균 대비) 계산
+    domains = list(domain_scores.keys())
+    deviations = {}
+    for d in domains:
+        if domain_scores[d] is None:
+            continue
+        others_avg = sum(domain_scores[o] for o in domains if o != d and domain_scores[o] is not None) / 2
+        deviations[d] = domain_scores[d] - others_avg
+
+    outlier = max(deviations, key=lambda k: abs(deviations[k]))
+    if deviations[outlier] > 0:
         return "강점 집중형"
 
     return "보완점 명확형"
