@@ -98,8 +98,8 @@ def determine_type(domain_scores: dict) -> str:
 
     각 영역 편차 = 해당 영역 - 나머지 2개 평균
     max - min <= 0.5: 균형형
-    가장 큰 |편차| 영역이 양수: 강점 집중형
-    가장 큰 |편차| 영역이 음수: 보완점 명확형
+    가장 큰 |편차| 영역이 양수이고 음수 편차와 0.05 이상 차이: 강점 집중형
+    그 외 (음수이거나 동률): 보완점 명확형 (애매하면 개선 피드백 우선)
     """
     values = [v for v in domain_scores.values() if v is not None]
     if len(values) < 3:
@@ -122,7 +122,9 @@ def determine_type(domain_scores: dict) -> str:
 
     outlier = max(deviations, key=lambda k: abs(deviations[k]))
     if deviations[outlier] > 0:
-        return "강점 집중형"
+        min_dev = min(deviations.values())
+        if abs(deviations[outlier]) - abs(min_dev) >= 0.05:
+            return "강점 집중형"
 
     return "보완점 명확형"
 
