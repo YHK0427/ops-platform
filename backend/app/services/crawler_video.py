@@ -239,9 +239,9 @@ async def _upload_single(page, video_path: str, cafe_title: str) -> bool:
         file_chooser = await fc_info.value
         await file_chooser.set_files(video_path)
         
-        # 업로드 완료 대기 (3분)
+        # 업로드 완료 대기 (5분)
         # "업로드 완료!" 텍스트 확인
-        await page.get_by_text("업로드 완료!", exact=False).wait_for(state="visible", timeout=180_000)
+        await page.get_by_text("업로드 완료!", exact=False).wait_for(state="visible", timeout=300_000)
         
         # 등록 버튼 클릭 (1단계)
         await page.locator("button:has-text('등록'),button:has-text('완료'),.btn_done").first.click()
