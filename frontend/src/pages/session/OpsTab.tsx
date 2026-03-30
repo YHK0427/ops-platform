@@ -224,9 +224,6 @@ export default function OpsTab() {
         });
     };
 
-    // 이전 결과에 미완료 영상이 있는지
-    const hasIncomplete = previousResult?.some(p => p.status !== "done") ?? false;
-
     const renderTaskStatus = () => {
         if (!uploadTaskId || !taskStatus) return (
             <div className="bg-[var(--color-base)] rounded-lg p-4 border border-[var(--color-border)] min-h-[60px] flex items-center justify-center text-[var(--color-text-muted)] text-sm">
@@ -387,7 +384,7 @@ export default function OpsTab() {
                                 : <Film className="w-4 h-4 mr-2" />}
                             드라이브 확인
                         </Button>
-                        <Button onClick={handleCafeUpload} disabled={isUploading} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]">
+                        <Button onClick={() => handleCafeUpload(false)} disabled={isUploading} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]">
                             <UploadCloud className="w-4 h-4 mr-2" />
                             {isUploading ? "시작 중..." : "업로드 시작"}
                         </Button>
