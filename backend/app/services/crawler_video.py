@@ -356,7 +356,9 @@ async def upload_all_videos(
                 cafe_title = f"연합UP 33기 {session.week_num}주차 발표-[{session.title}]-{presenter}{order_suffix}"
             tmp_path = os.path.join(tmp_dir, raw_name)
 
-            logger.info(f"Processing video: {raw_name} -> {cafe_title}")
+            logger.info(f"[{idx+1}/{len(drive_files)}] 처리 시작: {raw_name} -> {cafe_title}")
+
+            MAX_UPLOAD_RETRIES = 2
 
             try:
                 # 1. 다운로드
@@ -365,27 +367,41 @@ async def upload_all_videos(
 
                 await asyncio.to_thread(download_drive_file, file_id, tmp_path)
 
-                # 2. 업로드
+                # 2. 업로드 (실패 시 재시도)
                 progress_list[idx]["status"] = "uploading"
                 await _set_progress(redis, job_id, progress_list)
 
-                ok = await _upload_single(page, tmp_path, cafe_title)
+                ok = False
+                for attempt in range(1, MAX_UPLOAD_RETRIES + 1):
+                    ok = await _upload_single(page, tmp_path, cafe_title)
+                    if ok:
+                        break
+                    if attempt < MAX_UPLOAD_RETRIES:
+                        logger.warning(
+                            f"[{idx+1}/{len(drive_files)}] {raw_name} 업로드 실패 "
+                            f"(시도 {attempt}/{MAX_UPLOAD_RETRIES}), 재시도..."
+                        )
+                        await page.goto("about:blank")
+                        await asyncio.sleep(5)
 
                 if ok:
                     progress_list[idx]["status"] = "done"
                 else:
                     progress_list[idx]["status"] = "failed"
-                    progress_list[idx]["error"] = "업로드 실패"
+                    progress_list[idx]["error"] = f"업로드 실패 ({MAX_UPLOAD_RETRIES}회 시도)"
                 await _set_progress(redis, job_id, progress_list)
 
                 results.append({"file": raw_name, "title": cafe_title, "success": ok})
-                logger.info(f"Upload result for {raw_name}: {ok}")
+                logger.info(
+                    f"[{idx+1}/{len(drive_files)}] {raw_name}: "
+                    f"{'성공' if ok else '실패'}"
+                )
 
                 if ok:
                     await asyncio.sleep(10)  # rate limit 방지
 
             except Exception as e:
-                logger.error(f"Failed to process {raw_name}: {e}", exc_info=True)
+                logger.error(f"[{idx+1}/{len(drive_files)}] {raw_name} 처리 실패: {e}", exc_info=True)
                 progress_list[idx]["status"] = "failed"
                 progress_list[idx]["error"] = str(e)
                 await _set_progress(redis, job_id, progress_list)
@@ -401,10 +417,28 @@ async def upload_all_videos(
 
         await browser.close()
 
-    # 완료 후 Redis 정리
+    # 결과 요약 로그
+    success_count = sum(1 for r in results if r["success"])
+    fail_count = len(results) - success_count
+    logger.info(f"영상 업로드 완료: 총 {len(results)}개 중 성공 {success_count}개, 실패 {fail_count}개")
+
     if redis and job_id:
         try:
-            await redis.delete(f"upload_progress:{job_id}")
+            if fail_count == 0:
+                # 전부 성공 → 정리
+                await redis.delete(f"upload_progress:{job_id}")
+            else:
+                # 실패 영상 있음 → progress 보존 (24시간)
+                failed_items = [p for p in progress_list if p["status"] == "failed"]
+                logger.warning(
+                    f"실패 영상 목록:\n"
+                    + "\n".join(f"  - {p['file']}: {p.get('error', 'unknown')}" for p in failed_items)
+                )
+                await redis.set(
+                    f"upload_progress:{job_id}",
+                    json.dumps(progress_list, ensure_ascii=False),
+                    ex=86400,
+                )
             await redis.delete(f"active_upload_task:{session_id}")
         except Exception:
             pass
