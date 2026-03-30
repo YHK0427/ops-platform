@@ -341,11 +341,6 @@ async def upload_all_videos(
 
     cancel_poller = asyncio.create_task(poll_cancel())
 
-    # 다운로드 선행: 백그라운드에서 미리 다운로드 (동시 3개)
-    download_semaphore = asyncio.Semaphore(3)
-    download_events = [asyncio.Event() for _ in range(total)]
-    download_errors: List[Optional[str]] = [None] * total
-
     # 파일별 메타 미리 계산
     file_metas = []
     for drive_file in drive_files:
@@ -354,24 +349,17 @@ async def upload_all_videos(
         tmp_path = os.path.join(tmp_dir, raw_name)
         file_metas.append({"raw_name": raw_name, "file_id": file_id, "tmp_path": tmp_path})
 
-    async def bg_download(idx: int):
-        meta = file_metas[idx]
-        async with download_semaphore:
-            if abort_event.is_set():
-                download_events[idx].set()
-                return
-            try:
-                progress_list[idx]["status"] = "downloading"
-                await _set_progress(redis, job_id, progress_list)
-                await asyncio.to_thread(download_drive_file, meta["file_id"], meta["tmp_path"])
-            except Exception as e:
-                download_errors[idx] = str(e)
-                logger.error(f"[{idx+1}/{total}] {meta['raw_name']} 다운로드 실패: {e}")
-            finally:
-                download_events[idx].set()
+    # 다음 영상 1개만 미리 다운로드하는 헬퍼
+    prefetch_task: Optional[asyncio.Task] = None
 
-    # 전체 다운로드 백그라운드 시작
-    download_tasks = [asyncio.create_task(bg_download(i)) for i in range(total)]
+    async def prefetch_download(idx: int):
+        meta = file_metas[idx]
+        try:
+            progress_list[idx]["status"] = "downloading"
+            await _set_progress(redis, job_id, progress_list)
+            await asyncio.to_thread(download_drive_file, meta["file_id"], meta["tmp_path"])
+        except Exception as e:
+            logger.error(f"[{idx+1}/{total}] {meta['raw_name']} 다운로드 실패: {e}")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -384,6 +372,7 @@ async def upload_all_videos(
 
         for idx, drive_file in enumerate(drive_files):
             raw_name = file_metas[idx]["raw_name"]
+            file_id = file_metas[idx]["file_id"]
             tmp_path = file_metas[idx]["tmp_path"]
             presenter = drive_file.get("presenter", parse_presenter_name(raw_name))
 
@@ -406,20 +395,25 @@ async def upload_all_videos(
 
             logger.info(f"[{idx+1}/{total}] 처리 시작: {raw_name} -> {cafe_title}")
 
-            # 다운로드 완료 대기
-            await download_events[idx].wait()
-
-            if download_errors[idx]:
-                progress_list[idx]["status"] = "failed"
-                progress_list[idx]["error"] = download_errors[idx]
-                await _set_progress(redis, job_id, progress_list)
-                results.append({"file": raw_name, "title": cafe_title, "success": False, "error": download_errors[idx]})
-                continue
-
-            # 업로드 (재시도 포함)
             try:
+                # 1. 다운로드 (prefetch로 이미 받았으면 대기, 아니면 직접)
+                if prefetch_task and not os.path.exists(tmp_path):
+                    # prefetch 진행 중이면 완료 대기
+                    await prefetch_task
+                    prefetch_task = None
+
+                if not os.path.exists(tmp_path):
+                    # prefetch 안 됐거나 첫 번째 영상
+                    progress_list[idx]["status"] = "downloading"
+                    await _set_progress(redis, job_id, progress_list)
+                    await asyncio.to_thread(download_drive_file, file_id, tmp_path)
+
+                # 2. 업로드 시작 → 다음 영상 미리 다운로드
                 progress_list[idx]["status"] = "uploading"
                 await _set_progress(redis, job_id, progress_list)
+
+                if idx + 1 < total and not abort_event.is_set():
+                    prefetch_task = asyncio.create_task(prefetch_download(idx + 1))
 
                 ok = False
                 for attempt in range(1, MAX_UPLOAD_RETRIES + 1):
@@ -471,15 +465,15 @@ async def upload_all_videos(
 
         await browser.close()
 
-    # 백그라운드 다운로드 정리
-    for t in download_tasks:
-        t.cancel()
+    # 정리
+    if prefetch_task:
+        prefetch_task.cancel()
     cancel_poller.cancel()
 
     # 남은 pending → cancelled
     if abort_event.is_set():
         for p in progress_list:
-            if p["status"] in ("pending", "downloading"):
+            if p["status"] == "pending":
                 p["status"] = "cancelled"
 
     # 남은 임시파일 정리
