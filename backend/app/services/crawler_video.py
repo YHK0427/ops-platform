@@ -215,8 +215,8 @@ async def _get_naver_storage_state(db: AsyncSession) -> dict:
     return session.storage_json
 
 
-async def _upload_file(page, video_path: str, cafe_title: str) -> bool:
-    """1단계: 글쓰기 페이지 → 제목 입력 → 영상 파일 업로드 → '업로드 완료!' 대기 (병렬 가능)"""
+async def _upload_single(page, video_path: str, cafe_title: str) -> bool:
+    """Playwright 2단계 업로드 (모바일 웹) — 페이지 1개 재사용"""
     url = (f"https://m.cafe.naver.com/ca-fe/web/cafes/{settings.NAVER_CAFE_ID}"
            f"/menus/{settings.NAVER_CAFE_MENU_VIDEO}/articles/write?boardType=L")
 
@@ -238,25 +238,23 @@ async def _upload_file(page, video_path: str, cafe_title: str) -> bool:
         # 업로드 완료 대기 (5분)
         await page.get_by_text("업로드 완료!", exact=False).wait_for(state="visible", timeout=300_000)
 
-        # 등록 버튼 클릭 (1단계 - 영상 확정)
+        # 등록 버튼 클릭 (1단계)
         await page.locator("button:has-text('등록'),button:has-text('완료'),.btn_done").first.click()
         await asyncio.sleep(3)
 
-        return True
     except Exception as e:
-        logger.error(f"파일 업로드 실패: {e}")
+        logger.error(f"1단계 업로드 실패: {e}")
         return False
 
-
-async def _register_post(page) -> bool:
-    """2단계: 최종 게시글 발행 (순서 보장을 위해 순차 호출)"""
     await asyncio.sleep(2)
+
     try:
+        # 최종 등록 (2단계)
         await page.locator("button:has-text('등록'),.GnbBntRight__green,.btn_register").first.click()
         await page.wait_for_url(lambda u: "/articles/write" not in u, timeout=30_000)
         return True
     except Exception as e:
-        logger.error(f"최종 등록 실패: {e}")
+        logger.error(f"2단계 등록 실패: {e}")
         return False
 
 
@@ -282,7 +280,7 @@ async def upload_all_videos(
     job_id: Optional[str] = None,
     videos: Optional[List[dict]] = None,
 ) -> List[dict]:
-    """전체 비디오 업로드 (최대 3개 동시 업로드, 등록은 순서 보장)"""
+    """전체 비디오 업로드 (페이지 1개 재사용 + 순차 업로드 + 다운로드 선행)"""
     session = await db.get(Session, session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
@@ -304,7 +302,6 @@ async def upload_all_videos(
         return []
 
     total = len(drive_files)
-    CONCURRENCY = 3
     MAX_UPLOAD_RETRIES = 2
 
     # 초기 progress
@@ -320,22 +317,15 @@ async def upload_all_videos(
         })
     await _set_progress(redis, job_id, progress_list)
 
-    results: List[Optional[dict]] = [None] * total
+    results = []
     tmp_dir = "/app/files/video"
     os.makedirs(tmp_dir, exist_ok=True)
 
-    # 동시 실행 제한
-    upload_semaphore = asyncio.Semaphore(1)                  # 업로드+등록은 1개씩 순차
-    download_semaphore = asyncio.Semaphore(CONCURRENCY)     # 다운로드는 동시 3개
-    # 등록 순서 보장: idx번 영상은 register_events[idx]가 set된 후에만 등록
-    register_events = [asyncio.Event() for _ in range(total + 1)]
-    register_events[0].set()  # 첫 번째 영상은 바로 등록 가능
-    # 중단 시그널 (세션 만료 or 사용자 취소)
+    # 중단 시그널
     abort_event = asyncio.Event()
-    progress_lock = asyncio.Lock()
 
     async def poll_cancel():
-        """Redis cancel 플래그를 2초마다 체크 → abort_event 설정"""
+        """Redis cancel 플래그를 2초마다 체크"""
         while not abort_event.is_set():
             try:
                 if redis:
@@ -351,6 +341,38 @@ async def upload_all_videos(
 
     cancel_poller = asyncio.create_task(poll_cancel())
 
+    # 다운로드 선행: 백그라운드에서 미리 다운로드 (동시 3개)
+    download_semaphore = asyncio.Semaphore(3)
+    download_events = [asyncio.Event() for _ in range(total)]
+    download_errors: List[Optional[str]] = [None] * total
+
+    # 파일별 메타 미리 계산
+    file_metas = []
+    for drive_file in drive_files:
+        raw_name = drive_file.get("name", drive_file.get("id", "unknown"))
+        file_id = drive_file.get("id", drive_file.get("file_id"))
+        tmp_path = os.path.join(tmp_dir, raw_name)
+        file_metas.append({"raw_name": raw_name, "file_id": file_id, "tmp_path": tmp_path})
+
+    async def bg_download(idx: int):
+        meta = file_metas[idx]
+        async with download_semaphore:
+            if abort_event.is_set():
+                download_events[idx].set()
+                return
+            try:
+                progress_list[idx]["status"] = "downloading"
+                await _set_progress(redis, job_id, progress_list)
+                await asyncio.to_thread(download_drive_file, meta["file_id"], meta["tmp_path"])
+            except Exception as e:
+                download_errors[idx] = str(e)
+                logger.error(f"[{idx+1}/{total}] {meta['raw_name']} 다운로드 실패: {e}")
+            finally:
+                download_events[idx].set()
+
+    # 전체 다운로드 백그라운드 시작
+    download_tasks = [asyncio.create_task(bg_download(i)) for i in range(total)]
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         pw_ctx = await browser.new_context(storage_state=storage)
@@ -358,10 +380,12 @@ async def upload_all_videos(
             "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
         )
 
-        async def process_video(idx: int, drive_file: dict):
-            raw_name = drive_file.get("name", drive_file.get("id", "unknown"))
+        page = await pw_ctx.new_page()
+
+        for idx, drive_file in enumerate(drive_files):
+            raw_name = file_metas[idx]["raw_name"]
+            tmp_path = file_metas[idx]["tmp_path"]
             presenter = drive_file.get("presenter", parse_presenter_name(raw_name))
-            file_id = drive_file.get("id", drive_file.get("file_id"))
 
             order = drive_file.get("order", 9999)
             cafe_title = drive_file.get("cafe_title")
@@ -372,143 +396,103 @@ async def upload_all_videos(
                 else:
                     order_suffix = f"({order}번째)" if order != 9999 else ""
                 cafe_title = f"연합UP 33기 {session.week_num}주차 발표-[{session.title}]-{presenter}{order_suffix}"
-            tmp_path = os.path.join(tmp_dir, raw_name)
 
+            # 중단 체크
+            if abort_event.is_set():
+                progress_list[idx]["status"] = "cancelled"
+                await _set_progress(redis, job_id, progress_list)
+                results.append({"file": raw_name, "title": cafe_title, "success": False, "error": "중단"})
+                continue
+
+            logger.info(f"[{idx+1}/{total}] 처리 시작: {raw_name} -> {cafe_title}")
+
+            # 다운로드 완료 대기
+            await download_events[idx].wait()
+
+            if download_errors[idx]:
+                progress_list[idx]["status"] = "failed"
+                progress_list[idx]["error"] = download_errors[idx]
+                await _set_progress(redis, job_id, progress_list)
+                results.append({"file": raw_name, "title": cafe_title, "success": False, "error": download_errors[idx]})
+                continue
+
+            # 업로드 (재시도 포함)
             try:
-                # 세션 만료로 중단된 경우 스킵
-                if abort_event.is_set():
-                    async with progress_lock:
-                        progress_list[idx]["status"] = "failed"
-                        progress_list[idx]["error"] = "세션 만료로 중단"
-                        await _set_progress(redis, job_id, progress_list)
-                    results[idx] = {"file": raw_name, "title": cafe_title, "success": False, "error": "세션 만료로 중단"}
-                    return
+                progress_list[idx]["status"] = "uploading"
+                await _set_progress(redis, job_id, progress_list)
 
-                logger.info(f"[{idx+1}/{total}] 처리 시작: {raw_name}")
+                ok = False
+                for attempt in range(1, MAX_UPLOAD_RETRIES + 1):
+                    ok = await _upload_single(page, tmp_path, cafe_title)
+                    if ok:
+                        break
+                    if attempt < MAX_UPLOAD_RETRIES:
+                        logger.warning(
+                            f"[{idx+1}/{total}] {raw_name} 업로드 실패 "
+                            f"(시도 {attempt}/{MAX_UPLOAD_RETRIES}), 재시도..."
+                        )
+                        await page.goto("about:blank")
+                        await asyncio.sleep(5)
 
-                # 1. 다운로드 — 업로드 슬롯 밖에서 미리 수행
-                async with download_semaphore:
-                    async with progress_lock:
-                        progress_list[idx]["status"] = "downloading"
-                        await _set_progress(redis, job_id, progress_list)
-                    await asyncio.to_thread(download_drive_file, file_id, tmp_path)
+                if ok:
+                    progress_list[idx]["status"] = "done"
+                else:
+                    progress_list[idx]["status"] = "failed"
+                    progress_list[idx]["error"] = f"업로드 실패 ({MAX_UPLOAD_RETRIES}회 시도)"
+                await _set_progress(redis, job_id, progress_list)
 
-                # 2. 업로드 + 등록 — 동시 3개 제한
-                async with upload_semaphore:
-                    if abort_event.is_set():
-                        async with progress_lock:
-                            progress_list[idx]["status"] = "failed"
-                            progress_list[idx]["error"] = "세션 만료로 중단"
-                            await _set_progress(redis, job_id, progress_list)
-                        results[idx] = {"file": raw_name, "title": cafe_title, "success": False, "error": "세션 만료로 중단"}
-                        return
+                results.append({"file": raw_name, "title": cafe_title, "success": ok})
+                logger.info(f"[{idx+1}/{total}] {raw_name}: {'성공' if ok else '실패'}")
 
-                    page = await pw_ctx.new_page()
-                    try:
-                        # 업로드 (재시도 포함)
-                        async with progress_lock:
-                            progress_list[idx]["status"] = "uploading"
-                            await _set_progress(redis, job_id, progress_list)
+                if ok:
+                    await asyncio.sleep(10)  # rate limit 방지
 
-                        upload_ok = False
-                        for attempt in range(1, MAX_UPLOAD_RETRIES + 1):
-                            upload_ok = await _upload_file(page, tmp_path, cafe_title)
-                            if upload_ok:
-                                break
-                            if attempt < MAX_UPLOAD_RETRIES:
-                                logger.warning(
-                                    f"[{idx+1}/{total}] {raw_name} 업로드 실패 "
-                                    f"(시도 {attempt}/{MAX_UPLOAD_RETRIES}), 재시도..."
-                                )
-                                await page.goto("about:blank")
-                                await asyncio.sleep(5)
-
-                        if not upload_ok:
-                            async with progress_lock:
-                                progress_list[idx]["status"] = "failed"
-                                progress_list[idx]["error"] = f"업로드 실패 ({MAX_UPLOAD_RETRIES}회 시도)"
-                                await _set_progress(redis, job_id, progress_list)
-                            results[idx] = {"file": raw_name, "title": cafe_title, "success": False}
-                            logger.warning(f"[{idx+1}/{total}] {raw_name}: 업로드 실패")
-                            return
-
-                        # 등록 순서 대기
-                        await register_events[idx].wait()
-
-                        # 최종 등록 — 순서대로
-                        ok = await _register_post(page)
-
-                        if ok:
-                            async with progress_lock:
-                                progress_list[idx]["status"] = "done"
-                                await _set_progress(redis, job_id, progress_list)
-                            results[idx] = {"file": raw_name, "title": cafe_title, "success": True}
-                            logger.info(f"[{idx+1}/{total}] {raw_name}: 성공")
-                            await asyncio.sleep(3)  # rate limit
-                        else:
-                            async with progress_lock:
-                                progress_list[idx]["status"] = "failed"
-                                progress_list[idx]["error"] = "등록 실패"
-                                await _set_progress(redis, job_id, progress_list)
-                            results[idx] = {"file": raw_name, "title": cafe_title, "success": False}
-                            logger.warning(f"[{idx+1}/{total}] {raw_name}: 등록 실패")
-
-                    except NaverSessionExpiredError:
-                        abort_event.set()
-                        logger.error("네이버 세션 만료 — 남은 영상 업로드 중단")
-                        async with progress_lock:
-                            progress_list[idx]["status"] = "failed"
-                            progress_list[idx]["error"] = "세션 만료"
-                            await _set_progress(redis, job_id, progress_list)
-                        results[idx] = {"file": raw_name, "title": cafe_title, "success": False, "error": "세션 만료"}
-
-                    except Exception as e:
-                        logger.error(f"[{idx+1}/{total}] {raw_name} 처리 실패: {e}", exc_info=True)
-                        async with progress_lock:
-                            progress_list[idx]["status"] = "failed"
-                            progress_list[idx]["error"] = str(e)
-                            await _set_progress(redis, job_id, progress_list)
-                        results[idx] = {"file": raw_name, "title": cafe_title, "success": False, "error": str(e)}
-
-                    finally:
-                        await page.close()
+            except NaverSessionExpiredError:
+                abort_event.set()
+                logger.error("네이버 세션 만료 — 남은 영상 업로드 중단")
+                progress_list[idx]["status"] = "failed"
+                progress_list[idx]["error"] = "세션 만료"
+                await _set_progress(redis, job_id, progress_list)
+                results.append({"file": raw_name, "title": cafe_title, "success": False, "error": "세션 만료"})
 
             except Exception as e:
-                logger.error(f"[{idx+1}/{total}] {raw_name} 다운로드 실패: {e}", exc_info=True)
-                async with progress_lock:
-                    progress_list[idx]["status"] = "failed"
-                    progress_list[idx]["error"] = str(e)
-                    await _set_progress(redis, job_id, progress_list)
-                results[idx] = {"file": raw_name, "title": cafe_title, "success": False, "error": str(e)}
+                logger.error(f"[{idx+1}/{total}] {raw_name} 처리 실패: {e}", exc_info=True)
+                progress_list[idx]["status"] = "failed"
+                progress_list[idx]["error"] = str(e)
+                await _set_progress(redis, job_id, progress_list)
+                results.append({"file": raw_name, "title": cafe_title, "success": False, "error": str(e)})
 
             finally:
-                # 다음 영상 등록 허용 (실패해도 반드시)
-                register_events[idx + 1].set()
                 if os.path.exists(tmp_path):
                     try:
                         os.remove(tmp_path)
                     except Exception:
                         pass
 
-        # 모든 영상을 동시 태스크로 실행 (세마포어로 동시 3개 제한)
-        tasks = [asyncio.create_task(process_video(i, f)) for i, f in enumerate(drive_files)]
-        await asyncio.gather(*tasks)
-
         await browser.close()
 
-    # cancel 폴러 정리
+    # 백그라운드 다운로드 정리
+    for t in download_tasks:
+        t.cancel()
     cancel_poller.cancel()
 
-    # 중단된 영상 상태 업데이트
+    # 남은 pending → cancelled
     if abort_event.is_set():
         for p in progress_list:
-            if p["status"] == "pending":
+            if p["status"] in ("pending", "downloading"):
                 p["status"] = "cancelled"
 
+    # 남은 임시파일 정리
+    for meta in file_metas:
+        if os.path.exists(meta["tmp_path"]):
+            try:
+                os.remove(meta["tmp_path"])
+            except Exception:
+                pass
+
     # 결과 요약
-    final_results = [r for r in results if r is not None]
-    success_count = sum(1 for r in final_results if r["success"])
-    fail_count = len(final_results) - success_count
+    success_count = sum(1 for r in results if r["success"])
+    fail_count = sum(1 for r in results if not r["success"])
     cancelled_count = sum(1 for p in progress_list if p["status"] == "cancelled")
     logger.info(
         f"영상 업로드 완료: 총 {total}개 중 성공 {success_count}개, "
@@ -517,7 +501,6 @@ async def upload_all_videos(
 
     if redis:
         try:
-            # 세션별 결과 저장 (이어하기용, 24시간)
             await redis.set(
                 f"upload_result:{session_id}",
                 json.dumps(progress_list, ensure_ascii=False),
@@ -542,4 +525,4 @@ async def upload_all_videos(
         except Exception:
             pass
 
-    return final_results
+    return results
