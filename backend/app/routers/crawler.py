@@ -151,7 +151,7 @@ async def start_upload_videos(
     if body.videos:
         videos_raw = [v.model_dump() for v in body.videos]
 
-    job = await pool.enqueue_job("task_upload_videos", session_id=body.session_id, videos=videos_raw, _job_timeout=7200)
+    job = await pool.enqueue_job("task_upload_videos", session_id=body.session_id, videos=videos_raw)
     logger.audit(f"crawler_start type=upload_videos session={body.session_id}")
 
     # 활성 태스크 Redis 등록 (다중 사용자 공유용, TTL 2시간)

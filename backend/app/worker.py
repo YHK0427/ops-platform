@@ -1,7 +1,7 @@
 import logging
 
 from arq.connections import RedisSettings
-from arq import cron
+from arq import cron, func
 from sqlalchemy import select
 
 from app.config import settings
@@ -163,7 +163,7 @@ async def task_naver_health_check(ctx):
 
 
 class WorkerSettings:
-    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, task_upload_videos, task_naver_login, task_naver_health_check]
+    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), task_naver_login, task_naver_health_check]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     on_startup = startup
     cron_jobs = [
