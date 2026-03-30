@@ -1,9 +1,9 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink, Shuffle, ShieldCheck, RotateCcw } from "lucide-react";
+import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink, Shuffle, ShieldCheck, RotateCcw, StopCircle, PlayCircle } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
-import { useUploadVideos, useSetFeedbackTargets, useRandomAssignFeedback, useDriveVideos, useActiveUploadTask, useUpdateSessionConfig } from "@/hooks";
+import { useUploadVideos, useSetFeedbackTargets, useRandomAssignFeedback, useDriveVideos, useActiveUploadTask, useUpdateSessionConfig, useCancelUpload, useUploadResult } from "@/hooks";
 import type { VideoProgress, DriveVideoItem } from "@/hooks/useCrawler";
 import { crawlerKeys } from "@/hooks/useCrawler";
 import { useMembers } from "@/hooks/useMembers";
@@ -28,6 +28,8 @@ export default function OpsTab() {
     const { mutate: updateConfig } = useUpdateSessionConfig();
     const { data: allMembers } = useMembers();
     const { data: activeTask } = useActiveUploadTask(session.id);
+    const { mutate: cancelUpload, isPending: isCancelling } = useCancelUpload();
+    const { data: previousResult, refetch: refetchResult } = useUploadResult(session.id);
     const queryClient = useQueryClient();
 
     // 순서 변경 시 React Query 캐시를 직접 업데이트 (탭 이동해도 유지됨)
@@ -70,6 +72,13 @@ export default function OpsTab() {
             setUploadTaskId(activeTask.task_id);
         }
     }, [activeTask, uploadTaskId]);
+
+    // 태스크 완료 시 이전 결과 갱신
+    useEffect(() => {
+        if (taskStatus?.status === "complete" || taskStatus?.status === "failed") {
+            refetchResult();
+        }
+    }, [taskStatus?.status]);
 
     // D+1 Warning Logic
     const sessionDate = new Date(session.date);
@@ -184,8 +193,22 @@ export default function OpsTab() {
         }
     }, [driveVideos, presenterIds, memberNameMap]);
 
-    const handleCafeUpload = () => {
-        uploadVideos({ sessionId: session.id, videos: driveVideos ?? undefined }, {
+    const handleCafeUpload = (resumeMode: boolean = false) => {
+        let videosToUpload = driveVideos ?? undefined;
+
+        if (resumeMode && previousResult) {
+            const doneFiles = new Set(
+                previousResult.filter(p => p.status === "done").map(p => p.file)
+            );
+            videosToUpload = driveVideos?.filter(v => !doneFiles.has(v.name));
+            if (!videosToUpload || videosToUpload.length === 0) {
+                toast.info("이어서 할 영상이 없습니다.");
+                return;
+            }
+            toast.info(`${videosToUpload.length}개 영상 이어서 업로드`);
+        }
+
+        uploadVideos({ sessionId: session.id, videos: videosToUpload }, {
             onSuccess: (data) => {
                 toast.success("업로드 작업이 시작되었습니다.");
                 setUploadTaskId(data.task_id);
@@ -193,6 +216,16 @@ export default function OpsTab() {
             onError: () => toast.error("요청 실패"),
         });
     };
+
+    const handleCancelUpload = () => {
+        cancelUpload({ sessionId: session.id }, {
+            onSuccess: () => toast.info("업로드 중단 요청됨. 진행 중인 영상 완료 후 중단됩니다."),
+            onError: () => toast.error("중단 요청 실패"),
+        });
+    };
+
+    // 이전 결과에 미완료 영상이 있는지
+    const hasIncomplete = previousResult?.some(p => p.status !== "done") ?? false;
 
     const renderTaskStatus = () => {
         if (!uploadTaskId || !taskStatus) return (
@@ -219,8 +252,22 @@ export default function OpsTab() {
                     <span className="text-sm font-medium">
                         {isActive ? "업로드 진행 중..." : taskStatus.status === "complete" ? "업로드 완료" : "업로드 실패"}
                     </span>
-                    <span className="ml-auto text-xs text-[var(--color-text-muted)]">
-                        {uploadTaskId.slice(0, 8)}
+                    <span className="ml-auto flex items-center gap-2">
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                            {uploadTaskId.slice(0, 8)}
+                        </span>
+                        {isActive && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleCancelUpload}
+                                disabled={isCancelling}
+                                className="h-6 px-2 text-xs border-red-300 text-red-500 hover:bg-red-50 hover:text-red-600"
+                            >
+                                <StopCircle className="w-3 h-3 mr-1" />
+                                {isCancelling ? "중단 중..." : "중단"}
+                            </Button>
+                        )}
                     </span>
                 </div>
 
@@ -260,6 +307,35 @@ export default function OpsTab() {
                                 ({result.filter((r: any) => !r.success).length}건 실패)
                             </span>
                         )}
+                    </div>
+                )}
+
+                {/* Resume / Restart options */}
+                {!isActive && taskStatus.status === "complete" && result && Array.isArray(result) && result.some((r: any) => !r.success) && driveVideos && driveVideos.length > 0 && (
+                    <div className="flex items-center gap-2 px-4 py-3 border-t border-[var(--color-border)] bg-amber-50/50">
+                        <span className="text-xs text-amber-700">미완료 영상이 있습니다.</span>
+                        <span className="ml-auto flex gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleCafeUpload(true)}
+                                disabled={isUploading}
+                                className="h-7 px-3 text-xs border-[var(--color-accent)]/30 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/5"
+                            >
+                                <PlayCircle className="w-3.5 h-3.5 mr-1" />
+                                이어서 하기
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleCafeUpload(false)}
+                                disabled={isUploading}
+                                className="h-7 px-3 text-xs border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-gray-50"
+                            >
+                                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                                처음부터
+                            </Button>
+                        </span>
                     </div>
                 )}
             </div>
@@ -584,6 +660,7 @@ function VideoStatusBadge({ status, error }: { status: VideoProgress["status"]; 
         uploading:   { label: "업로드 중",   className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20", icon: <Upload className="w-3 h-3 animate-pulse" /> },
         done:        { label: "완료",       className: "bg-green-500/10 text-green-600 border-green-500/20", icon: <CheckCircle2 className="w-3 h-3" /> },
         failed:      { label: "실패",       className: "bg-red-500/10 text-red-500 border-red-500/20", icon: <XCircle className="w-3 h-3" /> },
+        cancelled:   { label: "취소",       className: "bg-orange-500/10 text-orange-500 border-orange-500/20", icon: <StopCircle className="w-3 h-3" /> },
     };
     const c = config[status] ?? config.pending;
     return (

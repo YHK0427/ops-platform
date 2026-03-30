@@ -20,7 +20,7 @@ export interface VideoProgress {
     file: string;
     presenter: string;
     order: number;
-    status: "pending" | "downloading" | "uploading" | "done" | "failed";
+    status: "pending" | "downloading" | "uploading" | "done" | "failed" | "cancelled";
     error?: string | null;
 }
 
@@ -170,6 +170,30 @@ export function useActiveUploadTask(sessionId: number) {
         enabled: !!sessionId,
         staleTime: 10_000,
         refetchInterval: 10_000,
+    });
+}
+
+export function useCancelUpload() {
+    return useMutation({
+        networkMode: "always",
+        mutationFn: async ({ sessionId }: { sessionId: number }) => {
+            const { data } = await api.post<{ status: string }>(`/crawler/cancel-upload/${sessionId}`);
+            return data;
+        },
+    });
+}
+
+export function useUploadResult(sessionId: number) {
+    return useQuery({
+        queryKey: [...crawlerKeys.all, "upload-result", sessionId],
+        queryFn: async () => {
+            const { data } = await api.get<{ session_id: number; progress: VideoProgress[] | null }>(
+                `/crawler/upload-result/${sessionId}`
+            );
+            return data.progress;
+        },
+        enabled: !!sessionId,
+        staleTime: 30_000,
     });
 }
 

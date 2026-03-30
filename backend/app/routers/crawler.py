@@ -206,6 +206,46 @@ async def get_task_status(
         "enqueue_time": info.enqueue_time if info else None,
     }
 
+@router.post("/cancel-upload/{session_id}")
+async def cancel_upload(
+    request: Request,
+    session_id: int,
+    _: dict = Depends(require_staff),
+):
+    """진행 중인 영상 업로드 중단"""
+    pool = getattr(request.app.state, "arq_pool", None)
+    if not pool:
+        raise HTTPException(status_code=503, detail="ARQ pool not initialized")
+
+    redis = pool
+    await redis.set(f"cancel_upload:{session_id}", "1", ex=300)
+    logger.audit(f"crawler_cancel type=upload_videos session={session_id}")
+    return {"status": "cancelling"}
+
+
+@router.get("/upload-result/{session_id}")
+async def get_upload_result(
+    request: Request,
+    session_id: int,
+    _: str = Depends(get_current_user),
+):
+    """세션의 마지막 업로드 결과 조회 (이어하기용)"""
+    pool = getattr(request.app.state, "arq_pool", None)
+    if not pool:
+        raise HTTPException(status_code=503, detail="ARQ pool not initialized")
+
+    try:
+        redis = pool
+        raw = await redis.get(f"upload_result:{session_id}")
+        if raw:
+            progress = json.loads(raw)
+            return {"session_id": session_id, "progress": progress}
+    except Exception:
+        pass
+
+    return {"session_id": session_id, "progress": None}
+
+
 @router.get("/active-task/{session_id}")
 async def get_active_upload_task(
     request: Request,
