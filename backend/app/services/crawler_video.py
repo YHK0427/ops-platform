@@ -326,7 +326,7 @@ async def upload_all_videos(
 
     # 동시 실행 제한
     upload_semaphore = asyncio.Semaphore(CONCURRENCY)       # 업로드+등록 동시 3개
-    download_semaphore = asyncio.Semaphore(CONCURRENCY + 2) # 다운로드 미리 2개 더
+    download_semaphore = asyncio.Semaphore(CONCURRENCY)     # 다운로드도 동시 3개
     # 등록 순서 보장: idx번 영상은 register_events[idx]가 set된 후에만 등록
     register_events = [asyncio.Event() for _ in range(total + 1)]
     register_events[0].set()  # 첫 번째 영상은 바로 등록 가능
