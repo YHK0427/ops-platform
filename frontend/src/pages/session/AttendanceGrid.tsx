@@ -13,7 +13,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { toast } from "sonner";
@@ -63,6 +63,16 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
             toast.error(error?.response?.data?.detail ?? "사유서 업데이트 실패");
         } finally {
             setUpdating(prev => ({ ...prev, [memberId]: false }));
+        }
+    };
+
+    const handleNoteChange = async (memberId: number, note: string) => {
+        try {
+            await api.patch(`/sessions/${sessionId}/attendance/${memberId}`, { note: note || null });
+            await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
+        } catch (error) {
+            console.error(error);
+            toast.error("메모 저장 실패");
         }
     };
 
@@ -164,6 +174,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                             {!showGroupHeader && <TableHead className="w-[100px]">팀</TableHead>}
                             <TableHead>멤버</TableHead>
                             <TableHead className="w-[180px]">출결</TableHead>
+                            <TableHead className="w-[150px]">메모</TableHead>
                             <TableHead className="w-[200px]">사유서</TableHead>
                             <TableHead className="w-[220px]">PPT 이메일</TableHead>
                         </TableRow>
@@ -221,6 +232,12 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                                 </div>
                                             )}
                                         </div>
+                                    </TableCell>
+                                    <TableCell>
+                                        <NoteInput
+                                            defaultValue={member.attendance?.note || ""}
+                                            onSave={(note) => handleNoteChange(member.member_id, note)}
+                                        />
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-2">
@@ -333,6 +350,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                 onStatusChange={handleStatusChange}
                                 onExcuseChange={handleExcuseChange}
                                 onPptEmailChange={handlePptEmailChange}
+                                onNoteChange={handleNoteChange}
                             />
                         ))}
                     </div>
@@ -383,6 +401,7 @@ interface MobileAttendanceRowProps {
     onStatusChange: (memberId: number, status: string) => void;
     onExcuseChange: (memberId: number, excuseType: string) => void;
     onPptEmailChange: (assignmentId: number, newStatus: string) => void;
+    onNoteChange: (memberId: number, note: string) => void;
 }
 
 function MobileAttendanceRow({
@@ -394,6 +413,7 @@ function MobileAttendanceRow({
     onStatusChange,
     onExcuseChange,
     onPptEmailChange,
+    onNoteChange,
 }: MobileAttendanceRowProps) {
     const [expanded, setExpanded] = useState(false);
 
@@ -493,9 +513,9 @@ function MobileAttendanceRow({
                 </div>
             </div>
 
-            {/* Expanded section: PPT only */}
+            {/* Expanded section: PPT + 메모 */}
             {expanded && (
-                <div className="px-3 py-2 border-t border-[var(--color-border-subtle)] bg-[var(--color-hover)]/50">
+                <div className="px-3 py-2 border-t border-[var(--color-border-subtle)] bg-[var(--color-hover)]/50 space-y-2">
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-[var(--color-text-muted)] w-10 shrink-0">PPT</span>
                         {(() => {
@@ -540,8 +560,44 @@ function MobileAttendanceRow({
                             );
                         })()}
                     </div>
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-xs text-[var(--color-text-muted)] w-10 shrink-0">메모</span>
+                        <NoteInput
+                            defaultValue={member.attendance?.note || ""}
+                            onSave={(note) => onNoteChange(member.member_id, note)}
+                        />
+                    </div>
                 </div>
             )}
         </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/*  NoteInput – blur 시 자동 저장되는 메모 입력                          */
+/* ------------------------------------------------------------------ */
+
+function NoteInput({ defaultValue, onSave }: { defaultValue: string; onSave: (note: string) => void }) {
+    const [value, setValue] = useState(defaultValue);
+    const savedRef = useRef(defaultValue);
+
+    const handleBlur = useCallback(() => {
+        const trimmed = value.trim();
+        if (trimmed !== savedRef.current) {
+            savedRef.current = trimmed;
+            onSave(trimmed);
+        }
+    }, [value, onSave]);
+
+    return (
+        <input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            placeholder="메모"
+            className="h-7 w-full text-xs border border-[var(--color-border)] rounded px-2 bg-white text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+        />
     );
 }

@@ -202,6 +202,7 @@ class Attendance(Base):
     status = Column(String(20), server_default="PENDING")
     excuse_type = Column(String(10))
     excuse_text = Column(Text)
+    note = Column(Text)  # 자유 메모 (예: 도착 시간)
     group_num = Column(Integer)  # 분반: 1 or 2, NULL = 분반 없음
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
