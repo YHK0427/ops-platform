@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Wand2, Save, Search, Users, Settings2, X, RotateCcw } from "lucide-react";
+import { Wand2, Save, Search, Users, Settings2, X, RotateCcw, Lock } from "lucide-react";
 import { toast } from "sonner";
 import {
     DndContext,
@@ -40,6 +40,7 @@ export interface EvalMatchingBoardProps {
     users: MatchingUser[];
     members: MatchingMember[];
     initialBoard: Record<string, number[]>;
+    submittedPairs?: Set<string>;  // format: "${evaluatorUserId}_${memberId}" — 잠금 대상
     onSave: (assignments: { evaluator_user_id: number; presenter_member_id: number }[]) => void;
     onCancel?: () => void;
     isSaving?: boolean;
@@ -198,14 +199,19 @@ function EvalMember({
     onRemove,
     isHighlighted,
     groupNum,
+    isLocked,
 }: {
     member: MatchingMember | undefined;
     uniqueId: string;
     onRemove: () => void;
     isHighlighted?: boolean;
     groupNum?: number | null;
+    isLocked?: boolean;
 }) {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: uniqueId });
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+        id: uniqueId,
+        disabled: isLocked,
+    });
     const style = {
         transform: CSS.Transform.toString(transform),
         transition,
@@ -217,28 +223,37 @@ function EvalMember({
             ref={setNodeRef}
             style={style}
             className={cn(
-                "p-2 rounded border text-sm mb-1.5 cursor-grab active:cursor-grabbing transition-all shadow-sm flex items-center justify-between gap-1 select-none group",
-                isHighlighted
+                "p-2 rounded border text-sm mb-1.5 transition-all shadow-sm flex items-center justify-between gap-1 select-none group",
+                isLocked
+                    ? "cursor-default bg-amber-500/5 border-amber-500/20"
+                    : "cursor-grab active:cursor-grabbing",
+                !isLocked && isHighlighted
                     ? "bg-[var(--color-accent)]/15 border-[var(--color-accent)]/40 ring-1 ring-[var(--color-accent)]/20"
-                    : "bg-[var(--color-elevated)] border-[var(--color-border)] hover:border-[var(--color-accent)]/50"
+                    : !isLocked ? "bg-[var(--color-elevated)] border-[var(--color-border)] hover:border-[var(--color-accent)]/50" : ""
             )}
             {...attributes}
-            {...listeners}
+            {...(isLocked ? {} : listeners)}
         >
             <span className="font-medium truncate flex items-center gap-1">
                 {member?.name ?? uniqueId}
                 <GroupBadge groupNum={groupNum} />
             </span>
-            <button
-                className="w-4 h-4 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500/20 text-rose-500 transition-opacity flex-shrink-0"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove();
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-            >
-                <X className="w-3 h-3" />
-            </button>
+            {isLocked ? (
+                <span className="w-4 h-4 rounded flex items-center justify-center text-amber-500 flex-shrink-0" title="제출 완료 — 잠금">
+                    <Lock className="w-3 h-3" />
+                </span>
+            ) : (
+                <button
+                    className="w-4 h-4 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500/20 text-rose-500 transition-opacity flex-shrink-0"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onRemove();
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                >
+                    <X className="w-3 h-3" />
+                </button>
+            )}
         </div>
     );
 }
@@ -256,6 +271,7 @@ function EvalColumn({
     selectedMemberId,
     groupNum,
     memberGroupMap,
+    submittedPairs,
 }: {
     id: string;
     title: string;
@@ -267,6 +283,7 @@ function EvalColumn({
     selectedMemberId?: number | null;
     groupNum?: number | null;
     memberGroupMap?: Map<number, number | null>;
+    submittedPairs?: Set<string>;
 }) {
     const { setNodeRef } = useSortable({ id });
 
@@ -305,6 +322,7 @@ function EvalColumn({
                                 onRemove={() => onRemove(parsed.memberId)}
                                 isHighlighted={selectedMemberId != null && parsed.memberId === selectedMemberId}
                                 groupNum={memberGroupMap?.get(parsed.memberId)}
+                                isLocked={submittedPairs?.has(`${id}_${parsed.memberId}`) ?? false}
                             />
                         );
                     })}
@@ -455,6 +473,7 @@ export function EvalMatchingBoard({
     users,
     members,
     initialBoard,
+    submittedPairs = new Set(),
     onSave,
     onCancel,
     isSaving = false,
@@ -504,11 +523,15 @@ export function EvalMatchingBoard({
         setEnabledUserIds((prev) => {
             const next = new Set(prev);
             if (next.has(userId)) {
+                // 제출된 배정이 있는 평가자는 비활성화 차단
+                const key = String(userId);
+                const hasLocked = (board[key] ?? []).some(mid => submittedPairs.has(`${userId}_${mid}`));
+                if (hasLocked) {
+                    toast.error("제출된 배정이 있는 평가자는 비활성화할 수 없습니다.");
+                    return prev;
+                }
                 next.delete(userId);
-                setBoard((prevBoard) => {
-                    const key = String(userId);
-                    return { ...prevBoard, [key]: [] };
-                });
+                setBoard((prevBoard) => ({ ...prevBoard, [key]: [] }));
             } else {
                 next.add(userId);
                 setBoard((prevBoard) => {
@@ -519,7 +542,7 @@ export function EvalMatchingBoard({
             }
             return next;
         });
-    }, []);
+    }, [board, submittedPairs]);
 
     // Assignment count per member
     const assignCounts = useMemo(() => {
@@ -677,6 +700,7 @@ export function EvalMatchingBoard({
     }, []);
 
     const removeMember = useCallback((userId: number, memberId: number) => {
+        if (submittedPairs.has(`${userId}_${memberId}`)) return;
         setBoard((prev) => {
             const key = String(userId);
             return {
@@ -684,14 +708,22 @@ export function EvalMatchingBoard({
                 [key]: (prev[key] ?? []).filter((id) => id !== memberId),
             };
         });
-    }, []);
+    }, [submittedPairs]);
 
     const handleReset = () => {
         const newBoard: Record<string, number[]> = {};
-        for (const u of users) newBoard[String(u.id)] = [];
+        for (const u of users) {
+            const key = String(u.id);
+            // 잠긴 배정만 유지
+            const existing = board[key] ?? [];
+            newBoard[key] = existing.filter(mid => submittedPairs.has(`${u.id}_${mid}`));
+        }
         setBoard(newBoard);
         setSelectedMemberId(null);
-        toast.success("배정이 초기화되었습니다.");
+        toast.success(submittedPairs.size > 0
+            ? "배정이 초기화되었습니다. (제출된 배정은 유지)"
+            : "배정이 초기화되었습니다."
+        );
     };
 
     const handleAutoAssign = () => {
@@ -704,12 +736,17 @@ export function EvalMatchingBoard({
             return;
         }
 
+        // 잠긴 배정 보존
         const newBoard: Record<string, number[]> = {};
-        for (const u of users) newBoard[String(u.id)] = [];
+        for (const u of users) {
+            const key = String(u.id);
+            const existing = board[key] ?? [];
+            newBoard[key] = existing.filter(mid => submittedPairs.has(`${u.id}_${mid}`));
+        }
 
-        // Track load per evaluator for balanced distribution
+        // Track load per evaluator for balanced distribution (잠긴 것 포함)
         const evalLoad = new Map<number, number>();
-        for (const u of enabledUsers) evalLoad.set(u.id, 0);
+        for (const u of enabledUsers) evalLoad.set(u.id, newBoard[String(u.id)].length);
 
         // Shuffle members for randomness
         const shuffled = [...members].sort(() => 0.5 - Math.random());
@@ -719,6 +756,12 @@ export function EvalMatchingBoard({
 
         // For each member, assign perMember evaluators (pick those with lowest load)
         for (const member of shuffled) {
+            // 이미 잠긴 배정으로 할당된 수
+            let currentCount = 0;
+            for (const u of users) {
+                if (newBoard[String(u.id)].includes(member.id)) currentCount++;
+            }
+
             const memberGroup = hasGroups ? memberGroupMap.get(member.id) : null;
             const sorted = [...enabledUsers].sort((a, b) => {
                 // 분반이 있으면 같은 분반 우선
@@ -729,10 +772,12 @@ export function EvalMatchingBoard({
                 }
                 return (evalLoad.get(a.id) ?? 0) - (evalLoad.get(b.id) ?? 0);
             });
-            for (let i = 0; i < perMember && i < sorted.length; i++) {
+            for (let i = 0; i < sorted.length && currentCount < perMember; i++) {
                 const u = sorted[i];
+                if (newBoard[String(u.id)].includes(member.id)) continue; // 이미 배정 (잠금)
                 newBoard[String(u.id)].push(member.id);
                 evalLoad.set(u.id, (evalLoad.get(u.id) ?? 0) + 1);
+                currentCount++;
             }
         }
 
@@ -867,6 +912,7 @@ export function EvalMatchingBoard({
                                     selectedMemberId={selectedMemberId}
                                     groupNum={userGroupMap?.get(user.id)}
                                     memberGroupMap={memberGroupMap}
+                                    submittedPairs={submittedPairs}
                                 />
                             </div>
                         ))}

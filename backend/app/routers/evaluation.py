@@ -632,6 +632,8 @@ async def delete_assignment(
     assignment = await db.get(EvalAssignment, assignment_id)
     if not assignment or assignment.round_id != round_id:
         raise HTTPException(status_code=404, detail="배정을 찾을 수 없습니다")
+    if assignment.submitted_at is not None:
+        raise HTTPException(status_code=409, detail="제출된 평가는 삭제할 수 없습니다.")
     await db.delete(assignment)
     await db.commit()
     logger.audit(  # type: ignore[attr-defined]
@@ -651,50 +653,74 @@ async def replace_audience_assignments(
     _: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """AUDIENCE 배정 전체 교체 (기존 삭제 후 재생성)."""
+    """AUDIENCE 배정 diff 교체 — 제출 완료된 배정은 보호."""
     await _get_round_or_404(db, round_id)
 
-    # 기존 AUDIENCE 배정의 응답 먼저 삭제
-    await db.execute(
-        delete(EvalResponse).where(
-            EvalResponse.assignment_id.in_(
-                select(EvalAssignment.id).where(
-                    EvalAssignment.round_id == round_id,
-                    EvalAssignment.eval_type == "AUDIENCE",
-                )
-            )
-        )
-    )
-    del_result = await db.execute(
-        delete(EvalAssignment).where(
+    # 1) 기존 AUDIENCE 배정 조회
+    existing_q = await db.execute(
+        select(EvalAssignment).where(
             EvalAssignment.round_id == round_id,
             EvalAssignment.eval_type == "AUDIENCE",
         )
     )
-    deleted = del_result.rowcount
+    existing_map: dict[tuple[int, int], EvalAssignment] = {
+        (a.evaluator_user_id, a.presenter_member_id): a
+        for a in existing_q.scalars().all()
+    }
 
-    created = 0
-    seen: set[tuple[int, int]] = set()
+    # 2) 요청에서 desired 집합 구성 (중복 제거)
+    desired: set[tuple[int, int]] = set()
     for item in body.assignments:
-        pair = (item.evaluator_user_id, item.presenter_member_id)
-        if pair in seen:
-            continue
-        db.add(
-            EvalAssignment(
-                round_id=round_id,
-                evaluator_user_id=item.evaluator_user_id,
-                presenter_member_id=item.presenter_member_id,
-                eval_type="AUDIENCE",
-            )
+        desired.add((item.evaluator_user_id, item.presenter_member_id))
+
+    # 3) diff 계산
+    to_remove = set(existing_map.keys()) - desired
+    to_add = desired - set(existing_map.keys())
+
+    # 4) 제출된 배정 삭제 시도 → 409 거부
+    locked = []
+    for pair in to_remove:
+        a = existing_map[pair]
+        if a.submitted_at is not None:
+            locked.append({
+                "evaluator_user_id": pair[0],
+                "presenter_member_id": pair[1],
+                "submitted_at": a.submitted_at.isoformat(),
+            })
+    if locked:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "제출된 평가가 포함되어 있어 변경할 수 없습니다.",
+                "locked_assignments": locked,
+            },
         )
-        seen.add(pair)
-        created += 1
+
+    # 5) 미제출 배정 삭제 (응답 포함)
+    remove_ids = [existing_map[pair].id for pair in to_remove]
+    if remove_ids:
+        await db.execute(
+            delete(EvalResponse).where(EvalResponse.assignment_id.in_(remove_ids))
+        )
+        await db.execute(
+            delete(EvalAssignment).where(EvalAssignment.id.in_(remove_ids))
+        )
+
+    # 6) 새 배정 추가
+    for pair in to_add:
+        db.add(EvalAssignment(
+            round_id=round_id,
+            evaluator_user_id=pair[0],
+            presenter_member_id=pair[1],
+            eval_type="AUDIENCE",
+        ))
 
     await db.commit()
+    kept = len(existing_map) - len(to_remove)
     logger.audit(  # type: ignore[attr-defined]
-        f"eval_replace_audience round={round_id} deleted={deleted} created={created}"
+        f"eval_replace_audience round={round_id} deleted={len(to_remove)} created={len(to_add)} kept={kept}"
     )
-    return {"deleted": deleted, "created": created}
+    return {"deleted": len(to_remove), "created": len(to_add), "kept": kept}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

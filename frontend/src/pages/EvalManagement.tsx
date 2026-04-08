@@ -811,6 +811,17 @@ function AssignmentsTab({
         return { memberGroupMap: mgm.size > 0 ? mgm : undefined, userGroupMap: ugm.size > 0 ? ugm : undefined };
     }, [groupData]);
 
+    // 제출 완료된 배정 페어 (잠금 대상)
+    const submittedPairs = useMemo(() => {
+        const pairs = new Set<string>();
+        for (const a of assignments ?? []) {
+            if (a.eval_type === "AUDIENCE" && a.submitted_at && a.evaluator_user_id) {
+                pairs.add(`${a.evaluator_user_id}_${a.presenter_member_id}`);
+            }
+        }
+        return pairs;
+    }, [assignments]);
+
     function handleSaveMatching(
         newAssignments: { evaluator_user_id: number; presenter_member_id: number }[]
     ) {
@@ -897,6 +908,7 @@ function AssignmentsTab({
                         users={activeUsers}
                         members={matchingMembers}
                         initialBoard={board}
+                        submittedPairs={submittedPairs}
                         onSave={handleSaveMatching}
                         isSaving={replaceAssignments.isPending}
                         saveLabel="저장"

@@ -301,10 +301,15 @@ export function useReplaceAudienceAssignments() {
             qc.invalidateQueries({ queryKey: evalKeys.assignments(vars.roundId) });
             qc.invalidateQueries({ queryKey: evalKeys.rounds() });
             qc.invalidateQueries({ queryKey: evalKeys.myPending() });
-            toast.success(`배정 저장 완료 (${data.created}건)`);
+            toast.success(`배정 저장 완료 (추가 ${data.created}건, 삭제 ${data.deleted}건, 유지 ${data.kept}건)`);
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.detail ?? "배정 저장 실패");
+            const detail = err?.response?.data?.detail;
+            if (err?.response?.status === 409 && typeof detail === "object" && detail?.message) {
+                toast.error(detail.message);
+            } else {
+                toast.error(typeof detail === "string" ? detail : "배정 저장 실패");
+            }
         },
     });
 }
