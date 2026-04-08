@@ -291,7 +291,7 @@ export function useReplaceAudienceAssignments() {
             roundId: number;
             assignments: { evaluator_user_id: number; presenter_member_id: number }[];
         }) => {
-            const { data } = await api.put<{ deleted: number; created: number }>(
+            const { data } = await api.put<{ deleted: number; created: number; kept: number }>(
                 `/evaluations/rounds/${roundId}/audience-assignments`,
                 { assignments }
             );
