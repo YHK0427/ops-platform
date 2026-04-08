@@ -1,11 +1,13 @@
 import { useState, useMemo } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
-import { useSettlementPreview, useFinalizeSession, useRemoveStagedMerit } from "@/hooks";
+import { useSettlementPreview, useFinalizeSession, useRemoveStagedMerit, useLedger, useUpdateLedger, useDeleteLedgerEntry, translateDescription, LEDGER_TYPE_LABELS } from "@/hooks";
+import type { LedgerEntry } from "@/hooks";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, CheckCircle2, ExternalLink, Trophy, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Trophy, Trash2, Pencil, X, Check } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatNumber } from "@/lib/utils";
@@ -161,30 +163,7 @@ export default function SettlementTab() {
     }
 
     if (session.status === "FINALIZED") {
-        return (
-            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-                <div className="flex flex-col items-center justify-center p-12 text-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
-                    <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
-                        <CheckCircle2 className="w-8 h-8 text-green-500" />
-                    </div>
-                    <h2 className="text-xl font-bold mb-2 text-[var(--color-text-primary)]">세션 마감 완료</h2>
-                    <p className="text-[var(--color-text-muted)] mb-6">
-                        이 세션은 {new Date(session.finalized_at || "").toLocaleString()}에 마감되었습니다.<br />
-                        정산 내역은 <span className="text-[var(--color-accent)]">장부</span> 메뉴에서 확인할 수 있습니다.
-                    </p>
-                    <div className="flex gap-3">
-                        <Button
-                            onClick={() => navigate("/ledger")}
-                            className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
-                        >
-                            <ExternalLink className="w-4 h-4 mr-2" />
-                            장부에서 확인
-                        </Button>
-                        <ExcelExportButton weekNum={session.week_num} />
-                    </div>
-                </div>
-            </div>
-        );
+        return <FinalizedView session={session} navigate={navigate} />;
     }
 
     return (
@@ -512,6 +491,170 @@ function StagedMeritPanel({
                     )}
                 </TableBody>
             </Table>
+        </div>
+    );
+}
+
+// ── Finalized View (마감 완료 후 장부 수정 UI) ──────────────────────────
+
+function FinalizedView({ session, navigate }: { session: Session; navigate: (path: string) => void }) {
+    const { data: ledgerData, isLoading: ledgerLoading } = useLedger({ session_id: session.id, limit: 100 });
+    const { mutate: updateEntry } = useUpdateLedger();
+    const { mutate: deleteEntry } = useDeleteLedgerEntry();
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editValues, setEditValues] = useState<{ score_delta?: number; amount_krw?: number; description?: string }>({});
+
+    const entries = useMemo(() => {
+        if (!ledgerData) return [];
+        const list = Array.isArray(ledgerData) ? ledgerData : (ledgerData as any).items ?? [];
+        return list as LedgerEntry[];
+    }, [ledgerData]);
+
+    const startEdit = (entry: LedgerEntry) => {
+        setEditingId(entry.id);
+        setEditValues({ score_delta: entry.score_delta, amount_krw: entry.amount_krw, description: entry.description });
+    };
+
+    const cancelEdit = () => { setEditingId(null); setEditValues({}); };
+
+    const saveEdit = () => {
+        if (editingId == null) return;
+        updateEntry({ id: editingId, data: editValues }, { onSuccess: () => cancelEdit() });
+    };
+
+    const handleDelete = (id: number) => {
+        if (!confirm("이 항목을 삭제하시겠습니까? 멤버의 잔액과 점수가 자동으로 조정됩니다.")) return;
+        deleteEntry(id);
+    };
+
+    return (
+        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
+            <div className="flex flex-col items-center justify-center p-8 text-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+                <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mb-3">
+                    <CheckCircle2 className="w-6 h-6 text-green-500" />
+                </div>
+                <h2 className="text-lg font-bold mb-1 text-[var(--color-text-primary)]">세션 마감 완료</h2>
+                <p className="text-sm text-[var(--color-text-muted)] mb-4">
+                    {new Date(session.finalized_at || "").toLocaleString()} 마감 · 아래에서 개별 항목을 수정/삭제할 수 있습니다.
+                </p>
+                <div className="flex gap-3">
+                    <Button variant="outline" onClick={() => navigate("/ledger")}>
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        장부에서 확인
+                    </Button>
+                    <ExcelExportButton weekNum={session.week_num} />
+                </div>
+            </div>
+
+            {ledgerLoading ? (
+                <Skeleton className="h-64 w-full" />
+            ) : entries.length === 0 ? (
+                <p className="text-center text-[var(--color-text-muted)] py-8">이 세션에 장부 항목이 없습니다.</p>
+            ) : (
+                <div className="rounded-xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-surface)]">
+                    <Table>
+                        <TableHeader>
+                            <TableRow className="bg-gray-50 hover:bg-gray-50">
+                                <TableHead>유형</TableHead>
+                                <TableHead>멤버</TableHead>
+                                <TableHead>사유</TableHead>
+                                <TableHead className="text-right">점수</TableHead>
+                                <TableHead className="text-right">금액</TableHead>
+                                <TableHead className="text-right">잔액</TableHead>
+                                <TableHead className="w-[80px]" />
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {entries.map((entry) => {
+                                const isEditing = editingId === entry.id;
+                                return (
+                                    <TableRow key={entry.id} className="hover:bg-gray-50">
+                                        <TableCell>
+                                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border ${
+                                                entry.type === "MERIT"
+                                                    ? "bg-green-500/10 text-green-600 border-green-500/20"
+                                                    : "bg-red-500/10 text-red-500 border-red-500/20"
+                                            }`}>
+                                                {LEDGER_TYPE_LABELS[entry.type] ?? entry.type}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="font-medium text-[var(--color-text-secondary)]">
+                                            {entry.member_name ?? `#${entry.member_id}`}
+                                        </TableCell>
+                                        <TableCell className="max-w-[200px]">
+                                            {isEditing ? (
+                                                <Input
+                                                    value={editValues.description ?? ""}
+                                                    onChange={(e) => setEditValues(v => ({ ...v, description: e.target.value }))}
+                                                    className="h-7 text-xs"
+                                                />
+                                            ) : (
+                                                <span className="text-sm text-[var(--color-text-secondary)] truncate block" title={entry.description}>
+                                                    {translateDescription(entry.description)}
+                                                </span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            {isEditing ? (
+                                                <Input
+                                                    type="number"
+                                                    value={editValues.score_delta ?? 0}
+                                                    onChange={(e) => setEditValues(v => ({ ...v, score_delta: Number(e.target.value) }))}
+                                                    className="h-7 text-xs w-20 ml-auto"
+                                                />
+                                            ) : (
+                                                <span className={entry.score_delta < 0 ? "text-rose-500" : entry.score_delta > 0 ? "text-green-600" : ""}>
+                                                    {entry.score_delta > 0 ? `+${entry.score_delta}` : entry.score_delta}
+                                                </span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            {isEditing ? (
+                                                <Input
+                                                    type="number"
+                                                    value={editValues.amount_krw ?? 0}
+                                                    onChange={(e) => setEditValues(v => ({ ...v, amount_krw: Number(e.target.value) }))}
+                                                    className="h-7 text-xs w-24 ml-auto"
+                                                />
+                                            ) : (
+                                                <span className={entry.amount_krw < 0 ? "text-rose-500" : ""}>
+                                                    {formatNumber(entry.amount_krw)}
+                                                </span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-right text-[var(--color-text-muted)]">
+                                            {formatNumber(entry.deposit_after)}
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="flex gap-1 justify-end">
+                                                {isEditing ? (
+                                                    <>
+                                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-green-600 hover:bg-green-500/10" onClick={saveEdit}>
+                                                            <Check className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-gray-200" onClick={cancelEdit}>
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-blue-500/10 hover:text-blue-500" onClick={() => startEdit(entry)}>
+                                                            <Pencil className="w-3 h-3" />
+                                                        </Button>
+                                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-rose-500/10 hover:text-rose-500" onClick={() => handleDelete(entry.id)}>
+                                                            <Trash2 className="w-3 h-3" />
+                                                        </Button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })}
+                        </TableBody>
+                    </Table>
+                </div>
+            )}
         </div>
     );
 }

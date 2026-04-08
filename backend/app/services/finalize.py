@@ -96,26 +96,22 @@ async def finalize_session(
                 type="MILESTONE_FINE",
                 amount_krw=ms["deposit_delta"],
                 score_delta=0,
-                deposit_after=p.member.current_deposit,
+                deposit_after=0,  # recalculate에서 보정
                 description=ms["description"],
                 created_at=now,
                 is_paid=False,
             ))
-            
-        # ④ 디파짓 차감 (Deposit Update) - 본 페널티
-        before_deposit = p.member.current_deposit # Ledger 기록용? 스냅샷은 차감 후여야 함
-        p.member.current_deposit += p.deposit_delta
-        
-        # ⑤ Ledger 기록 (Ledger) - 차감 후 잔액 스냅샷
+
+        # ④ Ledger 기록
         if p.score_delta != 0 or p.deposit_delta != 0:
             db.add(Ledger(
                 member_id=member_id,
                 session_id=session_id,
-                type="FINE", # 또는 PENALTY
+                type="FINE",
                 amount_krw=p.deposit_delta,
                 score_delta=p.score_delta,
-                deposit_after=p.member.current_deposit,
-                description=p.description, # "LATE_UNDER10/..."
+                deposit_after=0,  # recalculate에서 보정
+                description=p.description,
                 created_at=now
             ))
 
@@ -165,10 +161,18 @@ async def finalize_session(
             type="MERIT",
             amount_krw=0,
             score_delta=merit["score_delta"],
-            deposit_after=member.current_deposit,
+            deposit_after=0,  # recalculate에서 보정
             description=merit["description"],
             created_at=now,
         ))
+
+    # ── deposit_after 일괄 재계산 ─────────────────────────────────────────
+    from app.services.ledger_utils import recalculate_deposit_after
+
+    affected_member_ids = {p.member.id for p in penalties} | merit_member_ids
+    await db.flush()
+    for mid in affected_member_ids:
+        await recalculate_deposit_after(db, mid)
 
     # staged_merits 초기화
     config = session.config or {}

@@ -47,6 +47,7 @@ export function translateDescription(desc: string): string {
 export interface LedgerEntry {
     id: number;
     member_id: number;
+    member_name?: string | null;
     session_id?: number | null;
     session_title?: string | null;
     session_date?: string | null;
@@ -72,6 +73,7 @@ export interface TransactionRequest {
     amount_krw: number;
     score_delta: number;
     description: string;
+    session_id?: number;
 }
 
 // Keys
@@ -108,6 +110,7 @@ export interface PenaltyRequest {
     score_delta: number;
     deposit_delta?: number;
     description: string;
+    session_id?: number;
 }
 
 export function useGivePenalty() {
@@ -169,7 +172,7 @@ export function useUpdateLedger() {
     return useMutation({
         mutationFn: async ({ id, data }: {
             id: number;
-            data: { type?: string; amount_krw?: number; score_delta?: number; description?: string };
+            data: { type?: string; amount_krw?: number; score_delta?: number; description?: string; session_id?: number };
         }) => {
             const { data: updated } = await api.patch(`/ledger/${id}`, data);
             return updated;

@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { useLedger, useMembers, useSessions, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
+import { useLedger, useMembers, useSessions, useUpdateLedger, useDeleteLedgerEntry, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { formatNumber } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -32,7 +32,9 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
     const [amount, setAmount] = useState(entry.amount_krw);
     const [score, setScore] = useState(entry.score_delta);
     const [description, setDescription] = useState(entry.description);
+    const [sessionId, setSessionId] = useState<number | undefined>(entry.session_id ?? undefined);
     const { mutate: updateLedger, isPending } = useUpdateLedger();
+    const { data: sessions } = useSessions();
 
     const handleOpen = (isOpen: boolean) => {
         if (isOpen) {
@@ -40,6 +42,7 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
             setAmount(entry.amount_krw);
             setScore(entry.score_delta);
             setDescription(entry.description);
+            setSessionId(entry.session_id ?? undefined);
         }
         setOpen(isOpen);
     };
@@ -47,7 +50,7 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
     const handleSubmit = () => {
         updateLedger({
             id: entry.id,
-            data: { type, amount_krw: amount, score_delta: score, description },
+            data: { type, amount_krw: amount, score_delta: score, description, session_id: sessionId },
         }, {
             onSuccess: () => setOpen(false),
         });
@@ -68,7 +71,7 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
                     <DialogTitle>장부 항목 수정</DialogTitle>
                     <DialogDescription>
                         <span className="font-medium">{memberName}</span>의 장부 항목을 수정합니다.
-                        amount/score 변경 시 멤버 잔액이 즉시 반영됩니다.
+                        금액/점수 변경 시 멤버 잔액이 즉시 반영됩니다.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -113,6 +116,20 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
                             className="col-span-3"
                         />
                     </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right">세션</Label>
+                        <Select value={sessionId != null ? String(sessionId) : "none"} onValueChange={(v) => setSessionId(v === "none" ? undefined : Number(v))}>
+                            <SelectTrigger className="col-span-3 h-9">
+                                <SelectValue placeholder="세션 없음" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="none">세션 없음</SelectItem>
+                                {(sessions ?? []).map((s: any) => (
+                                    <SelectItem key={s.id} value={String(s.id)}>{s.week_num}주차 — {s.title}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => setOpen(false)}>취소</Button>
@@ -127,119 +144,6 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
 }
 
 // GrantMeritDialog and BulkPenaltyDialog are imported from components
-
-const DEDUCT_TYPES = new Set(["FINE", "DEPOSIT_ADJUST"]);
-
-function CreateTransactionDialog() {
-    const { mutate: createTransaction, isPending } = useCreateTransaction();
-    const { data: members } = useMembers();
-    const [selectedMemberId, setSelectedMemberId] = useState<string>("");
-    const [type, setType] = useState<string>("DEPOSIT_RECHARGE");
-    const [amount, setAmount] = useState(0);
-    const [score, setScore] = useState(0);
-    const [description, setDescription] = useState("");
-    const [open, setOpen] = useState(false);
-
-    const isDeduct = DEDUCT_TYPES.has(type);
-
-    const handleSubmit = () => {
-        if (!selectedMemberId) return toast.error("멤버를 선택해주세요.");
-        if (!description) return toast.error("설명을 입력해주세요.");
-        if (amount === 0 && score === 0) return toast.error("금액 또는 점수를 입력해주세요.");
-
-        createTransaction({
-            member_id: parseInt(selectedMemberId),
-            type,
-            amount_krw: isDeduct ? -Math.abs(amount) : Math.abs(amount),
-            score_delta: score,
-            description
-        }, {
-            onSuccess: () => {
-                setOpen(false);
-                setDescription("");
-                setAmount(0);
-                setScore(0);
-                setSelectedMemberId("");
-            }
-        });
-    };
-
-    return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button variant="outline" className="text-blue-600 border-blue-500/20 hover:bg-blue-500/10">
-                    <ArrowRightLeft className="mr-2 h-4 w-4" /> 수동 거래
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                    <DialogTitle>수동 거래 생성</DialogTitle>
-                    <DialogDescription>디파짓/승점을 수동으로 조정합니다.</DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right">멤버</Label>
-                        <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
-                            <SelectTrigger className="col-span-3">
-                                <SelectValue placeholder="멤버 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {members?.map((m: any) => (
-                                    <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right">유형</Label>
-                        <Select value={type} onValueChange={(v) => { setType(v); setAmount(0); }}>
-                            <SelectTrigger className="col-span-3">
-                                <SelectValue placeholder="유형 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="DEPOSIT_RECHARGE">디파짓 충전 (+)</SelectItem>
-                                <SelectItem value="DEPOSIT_ADJUST">디파짓 차감 (-)</SelectItem>
-                                <SelectItem value="DEPOSIT_REFUND">디파짓 환급 (+)</SelectItem>
-                                <SelectItem value="FINE">벌금 (-)</SelectItem>
-                                <SelectItem value="ADJUSTMENT">기타 조정</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right">{isDeduct ? "차감 금액" : "금액"}</Label>
-                        <div className="col-span-3 relative">
-                            <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-medium text-sm ${isDeduct ? "text-rose-500" : "text-green-600"}`}>
-                                {isDeduct ? "-" : "+"}
-                            </span>
-                            <Input
-                                type="number"
-                                value={amount}
-                                onChange={(e) => setAmount(Math.abs(parseInt(e.target.value) || 0))}
-                                min={0}
-                                className="pl-7"
-                                placeholder="원"
-                            />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right">점수</Label>
-                        <Input type="number" value={score} onChange={(e) => setScore(parseInt(e.target.value) || 0)} className="col-span-3" placeholder="0 (변동 없으면 0)" />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right">설명</Label>
-                        <Input value={description} onChange={(e) => setDescription(e.target.value)} className="col-span-3" placeholder="설명" />
-                    </div>
-                </div>
-                <DialogFooter>
-                    <Button onClick={handleSubmit} disabled={isPending}>
-                        {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        생성
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
-}
 
 
 // --- Main Page ---
@@ -292,7 +196,6 @@ export default function Ledger() {
                     <div className="flex gap-2">
                         <WeeklyReportButton />
                         <ExcelExportButton />
-                        <CreateTransactionDialog />
                         <BulkPenaltyDialog />
                         <GrantMeritDialog
                             trigger={

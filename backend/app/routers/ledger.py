@@ -29,10 +29,10 @@ async def get_ledger_entries(
     원장(Ledger) 조회
     """
     stmt = (
-        select(Ledger, Session.title, Session.date)
+        select(Ledger, Session.title, Session.date, Member.name)
         .outerjoin(Session, Ledger.session_id == Session.id)
         .outerjoin(Member, Ledger.member_id == Member.id)
-        .order_by(desc(Ledger.created_at))
+        .order_by(desc(Ledger.created_at), desc(Ledger.id))
     )
 
     if member_id:
@@ -52,10 +52,11 @@ async def get_ledger_entries(
     rows = result.all()
 
     entries = []
-    for ledger, s_title, s_date in rows:
+    for ledger, s_title, s_date, m_name in rows:
         resp = LedgerResponse.model_validate(ledger)
         resp.session_title = s_title
         resp.session_date = str(s_date) if s_date else None
+        resp.member_name = m_name
         entries.append(resp)
     return entries
 
@@ -80,6 +81,8 @@ async def give_merit(
             raise HTTPException(status_code=404, detail=f"Member ID {mid} not found")
         members_to_update.append(member)
         
+    from app.services.ledger_utils import recalculate_deposit_after
+
     for member in members_to_update:
         # 1. Update Score
         member.total_plus_score += req.score_delta
@@ -92,13 +95,16 @@ async def give_merit(
             amount_krw=0,
             score_delta=req.score_delta,
             description=req.reason,
-            deposit_after=member.current_deposit,
+            deposit_after=0,  # recalculate에서 보정
             created_by=current_user["username"],
             session_id=req.session_id,
         )
         db.add(entry)
         created_entries.append(entry)
-        
+
+    await db.flush()
+    for member in members_to_update:
+        await recalculate_deposit_after(db, member.id)
     await db.commit()
 
     # Refresh to get IDs
@@ -131,23 +137,22 @@ async def give_penalty(
     member.total_minus_score += req.score_delta  # score_delta is negative
     member.net_score = member.total_plus_score + member.total_minus_score
 
-    # 2. Deposit update (if any)
-    if req.deposit_delta != 0:
-        member.current_deposit += req.deposit_delta
+    from app.services.ledger_utils import recalculate_deposit_after
 
-    # 3. Create penalty ledger entry
+    # 2. Create penalty ledger entry
     entry = Ledger(
         member_id=req.member_id,
         type="FINE",
         amount_krw=req.deposit_delta,
         score_delta=req.score_delta,
         description=req.description,
-        deposit_after=member.current_deposit,
+        deposit_after=0,  # recalculate에서 보정
         created_by=current_user["username"],
+        session_id=req.session_id,
     )
     db.add(entry)
 
-    # 4. Milestone check
+    # 3. Milestone check
     from app.services.penalty_engine import check_milestone_fines
     milestones = check_milestone_fines(before_minus, member.total_minus_score)
     for ms in milestones:
@@ -156,12 +161,14 @@ async def give_penalty(
             type="MILESTONE_FINE",
             amount_krw=ms["deposit_delta"],
             score_delta=0,
-            deposit_after=member.current_deposit,
+            deposit_after=0,  # recalculate에서 보정
             description=ms["description"],
             created_by="system",
             is_paid=False,
         ))
 
+    await db.flush()
+    await recalculate_deposit_after(db, req.member_id)
     await db.commit()
     await db.refresh(entry)
     logger.audit(f"penalty member_id={req.member_id} score={req.score_delta} deposit={req.deposit_delta} desc={req.description} by={current_user['username']}")
@@ -189,11 +196,9 @@ async def create_transaction(
     if member.current_deposit + req.amount_krw < 0 and req.type not in no_deposit_types:
         raise HTTPException(status_code=400, detail="잔여 디파짓이 부족합니다")
 
-    # 1. Update Deposit (MILESTONE_FINE/DEPOSIT_FORFEIT은 디포짓 차감 안 함)
-    if req.type not in (LedgerType.MILESTONE_FINE, LedgerType.DEPOSIT_FORFEIT):
-        member.current_deposit += req.amount_krw
+    from app.services.ledger_utils import recalculate_deposit_after
 
-    # 2. Update Score (if provided)
+    # 1. Update Score (if provided)
     before_minus = member.total_minus_score
     if req.score_delta > 0:
         member.total_plus_score += req.score_delta
@@ -212,24 +217,27 @@ async def create_transaction(
                 type="MILESTONE_FINE",
                 amount_krw=ms["deposit_delta"],
                 score_delta=0,
-                deposit_after=member.current_deposit,
+                deposit_after=0,  # recalculate에서 보정
                 description=ms["description"],
                 created_by="system",
                 is_paid=False,
             ))
 
-    # 3. Create Ledger
+    # 2. Create Ledger
     entry = Ledger(
         member_id=req.member_id,
         type=req.type,
         amount_krw=req.amount_krw,
         score_delta=req.score_delta,
         description=req.description,
-        deposit_after=member.current_deposit,
+        deposit_after=0,  # recalculate에서 보정
         created_by=current_user["username"],
         is_paid=False if req.type == LedgerType.MILESTONE_FINE else None,
+        session_id=req.session_id,
     )
     db.add(entry)
+    await db.flush()
+    await recalculate_deposit_after(db, req.member_id)
     await db.commit()
     await db.refresh(entry)
     logger.audit(f"transaction member_id={req.member_id} type={req.type} amount={req.amount_krw} by={current_user['username']}")
@@ -256,12 +264,10 @@ async def update_ledger_entry(
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
 
-    # amount_krw 변경 (MILESTONE_FINE/DEPOSIT_FORFEIT은 디포짓 반영 안 함)
+    from app.services.ledger_utils import recalculate_deposit_after
+
+    # amount_krw 변경
     if req.amount_krw is not None and req.amount_krw != entry.amount_krw:
-        if entry.type not in ("MILESTONE_FINE", "DEPOSIT_FORFEIT"):
-            delta = req.amount_krw - entry.amount_krw
-            member.current_deposit += delta
-            entry.deposit_after = member.current_deposit
         entry.amount_krw = req.amount_krw
 
     # score_delta 변경
@@ -292,6 +298,12 @@ async def update_ledger_entry(
     if req.description is not None:
         entry.description = req.description
 
+    # session_id 변경
+    if req.session_id is not None:
+        entry.session_id = req.session_id
+
+    await db.flush()
+    await recalculate_deposit_after(db, entry.member_id)
     await db.commit()
     await db.refresh(entry)
     logger.audit(f"ledger_updated id={ledger_id} by=staff")
@@ -315,10 +327,7 @@ async def delete_ledger_entry(
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
 
-    # 잔액 효과 역전 (MILESTONE_FINE/DEPOSIT_FORFEIT은 디포짓 차감 안 했으므로 역전도 스킵)
-    skip_deposit_types = ("MILESTONE_FINE", "DEPOSIT_FORFEIT")
-    if entry.amount_krw != 0 and entry.type not in skip_deposit_types:
-        member.current_deposit -= entry.amount_krw
+    from app.services.ledger_utils import recalculate_deposit_after
 
     # 점수 효과 역전
     if entry.score_delta > 0:
@@ -329,7 +338,10 @@ async def delete_ledger_entry(
     if entry.score_delta != 0:
         member.net_score = member.total_plus_score + member.total_minus_score
 
+    member_id = entry.member_id
     await db.delete(entry)
+    await db.flush()
+    await recalculate_deposit_after(db, member_id)
     await db.commit()
     logger.audit(f"ledger_deleted id={ledger_id} type={entry.type} member_id={entry.member_id}")
 

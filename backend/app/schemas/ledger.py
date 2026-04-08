@@ -28,6 +28,7 @@ class LedgerResponse(LedgerBase):
     session_id: int | None = None
     session_title: str | None = None
     session_date: str | None = None
+    member_name: str | None = None
     created_at: datetime
     deposit_after: int
     is_paid: bool | None = None
@@ -49,18 +50,21 @@ class TransactionRequest(BaseModel):
     amount_krw: int
     score_delta: int = 0
     description: str
+    session_id: Optional[int] = None
 
 class LedgerUpdate(BaseModel):
     type: Optional[LedgerType] = None
     amount_krw: Optional[int] = None
     score_delta: Optional[int] = None
     description: Optional[str] = Field(None, min_length=1, max_length=500)
+    session_id: Optional[int] = None
 
 class PenaltyRequest(BaseModel):
     member_id: int
     score_delta: int = Field(lt=0, description="벌점 (음수)")
     deposit_delta: int = Field(default=0, description="디파짓 차감 (0이면 없음)")
     description: str
+    session_id: Optional[int] = None
 
 class TreasuryExpenseCreate(BaseModel):
     amount_krw: int = Field(gt=0, description="지출 금액 (양수)")
