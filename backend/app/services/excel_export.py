@@ -586,12 +586,12 @@ def _build_assignment_sheet(ws, data: ExportData, sessions: list, members: list)
                 parts.append(f"PPT{_status_mark(a)}")
             else:
                 parts.append("PPT-")
-            # 과제
-            if config.get("has_homework"):
-                a = m_assigns.get("HOMEWORK")
-                parts.append(f"과제{_status_mark(a)}")
+            # 피드백
+            if config.get("has_feedback"):
+                a = m_assigns.get("FEEDBACK")
+                parts.append(f"피드백{_status_mark(a)}")
             else:
-                parts.append("과제-")
+                parts.append("피드백-")
 
             text = "/".join(parts)
             # 전부 "-"면 빈 셀
