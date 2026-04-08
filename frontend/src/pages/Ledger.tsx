@@ -12,8 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, PlusCircle, ArrowRightLeft, Pencil, Trash2, ChevronLeft, ChevronRight, Search } from "lucide-react";
-import { toast } from "sonner";
+import { Loader2, PlusCircle, Pencil, Trash2, ChevronLeft, ChevronRight, Search } from "lucide-react";
+
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import { BulkPenaltyDialog } from "@/components/BulkPenaltyDialog";
 import { WeeklyReportButton } from "@/components/WeeklyReportImage";
