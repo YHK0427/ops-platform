@@ -648,6 +648,53 @@ async def get_report_data(
     }
 
 
+@router.get("/report/excel/check")
+async def check_excel_merits(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """엑셀 내보내기 전 미매칭 상점 사전 체크"""
+    from app.services.excel_export import gather_export_data, check_unmatched_merits
+
+    data = await gather_export_data(db)
+    unmatched = check_unmatched_merits(data)
+    return {"unmatched_merits": unmatched}
+
+
+@router.get("/report/excel")
+async def export_report_excel(
+    week_num: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """벌점/디파짓 리포트 Excel 다운로드"""
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse
+
+    from app.config import settings
+    from app.services.excel_export import generate_excel_bytes
+
+    result = await generate_excel_bytes(db, generation=settings.GENERATION)
+
+    suffix = f"_{week_num}주차" if week_num else ""
+    filename = f"UnivPT_{settings.GENERATION}기_벌점_디파짓{suffix}.xlsx"
+    from urllib.parse import quote
+    encoded = quote(filename)
+
+    headers: dict[str, str] = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded}",
+    }
+    if result.unmatched_merits:
+        headers["X-Unmatched-Merits"] = quote(",".join(result.unmatched_merits))
+
+    return StreamingResponse(
+        result.stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
 @router.patch("/{ledger_id}/paid")
 async def toggle_milestone_paid(
     ledger_id: int,

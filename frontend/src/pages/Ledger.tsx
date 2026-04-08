@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import { BulkPenaltyDialog } from "@/components/BulkPenaltyDialog";
 import { WeeklyReportButton } from "@/components/WeeklyReportImage";
+import { ExcelExportButton } from "@/components/ExcelExportButton";
 
 // --- Dialogs ---
 
@@ -290,6 +291,7 @@ export default function Ledger() {
                 actions={
                     <div className="flex gap-2">
                         <WeeklyReportButton />
+                        <ExcelExportButton />
                         <CreateTransactionDialog />
                         <BulkPenaltyDialog />
                         <GrantMeritDialog

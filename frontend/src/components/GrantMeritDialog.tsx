@@ -26,22 +26,33 @@ interface Preset {
     reason: string;
 }
 
-// 세션 내에서 사용 (Settlement 탭)
+// 세션 내에서 사용 (Settlement 탭) — 당일 결정되는 항목
 const SESSION_PRESETS: Preset[] = [
     { label: "친바 선정팀", score: 1, reason: "친바 선정팀 포상" },
-    { label: "LU/BP 1등", score: 4, reason: "Listen Up/BP 1등" },
-    { label: "LU/BP 2등", score: 4, reason: "Listen Up/BP 2등" },
+    { label: "Listen Up 1등", score: 4, reason: "Listen Up 1등" },
+    { label: "Listen Up 2등", score: 4, reason: "Listen Up 2등" },
+    { label: "BP 1등", score: 4, reason: "BP 1등" },
+    { label: "BP 2등", score: 4, reason: "BP 2등" },
     { label: "피날래 본선 진출", score: 3, reason: "피날래 본선 진출" },
+    { label: "발전왕 선발", score: 4, reason: "발전왕 선발" },
     { label: "베스트 협력상", score: 1, reason: "베스트 협력상" },
+    { label: "오프/오피", score: 1, reason: "오프/오피 선정" },
 ];
 
-// 세션 외부에서 사용 (장부/멤버 페이지)
+// 세션 외부에서 사용 (장부/멤버 페이지) — 전체 프리셋
 const GENERAL_PRESETS: Preset[] = [
+    { label: "친바 선정팀", score: 1, reason: "친바 선정팀 포상" },
+    { label: "Listen Up 1등", score: 4, reason: "Listen Up 1등" },
+    { label: "Listen Up 2등", score: 4, reason: "Listen Up 2등" },
+    { label: "BP 1등", score: 4, reason: "BP 1등" },
+    { label: "BP 2등", score: 4, reason: "BP 2등" },
+    { label: "피날래 본선 진출", score: 3, reason: "피날래 본선 진출" },
     { label: "발전왕 선발", score: 4, reason: "발전왕 선발" },
+    { label: "베스트 협력상", score: 1, reason: "베스트 협력상" },
+    { label: "오프/오피", score: 1, reason: "오프/오피 선정" },
     { label: "추억상자 글 작성", score: 1, reason: "추억상자 글 작성" },
     { label: "번개 주최 완료", score: 1, reason: "번개 주최 완료" },
     { label: "번개 참석 (2회)", score: 1, reason: "번개 참석 2회" },
-    { label: "오프/오피", score: 1, reason: "오프/오피 참여" },
     { label: "정보성 자료 공유", score: 1, reason: "카페 정보성 자료 공유" },
 ];
 

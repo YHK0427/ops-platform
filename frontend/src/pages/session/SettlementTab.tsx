@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, CheckCircle2, ExternalLink, Trophy, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Trophy, Trash2, FileSpreadsheet } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "sonner";
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
+import { ExcelExportButton } from "@/components/ExcelExportButton";
 import type { Session, MeritPreviewItem } from "@/hooks/useSessions";
 
 const PENALTY_TYPE_LABEL: Record<string, string> = {
@@ -171,13 +172,16 @@ export default function SettlementTab() {
                         이 세션은 {new Date(session.finalized_at || "").toLocaleString()}에 마감되었습니다.<br />
                         정산 내역은 <span className="text-[var(--color-accent)]">장부</span> 메뉴에서 확인할 수 있습니다.
                     </p>
-                    <Button
-                        onClick={() => navigate("/ledger")}
-                        className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
-                    >
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        장부에서 확인
-                    </Button>
+                    <div className="flex gap-3">
+                        <Button
+                            onClick={() => navigate("/ledger")}
+                            className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
+                        >
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            장부에서 확인
+                        </Button>
+                        <ExcelExportButton weekNum={session.week_num} />
+                    </div>
                 </div>
             </div>
         );

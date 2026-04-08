@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { toast } from "sonner";
@@ -243,6 +244,37 @@ export function useDeleteTreasuryExpense() {
             toast.error("삭제 실패");
         },
     });
+}
+
+export interface UnmatchedMerit {
+    id: number;
+    member_name: string;
+    description: string;
+    score_delta: number;
+}
+
+export async function checkExcelMerits(): Promise<UnmatchedMerit[]> {
+    const { data } = await api.get<{ unmatched_merits: UnmatchedMerit[] }>("/ledger/report/excel/check");
+    return data.unmatched_merits;
+}
+
+export async function downloadExcel(weekNum?: number) {
+    const params = weekNum != null ? `?week_num=${weekNum}` : "";
+    const response = await api.get(`/ledger/report/excel${params}`, {
+        responseType: "blob",
+        timeout: 60000,
+    });
+    const blob = new Blob([response.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const disposition = response.headers["content-disposition"];
+    const filenameMatch = disposition?.match(/filename\*=UTF-8''(.+)/);
+    link.download = filenameMatch?.[1] ? decodeURIComponent(filenameMatch[1]) : "report.xlsx";
+    link.href = url;
+    link.click();
+    window.URL.revokeObjectURL(url);
 }
 
 export function useDeleteLedgerEntry() {
