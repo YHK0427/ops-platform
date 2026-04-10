@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { toJpeg } from "html-to-image";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Camera, Download, Loader2, Sun, Moon } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "sonner";
@@ -183,6 +184,18 @@ function getDateStr() {
     return `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, "0")}.${String(today.getDate()).padStart(2, "0")}`;
 }
 
+// 필터된 데이터의 기준 날짜 — 가장 최근 세션 날짜, 없으면 오늘
+function getReportDateStr(data: ReportData): string {
+    const dates = data.sessions
+        .map(s => s.date)
+        .filter((d): d is string => !!d)
+        .sort();
+    const latest = dates[dates.length - 1];
+    if (!latest) return getDateStr();
+    // "2026-04-04" → "2026.04.04"
+    return latest.replace(/-/g, ".");
+}
+
 // ═══════════════════════════════════════════════════
 // IMAGE 1: 현황판 (Overview — landscape card grid)
 // ═══════════════════════════════════════════════════
@@ -234,7 +247,7 @@ function OverviewImage({ data, t }: { data: ReportData; t: Theme }) {
     return (
         <div style={{ width: 920, fontFamily: font, color: t.text, background: t.bg, padding: "32px 32px 24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
-                {reportHeader("주간 현황판", "", getDateStr(), t)}
+                {reportHeader("주간 현황판", "", getReportDateStr(data), t)}
                 <div style={{ display: "flex", gap: 16, fontSize: 11, color: t.textMuted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         <div style={{ width: 8, height: 8, borderRadius: 2, background: t.green }} />상점
@@ -272,7 +285,7 @@ function AttendanceImage({ data, t }: { data: ReportData; t: Theme }) {
 
     return (
         <div style={{ width: Math.max(920, totalW), fontFamily: font, color: t.text, background: t.bg, padding: "32px 32px 24px" }}>
-            {reportHeader("출석부", "", getDateStr(), t)}
+            {reportHeader("출석부", "", getReportDateStr(data), t)}
 
             {/* Legend */}
             <div style={{ display: "flex", gap: 14, fontSize: 11, color: t.textMuted, marginBottom: 14 }}>
@@ -464,7 +477,7 @@ function DetailImage({ data, t }: { data: ReportData; t: Theme }) {
     return (
         <div style={{ width: 920, fontFamily: font, color: t.text, background: t.bg, padding: "32px 32px 24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
-                {reportHeader("상세 내역", "최신순", getDateStr(), t)}
+                {reportHeader("상세 내역", "최신순", getReportDateStr(data), t)}
                 <div style={{ display: "flex", gap: 16, fontSize: 11, color: t.textMuted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.red }} />벌점
@@ -512,13 +525,86 @@ export function WeeklyReportButton() {
     const [open, setOpen] = useState(false);
     const [generating, setGenerating] = useState(false);
     const [activeTab, setActiveTab] = useState<ImageTab>("overview");
-    const [light, setLight] = useState(false);
+    const [light, setLight] = useState(true);
+    const [selectedWeek, setSelectedWeek] = useState<"all" | number>("all");
     const overviewRef = useRef<HTMLDivElement>(null);
     const attendanceRef = useRef<HTMLDivElement>(null);
     const detailRef = useRef<HTMLDivElement>(null);
     const { data, isLoading } = useReportData(open);
 
     const theme = light ? LIGHT : DARK;
+
+    // 선택된 주차까지 누적 스냅샷으로 필터링
+    const filteredData = useMemo<ReportData | undefined>(() => {
+        if (!data) return undefined;
+        if (selectedWeek === "all") return data;
+
+        // 선택된 주차까지의 세션만 포함
+        const allowedSessions = data.sessions.filter(s => s.week_num <= selectedWeek);
+        const allowedSessionIds = new Set(allowedSessions.map(s => String(s.id)));
+
+        // 선택된 주차 세션의 날짜 중 최대값 (no_session 항목 컷오프용)
+        const maxDate = allowedSessions.reduce<string | null>((acc, s) => {
+            if (!s.date) return acc;
+            return !acc || s.date > acc ? s.date : acc;
+        }, null);
+
+        const filteredMembers: ReportMember[] = data.members.map(m => {
+            // by_session: 허용된 세션만
+            const by_session: Record<string, ReportEntry[]> = {};
+            for (const sid of Object.keys(m.by_session)) {
+                if (allowedSessionIds.has(sid)) {
+                    by_session[sid] = m.by_session[sid];
+                }
+            }
+
+            // no_session: 최대 세션 날짜까지 생성된 것만
+            const no_session = maxDate
+                ? m.no_session.filter(e => {
+                    if (!e.created_at) return true;
+                    return e.created_at.slice(0, 10) <= maxDate;
+                })
+                : [];
+
+            // attendance: 허용된 세션만
+            const attendance: Record<string, string> = {};
+            for (const sid of Object.keys(m.attendance)) {
+                if (allowedSessionIds.has(sid)) {
+                    attendance[sid] = m.attendance[sid];
+                }
+            }
+
+            // 점수/디파짓을 해당 주차까지 누적 재계산
+            const allEntries = [
+                ...Object.values(by_session).flat(),
+                ...no_session,
+            ];
+            let plus = 0, minus = 0, deposit = 20000;
+            for (const e of allEntries) {
+                if (e.score_delta > 0) plus += e.score_delta;
+                else if (e.score_delta < 0) minus += e.score_delta;
+                deposit += e.amount_krw;
+            }
+
+            return {
+                ...m,
+                by_session,
+                no_session,
+                attendance,
+                total_plus_score: plus,
+                total_minus_score: minus,
+                net_score: plus + minus,
+                current_deposit: deposit,
+            };
+        });
+
+        return {
+            sessions: allowedSessions,
+            members: filteredMembers,
+        };
+    }, [data, selectedWeek]);
+
+    const weekSuffix = selectedWeek === "all" ? "" : `-${selectedWeek}주차`;
 
     const refMap: Record<ImageTab, React.RefObject<HTMLDivElement | null>> = {
         overview: overviewRef,
@@ -538,7 +624,7 @@ export function WeeklyReportButton() {
             if (!url) return;
             const meta = TAB_META.find(t => t.key === activeTab)!;
             const link = document.createElement("a");
-            link.download = `univpt-${meta.suffix}-${new Date().toISOString().slice(0, 10)}.jpg`;
+            link.download = `univpt-${meta.suffix}${weekSuffix}-${new Date().toISOString().slice(0, 10)}.jpg`;
             link.href = url;
             link.click();
             toast.success("이미지가 다운로드되었습니다.");
@@ -557,7 +643,7 @@ export function WeeklyReportButton() {
             for (const [url, name] of urls) {
                 if (!url) continue;
                 const link = document.createElement("a");
-                link.download = `univpt-${name}-${date}.jpg`;
+                link.download = `univpt-${name}${weekSuffix}-${date}.jpg`;
                 link.href = url;
                 link.click();
                 await new Promise(r => setTimeout(r, 500));
@@ -588,11 +674,11 @@ export function WeeklyReportButton() {
     );
 
     const renderImage = (tab: ImageTab) => {
-        if (!data) return null;
+        if (!filteredData) return null;
         switch (tab) {
-            case "overview": return <OverviewImage data={data} t={theme} />;
-            case "attendance": return <AttendanceImage data={data} t={theme} />;
-            case "detail": return <DetailImage data={data} t={theme} />;
+            case "overview": return <OverviewImage data={filteredData} t={theme} />;
+            case "attendance": return <AttendanceImage data={filteredData} t={theme} />;
+            case "detail": return <DetailImage data={filteredData} t={theme} />;
         }
     };
 
@@ -610,10 +696,30 @@ export function WeeklyReportButton() {
                     <DialogTitle>주간 현황 이미지</DialogTitle>
                 </DialogHeader>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex items-center gap-1 p-1 rounded-lg bg-[var(--color-bg-secondary,#1a1a2e)] w-fit">
                         {TAB_META.map(t => tabBtn(t.key, t.label))}
                     </div>
+                    <Select
+                        value={selectedWeek === "all" ? "all" : String(selectedWeek)}
+                        onValueChange={(v) => setSelectedWeek(v === "all" ? "all" : Number(v))}
+                    >
+                        <SelectTrigger className="h-8 w-[120px] text-xs">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">전체 주차</SelectItem>
+                            {(data?.sessions ?? [])
+                                .slice()
+                                .sort((a, b) => a.week_num - b.week_num)
+                                .map(s => (
+                                    <SelectItem key={s.id} value={String(s.week_num)}>
+                                        {s.week_num}주차{s.title ? ` — ${s.title}` : ""}
+                                    </SelectItem>
+                                ))
+                            }
+                        </SelectContent>
+                    </Select>
                     <button
                         onClick={() => setLight(!light)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
@@ -642,7 +748,7 @@ export function WeeklyReportButton() {
                     <div className="flex items-center justify-center py-20 text-[var(--color-text-muted)]">
                         <Loader2 className="w-6 h-6 animate-spin mr-2" /> 로딩 중...
                     </div>
-                ) : data ? (
+                ) : filteredData ? (
                     <div style={{ position: "relative" }}>
                         {/* Active tab */}
                         <div className="rounded-xl overflow-hidden border border-[var(--color-border)] overflow-x-auto">
