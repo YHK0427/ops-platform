@@ -325,7 +325,7 @@ export default function Dashboard() {
                             />
                         ))}
 
-                        {unpaidMilestoneByMember.map((m) => (
+                        {unpaidMilestoneByMember.map((m: { member_id: number; member_name: string; unpaid: number }) => (
                             <WarningBanner
                                 key={`milestone-${m.member_id}`}
                                 level="warning"
