@@ -9,9 +9,11 @@ import {
     GraduationCap,
     Trophy,
     Pencil,
-    Trash2
+    Trash2,
+    CheckCircle2,
+    AlertCircle
 } from "lucide-react";
-import { useMember, useLedger, useDeactivateMember, useReactivateMember, useGraduateMember, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
+import { useMember, useLedger, useDeactivateMember, useReactivateMember, useGraduateMember, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry, useToggleMilestonePaid, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
@@ -19,6 +21,7 @@ import { MemberEditSheet } from "@/components/MemberEditSheet";
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import { GivePenaltyDialog } from "@/components/GivePenaltyDialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -322,6 +325,7 @@ export default function MemberDetail() {
                                         <LedgerRow
                                             key={entry.id}
                                             entry={entry}
+                                            memberName={member.name}
                                             onDelete={() => deleteEntry(entry.id)}
                                             onUpdate={(data) => updateEntry({ id: entry.id, data })}
                                             isDeleting={isDeleting}
@@ -417,12 +421,14 @@ export default function MemberDetail() {
 
 function LedgerRow({
     entry,
+    memberName,
     onDelete,
     onUpdate,
     isDeleting,
     isUpdating,
 }: {
     entry: LedgerEntry;
+    memberName: string;
     onDelete: () => void;
     onUpdate: (data: { amount_krw?: number; description?: string }) => void;
     isDeleting: boolean;
@@ -431,6 +437,7 @@ function LedgerRow({
     const [editOpen, setEditOpen] = useState(false);
     const [editAmount, setEditAmount] = useState(entry.amount_krw);
     const [editDesc, setEditDesc] = useState(entry.description);
+    const { mutate: togglePaid, isPending: isTogglingPaid } = useToggleMilestonePaid();
 
     useEffect(() => {
         setEditAmount(entry.amount_krw);
@@ -461,7 +468,33 @@ function LedgerRow({
                 <LedgerTypeBadge type={entry.type} />
             </TableCell>
             <TableCell className="text-sm text-[var(--color-text-secondary)]">
-                {translateDescription(entry.description)}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    <span>{translateDescription(entry.description)}</span>
+                    {entry.type === "MILESTONE_FINE" && (
+                        entry.is_paid ? (
+                            <Badge variant="outline" className="border-gray-400/50 text-gray-500 bg-gray-100 text-[10px] py-0 px-1.5 h-5">
+                                <CheckCircle2 className="w-3 h-3 mr-0.5" /> 납부 완료
+                            </Badge>
+                        ) : (
+                            <>
+                                <Badge variant="outline" className="border-rose-500/50 text-rose-600 bg-rose-500/10 text-[10px] py-0 px-1.5 h-5 font-semibold">
+                                    <AlertCircle className="w-3 h-3 mr-0.5" /> 미납 — 납부 확인 필요
+                                </Badge>
+                                <button
+                                    onClick={() => {
+                                        if (confirm(`${memberName}님의 누적벌점 벌금 ${Math.abs(entry.amount_krw).toLocaleString()}원 납부를 확인 처리합니다.\n금고 수입으로 반영됩니다.`)) {
+                                            togglePaid({ id: entry.id, is_paid: true });
+                                        }
+                                    }}
+                                    disabled={isTogglingPaid}
+                                    className="text-[10px] px-1.5 h-5 rounded border border-emerald-500/50 text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50"
+                                >
+                                    납부 확인
+                                </button>
+                            </>
+                        )
+                    )}
+                </div>
             </TableCell>
             <TableCell className={`text-right text-sm ${entry.amount_krw > 0 ? "text-green-600" : entry.amount_krw < 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
                 {entry.amount_krw !== 0 ? `${entry.amount_krw > 0 ? "+" : ""}${entry.amount_krw.toLocaleString()}` : "-"}

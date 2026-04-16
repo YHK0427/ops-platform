@@ -12,7 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { WarningBanner } from "@/components/WarningBanner";
 import { StatusBadge } from "@/components/StatusBadge";
-import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, useImportNaverSession, useNaverLogin, useCrawlerTask, crawlerKeys } from "@/hooks";
+import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, useImportNaverSession, useNaverLogin, useCrawlerTask, useTreasury, crawlerKeys } from "@/hooks";
 import { toast } from "sonner";
 
 function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
@@ -187,6 +187,11 @@ export default function Dashboard() {
 
     // 1. Identify Risks
     // Low Deposit: < 10,000 KRW
+    const { data: treasuryData } = useTreasury();
+    const unpaidMilestoneByMember = (treasuryData?.by_member ?? [])
+        .filter((m: any) => (m.milestone_unpaid || 0) > 0)
+        .map((m: any) => ({ member_id: m.member_id, member_name: m.member_name, unpaid: m.milestone_unpaid as number }));
+
     const lowDepositMembers = sortedMembers?.filter((m) => (m.current_deposit || 0) < 10000) || [];
     // Eviction Risk: net_score <= -12 (Eviction) or <= -8 (Warning)
     const riskScoreMembers = sortedMembers?.filter((m) => (m.net_score || 0) <= -8) || [];
@@ -320,6 +325,16 @@ export default function Dashboard() {
                             />
                         ))}
 
+                        {unpaidMilestoneByMember.map((m) => (
+                            <WarningBanner
+                                key={`milestone-${m.member_id}`}
+                                level="warning"
+                                title="누적벌점 벌금 미납"
+                                message={`[누적벌점 벌금 미납] ${m.member_name}님의 미납 벌금 ${m.unpaid.toLocaleString()}원. 납부 확인이 필요합니다.`}
+                                action={{ label: `${m.member_name} 상세보기`, onClick: () => navigate(`/members/${m.member_id}`) }}
+                            />
+                        ))}
+
                         {riskScoreMembers.length > 0 && (
                             <>
                                 {riskScoreMembers.map(member => (
@@ -334,7 +349,7 @@ export default function Dashboard() {
                             </>
                         )}
 
-                        {!isNaverExpired && lowDepositMembers.length === 0 && riskScoreMembers.length === 0 && (
+                        {!isNaverExpired && lowDepositMembers.length === 0 && riskScoreMembers.length === 0 && unpaidMilestoneByMember.length === 0 && (
                             <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-green-500/20 bg-green-500/5 text-green-600 text-sm">
                                 <CheckCircle2 className="w-4 h-4" />
                                 <span>현재 조치 필요한 경고 사항이 없습니다.</span>

@@ -207,6 +207,8 @@ export function useToggleMilestonePaid() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["ledger", "treasury"] });
+            queryClient.invalidateQueries({ queryKey: ["ledger"] });
+            queryClient.invalidateQueries({ queryKey: ["members"] });
             toast.success("납부 상태가 변경되었습니다.");
         },
         onError: () => {

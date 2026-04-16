@@ -28,7 +28,9 @@ async def recalculate_deposit_after(db: AsyncSession, member_id: int) -> None:
 
     running = 20000  # 초기 디파짓 기본값
     for entry in entries:
-        running += entry.amount_krw
+        # MILESTONE_FINE(누적벌점 벌금)은 디파짓과 별개로 별도 납부받는 금액 → 잔액 합산 제외
+        if entry.type != "MILESTONE_FINE":
+            running += entry.amount_krw
         entry.deposit_after = running
 
     member.current_deposit = running

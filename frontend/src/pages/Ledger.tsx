@@ -5,14 +5,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { useLedger, useMembers, useSessions, useUpdateLedger, useDeleteLedgerEntry, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
+import { useLedger, useMembers, useSessions, useUpdateLedger, useDeleteLedgerEntry, useToggleMilestonePaid, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { formatNumber } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, PlusCircle, Pencil, Trash2, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Loader2, PlusCircle, Pencil, Trash2, ChevronLeft, ChevronRight, Search, CheckCircle2, AlertCircle } from "lucide-react";
 
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import { BulkPenaltyDialog } from "@/components/BulkPenaltyDialog";
@@ -181,6 +181,7 @@ export default function Ledger() {
         limit: LIMIT,
     });
     const { mutate: deleteEntry } = useDeleteLedgerEntry();
+    const { mutate: togglePaid, isPending: isTogglingPaid } = useToggleMilestonePaid();
 
     // Reset page when filters change
     const handleMemberFilter = (v: string) => { setMemberFilter(v); setPage(1); };
@@ -319,13 +320,37 @@ export default function Ledger() {
                                                 {LEDGER_TYPE_LABELS[entry.type] ?? entry.type}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-[var(--color-text-secondary)] text-sm max-w-[300px]">
-                                            <div className="flex items-center gap-1">
+                                        <TableCell className="text-[var(--color-text-secondary)] text-sm max-w-[320px]">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
                                                 <span className="truncate" title={translateDescription(entry.description)}>{translateDescription(entry.description)}</span>
                                                 <EditLedgerDialog
                                                     entry={entry}
                                                     memberName={memberMap.get(entry.member_id) || String(entry.member_id)}
                                                 />
+                                                {entry.type === "MILESTONE_FINE" && (
+                                                    entry.is_paid ? (
+                                                        <Badge variant="outline" className="border-gray-400/50 text-gray-500 bg-gray-100 text-[10px] py-0 px-1.5 h-5">
+                                                            <CheckCircle2 className="w-3 h-3 mr-0.5" /> 납부 완료
+                                                        </Badge>
+                                                    ) : (
+                                                        <>
+                                                            <Badge variant="outline" className="border-rose-500/50 text-rose-600 bg-rose-500/10 text-[10px] py-0 px-1.5 h-5 font-semibold">
+                                                                <AlertCircle className="w-3 h-3 mr-0.5" /> 미납 — 납부 확인 필요
+                                                            </Badge>
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (confirm(`${memberMap.get(entry.member_id) ?? entry.member_id}님의 누적벌점 벌금 ${formatNumber(Math.abs(entry.amount_krw))}원 납부를 확인 처리합니다.\n금고 수입으로 반영됩니다.`)) {
+                                                                        togglePaid({ id: entry.id, is_paid: true });
+                                                                    }
+                                                                }}
+                                                                disabled={isTogglingPaid}
+                                                                className="text-[10px] px-1.5 h-5 rounded border border-emerald-500/50 text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50"
+                                                            >
+                                                                납부 확인
+                                                            </button>
+                                                        </>
+                                                    )
+                                                )}
                                             </div>
                                         </TableCell>
                                         <TableCell className={`text-right text-sm ${entry.amount_krw < 0 ? 'text-rose-500' : 'text-[var(--color-text-secondary)]'}`}>
