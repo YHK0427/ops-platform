@@ -190,7 +190,7 @@ export default function Dashboard() {
     const { data: treasuryData } = useTreasury();
     const unpaidMilestoneByMember = (treasuryData?.by_member ?? [])
         .filter((m: any) => (m.milestone_unpaid || 0) > 0)
-        .map((m: any) => ({ member_id: m.member_id, member_name: m.member_name, unpaid: m.milestone_unpaid as number }));
+        .map((m: any) => ({ member_id: m.member_id, name: m.name, unpaid: m.milestone_unpaid as number }));
 
     const lowDepositMembers = sortedMembers?.filter((m) => (m.current_deposit || 0) < 10000) || [];
     // Eviction Risk: net_score <= -12 (Eviction) or <= -8 (Warning)
@@ -325,13 +325,13 @@ export default function Dashboard() {
                             />
                         ))}
 
-                        {unpaidMilestoneByMember.map((m: { member_id: number; member_name: string; unpaid: number }) => (
+                        {unpaidMilestoneByMember.map((m: { member_id: number; name: string; unpaid: number }) => (
                             <WarningBanner
                                 key={`milestone-${m.member_id}`}
                                 level="warning"
                                 title="누적벌점 벌금 미납"
-                                message={`[누적벌점 벌금 미납] ${m.member_name}님의 미납 벌금 ${m.unpaid.toLocaleString()}원. 납부 확인이 필요합니다.`}
-                                action={{ label: `${m.member_name} 상세보기`, onClick: () => navigate(`/members/${m.member_id}`) }}
+                                message={`[누적벌점 벌금 미납] ${m.name}님의 미납 벌금 ${m.unpaid.toLocaleString()}원. 납부 확인이 필요합니다.`}
+                                action={{ label: `${m.name} 상세보기`, onClick: () => navigate(`/members/${m.member_id}`) }}
                             />
                         ))}
 

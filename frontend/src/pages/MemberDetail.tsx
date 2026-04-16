@@ -75,6 +75,7 @@ export default function MemberDetail() {
     const { mutate: createTransaction, isPending: isCreatingTx } = useCreateTransaction();
     const { mutate: updateEntry, isPending: isUpdating } = useUpdateLedger();
     const { mutate: deleteEntry, isPending: isDeleting } = useDeleteLedgerEntry();
+    const { mutateAsync: togglePaidAsync, isPending: isTogglingPaidTop } = useToggleMilestonePaid();
 
     if (isLoadingMember || isLoadingLedger) {
         return (
@@ -195,6 +196,73 @@ export default function MemberDetail() {
             />
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {/* 받을 돈 요약 — 디파짓 부족 또는 미납 벌금 있을 때 */}
+                {(() => {
+                    const unpaidEntries = (ledger ?? []).filter(
+                        (e: LedgerEntry) => e.type === "MILESTONE_FINE" && !e.is_paid
+                    );
+                    const unpaidMilestoneTotal = unpaidEntries.reduce(
+                        (sum: number, e: LedgerEntry) => sum + Math.abs(e.amount_krw), 0
+                    );
+                    const needsDeposit = (member.current_deposit || 0) < 10000 && member.is_active;
+                    const depositShortfall = needsDeposit ? 20000 - (member.current_deposit || 0) : 0;
+                    const totalReceivable = depositShortfall + unpaidMilestoneTotal;
+
+                    if (totalReceivable === 0) return null;
+
+                    const confirmAllPaid = async () => {
+                        const totalTxt = `₩${unpaidMilestoneTotal.toLocaleString()}`;
+                        if (!confirm(`${member.name}님의 누적벌점 벌금 ${totalTxt} (${unpaidEntries.length}건) 납부를 확인 처리합니다.\n금고 수입으로 반영됩니다.`)) return;
+                        for (const e of unpaidEntries) {
+                            await togglePaidAsync({ id: e.id, is_paid: true });
+                        }
+                    };
+
+                    return (
+                        <div className="rounded-xl border border-rose-500/40 bg-rose-500/5 p-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <AlertCircle className="w-4 h-4 text-rose-500" />
+                                <span className="text-sm font-bold text-rose-500 uppercase tracking-wider">받아야 할 돈</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div>
+                                    <div className="text-[11px] text-[var(--color-text-muted)] mb-1">디파짓 충전</div>
+                                    <div className={`text-lg font-bold ${depositShortfall > 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
+                                        {depositShortfall > 0 ? `₩${depositShortfall.toLocaleString()}` : "-"}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-[11px] text-[var(--color-text-muted)] mb-1">누적벌점 벌금 미납</div>
+                                    <div className={`text-lg font-bold ${unpaidMilestoneTotal > 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
+                                        {unpaidMilestoneTotal > 0 ? `₩${unpaidMilestoneTotal.toLocaleString()}` : "-"}
+                                    </div>
+                                </div>
+                                <div className="sm:border-l sm:border-rose-500/20 sm:pl-4">
+                                    <div className="text-[11px] text-[var(--color-text-muted)] mb-1">총 받을 돈</div>
+                                    <div className="text-2xl font-extrabold text-rose-500">
+                                        ₩{totalReceivable.toLocaleString()}
+                                    </div>
+                                </div>
+                            </div>
+                            {unpaidMilestoneTotal > 0 && (
+                                <div className="mt-4 pt-4 border-t border-rose-500/20 flex items-center justify-between gap-3 flex-wrap">
+                                    <div className="text-xs text-[var(--color-text-muted)]">
+                                        누적벌점 벌금 {unpaidEntries.length}건이 미납 상태입니다. 납부를 받으셨으면 확인 처리해주세요.
+                                    </div>
+                                    <Button
+                                        onClick={confirmAllPaid}
+                                        disabled={isTogglingPaidTop}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm shadow-emerald-500/20"
+                                    >
+                                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                                        {isTogglingPaidTop ? "처리 중..." : `누적벌점 벌금 납부 확인 (₩${unpaidMilestoneTotal.toLocaleString()})`}
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
+
                 {/* Top Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Deposit Card */}

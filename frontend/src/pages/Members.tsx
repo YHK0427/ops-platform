@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Filter } from "lucide-react";
-import { useMembers } from "@/hooks";
+import { useMembers, useTreasury } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { MemberAddSheet } from "@/components/MemberAddSheet";
@@ -26,8 +26,18 @@ export default function Members() {
     // Fetch ALL members so we can filter client-side for active/inactive toggle
     // In a real app with pagination, we'd pass showInactive to API
     const { data: members, isLoading } = useMembers(!showInactive);
+    const { data: treasuryData } = useTreasury();
+
+    // member_id → milestone_unpaid
+    const unpaidMap = new Map<number, number>();
+    (treasuryData?.by_member ?? []).forEach((m: any) => {
+        if ((m.milestone_unpaid || 0) > 0) {
+            unpaidMap.set(m.member_id, m.milestone_unpaid);
+        }
+    });
 
     const lowDepositCount = members?.filter(m => m.is_active && (m.current_deposit || 0) < 10000).length || 0;
+    const unpaidMilestoneCount = (treasuryData?.by_member ?? []).filter((m: any) => (m.milestone_unpaid || 0) > 0).length;
 
     const filteredMembers = members?.filter((m) => {
         if (!search) return true;
@@ -41,7 +51,7 @@ export default function Members() {
         <div className="flex flex-col h-full">
             <PageHeader
                 title="멤버"
-                subtitle={`총 ${members?.length || 0}명${lowDepositCount > 0 ? ` · 충전 필요 ${lowDepositCount}명` : ""}`}
+                subtitle={`총 ${members?.length || 0}명${lowDepositCount > 0 ? ` · 충전 필요 ${lowDepositCount}명` : ""}${unpaidMilestoneCount > 0 ? ` · 벌금 미납 ${unpaidMilestoneCount}명` : ""}`}
                 actions={<MemberAddSheet />}
             />
 
@@ -86,6 +96,7 @@ export default function Members() {
                                 <TableHead className="text-[var(--color-text-muted)]">이름 / 이메일</TableHead>
                                 <TableHead className="text-[var(--color-text-muted)]">태그</TableHead>
                                 <TableHead className="text-right text-[var(--color-text-muted)]">디파짓</TableHead>
+                                <TableHead className="text-right text-[var(--color-text-muted)]">벌금 미납</TableHead>
                                 <TableHead className="text-right text-[var(--color-text-muted)]">상점</TableHead>
                                 <TableHead className="text-right text-[var(--color-text-muted)]">벌점</TableHead>
                                 <TableHead className="text-right text-[var(--color-text-muted)]">순점수</TableHead>
@@ -95,13 +106,13 @@ export default function Members() {
                         <TableBody>
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="h-24 text-center text-[var(--color-text-muted)]">
+                                    <TableCell colSpan={9} className="h-24 text-center text-[var(--color-text-muted)]">
                                         로딩 중...
                                     </TableCell>
                                 </TableRow>
                             ) : filteredMembers?.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="h-32 text-center text-[var(--color-text-muted)]">
+                                    <TableCell colSpan={9} className="h-32 text-center text-[var(--color-text-muted)]">
                                         데이터가 없습니다.
                                     </TableCell>
                                 </TableRow>
@@ -140,6 +151,18 @@ export default function Members() {
                                                 )}
                                                 ₩{(member.current_deposit || 0).toLocaleString()}
                                             </div>
+                                        </TableCell>
+                                        <TableCell className="text-right text-sm">
+                                            {unpaidMap.has(member.id) ? (
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-500 border border-rose-500/20">
+                                                        납부필요
+                                                    </span>
+                                                    <span className="text-rose-500 font-medium">₩{(unpaidMap.get(member.id) || 0).toLocaleString()}</span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-[var(--color-text-muted)]">-</span>
+                                            )}
                                         </TableCell>
                                         <TableCell className="text-right text-sm text-green-600">
                                             {member.total_plus_score || 0 ? `+${member.total_plus_score}` : "-"}

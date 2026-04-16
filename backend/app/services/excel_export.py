@@ -418,10 +418,8 @@ def _build_deposit_sheet(ws, data: ExportData, generation: int):
     sessions = data.sessions
     members = data.members
 
-    summary_r8 = ["총점"]
-    summary_r10 = ["벌금", "부과된 디파짓", "충전한 금액", "내실 돈", "받으실 돈"]
-    # row 8에는 "총점" 하나만, 나머지 4개는 row 10에만
-    summary_r8_full = summary_r8 + [""] * (len(summary_r10) - 1)
+    summary_r10 = ["누적벌점 벌금", "└ 미납", "부과된 디파짓", "충전한 금액", "내실 돈", "받으실 돈"]
+    summary_r8_full = [""] * len(summary_r10)
 
     summary_start = _write_common_headers(
         ws, sessions, f"UnivPT {generation}기 디파짓",
@@ -435,11 +433,12 @@ def _build_deposit_sheet(ws, data: ExportData, generation: int):
         member_ledger = data.ledger_by_session.get(m.id, {})
         no_session_entries = data.ledger_no_session.get(m.id, [])
 
-        total_fine_deposit = 0     # FINE 유형 디파짓 차감 합
-        total_milestone = 0        # MILESTONE_FINE 합
-        total_recharge = 0         # DEPOSIT_RECHARGE 합
+        total_fine_deposit = 0        # FINE 유형 디파짓 차감 합 (MILESTONE 제외)
+        total_milestone = 0           # MILESTONE_FINE 총합
+        total_milestone_unpaid = 0    # MILESTONE_FINE 중 is_paid=False 합
+        total_recharge = 0            # DEPOSIT_RECHARGE 합
 
-        # 주차별 디파짓 차감
+        # 주차별 디파짓 차감 (FINE만)
         for si, s in enumerate(sessions):
             col = DATA_START_COL + si
             entries = member_ledger.get(s.id, [])
@@ -451,45 +450,56 @@ def _build_deposit_sheet(ws, data: ExportData, generation: int):
             ws.cell(row=row, column=col).border = THIN_BORDER
             total_fine_deposit += deposit_deduct
 
-        # 전체 세션 마일스톤 벌금
+        # 전체 MILESTONE_FINE (세션 + 세션 외)
+        all_entries = []
         for sid_entries in member_ledger.values():
-            total_milestone += sum(abs(e.amount_krw) for e in sid_entries if e.type == "MILESTONE_FINE" and e.amount_krw < 0)
-        # 세션 외 마일스톤
-        total_milestone += sum(abs(e.amount_krw) for e in no_session_entries if e.type == "MILESTONE_FINE" and e.amount_krw < 0)
+            all_entries.extend(sid_entries)
+        all_entries.extend(no_session_entries)
 
-        # 충전
-        for sid_entries in member_ledger.values():
-            total_recharge += sum(e.amount_krw for e in sid_entries if e.type == "DEPOSIT_RECHARGE" and e.amount_krw > 0)
-        total_recharge += sum(e.amount_krw for e in no_session_entries if e.type == "DEPOSIT_RECHARGE" and e.amount_krw > 0)
-
-        total_deducted = total_fine_deposit + total_milestone  # 총 부과액
+        for e in all_entries:
+            if e.type == "MILESTONE_FINE" and e.amount_krw < 0:
+                total_milestone += abs(e.amount_krw)
+                if not e.is_paid:
+                    total_milestone_unpaid += abs(e.amount_krw)
+            elif e.type == "DEPOSIT_RECHARGE" and e.amount_krw > 0:
+                total_recharge += e.amount_krw
 
         # 요약 컬럼
         sc = summary_start
-        # 벌금 (마일스톤)
+        # 누적벌점 벌금 (총)
         c = ws.cell(row=row, column=sc, value=total_milestone if total_milestone else None)
         c.alignment = CENTER_ALIGN
         c.number_format = "#,##0"
         c.border = THIN_BORDER
-        # 부과된 디파짓
-        c = ws.cell(row=row, column=sc + 1, value=total_deducted if total_deducted else 0)
+        # └ 미납
+        c = ws.cell(row=row, column=sc + 1, value=total_milestone_unpaid if total_milestone_unpaid else None)
+        c.alignment = CENTER_ALIGN
+        c.number_format = "#,##0"
+        c.border = THIN_BORDER
+        if total_milestone_unpaid:
+            c.font = Font(bold=True, color="C00000")
+        # 부과된 디파짓 (FINE만)
+        c = ws.cell(row=row, column=sc + 2, value=total_fine_deposit if total_fine_deposit else 0)
         c.alignment = CENTER_ALIGN
         c.number_format = "#,##0"
         c.border = THIN_BORDER
         # 충전한 금액
-        c = ws.cell(row=row, column=sc + 2, value=total_recharge if total_recharge else 0)
+        c = ws.cell(row=row, column=sc + 3, value=total_recharge if total_recharge else 0)
         c.alignment = CENTER_ALIGN
         c.number_format = "#,##0"
         c.border = THIN_BORDER
-        # 내실 돈
-        to_pay = max(total_deducted - total_recharge, 0)
-        c = ws.cell(row=row, column=sc + 3, value=to_pay)
+        # 내실 돈 = 디파짓 부족분 + 미납 벌금
+        deposit_shortfall = max(total_fine_deposit - total_recharge, 0)
+        to_pay = deposit_shortfall + total_milestone_unpaid
+        c = ws.cell(row=row, column=sc + 4, value=to_pay)
         c.alignment = CENTER_ALIGN
         c.number_format = "#,##0"
         c.border = THIN_BORDER
-        # 받으실 돈
-        to_receive = max(20000 - total_deducted + total_recharge, 0)
-        c = ws.cell(row=row, column=sc + 4, value=to_receive)
+        if to_pay:
+            c.font = Font(bold=True, color="C00000")
+        # 받으실 돈 = 디파짓 잔액 (수료 시 환급액)
+        to_receive = max(20000 - total_fine_deposit + total_recharge, 0)
+        c = ws.cell(row=row, column=sc + 5, value=to_receive)
         c.alignment = CENTER_ALIGN
         c.number_format = "#,##0"
         c.border = THIN_BORDER
