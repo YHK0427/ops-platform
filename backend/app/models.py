@@ -204,6 +204,7 @@ class Attendance(Base):
     excuse_text = Column(Text)
     note = Column(Text)  # 자유 메모 (예: 도착 시간)
     group_num = Column(Integer)  # 분반: 1 or 2, NULL = 분반 없음
+    presenter_order = Column(Integer)  # 분반 내 발표 순서 (NULL = 미지정)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (

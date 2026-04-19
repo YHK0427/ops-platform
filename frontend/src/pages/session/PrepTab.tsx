@@ -103,7 +103,7 @@ export default function PrepTab() {
     const staffGroups = groupData?.staff_groups;
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-6 md:space-y-8">
             {/* Action Panel */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {cfg.has_ppt_email !== false && (

@@ -81,7 +81,7 @@ export default function Treasury() {
         <div className="flex flex-col h-full">
             <PageHeader title="금고" subtitle="동아리 재정 현황" />
 
-            <div className="p-6 space-y-6">
+            <div className="p-3 md:p-6 space-y-4 md:space-y-6">
                 {isLoading ? (
                     <div className="flex justify-center py-12">
                         <Loader2 className="w-6 h-6 animate-spin text-[var(--color-text-muted)]" />
@@ -92,10 +92,10 @@ export default function Treasury() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* 금고 (운영진 자금) */}
                             <Card className="bg-[var(--color-surface)] border-blue-500/30">
-                                <CardContent className="pt-6 pb-5 px-6">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <p className="text-sm font-semibold text-blue-600 uppercase tracking-wider">금고 (운영 자금)</p>
-                                        <p className={`text-3xl font-bold ${netTreasury >= 0 ? "text-blue-600" : "text-rose-500"}`}>{formatKRW(netTreasury)}</p>
+                                <CardContent className="pt-4 md:pt-6 pb-4 md:pb-5 px-4 md:px-6">
+                                    <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
+                                        <p className="text-xs md:text-sm font-semibold text-blue-600 uppercase tracking-wider">금고 (운영 자금)</p>
+                                        <p className={`text-xl md:text-3xl font-bold ${netTreasury >= 0 ? "text-blue-600" : "text-rose-500"}`}>{formatKRW(netTreasury)}</p>
                                     </div>
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">
@@ -128,10 +128,10 @@ export default function Treasury() {
 
                             {/* 기수 자금 (멤버 디파짓) */}
                             <Card className="bg-[var(--color-surface)] border-cyan-500/30">
-                                <CardContent className="pt-6 pb-5 px-6">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <p className="text-sm font-semibold text-cyan-600 uppercase tracking-wider">기수 자금 (멤버 디파짓)</p>
-                                        <p className="text-3xl font-bold text-cyan-600">{formatKRW(data?.deposit_summary?.total_deposits ?? 0)}</p>
+                                <CardContent className="pt-4 md:pt-6 pb-4 md:pb-5 px-4 md:px-6">
+                                    <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
+                                        <p className="text-xs md:text-sm font-semibold text-cyan-600 uppercase tracking-wider">기수 자금</p>
+                                        <p className="text-xl md:text-3xl font-bold text-cyan-600">{formatKRW(data?.deposit_summary?.total_deposits ?? 0)}</p>
                                     </div>
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">
@@ -158,13 +158,31 @@ export default function Treasury() {
                             </Card>
                         </div>
 
-                        {/* Tab Buttons + Action Buttons */}
-                        <div className="flex items-center gap-1 border-b border-[var(--color-border)]">
+                        {/* Action Buttons (모바일 상단) */}
+                        <div className="flex gap-2 md:hidden">
+                            <button
+                                onClick={() => setShowExpenseDialog(true)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-rose-500 border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20"
+                            >
+                                <MinusCircle className="w-3.5 h-3.5" />
+                                지출 기록
+                            </button>
+                            <button
+                                onClick={() => setShowAddDialog(true)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-amber-600 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20"
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                                누적벌점 벌금
+                            </button>
+                        </div>
+
+                        {/* Tab Buttons + Action Buttons (PC) */}
+                        <div className="flex items-center gap-1 border-b border-[var(--color-border)] overflow-x-auto">
                             {tabs.map(t => (
                                 <button
                                     key={t.key}
                                     onClick={() => setTab(t.key)}
-                                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                                    className={`px-3 md:px-4 py-2 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                                         tab === t.key
                                             ? "border-[var(--color-accent)] text-[var(--color-accent)]"
                                             : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
@@ -173,7 +191,7 @@ export default function Treasury() {
                                     {t.label}
                                 </button>
                             ))}
-                            <div className="ml-auto pb-1 flex gap-2">
+                            <div className="ml-auto pb-1 hidden md:flex gap-2">
                                 <button
                                     onClick={() => setShowExpenseDialog(true)}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-rose-500 border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20"
@@ -191,8 +209,8 @@ export default function Treasury() {
                             </div>
                         </div>
 
-                        {/* Tab Content */}
-                        <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
+                        {/* Tab Content — Desktop */}
+                        <div className="hidden md:block rounded-xl border border-[var(--color-border)] overflow-x-auto">
                             {tab === "session" && (
                                 <Table>
                                     <TableHeader>
@@ -407,6 +425,134 @@ export default function Treasury() {
                                         )}
                                     </TableBody>
                                 </Table>
+                            )}
+                        </div>
+
+                        {/* Tab Content — Mobile 카드 */}
+                        <div className="md:hidden space-y-2">
+                            {tab === "session" && (
+                                !data?.by_session?.length ? (
+                                    <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">벌금 내역이 없습니다</div>
+                                ) : data.by_session.map((s: any) => (
+                                    <div key={s.session_id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                            <div>
+                                                <div className="font-medium text-sm text-[var(--color-text-primary)]">{s.title}</div>
+                                                <div className="text-[10px] text-[var(--color-text-muted)]">{s.date}</div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-sm font-bold text-[var(--color-text-primary)]">{formatKRW(s.fine_total + s.milestone_total)}</div>
+                                                <div className="text-[10px] text-[var(--color-text-muted)]">합계</div>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                            <div><span className="text-[var(--color-text-muted)]">벌금 </span><span>{formatKRW(s.fine_total)}</span></div>
+                                            <div><span className="text-[var(--color-text-muted)]">누적벌점 </span><span className={s.milestone_total > 0 ? "text-amber-600" : ""}>{s.milestone_total > 0 ? formatKRW(s.milestone_total) : "-"}</span></div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            {tab === "member" && (
+                                !data?.by_member?.length ? (
+                                    <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">벌금 내역이 없습니다</div>
+                                ) : data.by_member.map((m: any) => (
+                                    <div key={m.member_id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                            <div className="font-medium text-sm text-[var(--color-text-primary)]">{m.name}</div>
+                                            <div className="text-right">
+                                                <div className="text-sm font-bold text-[var(--color-text-primary)]">{formatKRW(m.fine_total + m.milestone_total)}</div>
+                                                <div className="text-[10px] text-[var(--color-text-muted)]">합계</div>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                            <div><span className="text-[var(--color-text-muted)]">벌금 </span><span>{formatKRW(m.fine_total)}</span></div>
+                                            <div><span className="text-[var(--color-text-muted)]">누적벌점 </span><span className={m.milestone_total > 0 ? "text-amber-600" : ""}>{m.milestone_total > 0 ? formatKRW(m.milestone_total) : "-"}</span></div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            {tab === "unpaid" && (
+                                !data?.unpaid_milestones?.length ? (
+                                    <div className="text-center py-8 text-emerald-600 text-sm">미납 내역 없음</div>
+                                ) : data.unpaid_milestones.map((u: any) => (
+                                    <div key={u.id} className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 space-y-2">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <div className="font-medium text-sm text-[var(--color-text-primary)]">{u.member_name}</div>
+                                                {u.session_title && <div className="text-[10px] text-[var(--color-text-muted)]">{u.session_title}</div>}
+                                            </div>
+                                            <div className="text-sm font-bold text-rose-500">{formatKRW(Math.abs(u.amount_krw))}</div>
+                                        </div>
+                                        <div className="text-xs text-[var(--color-text-secondary)]">{u.description}</div>
+                                        <button
+                                            onClick={() => togglePaid({ id: u.id, is_paid: true })}
+                                            disabled={isPending}
+                                            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border text-emerald-600 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                        >
+                                            <Check className="w-3 h-3" /> 납부 확인
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                            {tab === "expense" && (
+                                !data?.expenses?.length ? (
+                                    <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">지출 내역 없음</div>
+                                ) : data.expenses.map((e: any) => (
+                                    <div key={e.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+                                        <div className="flex items-start justify-between gap-2 mb-1">
+                                            <div className="font-medium text-sm text-[var(--color-text-primary)]">{e.description}</div>
+                                            <div className="text-sm font-bold text-rose-500">{formatKRW(e.amount_krw)}</div>
+                                        </div>
+                                        <div className="flex items-center justify-between text-[10px] text-[var(--color-text-muted)]">
+                                            <span>{e.created_at ? new Date(e.created_at).toLocaleDateString("ko-KR") : "-"} · {e.created_by || "-"}</span>
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <button disabled={isDeletingExpense} className="p-1 rounded hover:bg-rose-500/10 hover:text-rose-500">
+                                                        <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent className="bg-[var(--color-elevated)] border-[var(--color-border)] text-[var(--color-text-primary)]">
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle>지출 삭제</AlertDialogTitle>
+                                                        <AlertDialogDescription>"{e.description}" ({formatKRW(e.amount_krw)}) 지출 기록을 삭제하시겠습니까?</AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>취소</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={() => deleteExpense(e.id)} className="bg-rose-600 hover:bg-rose-700">삭제</AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            {tab === "all" && (
+                                !data?.all_entries?.length ? (
+                                    <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">내역이 없습니다</div>
+                                ) : data.all_entries.map((e: any) => (
+                                    <div key={e.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 space-y-1.5">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                                                        e.type === "FINE" ? "bg-blue-500/10 text-blue-600" :
+                                                        e.type === "DEPOSIT_FORFEIT" ? "bg-yellow-500/10 text-yellow-600" :
+                                                        "bg-amber-500/10 text-amber-600"
+                                                    }`}>
+                                                        {e.type === "FINE" ? "벌금" : e.type === "DEPOSIT_FORFEIT" ? "이탈 몰수" : "누적벌점"}
+                                                    </span>
+                                                    <span className="font-medium text-sm text-[var(--color-text-primary)]">{e.member_name}</span>
+                                                </div>
+                                                {e.session_title && <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{e.session_title}</div>}
+                                            </div>
+                                            <div className="text-sm font-bold text-rose-500">{formatKRW(Math.abs(e.amount_krw))}</div>
+                                        </div>
+                                        <div className="text-xs text-[var(--color-text-secondary)]">{e.description}</div>
+                                        <div className="text-[10px] text-[var(--color-text-muted)]">
+                                            {e.created_at ? new Date(e.created_at).toLocaleDateString("ko-KR") : "-"}
+                                        </div>
+                                    </div>
+                                ))
                             )}
                         </div>
                     </>

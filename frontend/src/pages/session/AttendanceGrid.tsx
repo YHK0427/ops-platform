@@ -21,6 +21,7 @@ import { RefreshCw, CheckCircle2, FileText, ChevronDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
+import { PresenterOrderPanel } from "@/components/PresenterOrderPanel";
 
 interface AttendanceGridProps {
     sessionId: number;
@@ -33,6 +34,18 @@ interface AttendanceGridProps {
 export function AttendanceGrid({ sessionId, teams, assignments, sessionType, staffGroups }: AttendanceGridProps) {
     const queryClient = useQueryClient();
     const [updating, setUpdating] = useState<Record<string, boolean>>({});
+    const [viewMode, setViewMode] = useState<"default" | "order">("default");
+
+    const handlePresenterOrderChange = async (memberId: number, order: number | null) => {
+        try {
+            await api.patch(`/sessions/${sessionId}/presenter-order`, [
+                { member_id: memberId, presenter_order: order },
+            ]);
+            await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
+        } catch {
+            toast.error("순서 변경 실패");
+        }
+    };
 
     const handleStatusChange = async (memberId: number, status: string) => {
         setUpdating(prev => ({ ...prev, [memberId]: true }));
@@ -41,7 +54,6 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                 status: status
             });
             await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
-            // toast.success("출결 상태가 변경되었습니다."); // Removed per user request
         } catch (error) {
             console.error(error);
             toast.error("출결 변경 실패");
@@ -126,18 +138,78 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
         }
     };
 
+    // 발표 순서 뷰 데이터 구성
+    const presenterOrderItems = teams.flatMap((team: any) =>
+        team.members
+            .filter((m: any) => m.attendance?.status !== "ABSENT" && m.attendance?.status !== "EXCUSED")
+            .map((m: any) => ({
+                id: m.member_id,
+                name: m.name,
+                group_num: m.attendance?.group_num ?? null,
+                presenter_order: m.attendance?.presenter_order ?? null,
+            }))
+    );
+    const absentOrderItems = teams.flatMap((team: any) =>
+        team.members
+            .filter((m: any) => m.attendance?.status === "ABSENT" || m.attendance?.status === "EXCUSED")
+            .map((m: any) => ({
+                id: m.member_id,
+                name: m.name,
+                status: m.attendance.status as "ABSENT" | "EXCUSED",
+            }))
+    );
+    const hasGroups = teams.some((t: any) => t.name?.includes("분반"));
+
+    const teamOrderItems = sessionType === "TEAM" ? teams.map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        memberNames: t.members.map((m: any) => m.name),
+    })) : undefined;
+
     return (
         <div className="space-y-4">
-            <div className="flex justify-end">
-                <button
-                    onClick={handleBatchPresent}
-                    className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-md text-sm font-bold hover:bg-rose-600 transition-colors flex items-center shadow-md shadow-rose-100"
-                >
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    일괄 출석 처리
-                </button>
+            <div className="flex items-center justify-between">
+                {/* 뷰 토글 */}
+                <div className="flex gap-1 p-0.5 bg-[var(--color-hover)] rounded-lg">
+                    <button
+                        onClick={() => setViewMode("default")}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                            viewMode === "default" ? "bg-white shadow text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]"
+                        }`}
+                    >
+                        출석 관리
+                    </button>
+                    <button
+                        onClick={() => setViewMode("order")}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                            viewMode === "order" ? "bg-white shadow text-[var(--color-accent)]" : "text-[var(--color-text-muted)]"
+                        }`}
+                    >
+                        발표 순서
+                    </button>
+                </div>
+                {viewMode === "default" && (
+                    <button
+                        onClick={handleBatchPresent}
+                        className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-md text-sm font-bold hover:bg-rose-600 transition-colors flex items-center shadow-md shadow-rose-100"
+                    >
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        일괄 출석 처리
+                    </button>
+                )}
             </div>
 
+            {viewMode === "order" ? (
+                <PresenterOrderPanel
+                    sessionId={sessionId}
+                    items={presenterOrderItems}
+                    absentItems={absentOrderItems}
+                    hasGroups={hasGroups}
+                    isTeamSession={sessionType === "TEAM"}
+                    teamItems={teamOrderItems}
+                />
+            ) : (
+            <>
             {teams.map((team) => {
                 const groupColor = team.name === "1분반" ? "border-blue-400" : team.name === "2분반" ? "border-emerald-400" : "border-[var(--color-border)]";
                 const groupDot = team.name === "1분반" ? "bg-blue-500" : team.name === "2분반" ? "bg-emerald-500" : "bg-gray-400";
@@ -357,6 +429,8 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                 </div>
                 );
             })}
+            </>
+            )}
         </div>
     );
 }

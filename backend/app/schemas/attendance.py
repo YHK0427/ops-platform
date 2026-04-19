@@ -28,6 +28,7 @@ class AttendanceResponse(BaseModel):
     excuse_text: Optional[str]
     note: Optional[str] = None
     group_num: Optional[int] = None
+    presenter_order: Optional[int] = None
     updated_at: datetime
 
     model_config = {"from_attributes": True}

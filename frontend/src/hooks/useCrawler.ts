@@ -209,3 +209,52 @@ export function useScanExcuses() {
         },
     });
 }
+
+
+// ── 영상 직접 업로드 ─────────────────────────────────────────────────────────
+
+export interface SessionVideo {
+    member_id: number;
+    member_name: string;
+    filename: string;
+    size_mb: number;
+}
+
+export const videoKeys = {
+    list: (sessionId: number) => ["session-videos", sessionId] as const,
+};
+
+export function useSessionVideos(sessionId: number) {
+    return useQuery<SessionVideo[]>({
+        queryKey: videoKeys.list(sessionId),
+        queryFn: async () => {
+            const { data } = await api.get<SessionVideo[]>(`/sessions/${sessionId}/videos`);
+            return data;
+        },
+        enabled: !!sessionId,
+    });
+}
+
+export function useDeleteSessionVideo() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ sessionId, memberId }: { sessionId: number; memberId: number }) => {
+            await api.delete(`/sessions/${sessionId}/videos/${memberId}`);
+            return { sessionId };
+        },
+        onSuccess: (data) => {
+            qc.invalidateQueries({ queryKey: videoKeys.list(data.sessionId) });
+            toast.success("영상이 삭제되었습니다.");
+        },
+        onError: () => toast.error("영상 삭제 실패"),
+    });
+}
+
+export function useUpdatePresenterOrder() {
+    return useMutation({
+        mutationFn: async ({ sessionId, order }: { sessionId: number; order: { member_id: number; presenter_order: number }[] }) => {
+            const { data } = await api.patch(`/sessions/${sessionId}/presenter-order`, order);
+            return data;
+        },
+    });
+}

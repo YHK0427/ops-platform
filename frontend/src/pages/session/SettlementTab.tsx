@@ -167,56 +167,56 @@ export default function SettlementTab() {
     }
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center justify-between">
+        <div className="space-y-4 md:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                 <div>
-                    <h2 className="text-xl font-bold tracking-tight text-[var(--color-text-primary)]">정산 미리보기</h2>
-                    <p className="text-sm text-[var(--color-text-secondary)]">
+                    <h2 className="text-lg md:text-xl font-bold tracking-tight text-[var(--color-text-primary)]">정산 미리보기</h2>
+                    <p className="text-xs md:text-sm text-[var(--color-text-secondary)]">
                         이번 세션의 페널티 및 정산 예정 내역입니다. 체크박스를 해제하여 면제할 수 있습니다.
                     </p>
                 </div>
                 <Button
                     onClick={handleFinalize}
                     disabled={isFinalizing}
-                    className="bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-100 transition-all hover:scale-105"
+                    className="bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-100 transition-all hover:scale-105 self-start md:self-auto"
                 >
                     {isFinalizing ? "마감 처리 중..." : "세션 마감"}
                 </Button>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-2 md:gap-4">
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-[var(--color-text-muted)]">
+                    <CardHeader className="pb-1 md:pb-2 p-3 md:p-6">
+                        <CardTitle className="text-[11px] md:text-sm font-medium text-[var(--color-text-muted)]">
                             총 벌점
                         </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                        <div className={`text-2xl font-bold ${totalScoreDelta < 0 ? 'text-rose-500' : 'text-[var(--color-text-muted)]'}`}>
+                    <CardContent className="p-3 md:p-6 pt-0">
+                        <div className={`text-lg md:text-2xl font-bold ${totalScoreDelta < 0 ? 'text-rose-500' : 'text-[var(--color-text-muted)]'}`}>
                             {totalScoreDelta > 0 ? `+${totalScoreDelta}` : totalScoreDelta}
                         </div>
                     </CardContent>
                 </Card>
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-[var(--color-text-muted)]">
+                    <CardHeader className="pb-1 md:pb-2 p-3 md:p-6">
+                        <CardTitle className="text-[11px] md:text-sm font-medium text-[var(--color-text-muted)]">
                             총 차감액
                         </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                        <div className={`text-2xl font-bold ${totalDepositDelta < 0 ? 'text-rose-500' : 'text-[var(--color-text-muted)]'}`}>
+                    <CardContent className="p-3 md:p-6 pt-0">
+                        <div className={`text-lg md:text-2xl font-bold ${totalDepositDelta < 0 ? 'text-rose-500' : 'text-[var(--color-text-muted)]'}`}>
                             {formatNumber(totalDepositDelta)}원
                         </div>
                     </CardContent>
                 </Card>
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-[var(--color-text-muted)]">
+                    <CardHeader className="pb-1 md:pb-2 p-3 md:p-6">
+                        <CardTitle className="text-[11px] md:text-sm font-medium text-[var(--color-text-muted)]">
                             총 상점
                         </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                        <div className={`text-2xl font-bold ${totalMeritScore > 0 ? 'text-green-600' : 'text-[var(--color-text-muted)]'}`}>
+                    <CardContent className="p-3 md:p-6 pt-0">
+                        <div className={`text-lg md:text-2xl font-bold ${totalMeritScore > 0 ? 'text-green-600' : 'text-[var(--color-text-muted)]'}`}>
                             +{totalMeritScore}
                         </div>
                     </CardContent>
@@ -224,9 +224,9 @@ export default function SettlementTab() {
             </div>
 
             {/* Penalty filters */}
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-2">
                 <Select value={filterMember} onValueChange={setFilterMember}>
-                    <SelectTrigger className="w-[160px] h-8 text-xs bg-[var(--color-surface)] border-[var(--color-border)]">
+                    <SelectTrigger className="w-[140px] md:w-[160px] h-8 text-xs bg-[var(--color-surface)] border-[var(--color-border)]">
                         <SelectValue placeholder="멤버 필터" />
                     </SelectTrigger>
                     <SelectContent>
@@ -237,7 +237,7 @@ export default function SettlementTab() {
                     </SelectContent>
                 </Select>
                 <Select value={filterType} onValueChange={setFilterType}>
-                    <SelectTrigger className="w-[160px] h-8 text-xs bg-[var(--color-surface)] border-[var(--color-border)]">
+                    <SelectTrigger className="w-[140px] md:w-[160px] h-8 text-xs bg-[var(--color-surface)] border-[var(--color-border)]">
                         <SelectValue placeholder="유형 필터" />
                     </SelectTrigger>
                     <SelectContent>
@@ -253,7 +253,7 @@ export default function SettlementTab() {
             </div>
 
             {/* Penalty table */}
-            <div className="rounded-xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-surface)]">
+            <div className="rounded-xl border border-[var(--color-border)] overflow-x-auto bg-[var(--color-surface)]">
                 <Table>
                     <TableHeader>
                         <TableRow className="bg-gray-50 hover:bg-gray-50">
@@ -381,7 +381,7 @@ function StagedMeritPanel({
 
     return (
         <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+            <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-[var(--color-border)]">
                 <div className="flex items-center gap-2">
                     <Trophy className="w-4 h-4 text-yellow-500" />
                     <h3 className="font-semibold text-sm">상점</h3>
@@ -408,9 +408,9 @@ function StagedMeritPanel({
 
             {/* Merit filter */}
             {merits.length > 0 && (
-                <div className="px-6 py-3 border-b border-[var(--color-border)] flex items-center gap-3">
+                <div className="px-4 md:px-6 py-3 border-b border-[var(--color-border)] flex flex-wrap items-center gap-2 md:gap-3">
                     <Select value={meritFilterMember} onValueChange={onMeritFilterChange}>
-                        <SelectTrigger className="w-[160px] h-8 text-xs bg-[var(--color-surface)] border-[var(--color-border)]">
+                        <SelectTrigger className="w-[140px] md:w-[160px] h-8 text-xs bg-[var(--color-surface)] border-[var(--color-border)]">
                             <SelectValue placeholder="멤버 필터" />
                         </SelectTrigger>
                         <SelectContent>
@@ -426,6 +426,7 @@ function StagedMeritPanel({
                 </div>
             )}
 
+            <div className="overflow-x-auto">
             <Table>
                 <TableHeader>
                     <TableRow className="bg-gray-50 hover:bg-gray-50">
@@ -491,6 +492,7 @@ function StagedMeritPanel({
                     )}
                 </TableBody>
             </Table>
+            </div>
         </div>
     );
 }
@@ -528,17 +530,17 @@ function FinalizedView({ session, navigate }: { session: Session; navigate: (pat
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-            <div className="flex flex-col items-center justify-center p-8 text-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+        <div className="space-y-4 md:space-y-6 animate-in fade-in zoom-in-95 duration-500">
+            <div className="flex flex-col items-center justify-center p-6 md:p-8 text-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
                 <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mb-3">
                     <CheckCircle2 className="w-6 h-6 text-green-500" />
                 </div>
-                <h2 className="text-lg font-bold mb-1 text-[var(--color-text-primary)]">세션 마감 완료</h2>
-                <p className="text-sm text-[var(--color-text-muted)] mb-4">
+                <h2 className="text-base md:text-lg font-bold mb-1 text-[var(--color-text-primary)]">세션 마감 완료</h2>
+                <p className="text-xs md:text-sm text-[var(--color-text-muted)] mb-4">
                     {new Date(session.finalized_at || "").toLocaleString()} 마감 · 아래에서 개별 항목을 수정/삭제할 수 있습니다.
                 </p>
-                <div className="flex gap-3">
-                    <Button variant="outline" onClick={() => navigate("/ledger")}>
+                <div className="flex gap-2 md:gap-3 flex-wrap justify-center">
+                    <Button variant="outline" size="sm" onClick={() => navigate("/ledger")}>
                         <ExternalLink className="w-4 h-4 mr-2" />
                         장부에서 확인
                     </Button>
@@ -551,7 +553,7 @@ function FinalizedView({ session, navigate }: { session: Session; navigate: (pat
             ) : entries.length === 0 ? (
                 <p className="text-center text-[var(--color-text-muted)] py-8">이 세션에 장부 항목이 없습니다.</p>
             ) : (
-                <div className="rounded-xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-surface)]">
+                <div className="rounded-xl border border-[var(--color-border)] overflow-x-auto bg-[var(--color-surface)]">
                     <Table>
                         <TableHeader>
                             <TableRow className="bg-gray-50 hover:bg-gray-50">

@@ -100,8 +100,8 @@ export function PostTab() {
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex justify-between items-center">
+        <div className="space-y-4 md:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
                 <div>
                     <h2 className="text-xl font-bold tracking-tight text-[var(--color-text-primary)]">과제 검사</h2>
                     <p className="text-sm text-[var(--color-text-muted)]">PPT, 리뷰, 피드백 제출 현황을 스캔하고 관리합니다.</p>
@@ -109,7 +109,8 @@ export function PostTab() {
                 <Button
                     onClick={handleScanHomework}
                     disabled={isPolling}
-                    className="bg-[var(--color-primary)] hover:bg-rose-600 text-white shadow-md shadow-rose-100"
+                    size="sm"
+                    className="bg-[var(--color-primary)] hover:bg-rose-600 text-white shadow-md shadow-rose-100 self-start md:self-auto"
                 >
                     {isPolling ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                     {isPolling ? "스캔 중..." : "과제 스캔"}
@@ -134,12 +135,13 @@ export function PostTab() {
             )}
 
             <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
-                <CardHeader>
+                <CardHeader className="p-4 md:p-6">
                     <CardTitle className="text-lg">과제 현황</CardTitle>
                     <CardDescription>드롭다운으로 상태를 직접 변경할 수 있습니다.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                    <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
+                <CardContent className="p-3 md:p-6 md:pt-0">
+                    {/* Desktop 테이블 */}
+                    <div className="hidden md:block rounded-md border border-[var(--color-border)] overflow-hidden">
                         <Table>
                             <TableHeader>
                                 <TableRow className="bg-gray-50 hover:bg-gray-50">
@@ -262,6 +264,120 @@ export function PostTab() {
                                 ))}
                             </TableBody>
                         </Table>
+                    </div>
+
+                    {/* Mobile 카드 */}
+                    <div className="md:hidden space-y-2">
+                        {rows.map((m) => (
+                            <div key={m.id} className="rounded-lg border border-[var(--color-border)] bg-white overflow-hidden">
+                                <div className="px-3 py-2 bg-gray-50 border-b border-[var(--color-border)] flex items-center gap-2">
+                                    <span className="font-medium text-sm text-[var(--color-text-primary)]">{m.name}</span>
+                                    {session.type === "TEAM" && (
+                                        <span className="text-[10px] text-gray-600">({m.teamName})</span>
+                                    )}
+                                </div>
+                                <div className="divide-y divide-[var(--color-border)]">
+                                    {activeTypes.map((type) => {
+                                        const assignment = getAssignment(m.id, type);
+                                        const status = assignment?.status || "—";
+                                        const feedbackDetail = type === "FEEDBACK" ? assignment?.raw_data?.feedback_detail : undefined;
+                                        const articleId = (type === "PPT" || type === "REVIEW") ? assignment?.raw_data?.article_id : undefined;
+                                        const menuId = (type === "PPT" || type === "REVIEW") ? assignment?.raw_data?.menu_id : undefined;
+
+                                        return (
+                                            <div key={type} className="px-3 py-2 space-y-1.5">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-[var(--color-text-muted)] w-16 flex-shrink-0">
+                                                        {TYPE_LABEL[type] ?? type}
+                                                    </span>
+                                                    {assignment ? (
+                                                        <>
+                                                            <Select
+                                                                value={status}
+                                                                onValueChange={(val) => handleStatusChange(assignment.id, val)}
+                                                            >
+                                                                <SelectTrigger
+                                                                    className="h-7 flex-1 text-xs border-[var(--color-border)] bg-transparent font-medium"
+                                                                    style={{ color: STATUS_COLOR[status] ?? "#94A3B8" }}
+                                                                >
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent className="bg-white border-[var(--color-border)]">
+                                                                    {STATUS_OPTIONS.map((opt) => (
+                                                                        <SelectItem key={opt} value={opt} className="text-xs" style={{ color: STATUS_COLOR[opt] }}>
+                                                                            {STATUS_LABEL[opt] ?? opt}
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                            {articleId && menuId && (
+                                                                <a
+                                                                    href={`https://cafe.naver.com/f-e/cafes/${CAFE_ID}/articles/${articleId}?menuid=${menuId}&referrerAllArticles=false`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="p-1 rounded hover:bg-gray-100 text-[var(--color-text-muted)] hover:text-green-500"
+                                                                    title="카페 게시글 확인"
+                                                                >
+                                                                    <ExternalLink className="w-3.5 h-3.5" />
+                                                                </a>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-gray-600 text-xs">—</span>
+                                                    )}
+                                                </div>
+                                                {feedbackDetail && feedbackDetail.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 pl-16">
+                                                        {feedbackDetail.map((d) => {
+                                                            const hasComments = d.comments && d.comments.length > 0;
+                                                            const label = d.is_self ? "본인" : d.name;
+                                                            const chip = (
+                                                                <span
+                                                                    className={`inline-flex items-center gap-0.5 text-[10px] leading-none px-1 py-0.5 rounded ${
+                                                                        hasComments ? "cursor-pointer hover:opacity-80" : ""
+                                                                    } ${
+                                                                        d.commented
+                                                                            ? "bg-green-500/10 text-green-600"
+                                                                            : "bg-red-500/10 text-red-500"
+                                                                    }`}
+                                                                >
+                                                                    {d.commented ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />}
+                                                                    {label}
+                                                                    {hasComments && <MessageSquare className="w-2.5 h-2.5 ml-0.5 opacity-60" />}
+                                                                </span>
+                                                            );
+                                                            if (!hasComments) return <span key={d.member_id}>{chip}</span>;
+                                                            return (
+                                                                <Popover key={d.member_id}>
+                                                                    <PopoverTrigger asChild>
+                                                                        {chip}
+                                                                    </PopoverTrigger>
+                                                                    <PopoverContent
+                                                                        className="w-72 max-h-60 overflow-y-auto bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm"
+                                                                        align="start"
+                                                                    >
+                                                                        <div className="space-y-2">
+                                                                            <p className="font-medium text-[var(--color-text-secondary)] text-xs border-b border-[var(--color-border)] pb-1">
+                                                                                {m.name} → {d.is_self ? "본인" : d.name} 영상 댓글
+                                                                            </p>
+                                                                            {d.comments!.map((text, i) => (
+                                                                                <p key={i} className="text-[var(--color-text-muted)] text-xs whitespace-pre-wrap break-words leading-relaxed">
+                                                                                    {text}
+                                                                                </p>
+                                                                            ))}
+                                                                        </div>
+                                                                    </PopoverContent>
+                                                                </Popover>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </CardContent>
             </Card>

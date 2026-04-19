@@ -94,7 +94,7 @@ export default function SessionLayout() {
                 showBackButton
                 backTo="/sessions"
                 actions={
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
                         {typedSession.status !== "FINALIZED" && (
                             <Button
                                 size="sm"
@@ -112,7 +112,7 @@ export default function SessionLayout() {
                             </Button>
                         )}
                         {renderStatusAction()}
-                        <div className="h-6 w-px bg-gray-200 mx-2" />
+                        <div className="hidden md:block h-6 w-px bg-gray-200 mx-2" />
                         {typedSession.status === "FINALIZED" && (
                             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200 text-xs font-medium text-[var(--color-text-muted)]">
                                 <Lock className="w-3.5 h-3.5" />
@@ -125,8 +125,8 @@ export default function SessionLayout() {
             />
 
             <div className="border-b border-[var(--color-border)] bg-[var(--color-surface)] sticky top-[60px] z-10 backdrop-blur-md">
-                <div className="container mx-auto px-4">
-                    <div className="flex space-x-1">
+                <div className="container mx-auto px-2 md:px-4">
+                    <div className="flex space-x-1 overflow-x-auto">
                         {tabs.map((tab) => {
                             const unlockedTabs: Record<string, string[]> = {
                                 SETUP:      ["prep"],
@@ -141,7 +141,7 @@ export default function SessionLayout() {
                             return locked ? (
                                 <span
                                     key={tab.id}
-                                    className="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed select-none"
+                                    className="px-3 md:px-4 py-3 text-xs md:text-sm font-medium border-b-2 border-transparent text-gray-600 cursor-not-allowed select-none whitespace-nowrap"
                                 >
                                     {tab.label}
                                 </span>
@@ -151,7 +151,7 @@ export default function SessionLayout() {
                                     to={tab.id}
                                     className={({ isActive }) =>
                                         cn(
-                                            "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                                            "px-3 md:px-4 py-3 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
                                             isActive
                                                 ? "border-[var(--color-accent)] text-[var(--color-accent)]"
                                                 : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-border-highlight)]"
@@ -166,7 +166,7 @@ export default function SessionLayout() {
                 </div>
             </div>
 
-            <div className="flex-1 container mx-auto px-4 py-6">
+            <div className="flex-1 container mx-auto px-3 md:px-4 py-4 md:py-6">
                 <DeadlineBar session={typedSession} />
                 <Outlet context={{ session: typedSession }} />
             </div>
@@ -212,40 +212,40 @@ function DeadlineBar({ session }: { session: Session }) {
     };
 
     return (
-        <div className="mb-4 px-4 py-2.5 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center gap-4 text-sm">
+        <div className="mb-4 px-3 md:px-4 py-2.5 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
             <Clock className="w-4 h-4 text-[var(--color-text-muted)] shrink-0" />
             {editing ? (
                 <>
                     {hasPptEmail && (
                         <>
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">PPT 이메일:</span>
+                            <div className="flex items-center gap-1.5 w-full md:w-auto">
+                                <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap w-20 md:w-auto">PPT 이메일</span>
                                 <Input
                                     type="datetime-local"
                                     value={pptEmail}
                                     onChange={(e) => setPptEmail(e.target.value)}
-                                    className="h-7 text-xs w-44"
+                                    className="h-7 text-xs flex-1 md:w-44 md:flex-none"
                                 />
                             </div>
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">지각:</span>
+                            <div className="flex items-center gap-1.5 w-full md:w-auto">
+                                <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap w-20 md:w-auto">지각</span>
                                 <Input
                                     type="datetime-local"
                                     value={pptEmailLate}
                                     onChange={(e) => setPptEmailLate(e.target.value)}
-                                    className="h-7 text-xs w-44"
+                                    className="h-7 text-xs flex-1 md:w-44 md:flex-none"
                                 />
                             </div>
                         </>
                     )}
                     {hasPostTasks && (
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap">후속 과제:</span>
+                        <div className="flex items-center gap-1.5 w-full md:w-auto">
+                            <span className="text-[var(--color-text-secondary)] text-xs whitespace-nowrap w-20 md:w-auto">후속 과제</span>
                             <Input
                                 type="datetime-local"
                                 value={post}
                                 onChange={(e) => setPost(e.target.value)}
-                                className="h-7 text-xs w-44"
+                                className="h-7 text-xs flex-1 md:w-44 md:flex-none"
                             />
                         </div>
                     )}
@@ -261,17 +261,17 @@ function DeadlineBar({ session }: { session: Session }) {
             ) : (
                 <>
                     {hasPptEmail && cfg.deadline_ppt_email && (
-                        <span className="text-[var(--color-text-secondary)]">
+                        <span className="text-[var(--color-text-secondary)] text-xs md:text-sm">
                             PPT 이메일: <span className="text-[var(--color-text-primary)]">{fmt(cfg.deadline_ppt_email)}</span>
                         </span>
                     )}
                     {hasPptEmail && cfg.deadline_ppt_email_late && (
-                        <span className="text-[var(--color-text-secondary)]">
+                        <span className="text-[var(--color-text-secondary)] text-xs md:text-sm">
                             지각: <span className="text-[var(--color-text-primary)]">{fmt(cfg.deadline_ppt_email_late)}</span>
                         </span>
                     )}
                     {hasPostTasks && cfg.deadline_post && (
-                        <span className="text-[var(--color-text-secondary)]">
+                        <span className="text-[var(--color-text-secondary)] text-xs md:text-sm">
                             후속 과제: <span className="text-[var(--color-text-primary)]">{fmt(cfg.deadline_post)}</span>
                         </span>
                     )}

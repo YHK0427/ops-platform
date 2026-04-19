@@ -1,0 +1,475 @@
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle, UserMinus } from "lucide-react";
+import { useSessionVideos, useDeleteSessionVideo, useUploadVideos } from "@/hooks";
+import type { SessionVideo } from "@/hooks";
+import api, { getToken } from "@/lib/api";
+import { toast } from "sonner";
+
+interface PresenterSlot {
+    member_id: number;
+    member_name: string;
+    sub_label?: string | null;
+    group_num: number | null;
+    presenter_order: number | null;
+}
+
+interface AbsentMember {
+    member_id: number;
+    member_name: string;
+    status: "ABSENT" | "EXCUSED";
+}
+
+interface NaverResultItem {
+    success: boolean;
+    file?: string;
+    presenter?: string;
+    error?: string | null;
+}
+
+interface VideoUploadPanelProps {
+    sessionId: number;
+    sessionTitle: string;
+    weekNum: number;
+    presenters: PresenterSlot[];
+    absentMembers?: AbsentMember[];
+    hasGroups: boolean;
+    onNaverUploadStarted?: (taskId: string) => void;
+    naverProgress?: { file: string; presenter: string; status: string; error?: string | null }[] | null;
+    naverStatus?: "queued" | "in_progress" | "complete" | "failed" | "unknown" | null;
+    naverResult?: NaverResultItem[] | null;
+}
+
+interface UploadState {
+    progress: number;
+    uploading: boolean;
+    error?: string;
+}
+
+export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult }: VideoUploadPanelProps) {
+    const { data: uploadedVideos, refetch } = useSessionVideos(sessionId);
+    const { mutate: deleteVideo, isPending: isDeleting } = useDeleteSessionVideo();
+    const { mutate: startNaverUpload, isPending: isStartingNaver } = useUploadVideos();
+    const [uploads, setUploads] = useState<Record<number, UploadState>>({});
+    const xhrRefs = useRef<Record<number, XMLHttpRequest>>({});
+
+    // 네이버 업로드 대상 체크
+    const [selectedForNaver, setSelectedForNaver] = useState<Set<number>>(new Set());
+
+    // 카페 제목 접두어
+    const defaultPrefix = `연합UP 33기 ${weekNum}주차 발표-[${sessionTitle}]-`;
+    const [titlePrefix, setTitlePrefix] = useState(defaultPrefix);
+
+    // member_id → uploaded video
+    const videoMap = new Map<number, SessionVideo>();
+    (uploadedVideos ?? []).forEach(v => videoMap.set(v.member_id, v));
+
+    // 영상 업로드된 발표자 auto-select
+    useEffect(() => {
+        const uploaded = new Set<number>();
+        presenters.forEach(p => { if (videoMap.has(p.member_id)) uploaded.add(p.member_id); });
+        setSelectedForNaver(uploaded);
+    }, [uploadedVideos]);
+
+    // 개별 카페 제목 오버라이드
+    const [titleOverrides, setTitleOverrides] = useState<Record<number, string>>({});
+
+    const getTitle = (p: PresenterSlot) => titleOverrides[p.member_id] ?? buildTitle(p);
+
+    const toggleNaver = (memberId: number) => {
+        setSelectedForNaver(prev => {
+            const next = new Set(prev);
+            next.has(memberId) ? next.delete(memberId) : next.add(memberId);
+            return next;
+        });
+    };
+
+    const handleFileSelect = useCallback(async (memberId: number, file: File) => {
+        setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: true } }));
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/v1/sessions/${sessionId}/videos/${memberId}`);
+
+        const token = getToken();
+        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const pct = Math.round((e.loaded / e.total) * 100);
+                setUploads(prev => ({ ...prev, [memberId]: { progress: pct, uploading: true } }));
+            }
+        };
+
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                setUploads(prev => ({ ...prev, [memberId]: { progress: 100, uploading: false } }));
+                toast.success(`영상 업로드 완료`);
+                refetch();
+            } else {
+                setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: `실패 (${xhr.status})` } }));
+                toast.error("업로드 실패");
+            }
+        };
+
+        xhr.onerror = () => {
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: "네트워크 오류" } }));
+            toast.error("네트워크 오류");
+        };
+
+        xhr.onabort = () => {
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false } }));
+            toast.info("업로드가 중지되었습니다.");
+        };
+
+        xhrRefs.current[memberId] = xhr;
+        xhr.send(formData);
+    }, [sessionId, refetch]);
+
+    const cancelUpload = useCallback((memberId: number) => {
+        const xhr = xhrRefs.current[memberId];
+        if (xhr) {
+            xhr.abort();
+            delete xhrRefs.current[memberId];
+        }
+    }, []);
+
+    // 분반별 그룹화 (분반 번호 오름차순 고정)
+    const groups: Record<string, PresenterSlot[]> = {};
+    if (hasGroups) {
+        const sortedPresenters = [...presenters].sort((a, b) =>
+            (a.group_num ?? 999) - (b.group_num ?? 999)
+        );
+        for (const p of sortedPresenters) {
+            const key = p.group_num ? `${p.group_num}분반` : "미배정";
+            (groups[key] ??= []).push(p);
+        }
+    } else {
+        groups["전체"] = presenters;
+    }
+
+    // 카페 제목 생성
+    const buildTitle = (p: PresenterSlot) => {
+        const orderPart = hasGroups && p.group_num
+            ? `${p.group_num}분반 ${p.presenter_order ?? ""}번째`
+            : p.presenter_order ? `${p.presenter_order}번째` : "";
+        return `${titlePrefix}${p.member_name}${orderPart ? `(${orderPart})` : ""}`;
+    };
+
+    // 네이버 업로드 시작
+    const handleNaverUpload = () => {
+        const selected = presenters.filter(p => selectedForNaver.has(p.member_id) && videoMap.has(p.member_id));
+        if (selected.length === 0) {
+            toast.error("네이버에 업로드할 영상을 선택해주세요.");
+            return;
+        }
+
+        const videos = selected.map(p => {
+            const video = videoMap.get(p.member_id)!;
+            return {
+                id: `local_${p.member_id}`,
+                name: video.filename,
+                presenter: p.member_name,
+                order: p.presenter_order ?? 9999,
+                group: p.group_num ?? undefined,
+                cafe_title: getTitle(p),
+                local_path: `/app/files/video/session_${sessionId}/${p.member_id}_${video.filename}`,
+            };
+        });
+
+        startNaverUpload({ sessionId, videos: videos as any }, {
+            onSuccess: (data) => {
+                toast.success("네이버 카페 업로드가 시작되었습니다.");
+                onNaverUploadStarted?.(data.task_id);
+            },
+            onError: (err: any) => {
+                if (err?.response?.status === 409) {
+                    toast.error(err.response.data?.detail ?? "이미 업로드가 진행 중입니다.");
+                } else {
+                    toast.error("요청 실패");
+                }
+            },
+        });
+    };
+
+    const totalPresenters = presenters.length;
+    const uploadedCount = presenters.filter(p => videoMap.has(p.member_id)).length;
+    const selectedCount = selectedForNaver.size;
+    const uploadingCount = Object.values(uploads).filter(u => u.uploading).length;
+
+    return (
+        <div className="space-y-4">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                    <Film className="w-4 h-4 text-[var(--color-accent)]" />
+                    <span className="text-sm font-medium">영상 직접 업로드</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">
+                        {uploadedCount}/{totalPresenters}개 완료
+                        {uploadingCount > 0 && ` · ${uploadingCount}개 업로드 중`}
+                    </span>
+                </div>
+                <Button
+                    onClick={handleNaverUpload}
+                    disabled={selectedCount === 0 || isStartingNaver}
+                    className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
+                    size="sm"
+                >
+                    <UploadCloud className="w-4 h-4 mr-1" />
+                    {isStartingNaver ? "시작 중..." : `네이버 업로드 (${selectedCount}개)`}
+                </Button>
+            </div>
+
+            {/* 안내 */}
+            <p className="text-xs text-[var(--color-text-muted)]">
+                체크된 영상만 네이버 카페에 업로드됩니다. 1분반 → 2분반 순서로 발표 순서대로 진행됩니다.
+            </p>
+
+            {/* 네이버 업로드 결과 배너 */}
+            {(naverStatus === "complete" || naverStatus === "failed") && Array.isArray(naverResult) && naverResult.length > 0 && (() => {
+                const successCount = naverResult.filter(r => r.success).length;
+                const failures = naverResult.filter(r => !r.success);
+                const allOk = failures.length === 0;
+                return (
+                    <div className={`rounded-lg border p-3 ${
+                        allOk
+                            ? "bg-green-500/5 border-green-500/30"
+                            : "bg-red-500/5 border-red-500/30"
+                    }`}>
+                        <div className="flex items-center gap-2 mb-1">
+                            {allOk
+                                ? <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                : <XCircle className="w-4 h-4 text-red-500" />}
+                            <span className={`text-sm font-bold ${allOk ? "text-green-700" : "text-red-600"}`}>
+                                {allOk ? "네이버 업로드 완료" : "네이버 업로드 일부 실패"}
+                            </span>
+                            <span className="ml-auto text-xs tabular-nums text-[var(--color-text-muted)]">
+                                {successCount}/{naverResult.length} 성공
+                            </span>
+                        </div>
+                        {failures.length > 0 && (
+                            <ul className="mt-2 space-y-1 text-xs">
+                                {failures.map((f, i) => (
+                                    <li key={i} className="flex items-start gap-1.5 text-red-600">
+                                        <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                        <span className="font-medium">{f.presenter ?? f.file ?? "알 수 없음"}</span>
+                                        <span className="text-red-500/80">— {f.error ?? "원인 미상"}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                );
+            })()}
+
+            {/* 카페 제목 접두어 */}
+            <div className="flex items-center gap-2 text-xs">
+                <span className="text-[var(--color-text-muted)] whitespace-nowrap">카페 제목 접두어</span>
+                <Input
+                    value={titlePrefix}
+                    onChange={(e) => setTitlePrefix(e.target.value)}
+                    className="h-7 text-xs flex-1"
+                />
+            </div>
+
+            {/* 분반별 슬롯 */}
+            <div className={hasGroups ? "grid grid-cols-1 md:grid-cols-2 gap-4" : ""}>
+                {Object.entries(groups).map(([groupName, members]) => {
+                    const groupMemberIds = members.filter(p => videoMap.has(p.member_id)).map(p => p.member_id);
+                    const allChecked = groupMemberIds.length > 0 && groupMemberIds.every(id => selectedForNaver.has(id));
+                    const toggleAll = () => {
+                        setSelectedForNaver(prev => {
+                            const next = new Set(prev);
+                            if (allChecked) {
+                                groupMemberIds.forEach(id => next.delete(id));
+                            } else {
+                                groupMemberIds.forEach(id => next.add(id));
+                            }
+                            return next;
+                        });
+                    };
+
+                    return (
+                    <div key={groupName} className="rounded-lg border border-[var(--color-border)] overflow-hidden">
+                        <div className="px-4 py-2 bg-gray-50 border-b border-[var(--color-border)] flex items-center gap-3">
+                            {groupMemberIds.length > 0 && (
+                                <Checkbox
+                                    checked={allChecked}
+                                    onCheckedChange={toggleAll}
+                                />
+                            )}
+                            <span className="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                                {groupName}
+                            </span>
+                        </div>
+                        <div className="divide-y divide-[var(--color-border)]">
+                            {members
+                                .sort((a, b) => (a.presenter_order ?? 999) - (b.presenter_order ?? 999))
+                                .map((p, idx) => {
+                                    const video = videoMap.get(p.member_id);
+                                    const uploadState = uploads[p.member_id];
+                                    const isUploading = uploadState?.uploading;
+                                    const isChecked = selectedForNaver.has(p.member_id);
+                                    const naverStatus = naverProgress?.find(np => np.presenter === p.member_name)?.status;
+
+                                    return (
+                                        <div key={p.member_id} className="px-3 md:px-4 py-2.5 md:py-3 space-y-1.5">
+                                            <div className="flex flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5">
+                                                {/* 체크박스 */}
+                                                <Checkbox
+                                                    checked={isChecked}
+                                                    onCheckedChange={() => toggleNaver(p.member_id)}
+                                                    disabled={!video}
+                                                    className="flex-shrink-0"
+                                                />
+
+                                                {/* 순서 + 이름 */}
+                                                <span className="text-xs text-[var(--color-text-muted)] w-5 text-right tabular-nums">
+                                                    {p.presenter_order ?? idx + 1}.
+                                                </span>
+                                                <div className="flex flex-col min-w-0 flex-1 md:flex-initial">
+                                                    <span className="text-sm font-medium leading-tight truncate">
+                                                        {p.member_name}
+                                                    </span>
+                                                    {p.sub_label && (
+                                                        <span className="text-[10px] text-[var(--color-text-muted)] leading-tight truncate">
+                                                            {p.sub_label}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* 카페 업로드 상태 배지 */}
+                                                {naverStatus && (
+                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border flex-shrink-0 ${
+                                                        naverStatus === "done" ? "bg-green-500/10 text-green-600 border-green-500/20" :
+                                                        naverStatus === "uploading" ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/20 animate-pulse" :
+                                                        naverStatus === "downloading" ? "bg-blue-500/10 text-blue-600 border-blue-500/20 animate-pulse" :
+                                                        naverStatus === "failed" ? "bg-red-500/10 text-red-500 border-red-500/20" :
+                                                        naverStatus === "cancelled" ? "bg-orange-500/10 text-orange-500 border-orange-500/20" :
+                                                        "bg-gray-100 text-gray-500 border-gray-200"
+                                                    }`}>
+                                                        {naverStatus === "done" ? "완료" :
+                                                         naverStatus === "uploading" ? "업로드중" :
+                                                         naverStatus === "downloading" ? "다운중" :
+                                                         naverStatus === "failed" ? "실패" :
+                                                         naverStatus === "cancelled" ? "취소" :
+                                                         "대기"}
+                                                    </span>
+                                                )}
+
+                                                {/* 상태 — 모바일은 전체 폭 아래 줄, 데스크톱은 인라인 */}
+                                                {video && !isUploading ? (
+                                                    <div className="flex items-center gap-2 w-full md:w-auto md:flex-1 min-w-0 order-last md:order-none">
+                                                        <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                                        <span className="text-xs text-green-600 truncate flex-1">
+                                                            {video.filename} ({video.size_mb} MB)
+                                                        </span>
+                                                        <div className="flex gap-1 flex-shrink-0">
+                                                            <FileInputButton memberId={p.member_id} onSelect={handleFileSelect} label="교체" small />
+                                                            <Button
+                                                                variant="ghost" size="sm"
+                                                                className="h-6 w-6 p-0 text-rose-500 hover:bg-rose-50"
+                                                                onClick={() => deleteVideo({ sessionId, memberId: p.member_id })}
+                                                                disabled={isDeleting}
+                                                            >
+                                                                <Trash2 className="w-3 h-3" />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                ) : isUploading ? (
+                                                    <div className="w-full md:w-auto md:flex-1 min-w-0 order-last md:order-none">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                                                <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${uploadState.progress}%` }} />
+                                                            </div>
+                                                            <span className="text-xs text-blue-600 tabular-nums w-10 text-right">{uploadState.progress}%</span>
+                                                            <Button
+                                                                variant="ghost" size="sm"
+                                                                className="h-6 px-2 text-[10px] text-rose-500 hover:bg-rose-50"
+                                                                onClick={() => cancelUpload(p.member_id)}
+                                                            >
+                                                                중지
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-full md:w-auto md:flex-1 flex items-center gap-2 order-last md:order-none">
+                                                        {uploadState?.error && <span className="text-xs text-rose-500">{uploadState.error}</span>}
+                                                        <div className="ml-auto">
+                                                            <FileInputButton memberId={p.member_id} onSelect={handleFileSelect} label="영상 선택" />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {/* 카페 제목 인라인 편집 */}
+                                            {video && (
+                                                <div className="ml-0 md:ml-14">
+                                                    <input
+                                                        type="text"
+                                                        className="w-full h-6 text-[11px] px-2 border border-[var(--color-border)] rounded bg-white text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+                                                        value={getTitle(p)}
+                                                        onChange={(e) => setTitleOverrides(prev => ({ ...prev, [p.member_id]: e.target.value }))}
+                                                        placeholder="카페 게시글 제목"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    </div>
+                    );
+                })}
+            </div>
+
+            {/* 결석/공결 제외 안내 */}
+            {absentMembers && absentMembers.length > 0 && (
+                <div className="rounded-lg border border-[var(--color-border)] bg-gray-50/50 px-4 py-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                        <UserMinus className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                        <span className="text-xs font-medium text-[var(--color-text-muted)]">
+                            업로드 대상에서 제외 ({absentMembers.length}명)
+                        </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {absentMembers.map(m => (
+                            <span
+                                key={m.member_id}
+                                className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border ${
+                                    m.status === "ABSENT"
+                                        ? "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                                        : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                                }`}
+                            >
+                                {m.member_name}
+                                <span className="text-[9px] opacity-80">
+                                    {m.status === "ABSENT" ? "결석" : "공결"}
+                                </span>
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function FileInputButton({ memberId, onSelect, label = "영상 선택", small = false }: {
+    memberId: number; onSelect: (id: number, file: File) => void; label?: string; small?: boolean;
+}) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    return (
+        <>
+            <input ref={inputRef} type="file" accept="video/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) { onSelect(memberId, f); e.target.value = ""; } }} />
+            <Button variant="outline" size="sm" className={small ? "h-6 px-2 text-[10px]" : "h-7 px-3 text-xs"}
+                onClick={() => inputRef.current?.click()}>
+                <Upload className={small ? "w-2.5 h-2.5 mr-1" : "w-3 h-3 mr-1"} />{label}
+            </Button>
+        </>
+    );
+}

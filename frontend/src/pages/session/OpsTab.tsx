@@ -1,6 +1,6 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink, Shuffle, ShieldCheck, RotateCcw, StopCircle, PlayCircle } from "lucide-react";
+import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink, Shuffle, RotateCcw, StopCircle, PlayCircle, ClipboardCopy } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
 import { useUploadVideos, useSetFeedbackTargets, useRandomAssignFeedback, useDriveVideos, useActiveUploadTask, useUpdateSessionConfig, useCancelUpload, useUploadResult } from "@/hooks";
@@ -13,6 +13,7 @@ import { Loader2, CheckCircle2, XCircle, Download, Upload, UserMinus } from "luc
 import type { Session } from "@/hooks/useSessions";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { VideoUploadPanel } from "@/components/VideoUploadPanel";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ export default function OpsTab() {
     const { mutate: cancelUpload, isPending: isCancelling } = useCancelUpload();
     const { data: previousResult, refetch: refetchResult } = useUploadResult(session.id);
     const queryClient = useQueryClient();
+    const [uploadedFromDirect, setUploadedFromDirect] = useState(false);
 
     // 순서 변경 시 React Query 캐시를 직접 업데이트 (탭 이동해도 유지됨)
     const updateVideoOrder = useCallback((videoId: string, newOrder: number) => {
@@ -73,10 +75,11 @@ export default function OpsTab() {
         }
     }, [activeTask, uploadTaskId]);
 
-    // 태스크 완료 시 이전 결과 갱신
+    // 태스크 완료 시 이전 결과 갱신 + 직접 업로드 플래그 리셋
     useEffect(() => {
         if (taskStatus?.status === "complete" || taskStatus?.status === "failed") {
             refetchResult();
+            setUploadedFromDirect(false);
         }
     }, [taskStatus?.status]);
 
@@ -167,31 +170,55 @@ export default function OpsTab() {
     // 초기화: 벌크 API에 0/0으로 호출 → 전원 빈 배열
     const handleResetAssign = useCallback(() => {
         randomAssign({ sessionId: session.id, extraCountNormal: 0, extraCountAbsent: 0 });
-        setVideoWarnings([]);
     }, [randomAssign, session.id]);
 
-    // 영상 검증: 발표자 중 드라이브 영상이 없는 사람 찾기
-    const [videoWarnings, setVideoWarnings] = useState<string[]>([]);
-    const handleVerifyVideos = useCallback(() => {
-        if (!driveVideos || driveVideos.length === 0) {
-            toast.error("먼저 '드라이브 확인'을 눌러 영상 목록을 불러와주세요.");
+    // 피드백 배정 → 가나다순 클립보드 복사 (Notion 표 붙여넣기 호환)
+    const handleCopyAssignments = useCallback(async () => {
+        const writerRows = feedbackAssignments
+            .filter(a => a.member_id != null)
+            .map(a => {
+                const writerName = memberNameMap.get(a.member_id!) ?? "";
+                const targetNames = (a.target_member_ids ?? [])
+                    .map(tid => memberNameMap.get(tid) ?? "")
+                    .filter(n => n)
+                    .sort((x, y) => x.localeCompare(y, "ko"));
+                return { writerName, targetNames };
+            })
+            .sort((a, b) => a.writerName.localeCompare(b.writerName, "ko"));
+
+        if (writerRows.length === 0) {
+            toast.error("복사할 피드백 배정이 없습니다.");
             return;
         }
-        const videoPresenterNames = new Set(driveVideos.map(v => v.presenter));
-        const missing: string[] = [];
-        for (const id of presenterIds) {
-            const name = memberNameMap.get(id) ?? `ID:${id}`;
-            if (!videoPresenterNames.has(name)) {
-                missing.push(name);
+
+        // text/plain: 줄바꿈 구분 (각 줄 = 한 셀)
+        const plain = writerRows.map(({ targetNames }) => targetNames.join(", ")).join("\n");
+
+        // text/html: 한 열짜리 표 → Notion/Sheets에서 표에 붙여넣으면 셀마다 분배됨
+        const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const html =
+            `<meta charset="utf-8"><table><tbody>` +
+            writerRows.map(({ targetNames }) =>
+                `<tr><td>${escape(targetNames.join(", "))}</td></tr>`
+            ).join("") +
+            `</tbody></table>`;
+
+        try {
+            if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+                const item = new ClipboardItem({
+                    "text/html": new Blob([html], { type: "text/html" }),
+                    "text/plain": new Blob([plain], { type: "text/plain" }),
+                });
+                await navigator.clipboard.write([item]);
+            } else {
+                await navigator.clipboard.writeText(plain);
             }
+            toast.success(`${writerRows.length}명의 피드백 대상이 복사되었습니다.`);
+        } catch {
+            toast.error("클립보드 복사 실패");
         }
-        setVideoWarnings(missing);
-        if (missing.length === 0) {
-            toast.success("모든 발표자의 영상이 확인되었습니다.");
-        } else {
-            toast.warning(`영상 미확인: ${missing.join(", ")}`);
-        }
-    }, [driveVideos, presenterIds, memberNameMap]);
+    }, [feedbackAssignments, memberNameMap]);
+
 
     const handleCafeUpload = (resumeMode: boolean = false) => {
         let videosToUpload = driveVideos ?? undefined;
@@ -361,11 +388,14 @@ export default function OpsTab() {
             )}
 
             {/* Video Upload Panel */}
-            <div className="bg-[var(--color-surface)] p-6 rounded-xl border border-[var(--color-border)]">
-                <div className="flex items-start justify-between mb-4">
+            <div className="bg-[var(--color-surface)] p-4 md:p-6 rounded-xl border border-[var(--color-border)]">
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
                     <div>
-                        <h3 className="font-bold text-lg mb-1 flex items-center gap-2">
-                            영상 업로드
+                        <h3 className="font-bold text-base md:text-lg mb-1 flex items-center gap-2 flex-wrap">
+                            영상 업로드 (드라이브)
+                            <span className="px-2 py-0.5 rounded-md text-[10px] md:text-xs font-bold bg-orange-500/15 text-orange-600 border border-orange-500/30">
+                                ⚠ 폐기 예정
+                            </span>
                             {session.config?.drive_folder_id && (
                                 <a
                                     href={`https://drive.google.com/drive/folders/${session.config.drive_folder_id}`}
@@ -378,13 +408,14 @@ export default function OpsTab() {
                                 </a>
                             )}
                         </h3>
-                        <p className="text-sm text-[var(--color-text-secondary)]">
-                            구글 드라이브 영상을 다운로드하여 네이버 카페에 업로드합니다.
+                        <p className="text-xs md:text-sm text-[var(--color-text-secondary)]">
+                            구글 드라이브 경유 방식입니다. 아래 "영상 직접 업로드" 사용을 권장합니다.
                         </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                         <Button
                             variant="outline"
+                            size="sm"
                             onClick={() => fetchDriveVideos()}
                             disabled={isLoadingDrive}
                             className="border-[var(--color-border)] hover:bg-gray-50"
@@ -394,7 +425,7 @@ export default function OpsTab() {
                                 : <Film className="w-4 h-4 mr-2" />}
                             드라이브 확인
                         </Button>
-                        <Button onClick={() => handleCafeUpload(false)} disabled={isUploading} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]">
+                        <Button size="sm" onClick={() => handleCafeUpload(false)} disabled={isUploading} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]">
                             <UploadCloud className="w-4 h-4 mr-2" />
                             {isUploading ? "시작 중..." : "업로드 시작"}
                         </Button>
@@ -434,7 +465,8 @@ export default function OpsTab() {
                                 미리보기: <span className="text-[var(--color-text-muted)]">{driveVideos[0] ? buildTitle(driveVideos[0]) : ""}</span>
                             </div>
                         </div>
-                        <table className="w-full text-sm">
+                        {/* Desktop 테이블 */}
+                        <table className="hidden md:table w-full text-sm">
                             <thead>
                                 <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">
                                     <th className="text-left px-4 py-2 w-[60px]">순서</th>
@@ -485,6 +517,45 @@ export default function OpsTab() {
                                     ))}
                             </tbody>
                         </table>
+                        {/* Mobile 카드 */}
+                        <div className="md:hidden divide-y divide-[var(--color-border)]">
+                            {[...driveVideos]
+                                .sort((a, b) => {
+                                    const ga = a.group ?? 0, gb = b.group ?? 0;
+                                    if (ga !== gb) return ga - gb;
+                                    return a.order - b.order;
+                                })
+                                .map((v) => (
+                                    <div key={v.id} className="px-3 py-2.5 space-y-1.5">
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                className="w-12 bg-transparent border border-[var(--color-border)] rounded px-1.5 py-1 text-xs text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                value={v.order === 9999 ? "" : v.order}
+                                                placeholder="-"
+                                                onChange={(e) => {
+                                                    const val = parseInt(e.target.value);
+                                                    updateVideoOrder(v.id, isNaN(val) ? 9999 : val);
+                                                }}
+                                            />
+                                            <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">{v.presenter}</span>
+                                            {v.group != null && (
+                                                <span className="text-[10px] text-blue-600 bg-blue-500/10 px-1 py-0.5 rounded border border-blue-500/20 flex-shrink-0">
+                                                    {v.group}분반
+                                                </span>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
+                                            value={v.cafe_title}
+                                            onChange={(e) => updateVideoTitle(v.id, e.target.value)}
+                                            title={`원본: ${v.name}`}
+                                        />
+                                    </div>
+                                ))}
+                        </div>
                         <div className="px-4 py-1.5 bg-gray-50/80 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)]">
                             접두어 수정 후 "일괄 적용"을 누르면 전체 제목이 변경됩니다. 개별 제목도 직접 수정 가능합니다.
                         </div>
@@ -496,13 +567,77 @@ export default function OpsTab() {
                     </div>
                 )}
 
-                {renderTaskStatus()}
+                {/* 직접 업로드에서 시작된 task면 여기에 표시 안 함 (VideoUploadPanel에서 인라인 표시) */}
+                {!uploadedFromDirect && renderTaskStatus()}
+            </div>
+
+            {/* 영상 직접 업로드 Panel */}
+            <div className="bg-[var(--color-surface)] p-6 rounded-xl border border-[var(--color-border)]">
+                {(() => {
+                    const isTeamSession = session.type === "TEAM";
+
+                    // 팀 세션: 팀당 1개 슬롯 (첫 멤버 id를 파일 저장 앵커로 사용)
+                    const teamPresenters = isTeamSession
+                        ? (session.teams ?? [])
+                            .filter(t => (t.members?.length ?? 0) > 0)
+                            .map((t, idx) => {
+                                const firstMember = t.members![0];
+                                const memberNames = t.members!.map(m => m.name).join(", ");
+                                return {
+                                    member_id: firstMember.id,
+                                    member_name: t.name,
+                                    sub_label: memberNames,
+                                    group_num: null,
+                                    presenter_order: idx + 1,
+                                };
+                            })
+                        : [];
+
+                    const individualPresenters = !isTeamSession
+                        ? (session.attendances ?? [])
+                            .filter((a: any) => a.status !== "ABSENT" && a.status !== "EXCUSED")
+                            .map((a: any) => ({
+                                member_id: a.member_id,
+                                member_name: memberNameMap.get(a.member_id) ?? `#${a.member_id}`,
+                                group_num: a.group_num ?? null,
+                                presenter_order: a.presenter_order ?? null,
+                            }))
+                        : [];
+
+                    const absentForIndividual = !isTeamSession
+                        ? (session.attendances ?? [])
+                            .filter((a: any) => a.status === "ABSENT" || a.status === "EXCUSED")
+                            .map((a: any) => ({
+                                member_id: a.member_id,
+                                member_name: memberNameMap.get(a.member_id) ?? `#${a.member_id}`,
+                                status: a.status as "ABSENT" | "EXCUSED",
+                            }))
+                        : [];
+
+                    return (
+                        <VideoUploadPanel
+                            sessionId={session.id}
+                            sessionTitle={session.title}
+                            weekNum={session.week_num}
+                            presenters={isTeamSession ? teamPresenters : individualPresenters}
+                            absentMembers={absentForIndividual}
+                            hasGroups={!isTeamSession && !!session.config?.has_groups}
+                            onNaverUploadStarted={(taskId) => {
+                                setUploadTaskId(taskId);
+                                setUploadedFromDirect(true);
+                            }}
+                            naverProgress={taskStatus?.progress ?? null}
+                            naverStatus={taskStatus?.status ?? null}
+                            naverResult={uploadedFromDirect && Array.isArray(taskStatus?.result) ? taskStatus.result : null}
+                        />
+                    );
+                })()}
             </div>
 
             {/* Feedback Target Designation Panel */}
             {session.config?.has_feedback !== false && feedbackAssignments.length > 0 && (
-                <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)]">
-                    <div className="flex items-start justify-between mb-3">
+                <div className="bg-[var(--color-surface)] p-3 md:p-4 rounded-xl border border-[var(--color-border)]">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-3">
                         <div>
                             <h3 className="font-bold text-sm mb-0.5 flex items-center gap-2">
                                 <Users className="w-4 h-4 text-[var(--color-accent)]" />
@@ -512,7 +647,7 @@ export default function OpsTab() {
                                 각 멤버가 피드백을 작성할 대상을 지정합니다. 본인 영상은 기본 포함됩니다.
                             </p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -526,11 +661,11 @@ export default function OpsTab() {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={handleVerifyVideos}
+                                onClick={handleCopyAssignments}
                                 className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-gray-50"
                             >
-                                <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                                영상 검증
+                                <ClipboardCopy className="w-3.5 h-3.5 mr-1" />
+                                복사
                             </Button>
                             <Button
                                 size="sm"
@@ -544,21 +679,13 @@ export default function OpsTab() {
                         </div>
                     </div>
 
-                    {/* 영상 미확인 경고 */}
-                    {videoWarnings.length > 0 && (
-                        <div className="mb-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600">
-                            <span className="font-medium">영상 미확인 발표자:</span> {videoWarnings.join(", ")}
-                            <span className="text-amber-600/60 ml-1">— 피드백 대상에서 제거하거나 영상을 확인해주세요.</span>
-                        </div>
-                    )}
-
                     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
                         {/* Left: Assignment table */}
-                        <div className="rounded-md border border-[var(--color-border)] overflow-hidden">
+                        <div className="rounded-md border border-[var(--color-border)] overflow-x-auto">
                             <Table>
                                 <TableHeader>
                                     <TableRow className="bg-gray-50 hover:bg-gray-50">
-                                        <TableHead className="w-[200px]">피드백 작성자</TableHead>
+                                        <TableHead className="w-[140px] md:w-[200px]">피드백 작성자</TableHead>
                                         <TableHead>피드백 대상 (추가 지정)</TableHead>
                                     </TableRow>
                                 </TableHeader>

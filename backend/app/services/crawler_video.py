@@ -408,23 +408,32 @@ async def upload_all_videos(
             logger.info(f"[{idx+1}/{total}] 처리 시작: {raw_name} -> {cafe_title}")
 
             try:
-                # 1. 다운로드 (prefetch로 이미 받았으면 대기, 아니면 직접)
-                if prefetch_task and not os.path.exists(tmp_path):
-                    # prefetch 진행 중이면 완료 대기
-                    await prefetch_task
-                    prefetch_task = None
+                # 로컬 파일 여부 확인 (직접 업로드된 영상)
+                local_path = drive_file.get("local_path")
+                is_local = bool(local_path and os.path.exists(local_path))
 
-                if not os.path.exists(tmp_path):
-                    # prefetch 안 됐거나 첫 번째 영상
-                    progress_list[idx]["status"] = "downloading"
-                    await _set_progress(redis, job_id, progress_list)
-                    await asyncio.to_thread(download_drive_file, file_id, tmp_path)
+                if is_local:
+                    # 로컬 파일 — Drive 다운로드 스킵, 경로만 지정
+                    tmp_path = local_path
+                else:
+                    # 1. Drive 다운로드 (prefetch로 이미 받았으면 대기, 아니면 직접)
+                    if prefetch_task and not os.path.exists(tmp_path):
+                        await prefetch_task
+                        prefetch_task = None
+
+                    if not os.path.exists(tmp_path):
+                        progress_list[idx]["status"] = "downloading"
+                        await _set_progress(redis, job_id, progress_list)
+                        await asyncio.to_thread(download_drive_file, file_id, tmp_path)
 
                 # 2. 업로드 시작 → 다음 영상 미리 다운로드
                 progress_list[idx]["status"] = "uploading"
                 await _set_progress(redis, job_id, progress_list)
 
-                if idx + 1 < total and not abort_event.is_set():
+                # 다음 영상 prefetch (Drive 파일만 — 로컬 파일은 이미 존재)
+                next_file = drive_files[idx + 1] if idx + 1 < total else None
+                next_is_local = bool(next_file and next_file.get("local_path"))
+                if idx + 1 < total and not abort_event.is_set() and not next_is_local:
                     prefetch_task = asyncio.create_task(prefetch_download(idx + 1))
 
                 ok = False
@@ -474,7 +483,8 @@ async def upload_all_videos(
                 results.append({"file": raw_name, "title": cafe_title, "success": False, "error": str(e)})
 
             finally:
-                if os.path.exists(tmp_path):
+                # 로컬 파일은 삭제하지 않음 (직접 업로드된 파일은 사용자가 관리)
+                if not is_local and os.path.exists(tmp_path):
                     try:
                         os.remove(tmp_path)
                     except Exception:

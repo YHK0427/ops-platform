@@ -39,12 +39,12 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
     }, [member, open]);
 
     const handleSubmit = () => {
-        if (!name || !email) return;
+        if (!name) return;
 
         updateMutation.mutate(
             {
                 id: member.id,
-                data: { name, email, tags }
+                data: { name, email: email || null, tags }
             },
             {
                 onSuccess: () => {
@@ -92,7 +92,7 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="edit-email">이메일</Label>
+                        <Label htmlFor="edit-email">이메일 <span className="text-[var(--color-text-muted)] font-normal">(선택)</span></Label>
                         <Input
                             id="edit-email"
                             type="email"
@@ -146,7 +146,7 @@ export function MemberEditSheet({ member, open, onOpenChange }: MemberEditSheetP
                 <SheetFooter>
                     <Button
                         onClick={handleSubmit}
-                        disabled={!name || !email || updateMutation.isPending}
+                        disabled={!name || updateMutation.isPending}
                         className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white"
                     >
                         {updateMutation.isPending ? "저장 중..." : "저장"}

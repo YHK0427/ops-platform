@@ -100,7 +100,7 @@ export default function MemberDetail() {
                 title={member.name}
                 subtitle={member.email ?? undefined}
                 actions={
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
                         <Button variant="outline" size="sm" onClick={() => navigate("/members")}>
                             <ArrowLeft className="w-4 h-4 mr-2" /> 뒤로
                         </Button>
@@ -195,7 +195,7 @@ export default function MemberDetail() {
                 }
             />
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+            <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-6 md:space-y-8">
                 {/* 받을 돈 요약 — 디파짓 부족 또는 미납 벌금 있을 때 */}
                 {(() => {
                     const unpaidEntries = (ledger ?? []).filter(
@@ -219,12 +219,12 @@ export default function MemberDetail() {
                     };
 
                     return (
-                        <div className="rounded-xl border border-rose-500/40 bg-rose-500/5 p-5">
+                        <div className="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 md:p-5">
                             <div className="flex items-center gap-2 mb-3">
                                 <AlertCircle className="w-4 h-4 text-rose-500" />
                                 <span className="text-sm font-bold text-rose-500 uppercase tracking-wider">받아야 할 돈</span>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-3 gap-2 md:gap-4">
                                 <div>
                                     <div className="text-[11px] text-[var(--color-text-muted)] mb-1">디파짓 충전</div>
                                     <div className={`text-lg font-bold ${depositShortfall > 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
@@ -264,9 +264,9 @@ export default function MemberDetail() {
                 })()}
 
                 {/* Top Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     {/* Deposit Card */}
-                    <div className={`rounded-xl border bg-[var(--color-surface)] p-6 flex flex-col justify-between ${(member.current_deposit || 0) < 10000 ? "border-rose-500/40" : "border-[var(--color-border)]"}`}>
+                    <div className={`rounded-xl border bg-[var(--color-surface)] p-4 md:p-6 flex flex-col justify-between ${(member.current_deposit || 0) < 10000 ? "border-rose-500/40" : "border-[var(--color-border)]"}`}>
                         <div className="flex items-start justify-between mb-4">
                             <div className="flex items-center gap-3 text-[var(--color-text-secondary)]">
                                 <CreditCard className="w-5 h-5" />
@@ -275,7 +275,7 @@ export default function MemberDetail() {
                             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsDepositOpen(true)}>관리</Button>
                         </div>
                         <div>
-                            <span className={`text-3xl font-bold ${(member.current_deposit || 0) < 10000 ? "text-rose-500" : "text-[var(--color-text-primary)]"}`}>
+                            <span className={`text-2xl md:text-3xl font-bold ${(member.current_deposit || 0) < 10000 ? "text-rose-500" : "text-[var(--color-text-primary)]"}`}>
                                 ₩{(member.current_deposit || 0).toLocaleString()}
                             </span>
                         </div>
@@ -317,7 +317,7 @@ export default function MemberDetail() {
                     </div>
 
                     {/* Score Card */}
-                    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
+                    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:p-6">
                         <div className="flex items-start justify-between mb-4">
                             <div className="flex items-center gap-3 text-[var(--color-text-secondary)]">
                                 <Trophy className="w-5 h-5" />
@@ -367,7 +367,8 @@ export default function MemberDetail() {
                         <h3 className="text-sm font-bold uppercase tracking-wider">거래 내역</h3>
                     </div>
 
-                    <div className="rounded-xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-surface)]/50">
+                    {/* Desktop 테이블 */}
+                    <div className="hidden md:block rounded-xl border border-[var(--color-border)] overflow-x-auto bg-[var(--color-surface)]/50">
                         <Table>
                             <TableHeader className="bg-[var(--color-surface)]">
                                 <TableRow className="border-b-[var(--color-border)] hover:bg-transparent">
@@ -403,6 +404,25 @@ export default function MemberDetail() {
                                 )}
                             </TableBody>
                         </Table>
+                    </div>
+
+                    {/* Mobile 카드 */}
+                    <div className="md:hidden space-y-2">
+                        {!ledger || ledger.length === 0 ? (
+                            <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">내역이 없습니다.</div>
+                        ) : (
+                            ledger.map((entry) => (
+                                <LedgerCardMobile
+                                    key={entry.id}
+                                    entry={entry}
+                                    memberName={member.name}
+                                    onDelete={() => deleteEntry(entry.id)}
+                                    onUpdate={(data) => updateEntry({ id: entry.id, data })}
+                                    isDeleting={isDeleting}
+                                    isUpdating={isUpdating}
+                                />
+                            ))
+                        )}
                     </div>
                 </div>
             </div>
@@ -653,6 +673,133 @@ function LedgerRow({
                 </div>
             </TableCell>
         </TableRow>
+    );
+}
+
+function LedgerCardMobile({
+    entry,
+    memberName,
+    onDelete,
+    onUpdate,
+    isDeleting,
+    isUpdating,
+}: {
+    entry: LedgerEntry;
+    memberName: string;
+    onDelete: () => void;
+    onUpdate: (data: { amount_krw?: number; description?: string }) => void;
+    isDeleting: boolean;
+    isUpdating: boolean;
+}) {
+    const [editOpen, setEditOpen] = useState(false);
+    const [editAmount, setEditAmount] = useState(entry.amount_krw);
+    const [editDesc, setEditDesc] = useState(entry.description);
+    const { mutate: togglePaid, isPending: isTogglingPaid } = useToggleMilestonePaid();
+
+    useEffect(() => {
+        setEditAmount(entry.amount_krw);
+        setEditDesc(entry.description);
+    }, [entry.amount_krw, entry.description]);
+
+    const handleSave = () => {
+        onUpdate({ amount_krw: editAmount, description: editDesc });
+        setEditOpen(false);
+    };
+
+    return (
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    <LedgerTypeBadge type={entry.type} />
+                    {entry.session_title && (
+                        <span className="text-[10px] text-[var(--color-text-muted)]">{entry.session_title}</span>
+                    )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                    <div className={`text-sm font-bold ${entry.amount_krw > 0 ? "text-green-600" : entry.amount_krw < 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
+                        {entry.amount_krw !== 0 ? `${entry.amount_krw > 0 ? "+" : ""}${entry.amount_krw.toLocaleString()}` : "-"}
+                    </div>
+                    {entry.score_delta !== 0 && (
+                        <div className={`text-[10px] ${entry.score_delta < 0 ? "text-rose-500" : "text-green-600"}`}>
+                            {entry.score_delta > 0 ? `+${entry.score_delta}` : entry.score_delta}점
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="text-xs text-[var(--color-text-secondary)] break-words">
+                {translateDescription(entry.description)}
+            </div>
+            {entry.type === "MILESTONE_FINE" && (
+                entry.is_paid ? (
+                    <Badge variant="outline" className="border-gray-400/50 text-gray-500 bg-gray-100 text-[10px] py-0 px-1.5 h-5">
+                        <CheckCircle2 className="w-3 h-3 mr-0.5" /> 납부 완료
+                    </Badge>
+                ) : (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge variant="outline" className="border-rose-500/50 text-rose-600 bg-rose-500/10 text-[10px] py-0 px-1.5 h-5 font-semibold">
+                            <AlertCircle className="w-3 h-3 mr-0.5" /> 미납
+                        </Badge>
+                        <button
+                            onClick={() => {
+                                if (confirm(`${memberName}님의 누적벌점 벌금 ${Math.abs(entry.amount_krw).toLocaleString()}원 납부를 확인 처리합니다.`)) {
+                                    togglePaid({ id: entry.id, is_paid: true });
+                                }
+                            }}
+                            disabled={isTogglingPaid}
+                            className="text-[10px] px-2 h-6 rounded border border-emerald-500/50 text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50"
+                        >
+                            납부 확인
+                        </button>
+                    </div>
+                )
+            )}
+            <div className="flex items-center justify-between text-[10px] text-[var(--color-text-muted)] pt-1 border-t border-[var(--color-border-subtle)]">
+                <span>{new Date(entry.created_at).toLocaleDateString()}</span>
+                <span>잔액 {entry.deposit_after.toLocaleString()}</span>
+                <div className="flex items-center gap-1">
+                    <Popover open={editOpen} onOpenChange={setEditOpen}>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" disabled={isUpdating}>
+                                <Pencil className="w-3 h-3" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 bg-[var(--color-elevated)] border-[var(--color-border)] p-3" align="end">
+                            <div className="space-y-3">
+                                <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase">장부 수정</p>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-[var(--color-text-muted)]">금액 (원)</label>
+                                    <Input type="number" value={editAmount} onChange={(e) => setEditAmount(Number(e.target.value))} className="h-7 text-sm" />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-[var(--color-text-muted)]">사유</label>
+                                    <Input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} className="h-7 text-sm" />
+                                </div>
+                                <Button size="sm" onClick={handleSave} disabled={isUpdating || !editDesc} className="w-full h-7 text-xs bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]">
+                                    저장
+                                </Button>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-rose-500" disabled={isDeleting}>
+                                <Trash2 className="w-3 h-3" />
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent className="bg-[var(--color-elevated)] border-[var(--color-border)] text-[var(--color-text-primary)]">
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>장부 항목 삭제</AlertDialogTitle>
+                                <AlertDialogDescription>이 항목을 삭제하면 멤버의 잔액과 점수가 역전됩니다. 계속하시겠습니까?</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>취소</AlertDialogCancel>
+                                <AlertDialogAction onClick={onDelete} className="bg-rose-600 hover:bg-rose-700">삭제</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                </div>
+            </div>
+        </div>
     );
 }
 

@@ -60,7 +60,7 @@ function EditLedgerDialog({ entry, memberName }: { entry: LedgerEntry; memberNam
         <Dialog open={open} onOpenChange={handleOpen}>
             <DialogTrigger asChild>
                 <button
-                    className="p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
+                    className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] md:opacity-0 md:group-hover/row:opacity-100 transition-opacity shrink-0"
                     onClick={(e) => e.stopPropagation()}
                 >
                     <Pencil className="w-3 h-3" />
@@ -194,13 +194,13 @@ export default function Ledger() {
                 title="장부"
                 subtitle="입출금 및 승점 내역 관리"
                 actions={
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap justify-end">
                         <WeeklyReportButton />
                         <ExcelExportButton />
                         <BulkPenaltyDialog />
                         <GrantMeritDialog
                             trigger={
-                                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
                                     <PlusCircle className="mr-2 h-4 w-4" /> 상점 부여
                                 </Button>
                             }
@@ -209,11 +209,11 @@ export default function Ledger() {
                 }
             />
 
-            <div className="flex-1 container mx-auto px-4 py-6 space-y-6">
+            <div className="flex-1 container mx-auto px-3 md:px-4 py-4 md:py-6 space-y-4 md:space-y-6">
                 {/* Filters */}
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
-                    <CardContent className="p-4 flex flex-wrap gap-4 items-center">
-                        <div className="relative w-[220px]">
+                    <CardContent className="p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-2 md:gap-4 md:items-center">
+                        <div className="relative sm:col-span-2 md:w-[220px]">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]" />
                             <Input
                                 placeholder="멤버명·설명 검색..."
@@ -222,7 +222,7 @@ export default function Ledger() {
                                 className="pl-9 h-9"
                             />
                         </div>
-                        <div className="w-[200px]">
+                        <div className="md:w-[200px]">
                             <Select value={memberFilter} onValueChange={handleMemberFilter}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="멤버 필터" />
@@ -235,7 +235,7 @@ export default function Ledger() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="w-[200px]">
+                        <div className="md:w-[200px]">
                             <Select value={typeFilter} onValueChange={handleTypeFilter}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="유형 필터" />
@@ -248,7 +248,7 @@ export default function Ledger() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="w-[200px]">
+                        <div className="md:w-[200px]">
                             <Select value={sessionFilter} onValueChange={handleSessionFilter}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="세션 필터" />
@@ -266,8 +266,8 @@ export default function Ledger() {
                     </CardContent>
                 </Card>
 
-                {/* Table */}
-                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+                {/* Desktop 테이블 */}
+                <div className="hidden md:block rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-x-auto">
                     <Table>
                         <TableHeader>
                             <TableRow className="bg-gray-50 hover:bg-gray-50">
@@ -399,6 +399,102 @@ export default function Ledger() {
                             )}
                         </TableBody>
                     </Table>
+                </div>
+
+                {/* Mobile 카드 리스트 */}
+                <div className="md:hidden space-y-2">
+                    {isLoading ? (
+                        Array.from({ length: 5 }).map((_, i) => (
+                            <div key={i} className="h-24 rounded-lg bg-[var(--color-surface)] animate-pulse" />
+                        ))
+                    ) : !ledgerEntries || ledgerEntries.length === 0 ? (
+                        <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">표시할 내역이 없습니다.</div>
+                    ) : (
+                        ledgerEntries.map((entry) => {
+                            const memberName = memberMap.get(entry.member_id) ?? String(entry.member_id);
+                            const badgeClass =
+                                entry.type === 'FINE' || entry.type === 'MILESTONE_FINE' ? 'border-red-500/50 text-red-500 bg-red-500/10' :
+                                entry.type === 'MERIT' ? 'border-green-500/50 text-green-500 bg-green-500/10' :
+                                entry.type.includes('DEPOSIT') ? 'border-blue-500/50 text-blue-500 bg-blue-500/10' :
+                                'border-[var(--color-border)] text-[var(--color-text-muted)] bg-gray-50';
+                            return (
+                                <div key={entry.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 space-y-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <Badge variant="outline" className={`${badgeClass} text-[10px] py-0 px-1.5 h-5`}>
+                                                {LEDGER_TYPE_LABELS[entry.type] ?? entry.type}
+                                            </Badge>
+                                            <span className="text-sm font-medium text-[var(--color-text-primary)]">{memberName}</span>
+                                            {entry.session_title && (
+                                                <span className="text-[10px] text-[var(--color-text-muted)]">{entry.session_title}</span>
+                                            )}
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                            <div className={`text-sm font-bold ${entry.amount_krw < 0 ? 'text-rose-500' : entry.amount_krw > 0 ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}>
+                                                {entry.amount_krw !== 0 ? formatNumber(entry.amount_krw) : '-'}
+                                            </div>
+                                            {entry.score_delta !== 0 && (
+                                                <div className={`text-[10px] ${entry.score_delta < 0 ? 'text-rose-500' : 'text-green-600'}`}>
+                                                    {entry.score_delta > 0 ? `+${entry.score_delta}` : entry.score_delta}점
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="text-xs text-[var(--color-text-secondary)] break-words">
+                                        {translateDescription(entry.description)}
+                                    </div>
+                                    {entry.type === "MILESTONE_FINE" && (
+                                        entry.is_paid ? (
+                                            <Badge variant="outline" className="border-gray-400/50 text-gray-500 bg-gray-100 text-[10px] py-0 px-1.5 h-5">
+                                                <CheckCircle2 className="w-3 h-3 mr-0.5" /> 납부 완료
+                                            </Badge>
+                                        ) : (
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <Badge variant="outline" className="border-rose-500/50 text-rose-600 bg-rose-500/10 text-[10px] py-0 px-1.5 h-5 font-semibold">
+                                                    <AlertCircle className="w-3 h-3 mr-0.5" /> 미납
+                                                </Badge>
+                                                <button
+                                                    onClick={() => {
+                                                        if (confirm(`${memberName}님의 누적벌점 벌금 ${formatNumber(Math.abs(entry.amount_krw))}원 납부를 확인 처리합니다.`)) {
+                                                            togglePaid({ id: entry.id, is_paid: true });
+                                                        }
+                                                    }}
+                                                    disabled={isTogglingPaid}
+                                                    className="text-[10px] px-2 h-6 rounded border border-emerald-500/50 text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50"
+                                                >
+                                                    납부 확인
+                                                </button>
+                                            </div>
+                                        )
+                                    )}
+                                    <div className="flex items-center justify-between text-[10px] text-[var(--color-text-muted)] pt-1 border-t border-[var(--color-border-subtle)]">
+                                        <span>{new Date(entry.created_at).toLocaleDateString()}</span>
+                                        <span>잔액 {formatNumber(entry.deposit_after)}</span>
+                                        <div className="flex items-center gap-1">
+                                            <EditLedgerDialog entry={entry} memberName={memberName} />
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <button className="p-1 text-gray-600 hover:text-rose-500">
+                                                        <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent className="bg-[var(--color-elevated)] border-[var(--color-border)] text-[var(--color-text-primary)]">
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle>장부 항목 삭제</AlertDialogTitle>
+                                                        <AlertDialogDescription>이 항목을 삭제하면 멤버의 잔액과 점수가 역전됩니다. 계속하시겠습니까?</AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>취소</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={() => deleteEntry(entry.id)} className="bg-rose-600 hover:bg-rose-700">삭제</AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
 
                 {/* Pagination */}

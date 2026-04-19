@@ -34,6 +34,7 @@ class VideoOrderItem(BaseModel):
     order: int
     group: Optional[int] = None        # 분반 번호 (e.g., 2분반 → 2)
     cafe_title: Optional[str] = None   # 카페 게시글 제목 (없으면 자동 생성)
+    local_path: Optional[str] = None   # 서버 로컬 파일 경로 (직접 업로드 시)
 
 class VideoUploadRequest(BaseModel):
     session_id: int

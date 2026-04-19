@@ -27,10 +27,10 @@ export function MemberAddSheet() {
     const createMutation = useCreateMember();
 
     const handleSubmit = () => {
-        if (!name || !email) return;
+        if (!name) return;
 
         createMutation.mutate(
-            { name, email, tags },
+            { name, email: email || null, tags },
             {
                 onSuccess: () => {
                     setOpen(false);
@@ -86,7 +86,7 @@ export function MemberAddSheet() {
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="email">이메일</Label>
+                        <Label htmlFor="email">이메일 <span className="text-[var(--color-text-muted)] font-normal">(선택)</span></Label>
                         <Input
                             id="email"
                             type="email"
@@ -140,7 +140,7 @@ export function MemberAddSheet() {
                 <SheetFooter>
                     <Button
                         onClick={handleSubmit}
-                        disabled={!name || !email || createMutation.isPending}
+                        disabled={!name || createMutation.isPending}
                         className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white"
                     >
                         {createMutation.isPending ? "생성 중..." : "멤버 생성"}

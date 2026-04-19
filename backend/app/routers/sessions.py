@@ -1,8 +1,10 @@
 import logging
+import os
 import random
+import shutil
 from datetime import datetime, time, timedelta, timezone
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile, status
 
 logger = logging.getLogger(__name__)
 from sqlalchemy import func, select, update
@@ -164,6 +166,10 @@ async def create_session(
             logger.info(f"Drive folders created: {folder_name} (main={folder_id}, videos={video_folder_id}, ppt={ppt_folder_id})")
         except Exception as e:
             logger.warning(f"Drive folder creation failed (non-fatal): {e}")
+
+        # 서버 영상 저장 폴더 생성
+        video_dir = f"/app/files/video/session_{session.id}"
+        os.makedirs(video_dir, exist_ok=True)
 
         logger.audit(f"session_created id={session.id} week={session.week_num} title={session.title}")
         return {"id": session.id, "week_num": session.week_num, "status": "created"}
@@ -561,9 +567,9 @@ async def update_attendance(
     member_id: int,
     body: AttendanceUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: str = Depends(get_current_user),
 ):
-    """출결 정보 수정 (마감 가드 포함)"""
+    """출결 정보 수정 (열람자 이상 가능)"""
     session = await _get_session_or_404(session_id, db)
 
     # 마감 검증 (KST 21:59:59 = UTC 12:59:59)
@@ -1415,4 +1421,129 @@ async def download_all_ppt(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{zip_filename}"'},
     )
+
+
+# ── 발표 순서 ─────────────────────────────────────────────────────────────────
+
+
+@router.patch("/{session_id}/presenter-order")
+async def update_presenter_order(
+    session_id: int,
+    body: list[dict],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """발표 순서 일괄 저장 — [{member_id, presenter_order}]"""
+    for item in body:
+        await db.execute(
+            update(Attendance)
+            .where(Attendance.session_id == session_id, Attendance.member_id == item["member_id"])
+            .values(presenter_order=item["presenter_order"])
+        )
+    await db.commit()
+    return {"status": "ok", "updated": len(body)}
+
+
+# ── 영상 직접 업로드 ──────────────────────────────────────────────────────────
+
+
+VIDEO_DIR = "/app/files/video"
+
+
+@router.post("/{session_id}/videos/{member_id}")
+async def upload_video(
+    session_id: int,
+    member_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """발표자별 영상 업로드 (교체 가능)"""
+    member = await db.get(Member, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
+
+    session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
+    os.makedirs(session_dir, exist_ok=True)
+
+    # 기존 파일 삭제 (교체)
+    for existing in os.listdir(session_dir):
+        if existing.startswith(f"{member_id}_"):
+            os.remove(os.path.join(session_dir, existing))
+
+    # 저장
+    safe_name = file.filename or "video.mp4"
+    save_name = f"{member_id}_{safe_name}"
+    save_path = os.path.join(session_dir, save_name)
+
+    size = 0
+    with open(save_path, "wb") as f:
+        while chunk := await file.read(1024 * 1024):  # 1MB chunks
+            f.write(chunk)
+            size += len(chunk)
+
+    size_mb = round(size / (1024 * 1024), 1)
+    logger.audit(f"video_uploaded session={session_id} member={member_id} file={save_name} size={size_mb}MB")
+
+    return {
+        "member_id": member_id,
+        "member_name": member.name,
+        "filename": safe_name,
+        "size_mb": size_mb,
+        "path": save_path,
+    }
+
+
+@router.get("/{session_id}/videos")
+async def list_videos(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """세션에 업로드된 영상 목록"""
+    session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
+    if not os.path.isdir(session_dir):
+        return []
+
+    # member_id → name 매핑
+    members_result = await db.execute(select(Member))
+    name_map = {m.id: m.name for m in members_result.scalars().all()}
+
+    videos = []
+    for fname in sorted(os.listdir(session_dir)):
+        parts = fname.split("_", 1)
+        if len(parts) < 2:
+            continue
+        try:
+            mid = int(parts[0])
+        except ValueError:
+            continue
+        fpath = os.path.join(session_dir, fname)
+        size_mb = round(os.path.getsize(fpath) / (1024 * 1024), 1)
+        videos.append({
+            "member_id": mid,
+            "member_name": name_map.get(mid, f"#{mid}"),
+            "filename": parts[1],
+            "size_mb": size_mb,
+        })
+
+    return videos
+
+
+@router.delete("/{session_id}/videos/{member_id}", status_code=204)
+async def delete_video(
+    session_id: int,
+    member_id: int,
+    _: str = Depends(get_current_user),
+):
+    """발표자별 영상 삭제"""
+    session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
+    if not os.path.isdir(session_dir):
+        return
+
+    for fname in os.listdir(session_dir):
+        if fname.startswith(f"{member_id}_"):
+            os.remove(os.path.join(session_dir, fname))
+            logger.audit(f"video_deleted session={session_id} member={member_id}")
+            return
 
