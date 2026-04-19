@@ -32,8 +32,16 @@ jobs:
           ssh deploy-server << 'SCRIPT'
             cd /home/ubuntu/ops-deploy
             git pull origin main
-            docker compose build --no-cache
+
+            # 캐시 활용 빌드 (변경 레이어만 재빌드)
+            docker compose build
+
+            # 빌드 성공한 경우에만 서비스 교체
             docker compose down
             docker compose up -d
             docker compose exec -T backend alembic upgrade head
+
+            # 이전 빌드 잔여물 정리 (현재 사용 중인 것만 보존)
+            docker image prune -f
+            docker builder prune -f --keep-storage=2GB
           SCRIPT
