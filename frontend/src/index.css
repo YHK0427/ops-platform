@@ -1,12 +1,19 @@
 /* ── Fonts ────────────────────────────────────── */
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css");
 @import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300..700&display=swap");
+/* Noto Sans KR — 희귀 한글 폴백 (윺, 뷁 등) */
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap");
 
 @font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-4Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-5Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
 @font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-6SemiBold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
 @font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-7Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
 @font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-8ExtraBold.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+
+/* 희귀 한글(윺 등) 전용 폴백 — SafeText 컴포넌트가 해당 문자를 이 클래스로 감싸 렌더 */
+.hangul-fallback {
+  font-family: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", "Nanum Gothic", sans-serif;
+}
 
 @import "tailwindcss";
 
@@ -56,7 +63,7 @@
   --color-ring: #F43F5E;
 
   /* Font families */
-  --font-sans: "Paperlogy", "Pretendard Variable", system-ui, sans-serif;
+  --font-sans: "Paperlogy", "Pretendard Variable", "Noto Sans KR", system-ui, sans-serif;
   --font-mono: "Geist Mono", "SF Mono", monospace;
 
   /* Radius */

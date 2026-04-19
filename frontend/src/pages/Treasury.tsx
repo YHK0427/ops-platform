@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { renderSafeHangul } from "@/components/SafeText";
 import { Card, CardContent } from "@/components/ui/card";
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -232,7 +233,7 @@ export default function Treasury() {
                                         ) : (
                                             data.by_session.map((s: any) => (
                                                 <TableRow key={s.session_id} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
-                                                    <TableCell className="font-medium text-[var(--color-text-primary)]">{s.title}</TableCell>
+                                                    <TableCell className="font-medium text-[var(--color-text-primary)]">{renderSafeHangul(s.title)}</TableCell>
                                                     <TableCell className="text-[var(--color-text-muted)]">{s.date}</TableCell>
                                                     <TableCell className="text-right text-[var(--color-text-primary)]">{formatKRW(s.fine_total)}</TableCell>
                                                     <TableCell className="text-right text-amber-600">{s.milestone_total > 0 ? formatKRW(s.milestone_total) : "-"}</TableCell>
@@ -437,7 +438,7 @@ export default function Treasury() {
                                     <div key={s.session_id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
                                         <div className="flex items-start justify-between gap-2 mb-2">
                                             <div>
-                                                <div className="font-medium text-sm text-[var(--color-text-primary)]">{s.title}</div>
+                                                <div className="font-medium text-sm text-[var(--color-text-primary)]">{renderSafeHangul(s.title)}</div>
                                                 <div className="text-[10px] text-[var(--color-text-muted)]">{s.date}</div>
                                             </div>
                                             <div className="text-right">
@@ -479,7 +480,7 @@ export default function Treasury() {
                                         <div className="flex items-start justify-between gap-2">
                                             <div>
                                                 <div className="font-medium text-sm text-[var(--color-text-primary)]">{u.member_name}</div>
-                                                {u.session_title && <div className="text-[10px] text-[var(--color-text-muted)]">{u.session_title}</div>}
+                                                {u.session_title && <div className="text-[10px] text-[var(--color-text-muted)]">{renderSafeHangul(u.session_title)}</div>}
                                             </div>
                                             <div className="text-sm font-bold text-rose-500">{formatKRW(Math.abs(u.amount_krw))}</div>
                                         </div>
@@ -543,7 +544,7 @@ export default function Treasury() {
                                                     </span>
                                                     <span className="font-medium text-sm text-[var(--color-text-primary)]">{e.member_name}</span>
                                                 </div>
-                                                {e.session_title && <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{e.session_title}</div>}
+                                                {e.session_title && <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{renderSafeHangul(e.session_title)}</div>}
                                             </div>
                                             <div className="text-sm font-bold text-rose-500">{formatKRW(Math.abs(e.amount_krw))}</div>
                                         </div>

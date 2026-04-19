@@ -1,7 +1,10 @@
+import asyncio
+import json
 import logging
 import os
 import random
 import shutil
+import uuid
 from datetime import datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile, status
@@ -1458,29 +1461,50 @@ async def upload_video(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
 ):
-    """발표자별 영상 업로드 (교체 가능)"""
+    """발표자별 영상 업로드 (교체 가능)
+
+    동시 업로드 안정성:
+    - 파일 쓰기는 스레드 풀에 위임 (이벤트 루프 블록 방지)
+    - .tmp 파일에 쓰고 성공 시 rename → 중단 시 불완전 파일 안 남음
+    """
     member = await db.get(Member, member_id)
     if not member:
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
-    os.makedirs(session_dir, exist_ok=True)
+    await asyncio.to_thread(os.makedirs, session_dir, exist_ok=True)
 
     # 기존 파일 삭제 (교체)
-    for existing in os.listdir(session_dir):
-        if existing.startswith(f"{member_id}_"):
-            os.remove(os.path.join(session_dir, existing))
+    def _remove_existing():
+        for existing in os.listdir(session_dir):
+            if existing.startswith(f"{member_id}_"):
+                try:
+                    os.remove(os.path.join(session_dir, existing))
+                except OSError:
+                    pass
+    await asyncio.to_thread(_remove_existing)
 
-    # 저장
+    # 저장 — 임시 파일에 쓰고 성공 시 rename
     safe_name = file.filename or "video.mp4"
     save_name = f"{member_id}_{safe_name}"
     save_path = os.path.join(session_dir, save_name)
+    tmp_path = save_path + ".tmp"
 
     size = 0
-    with open(save_path, "wb") as f:
-        while chunk := await file.read(1024 * 1024):  # 1MB chunks
-            f.write(chunk)
-            size += len(chunk)
+    try:
+        with open(tmp_path, "wb") as f:
+            while chunk := await file.read(4 * 1024 * 1024):  # 4MB chunks
+                await asyncio.to_thread(f.write, chunk)
+                size += len(chunk)
+        await asyncio.to_thread(os.replace, tmp_path, save_path)
+    except Exception as e:
+        # 실패 시 임시 파일 정리
+        try:
+            await asyncio.to_thread(os.remove, tmp_path)
+        except OSError:
+            pass
+        logger.error(f"video_upload_failed session={session_id} member={member_id} err={e}")
+        raise HTTPException(status_code=500, detail=f"업로드 실패: {e}")
 
     size_mb = round(size / (1024 * 1024), 1)
     logger.audit(f"video_uploaded session={session_id} member={member_id} file={save_name} size={size_mb}MB")
@@ -1492,6 +1516,172 @@ async def upload_video(
         "size_mb": size_mb,
         "path": save_path,
     }
+
+
+# ── 청크 업로드 (Cloudflare 100MB 제한 우회) ────────────────────────────
+
+
+@router.post("/{session_id}/videos/{member_id}/chunks/init")
+async def init_chunk_upload(
+    session_id: int,
+    member_id: int,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """청크 업로드 세션 초기화 → upload_id 반환"""
+    member = await db.get(Member, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
+
+    upload_id = uuid.uuid4().hex
+    chunks_dir = os.path.join(VIDEO_DIR, f"session_{session_id}", ".chunks", upload_id)
+    await asyncio.to_thread(os.makedirs, chunks_dir, exist_ok=True)
+
+    meta = {
+        "filename": body.get("filename", "video.mp4"),
+        "total_size": int(body.get("total_size", 0)),
+        "total_chunks": int(body.get("total_chunks", 1)),
+        "member_id": member_id,
+    }
+    meta_path = os.path.join(chunks_dir, "meta.json")
+
+    def _write_meta():
+        with open(meta_path, "w") as f:
+            f.write(json.dumps(meta))
+    await asyncio.to_thread(_write_meta)
+
+    return {"upload_id": upload_id, "chunks_total": meta["total_chunks"]}
+
+
+@router.post("/{session_id}/videos/{member_id}/chunks/{upload_id}/{chunk_idx}")
+async def upload_chunk(
+    session_id: int,
+    member_id: int,
+    upload_id: str,
+    chunk_idx: int,
+    file: UploadFile = File(...),
+    _: str = Depends(get_current_user),
+):
+    """개별 청크 수신 — 50MB 이하 권장 (Cloudflare 100MB 제한)"""
+    chunks_dir = os.path.join(VIDEO_DIR, f"session_{session_id}", ".chunks", upload_id)
+    if not os.path.isdir(chunks_dir):
+        raise HTTPException(status_code=404, detail="업로드 세션 없음 (만료되었거나 취소됨)")
+
+    chunk_path = os.path.join(chunks_dir, f"chunk_{chunk_idx:05d}")
+    tmp_path = chunk_path + ".tmp"
+
+    try:
+        with open(tmp_path, "wb") as f:
+            while data := await file.read(4 * 1024 * 1024):
+                await asyncio.to_thread(f.write, data)
+        await asyncio.to_thread(os.replace, tmp_path, chunk_path)
+    except Exception as e:
+        try:
+            await asyncio.to_thread(os.remove, tmp_path)
+        except OSError:
+            pass
+        logger.error(f"chunk_upload_failed session={session_id} member={member_id} upload={upload_id} idx={chunk_idx} err={e}")
+        raise HTTPException(status_code=500, detail=f"청크 저장 실패: {e}")
+
+    return {"received": chunk_idx}
+
+
+@router.post("/{session_id}/videos/{member_id}/chunks/{upload_id}/complete")
+async def complete_chunk_upload(
+    session_id: int,
+    member_id: int,
+    upload_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """모든 청크 수신 완료 후 순서대로 이어붙여 최종 파일 생성"""
+    member = await db.get(Member, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
+
+    chunks_dir = os.path.join(VIDEO_DIR, f"session_{session_id}", ".chunks", upload_id)
+    meta_path = os.path.join(chunks_dir, "meta.json")
+    if not os.path.isfile(meta_path):
+        raise HTTPException(status_code=404, detail="업로드 세션 없음")
+
+    def _read_meta():
+        with open(meta_path) as f:
+            return json.loads(f.read())
+    meta = await asyncio.to_thread(_read_meta)
+    total = meta["total_chunks"]
+
+    # 청크 모두 도착했는지 확인
+    def _verify_chunks():
+        for i in range(total):
+            cp = os.path.join(chunks_dir, f"chunk_{i:05d}")
+            if not os.path.isfile(cp):
+                return i
+        return -1
+    missing = await asyncio.to_thread(_verify_chunks)
+    if missing >= 0:
+        raise HTTPException(status_code=400, detail=f"청크 {missing} 누락 — 재업로드 필요")
+
+    session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
+
+    # 기존 파일 삭제 (교체)
+    def _remove_existing():
+        for existing in os.listdir(session_dir):
+            full = os.path.join(session_dir, existing)
+            if os.path.isfile(full) and existing.startswith(f"{member_id}_"):
+                try:
+                    os.remove(full)
+                except OSError:
+                    pass
+    await asyncio.to_thread(_remove_existing)
+
+    safe_name = meta.get("filename") or "video.mp4"
+    save_name = f"{member_id}_{safe_name}"
+    save_path = os.path.join(session_dir, save_name)
+    tmp_path = save_path + ".tmp"
+
+    def _assemble():
+        with open(tmp_path, "wb") as out:
+            for i in range(total):
+                with open(os.path.join(chunks_dir, f"chunk_{i:05d}"), "rb") as cf:
+                    shutil.copyfileobj(cf, out, length=4 * 1024 * 1024)
+        os.replace(tmp_path, save_path)
+        shutil.rmtree(chunks_dir, ignore_errors=True)
+
+    try:
+        await asyncio.to_thread(_assemble)
+    except Exception as e:
+        try:
+            await asyncio.to_thread(os.remove, tmp_path)
+        except OSError:
+            pass
+        logger.error(f"chunk_assemble_failed session={session_id} member={member_id} err={e}")
+        raise HTTPException(status_code=500, detail=f"재조립 실패: {e}")
+
+    size = await asyncio.to_thread(os.path.getsize, save_path)
+    size_mb = round(size / (1024 * 1024), 1)
+    logger.audit(f"video_uploaded_chunked session={session_id} member={member_id} file={save_name} size={size_mb}MB chunks={total}")
+
+    return {
+        "member_id": member_id,
+        "member_name": member.name,
+        "filename": safe_name,
+        "size_mb": size_mb,
+        "path": save_path,
+    }
+
+
+@router.delete("/{session_id}/videos/{member_id}/chunks/{upload_id}", status_code=204)
+async def abort_chunk_upload(
+    session_id: int,
+    member_id: int,
+    upload_id: str,
+    _: str = Depends(get_current_user),
+):
+    """업로드 중단 — 청크 디렉토리 정리"""
+    chunks_dir = os.path.join(VIDEO_DIR, f"session_{session_id}", ".chunks", upload_id)
+    await asyncio.to_thread(shutil.rmtree, chunks_dir, ignore_errors=True)
+    return None
 
 
 @router.get("/{session_id}/videos")

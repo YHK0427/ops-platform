@@ -16,6 +16,7 @@ import {
 import { useMember, useLedger, useDeactivateMember, useReactivateMember, useGraduateMember, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry, useToggleMilestonePaid, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
+import { renderSafeHangul } from "@/components/SafeText";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
 import { MemberEditSheet } from "@/components/MemberEditSheet";
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
@@ -545,7 +546,7 @@ function LedgerRow({
             <TableCell className="text-xs text-[var(--color-text-muted)]">
                 {entry.session_title ? (
                     <div>
-                        <span className="text-[var(--color-text-secondary)]">{entry.session_title}</span>
+                        <span className="text-[var(--color-text-secondary)]">{renderSafeHangul(entry.session_title)}</span>
                         {entry.session_date && <span className="block text-[var(--color-text-muted)] opacity-60">{entry.session_date}</span>}
                     </div>
                 ) : (
@@ -712,7 +713,7 @@ function LedgerCardMobile({
                 <div className="flex items-center gap-1.5 flex-wrap">
                     <LedgerTypeBadge type={entry.type} />
                     {entry.session_title && (
-                        <span className="text-[10px] text-[var(--color-text-muted)]">{entry.session_title}</span>
+                        <span className="text-[10px] text-[var(--color-text-muted)]">{renderSafeHangul(entry.session_title)}</span>
                     )}
                 </div>
                 <div className="text-right flex-shrink-0">

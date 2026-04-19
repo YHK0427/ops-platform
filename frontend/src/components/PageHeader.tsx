@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { renderSafeHangul } from "./SafeText";
 
 interface PageHeaderProps {
     title: string;
@@ -45,10 +46,10 @@ export function PageHeader({ title, subtitle, actions, className, showBackButton
                 )}
                 <div>
                     <h1 className="text-lg font-bold text-[var(--color-text-primary)]">
-                        {title}
+                        {renderSafeHangul(title)}
                     </h1>
                     {subtitle && (
-                        <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{subtitle}</p>
+                        <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{renderSafeHangul(subtitle)}</p>
                     )}
                 </div>
             </div>

@@ -45,8 +45,16 @@ interface VideoUploadPanelProps {
 interface UploadState {
     progress: number;
     uploading: boolean;
+    queued?: boolean;
     error?: string;
 }
+
+// 동시 업로드 개수 제한 — 대용량 영상 동시에 올리면 네트워크/서버 불안정
+const MAX_CONCURRENT_UPLOADS = 2;
+// 청크 크기 — Cloudflare Tunnel 100MB 제한 우회 (여유 있게 50MB)
+const CHUNK_SIZE = 50 * 1024 * 1024;
+// 이 크기 이하면 단일 요청, 초과면 청크 업로드 (Cloudflare 한계 고려)
+const CHUNK_THRESHOLD = 80 * 1024 * 1024;
 
 export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult }: VideoUploadPanelProps) {
     const { data: uploadedVideos, refetch } = useSessionVideos(sessionId);
@@ -54,6 +62,9 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     const { mutate: startNaverUpload, isPending: isStartingNaver } = useUploadVideos();
     const [uploads, setUploads] = useState<Record<number, UploadState>>({});
     const xhrRefs = useRef<Record<number, XMLHttpRequest>>({});
+    // 큐에서 대기 중인 업로드 (memberId → File)
+    const uploadQueueRef = useRef<Array<{ memberId: number; file: File }>>([]);
+    const activeUploadsRef = useRef<number>(0);
 
     // 네이버 업로드 대상 체크
     const [selectedForNaver, setSelectedForNaver] = useState<Set<number>>(new Set());
@@ -86,9 +97,8 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         });
     };
 
-    const handleFileSelect = useCallback(async (memberId: number, file: File) => {
-        setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: true } }));
-
+    // 작은 파일 단일 업로드
+    const singleUpload = (memberId: number, file: File, onDone: () => void) => {
         const formData = new FormData();
         formData.append("file", file);
 
@@ -104,33 +114,153 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                 setUploads(prev => ({ ...prev, [memberId]: { progress: pct, uploading: true } }));
             }
         };
-
         xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
                 setUploads(prev => ({ ...prev, [memberId]: { progress: 100, uploading: false } }));
-                toast.success(`영상 업로드 완료`);
+                toast.success("영상 업로드 완료");
                 refetch();
             } else {
                 setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: `실패 (${xhr.status})` } }));
-                toast.error("업로드 실패");
+                toast.error(`업로드 실패 (${xhr.status})`);
             }
+            onDone();
         };
-
         xhr.onerror = () => {
-            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: "네트워크 오류" } }));
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: "네트워크 오류 — 다시 시도해주세요" } }));
             toast.error("네트워크 오류");
+            onDone();
         };
-
         xhr.onabort = () => {
             setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false } }));
             toast.info("업로드가 중지되었습니다.");
+            onDone();
         };
 
         xhrRefs.current[memberId] = xhr;
         xhr.send(formData);
+    };
+
+    // 대용량: 청크 업로드 (Cloudflare 100MB 제한 우회)
+    const chunkedUpload = async (memberId: number, file: File, onDone: () => void) => {
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        const token = getToken();
+        const authHeader: Record<string, string> = token ? { "Authorization": `Bearer ${token}` } : {};
+
+        // AbortController로 중단 지원
+        const controller = new AbortController();
+        // xhrRefs에 abort-able 객체 저장
+        xhrRefs.current[memberId] = { abort: () => controller.abort() } as any;
+
+        const bail = (err: string) => {
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: err } }));
+            toast.error(err);
+            onDone();
+        };
+
+        let uploadId: string;
+        try {
+            // 1. Init
+            const initRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/init`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...authHeader },
+                body: JSON.stringify({ filename: file.name, total_size: file.size, total_chunks: totalChunks }),
+                signal: controller.signal,
+            });
+            if (!initRes.ok) throw new Error(`init 실패 (${initRes.status})`);
+            const initData = await initRes.json();
+            uploadId = initData.upload_id;
+
+            // 2. Chunks — 순차 전송 (같은 member 내에선 순서 보장, 부하 분산)
+            for (let i = 0; i < totalChunks; i++) {
+                if (controller.signal.aborted) throw new Error("aborted");
+                const start = i * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, file.size);
+                const chunk = file.slice(start, end);
+                const fd = new FormData();
+                fd.append("file", chunk, file.name);
+
+                const chunkRes = await fetch(
+                    `/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/${uploadId}/${i}`,
+                    { method: "POST", headers: { ...authHeader }, body: fd, signal: controller.signal },
+                );
+                if (!chunkRes.ok) throw new Error(`청크 ${i} 실패 (${chunkRes.status})`);
+
+                const pct = Math.round(((i + 1) / totalChunks) * 100);
+                setUploads(prev => ({ ...prev, [memberId]: { progress: pct, uploading: true } }));
+            }
+
+            // 3. Complete
+            const compRes = await fetch(
+                `/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/${uploadId}/complete`,
+                { method: "POST", headers: { ...authHeader }, signal: controller.signal },
+            );
+            if (!compRes.ok) throw new Error(`재조립 실패 (${compRes.status})`);
+
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 100, uploading: false } }));
+            toast.success("영상 업로드 완료");
+            refetch();
+        } catch (err: any) {
+            if (controller.signal.aborted || err?.name === "AbortError" || err?.message === "aborted") {
+                setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false } }));
+                toast.info("업로드가 중지되었습니다.");
+                // 서버 청크 정리
+                if (uploadId!) {
+                    fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/${uploadId}`, {
+                        method: "DELETE", headers: { ...authHeader },
+                    }).catch(() => {});
+                }
+            } else {
+                bail(`업로드 실패: ${err?.message ?? "알 수 없음"}`);
+            }
+        }
+        onDone();
+    };
+
+    const startActualUpload = useCallback((memberId: number, file: File) => {
+        activeUploadsRef.current += 1;
+        setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: true } }));
+
+        const finishAndDrain = () => {
+            activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
+            delete xhrRefs.current[memberId];
+            const next = uploadQueueRef.current.shift();
+            if (next) startActualUpload(next.memberId, next.file);
+        };
+
+        if (file.size > CHUNK_THRESHOLD) {
+            chunkedUpload(memberId, file, finishAndDrain);
+        } else {
+            singleUpload(memberId, file, finishAndDrain);
+        }
     }, [sessionId, refetch]);
 
+    const handleFileSelect = useCallback((memberId: number, file: File) => {
+        // 이미 진행 중인 같은 멤버 업로드가 있으면 중단
+        const existing = xhrRefs.current[memberId];
+        if (existing) {
+            try { existing.abort(); } catch { /* noop */ }
+        }
+        // 큐에서도 같은 멤버 기존 항목 제거
+        uploadQueueRef.current = uploadQueueRef.current.filter(q => q.memberId !== memberId);
+
+        if (activeUploadsRef.current < MAX_CONCURRENT_UPLOADS) {
+            startActualUpload(memberId, file);
+        } else {
+            uploadQueueRef.current.push({ memberId, file });
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, queued: true } }));
+            toast.info(`업로드 대기 중 (앞 ${uploadQueueRef.current.length}개)`);
+        }
+    }, [startActualUpload]);
+
     const cancelUpload = useCallback((memberId: number) => {
+        // 큐 대기 중이면 큐에서 제거
+        const inQueue = uploadQueueRef.current.some(q => q.memberId === memberId);
+        if (inQueue) {
+            uploadQueueRef.current = uploadQueueRef.current.filter(q => q.memberId !== memberId);
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false } }));
+            toast.info("대기 중 업로드를 취소했습니다.");
+            return;
+        }
         const xhr = xhrRefs.current[memberId];
         if (xhr) {
             xhr.abort();
@@ -362,7 +492,18 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                                                 )}
 
                                                 {/* 상태 — 모바일은 전체 폭 아래 줄, 데스크톱은 인라인 */}
-                                                {video && !isUploading ? (
+                                                {uploadState?.queued ? (
+                                                    <div className="w-full md:w-auto md:flex-1 flex items-center gap-2 order-last md:order-none">
+                                                        <span className="text-xs text-amber-600 font-medium">업로드 대기 중...</span>
+                                                        <Button
+                                                            variant="ghost" size="sm"
+                                                            className="h-6 px-2 text-[10px] text-rose-500 hover:bg-rose-50 ml-auto"
+                                                            onClick={() => cancelUpload(p.member_id)}
+                                                        >
+                                                            취소
+                                                        </Button>
+                                                    </div>
+                                                ) : video && !isUploading ? (
                                                     <div className="flex items-center gap-2 w-full md:w-auto md:flex-1 min-w-0 order-last md:order-none">
                                                         <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
                                                         <span className="text-xs text-green-600 truncate flex-1">
@@ -410,7 +551,7 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                                                 <div className="ml-0 md:ml-14">
                                                     <input
                                                         type="text"
-                                                        className="w-full h-6 text-[11px] px-2 border border-[var(--color-border)] rounded bg-white text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+                                                        className="hangul-fallback w-full h-6 text-[11px] px-2 border border-[var(--color-border)] rounded bg-white text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
                                                         value={getTitle(p)}
                                                         onChange={(e) => setTitleOverrides(prev => ({ ...prev, [p.member_id]: e.target.value }))}
                                                         placeholder="카페 게시글 제목"

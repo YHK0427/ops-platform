@@ -507,7 +507,7 @@ export default function OpsTab() {
                                             <td className="px-4 py-1.5">
                                                 <input
                                                     type="text"
-                                                    className="w-full bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
+                                                    className="hangul-fallback w-full bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
                                                     value={v.cafe_title}
                                                     onChange={(e) => updateVideoTitle(v.id, e.target.value)}
                                                     title={`원본: ${v.name}`}

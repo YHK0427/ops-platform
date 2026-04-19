@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { GripVertical, UserMinus } from "lucide-react";
+import { GripVertical, UserMinus, ChevronUp, ChevronDown } from "lucide-react";
 import {
     DndContext,
     closestCenter,
     KeyboardSensor,
     PointerSensor,
+    TouchSensor,
     useSensor,
     useSensors,
 } from "@dnd-kit/core";
@@ -43,23 +44,49 @@ interface PresenterOrderPanelProps {
     teamItems?: { id: number; name: string; memberNames: string[] }[];
 }
 
-function DraggableRow({ id, name, index, isTeam, subtext }: {
+function DraggableRow({ id, name, index, isTeam, subtext, isFirst, isLast, onMoveUp, onMoveDown }: {
     id: number; name: string; index: number; isTeam?: boolean; subtext?: string;
+    isFirst: boolean; isLast: boolean;
+    onMoveUp: () => void; onMoveDown: () => void;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
     return (
         <div
             ref={setNodeRef}
             style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-            className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-[var(--color-border)] last:border-b-0 cursor-grab active:cursor-grabbing hover:bg-gray-50"
-            {...attributes}
-            {...listeners}
+            className="flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2.5 bg-white border-b border-[var(--color-border)] last:border-b-0 hover:bg-gray-50"
         >
-            <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span className="text-xs text-gray-500 w-6 text-right tabular-nums font-bold">{index + 1}</span>
-            <div>
+            {/* 데스크톱 — 드래그 핸들 */}
+            <div
+                className="hidden md:flex items-center cursor-grab active:cursor-grabbing"
+                {...attributes}
+                {...listeners}
+            >
+                <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            </div>
+            <span className="text-xs text-gray-500 w-6 text-right tabular-nums font-bold flex-shrink-0">{index + 1}</span>
+            <div className="flex-1 min-w-0">
                 <span className={`text-sm ${isTeam ? "font-bold" : "font-medium"}`}>{name}</span>
-                {subtext && <span className="text-xs text-gray-400 ml-2">{subtext}</span>}
+                {subtext && <span className="text-xs text-gray-400 ml-2 truncate">{subtext}</span>}
+            </div>
+            {/* 모바일 — 위/아래 버튼 */}
+            <div className="flex md:hidden items-center gap-1">
+                <button
+                    onClick={onMoveUp}
+                    disabled={isFirst}
+                    className="w-8 h-8 flex items-center justify-center rounded border border-[var(--color-border)] bg-white active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="위로 이동"
+                >
+                    <ChevronUp className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={onMoveDown}
+                    disabled={isLast}
+                    className="w-8 h-8 flex items-center justify-center rounded border border-[var(--color-border)] bg-white active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="아래로 이동"
+                >
+                    <ChevronDown className="w-4 h-4" />
+                </button>
             </div>
         </div>
     );
@@ -69,6 +96,7 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
     const queryClient = useQueryClient();
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
     );
 
@@ -123,6 +151,24 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
         });
     };
 
+    // 모바일 위/아래 버튼으로 순서 변경
+    const moveItem = (groupKey: string, fromIdx: number, toIdx: number) => {
+        setGroupedItems(prev => {
+            const list = [...(prev[groupKey] ?? [])];
+            if (fromIdx < 0 || fromIdx >= list.length || toIdx < 0 || toIdx >= list.length) return prev;
+            const reordered = arrayMove(list, fromIdx, toIdx);
+            saveOrder(reordered.map((item, idx) => ({ member_id: item.id, presenter_order: idx + 1 })));
+            return { ...prev, [groupKey]: reordered };
+        });
+    };
+
+    const moveTeam = (fromIdx: number, toIdx: number) => {
+        setTeams(prev => {
+            if (fromIdx < 0 || fromIdx >= prev.length || toIdx < 0 || toIdx >= prev.length) return prev;
+            return arrayMove(prev, fromIdx, toIdx);
+        });
+    };
+
     const handleTeamDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
         if (!over || active.id === over.id) return;
@@ -140,7 +186,8 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
     if (isTeamSession && teams.length > 0) {
         return (
             <div className="space-y-2">
-                <p className="text-xs text-gray-500">드래그하여 팀 발표 순서를 조정하세요.</p>
+                <p className="text-xs text-gray-500 hidden md:block">드래그하여 팀 발표 순서를 조정하세요.</p>
+                <p className="text-xs text-gray-500 md:hidden">▲▼ 버튼으로 순서를 조정하세요. (길게 눌러 드래그도 가능)</p>
                 <div className="rounded-lg border border-[var(--color-border)] overflow-hidden">
                     <div className="px-4 py-2 bg-gray-50 border-b border-[var(--color-border)] text-xs font-bold text-gray-600 uppercase tracking-wider">
                         팀 발표 순서
@@ -148,7 +195,14 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTeamDragEnd}>
                         <SortableContext items={teams.map(t => t.id)} strategy={verticalListSortingStrategy}>
                             {teams.map((team, idx) => (
-                                <DraggableRow key={team.id} id={team.id} name={team.name} index={idx} isTeam subtext={team.memberNames.join(", ")} />
+                                <DraggableRow
+                                    key={team.id} id={team.id} name={team.name} index={idx} isTeam
+                                    subtext={team.memberNames.join(", ")}
+                                    isFirst={idx === 0}
+                                    isLast={idx === teams.length - 1}
+                                    onMoveUp={() => moveTeam(idx, idx - 1)}
+                                    onMoveDown={() => moveTeam(idx, idx + 1)}
+                                />
                             ))}
                         </SortableContext>
                     </DndContext>
@@ -160,7 +214,8 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
     // 개인 세션
     return (
         <div className="space-y-2">
-            <p className="text-xs text-gray-500">드래그하여 발표 순서를 조정하세요. 순서는 자동 저장됩니다.</p>
+            <p className="text-xs text-gray-500 hidden md:block">드래그하여 발표 순서를 조정하세요. 순서는 자동 저장됩니다.</p>
+            <p className="text-xs text-gray-500 md:hidden">▲▼ 버튼으로 순서를 조정하세요. 자동 저장됩니다. (길게 눌러 드래그도 가능)</p>
             <div className={hasGroups ? "grid grid-cols-1 md:grid-cols-2 gap-4" : ""}>
                 {Object.entries(groupedItems).map(([groupKey, list]) => (
                     <div key={groupKey} className="rounded-lg border border-[var(--color-border)] overflow-hidden">
@@ -170,7 +225,13 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
                         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd(groupKey)}>
                             <SortableContext items={list.map(i => i.id)} strategy={verticalListSortingStrategy}>
                                 {list.map((item, idx) => (
-                                    <DraggableRow key={item.id} id={item.id} name={item.name} index={idx} />
+                                    <DraggableRow
+                                        key={item.id} id={item.id} name={item.name} index={idx}
+                                        isFirst={idx === 0}
+                                        isLast={idx === list.length - 1}
+                                        onMoveUp={() => moveItem(groupKey, idx, idx - 1)}
+                                        onMoveDown={() => moveItem(groupKey, idx, idx + 1)}
+                                    />
                                 ))}
                             </SortableContext>
                         </DndContext>

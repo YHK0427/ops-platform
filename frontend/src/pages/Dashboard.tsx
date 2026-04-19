@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
+import { renderSafeHangul } from "@/components/SafeText";
 import { WarningBanner } from "@/components/WarningBanner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, useImportNaverSession, useNaverLogin, useCrawlerTask, useTreasury, crawlerKeys } from "@/hooks";
@@ -249,7 +250,7 @@ export default function Dashboard() {
                                     })()}
                                 </div>
                                 <h3 className="text-2xl font-bold text-[var(--color-text-primary)] mb-1">
-                                    {session.title}
+                                    {renderSafeHangul(session.title)}
                                 </h3>
                                 <p className="text-sm text-[var(--color-text-secondary)]">
                                     {session.type === "TEAM" ? "팀" : "개인"} 세션

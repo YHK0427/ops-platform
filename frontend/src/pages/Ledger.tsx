@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { renderSafeHangul } from "@/components/SafeText";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -303,7 +304,7 @@ export default function Ledger() {
                                         <TableCell className="text-xs text-[var(--color-text-muted)]">
                                             {entry.session_title ? (
                                                 <div>
-                                                    <span className="text-[var(--color-text-secondary)]">{entry.session_title}</span>
+                                                    <span className="text-[var(--color-text-secondary)]">{renderSafeHangul(entry.session_title)}</span>
                                                     {entry.session_date && <span className="block text-[var(--color-text-muted)]">{entry.session_date}</span>}
                                                 </div>
                                             ) : (
@@ -426,7 +427,7 @@ export default function Ledger() {
                                             </Badge>
                                             <span className="text-sm font-medium text-[var(--color-text-primary)]">{memberName}</span>
                                             {entry.session_title && (
-                                                <span className="text-[10px] text-[var(--color-text-muted)]">{entry.session_title}</span>
+                                                <span className="text-[10px] text-[var(--color-text-muted)]">{renderSafeHangul(entry.session_title)}</span>
                                             )}
                                         </div>
                                         <div className="text-right flex-shrink-0">

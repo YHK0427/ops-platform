@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Plus, ArrowRight, Calendar, Users, Briefcase, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { renderSafeHangul } from "@/components/SafeText";
 import { useSessions, useDeleteSession } from "@/hooks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -85,7 +86,7 @@ export default function SessionList() {
                                         )}
                                     </div>
                                     <h3 className="text-lg font-bold text-[var(--color-text-primary)] group-hover:text-[var(--color-accent)] transition-colors line-clamp-1">
-                                        {session.title}
+                                        {renderSafeHangul(session.title)}
                                     </h3>
                                 </CardHeader>
                                 <CardContent>
