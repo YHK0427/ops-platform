@@ -54,35 +54,40 @@ function DraggableRow({ id, name, index, isTeam, subtext, isFirst, isLast, onMov
         <div
             ref={setNodeRef}
             style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-            className="flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2.5 bg-white border-b border-[var(--color-border)] last:border-b-0 hover:bg-gray-50"
+            className="flex items-center gap-2 md:gap-3 px-2 md:px-4 py-2.5 bg-white border-b border-[var(--color-border)] last:border-b-0 hover:bg-gray-50"
         >
-            {/* 데스크톱 — 드래그 핸들 */}
-            <div
-                className="hidden md:flex items-center cursor-grab active:cursor-grabbing"
+            {/* 드래그 핸들 — touch-action:none 이 여기에만 적용되어 페이지 스크롤은 유지 */}
+            <button
+                type="button"
+                className="flex items-center justify-center h-10 w-10 -ml-1 rounded text-gray-400 hover:bg-gray-100 active:bg-gray-200 cursor-grab active:cursor-grabbing touch-none select-none flex-shrink-0"
+                style={{ touchAction: "none" }}
+                aria-label="드래그하여 순서 변경"
                 {...attributes}
                 {...listeners}
             >
-                <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            </div>
-            <span className="text-xs text-gray-500 w-6 text-right tabular-nums font-bold flex-shrink-0">{index + 1}</span>
+                <GripVertical className="w-5 h-5" />
+            </button>
+            <span className="text-xs text-gray-500 w-5 text-right tabular-nums font-bold flex-shrink-0">{index + 1}</span>
             <div className="flex-1 min-w-0">
                 <span className={`text-sm ${isTeam ? "font-bold" : "font-medium"}`}>{name}</span>
                 {subtext && <span className="text-xs text-gray-400 ml-2 truncate">{subtext}</span>}
             </div>
-            {/* 모바일 — 위/아래 버튼 */}
-            <div className="flex md:hidden items-center gap-1">
+            {/* 모바일 — 위/아래 버튼 (드래그 대안). 데스크톱엔 숨김 */}
+            <div className="flex md:hidden items-center gap-1 flex-shrink-0">
                 <button
+                    type="button"
                     onClick={onMoveUp}
                     disabled={isFirst}
-                    className="w-8 h-8 flex items-center justify-center rounded border border-[var(--color-border)] bg-white active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="w-9 h-9 flex items-center justify-center rounded border border-[var(--color-border)] bg-white active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
                     aria-label="위로 이동"
                 >
                     <ChevronUp className="w-4 h-4" />
                 </button>
                 <button
+                    type="button"
                     onClick={onMoveDown}
                     disabled={isLast}
-                    className="w-8 h-8 flex items-center justify-center rounded border border-[var(--color-border)] bg-white active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="w-9 h-9 flex items-center justify-center rounded border border-[var(--color-border)] bg-white active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
                     aria-label="아래로 이동"
                 >
                     <ChevronDown className="w-4 h-4" />
@@ -96,7 +101,7 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
     const queryClient = useQueryClient();
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-        useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
     );
 
@@ -187,7 +192,7 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
         return (
             <div className="space-y-2">
                 <p className="text-xs text-gray-500 hidden md:block">드래그하여 팀 발표 순서를 조정하세요.</p>
-                <p className="text-xs text-gray-500 md:hidden">▲▼ 버튼으로 순서를 조정하세요. (길게 눌러 드래그도 가능)</p>
+                <p className="text-xs text-gray-500 md:hidden">왼쪽 그립(⋮⋮)을 길게 눌러 드래그하거나 ▲▼ 버튼으로 순서 조정.</p>
                 <div className="rounded-lg border border-[var(--color-border)] overflow-hidden">
                     <div className="px-4 py-2 bg-gray-50 border-b border-[var(--color-border)] text-xs font-bold text-gray-600 uppercase tracking-wider">
                         팀 발표 순서
@@ -215,7 +220,7 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
     return (
         <div className="space-y-2">
             <p className="text-xs text-gray-500 hidden md:block">드래그하여 발표 순서를 조정하세요. 순서는 자동 저장됩니다.</p>
-            <p className="text-xs text-gray-500 md:hidden">▲▼ 버튼으로 순서를 조정하세요. 자동 저장됩니다. (길게 눌러 드래그도 가능)</p>
+            <p className="text-xs text-gray-500 md:hidden">왼쪽 그립(⋮⋮)을 길게 눌러 드래그하거나 ▲▼ 버튼으로 순서 조정. 자동 저장.</p>
             <div className={hasGroups ? "grid grid-cols-1 md:grid-cols-2 gap-4" : ""}>
                 {Object.entries(groupedItems).map(([groupKey, list]) => (
                     <div key={groupKey} className="rounded-lg border border-[var(--color-border)] overflow-hidden">

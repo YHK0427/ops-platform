@@ -1554,7 +1554,7 @@ async def init_chunk_upload(
     return {"upload_id": upload_id, "chunks_total": meta["total_chunks"]}
 
 
-@router.post("/{session_id}/videos/{member_id}/chunks/{upload_id}/{chunk_idx}")
+@router.post("/{session_id}/videos/{member_id}/chunk/{upload_id}/{chunk_idx}")
 async def upload_chunk(
     session_id: int,
     member_id: int,

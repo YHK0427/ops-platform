@@ -51,10 +51,12 @@ interface UploadState {
 
 // 동시 업로드 개수 제한 — 대용량 영상 동시에 올리면 네트워크/서버 불안정
 const MAX_CONCURRENT_UPLOADS = 2;
-// 청크 크기 — Cloudflare Tunnel/Free plan 제한 안정성 위해 20MB로 여유
-const CHUNK_SIZE = 20 * 1024 * 1024;
+// 청크 크기 — Cloudflare 100MB 제한 여유두고 50MB
+const CHUNK_SIZE = 50 * 1024 * 1024;
 // 이 크기 이하면 단일 요청, 초과면 청크 업로드
-const CHUNK_THRESHOLD = 50 * 1024 * 1024;
+const CHUNK_THRESHOLD = 80 * 1024 * 1024;
+// 청크 병렬 전송 수 — 모바일 대역폭 포화시키기 위함
+const PARALLEL_CHUNKS_PER_UPLOAD = 3;
 
 export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult }: VideoUploadPanelProps) {
     const { data: uploadedVideos, refetch } = useSessionVideos(sessionId);
@@ -140,16 +142,28 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         xhr.send(formData);
     };
 
-    // 대용량: 청크 업로드 (Cloudflare 100MB 제한 우회)
+    // 대용량: 청크 병렬 업로드 (Cloudflare 100MB 제한 우회 + 속도 개선)
     const chunkedUpload = async (memberId: number, file: File, onDone: () => void) => {
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
         const token = getToken();
         const authHeader: Record<string, string> = token ? { "Authorization": `Bearer ${token}` } : {};
 
-        // AbortController로 중단 지원
-        const controller = new AbortController();
-        // xhrRefs에 abort-able 객체 저장
-        xhrRefs.current[memberId] = { abort: () => controller.abort() } as any;
+        // 각 청크가 전송한 바이트 수 추적 → 전체 진행률 계산
+        const chunkBytesSent = new Array(totalChunks).fill(0);
+        const updateProgress = () => {
+            const total = chunkBytesSent.reduce((a: number, b: number) => a + b, 0);
+            const pct = Math.min(99, Math.round((total / file.size) * 100));
+            setUploads(prev => ({ ...prev, [memberId]: { progress: pct, uploading: true } }));
+        };
+
+        let aborted = false;
+        const activeXhrs: XMLHttpRequest[] = [];
+        xhrRefs.current[memberId] = {
+            abort: () => {
+                aborted = true;
+                activeXhrs.forEach(x => { try { x.abort(); } catch { /* noop */ } });
+            },
+        } as any;
 
         const bail = (err: string) => {
             setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: err } }));
@@ -157,60 +171,86 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             onDone();
         };
 
-        let uploadId: string;
+        // 개별 청크 XHR 업로드 (진행률 포함)
+        const uploadChunkXhr = (uploadId: string, idx: number): Promise<void> => {
+            return new Promise((resolve, reject) => {
+                if (aborted) { reject(new Error("aborted")); return; }
+                const start = idx * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, file.size);
+                const blob = file.slice(start, end);
+
+                const xhr = new XMLHttpRequest();
+                xhr.open("POST", `/api/v1/sessions/${sessionId}/videos/${memberId}/chunk/${uploadId}/${idx}`);
+                xhr.setRequestHeader("Content-Type", "application/octet-stream");
+                if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        chunkBytesSent[idx] = e.loaded;
+                        updateProgress();
+                    }
+                };
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        chunkBytesSent[idx] = blob.size;
+                        updateProgress();
+                        resolve();
+                    } else {
+                        reject(new Error(`청크 ${idx} 실패 (${xhr.status})`));
+                    }
+                };
+                xhr.onerror = () => reject(new Error(`청크 ${idx} 네트워크 오류`));
+                xhr.onabort = () => reject(new Error("aborted"));
+
+                activeXhrs.push(xhr);
+                xhr.send(blob);
+            });
+        };
+
+        let uploadId: string = "";
         try {
             // 1. Init
             const initRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/init`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeader },
                 body: JSON.stringify({ filename: file.name, total_size: file.size, total_chunks: totalChunks }),
-                signal: controller.signal,
             });
             if (!initRes.ok) throw new Error(`init 실패 (${initRes.status})`);
             const initData = await initRes.json();
             uploadId = initData.upload_id;
 
-            // 2. Chunks — raw binary body로 순차 전송 (multipart parsing 이슈 회피)
-            for (let i = 0; i < totalChunks; i++) {
-                if (controller.signal.aborted) throw new Error("aborted");
-                const start = i * CHUNK_SIZE;
-                const end = Math.min(start + CHUNK_SIZE, file.size);
-                const chunk = file.slice(start, end);
-
-                const chunkRes = await fetch(
-                    `/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/${uploadId}/${i}`,
-                    {
-                        method: "POST",
-                        headers: { "Content-Type": "application/octet-stream", ...authHeader },
-                        body: chunk,
-                        signal: controller.signal,
-                    },
-                );
-                if (!chunkRes.ok) {
-                    const errTxt = await chunkRes.text().catch(() => "");
-                    throw new Error(`청크 ${i} 실패 (${chunkRes.status}) ${errTxt}`);
+            // 2. 청크 병렬 업로드 — worker pool 방식
+            const queue = Array.from({ length: totalChunks }, (_, i) => i);
+            const worker = async () => {
+                while (queue.length > 0) {
+                    const idx = queue.shift();
+                    if (idx === undefined) break;
+                    if (aborted) throw new Error("aborted");
+                    await uploadChunkXhr(uploadId, idx);
                 }
-
-                const pct = Math.round(((i + 1) / totalChunks) * 100);
-                setUploads(prev => ({ ...prev, [memberId]: { progress: pct, uploading: true } }));
-            }
+            };
+            await Promise.all(
+                Array.from({ length: Math.min(PARALLEL_CHUNKS_PER_UPLOAD, totalChunks) }, () => worker())
+            );
 
             // 3. Complete
             const compRes = await fetch(
                 `/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/${uploadId}/complete`,
-                { method: "POST", headers: { ...authHeader }, signal: controller.signal },
+                { method: "POST", headers: { ...authHeader } },
             );
-            if (!compRes.ok) throw new Error(`재조립 실패 (${compRes.status})`);
+            if (!compRes.ok) {
+                const errTxt = await compRes.text().catch(() => "");
+                throw new Error(`재조립 실패 (${compRes.status}) ${errTxt}`);
+            }
 
             setUploads(prev => ({ ...prev, [memberId]: { progress: 100, uploading: false } }));
             toast.success("영상 업로드 완료");
             refetch();
         } catch (err: any) {
-            if (controller.signal.aborted || err?.name === "AbortError" || err?.message === "aborted") {
+            if (aborted || err?.message === "aborted") {
                 setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false } }));
                 toast.info("업로드가 중지되었습니다.");
-                // 서버 청크 정리
-                if (uploadId!) {
+                if (uploadId) {
                     fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/${uploadId}`, {
                         method: "DELETE", headers: { ...authHeader },
                     }).catch(() => {});
