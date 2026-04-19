@@ -213,13 +213,19 @@ export default function OpsTab() {
                 toast.success("업로드 작업이 시작되었습니다.");
                 setUploadTaskId(data.task_id);
             },
-            onError: () => toast.error("요청 실패"),
+            onError: (err: any) => {
+                if (err?.response?.status === 409) {
+                    toast.error(err.response.data?.detail ?? "이미 업로드가 진행 중입니다.");
+                } else {
+                    toast.error("요청 실패");
+                }
+            },
         });
     };
 
     const handleCancelUpload = () => {
         cancelUpload({ sessionId: session.id }, {
-            onSuccess: () => toast.info("업로드 중단 요청됨. 진행 중인 영상 완료 후 중단됩니다."),
+            onSuccess: () => toast.info("업로드를 중단하고 있습니다..."),
             onError: () => toast.error("중단 요청 실패"),
         });
     };
@@ -275,16 +281,20 @@ export default function OpsTab() {
                             <tr className="text-[var(--color-text-muted)] text-xs border-b border-[var(--color-border)]">
                                 <th className="text-left px-4 py-1.5 w-[50px]">순서</th>
                                 <th className="text-left px-4 py-1.5">발표자</th>
+                                <th className="text-right px-4 py-1.5 w-[80px]">용량</th>
                                 <th className="text-left px-4 py-1.5 w-[120px]">상태</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--color-border)]">
-                            {progress.map((item, idx) => (
+                            {progress.map((item: any, idx: number) => (
                                 <tr key={idx} className="hover:bg-gray-50">
                                     <td className="px-4 py-1.5 text-xs tabular-nums text-[var(--color-text-muted)]">
                                         {item.order === 9999 ? "-" : item.order}
                                     </td>
                                     <td className="px-4 py-1.5 text-[var(--color-text-secondary)] text-xs">{item.presenter}</td>
+                                    <td className="px-4 py-1.5 text-right text-xs tabular-nums text-[var(--color-text-muted)]">
+                                        {item.size_mb ? `${item.size_mb} MB` : "-"}
+                                    </td>
                                     <td className="px-4 py-1.5">
                                         <VideoStatusBadge status={item.status} error={item.error} />
                                     </td>

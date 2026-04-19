@@ -57,7 +57,7 @@ def list_drive_videos_by_folder(folder_id: str) -> List[dict]:
     query = f"'{folder_id}' in parents and mimeType contains 'video/' and trashed=false"
     results = service.files().list(
         q=query,
-        fields="files(id, name)",
+        fields="files(id, name, size)",
         orderBy="name",
     ).execute()
     files = results.get("files", [])
@@ -91,7 +91,7 @@ def list_drive_videos(week_num: int) -> List[dict]:
     
     results = service.files().list(
         q=query,
-        fields="files(id, name)",
+        fields="files(id, name, size)",
         orderBy="name"
     ).execute()
     
@@ -318,22 +318,31 @@ async def upload_all_videos(
     await _set_progress(redis, job_id, progress_list)
 
     results = []
-    tmp_dir = "/app/files/video"
+    # job별 임시 디렉토리 — 중복 실행 시 파일 충돌 방지
+    safe_job_id = (job_id or "default").replace(":", "_")[:32]
+    tmp_dir = f"/app/files/video/{safe_job_id}"
     os.makedirs(tmp_dir, exist_ok=True)
 
-    # 중단 시그널
+    # 중단 시그널 + browser 참조 (즉시 중단용)
     abort_event = asyncio.Event()
+    browser_ref: list = [None]  # mutable container for browser reference
 
     async def poll_cancel():
-        """Redis cancel 플래그를 2초마다 체크"""
+        """Redis cancel 플래그를 2초마다 체크 — 감지 시 browser 즉시 종료"""
         while not abort_event.is_set():
             try:
                 if redis:
                     flag = await redis.get(f"cancel_upload:{session_id}")
                     if flag:
                         abort_event.set()
-                        logger.info("사용자 요청으로 업로드 중단")
+                        logger.info("사용자 요청으로 업로드 즉시 중단")
                         await redis.delete(f"cancel_upload:{session_id}")
+                        # browser 즉시 종료 → 진행 중인 Playwright에 exception 발생
+                        if browser_ref[0]:
+                            try:
+                                await browser_ref[0].close()
+                            except Exception:
+                                pass
                         return
             except Exception:
                 pass
@@ -341,13 +350,15 @@ async def upload_all_videos(
 
     cancel_poller = asyncio.create_task(poll_cancel())
 
-    # 파일별 메타 미리 계산
+    # 파일별 메타 미리 계산 + 크기 정보
     file_metas = []
-    for drive_file in drive_files:
+    for i, drive_file in enumerate(drive_files):
         raw_name = drive_file.get("name", drive_file.get("id", "unknown"))
         file_id = drive_file.get("id", drive_file.get("file_id"))
         tmp_path = os.path.join(tmp_dir, raw_name)
-        file_metas.append({"raw_name": raw_name, "file_id": file_id, "tmp_path": tmp_path})
+        size_mb = round(int(drive_file.get("size", 0)) / (1024 * 1024), 1) if drive_file.get("size") else None
+        file_metas.append({"raw_name": raw_name, "file_id": file_id, "tmp_path": tmp_path, "size_mb": size_mb})
+        progress_list[i]["size_mb"] = size_mb
 
     # 다음 영상 1개만 미리 다운로드하는 헬퍼
     prefetch_task: Optional[asyncio.Task] = None
@@ -363,6 +374,7 @@ async def upload_all_videos(
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
+        browser_ref[0] = browser  # cancel poller가 즉시 종료할 수 있도록 참조 저장
         pw_ctx = await browser.new_context(storage_state=storage)
         await pw_ctx.add_init_script(
             "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
@@ -425,8 +437,13 @@ async def upload_all_videos(
                             f"[{idx+1}/{total}] {raw_name} 업로드 실패 "
                             f"(시도 {attempt}/{MAX_UPLOAD_RETRIES}), 재시도..."
                         )
-                        await page.goto("about:blank")
-                        await asyncio.sleep(5)
+                        # page를 닫고 새로 생성 (잔여 상태 완전 초기화)
+                        try:
+                            await page.close()
+                        except Exception:
+                            pass
+                        page = await pw_ctx.new_page()
+                        await asyncio.sleep(3)
 
                 if ok:
                     progress_list[idx]["status"] = "done"
@@ -463,7 +480,9 @@ async def upload_all_videos(
                     except Exception:
                         pass
 
-        await browser.close()
+        # browser가 cancel poller에 의해 이미 close되었을 수 있음
+        if browser.is_connected():
+            await browser.close()
 
     # 정리
     if prefetch_task:
@@ -476,7 +495,11 @@ async def upload_all_videos(
             if p["status"] == "pending":
                 p["status"] = "cancelled"
 
-    # 남은 임시파일 정리
+    # 임시 디렉토리 전체 삭제 (job별 격리)
+    import shutil
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # (하위 호환) 개별 파일 정리도 시도
     for meta in file_metas:
         if os.path.exists(meta["tmp_path"]):
             try:

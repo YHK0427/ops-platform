@@ -147,6 +147,22 @@ async def start_upload_videos(
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
+    # 중복 실행 차단 — 이미 진행 중인 task가 있으면 거부
+    redis = pool
+    try:
+        existing_task_id = await redis.get(f"active_upload_task:{body.session_id}")
+        if existing_task_id:
+            existing_id = existing_task_id if isinstance(existing_task_id, str) else existing_task_id.decode()
+            from arq.jobs import Job as ArqJob
+            existing_job = ArqJob(existing_id, pool)
+            existing_status = await existing_job.status()
+            if existing_status in ("queued", "in_progress"):
+                raise HTTPException(status_code=409, detail="이미 업로드가 진행 중입니다. 기존 업로드를 중단한 후 다시 시도해주세요.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Redis 조회 실패 시 진행 허용
+
     videos_raw = None
     if body.videos:
         videos_raw = [v.model_dump() for v in body.videos]
