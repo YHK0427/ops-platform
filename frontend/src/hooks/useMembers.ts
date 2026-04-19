@@ -19,13 +19,13 @@ export interface Member {
 
 export interface MemberCreate {
     name: string;
-    email: string;
+    email?: string | null;
     tags?: string[];
 }
 
 export interface MemberUpdate {
     name?: string;
-    email?: string;
+    email?: string | null;
     tags?: string[];
     deposit?: number; // only logic (add/deduct)
 }

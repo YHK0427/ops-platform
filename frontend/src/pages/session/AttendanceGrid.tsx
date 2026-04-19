@@ -36,17 +36,6 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
     const [updating, setUpdating] = useState<Record<string, boolean>>({});
     const [viewMode, setViewMode] = useState<"default" | "order">("default");
 
-    const handlePresenterOrderChange = async (memberId: number, order: number | null) => {
-        try {
-            await api.patch(`/sessions/${sessionId}/presenter-order`, [
-                { member_id: memberId, presenter_order: order },
-            ]);
-            await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
-        } catch {
-            toast.error("순서 변경 실패");
-        }
-    };
-
     const handleStatusChange = async (memberId: number, status: string) => {
         setUpdating(prev => ({ ...prev, [memberId]: true }));
         try {

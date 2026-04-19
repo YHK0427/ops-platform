@@ -1,11 +1,11 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle, UserMinus } from "lucide-react";
 import { useSessionVideos, useDeleteSessionVideo, useUploadVideos } from "@/hooks";
 import type { SessionVideo } from "@/hooks";
-import api, { getToken } from "@/lib/api";
+import { getToken } from "@/lib/api";
 import { toast } from "sonner";
 
 interface PresenterSlot {
