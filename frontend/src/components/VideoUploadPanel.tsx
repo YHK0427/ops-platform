@@ -51,10 +51,10 @@ interface UploadState {
 
 // 동시 업로드 개수 제한 — 대용량 영상 동시에 올리면 네트워크/서버 불안정
 const MAX_CONCURRENT_UPLOADS = 2;
-// 청크 크기 — Cloudflare Tunnel 100MB 제한 우회 (여유 있게 50MB)
-const CHUNK_SIZE = 50 * 1024 * 1024;
-// 이 크기 이하면 단일 요청, 초과면 청크 업로드 (Cloudflare 한계 고려)
-const CHUNK_THRESHOLD = 80 * 1024 * 1024;
+// 청크 크기 — Cloudflare Tunnel/Free plan 제한 안정성 위해 20MB로 여유
+const CHUNK_SIZE = 20 * 1024 * 1024;
+// 이 크기 이하면 단일 요청, 초과면 청크 업로드
+const CHUNK_THRESHOLD = 50 * 1024 * 1024;
 
 export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult }: VideoUploadPanelProps) {
     const { data: uploadedVideos, refetch } = useSessionVideos(sessionId);
@@ -170,20 +170,26 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             const initData = await initRes.json();
             uploadId = initData.upload_id;
 
-            // 2. Chunks — 순차 전송 (같은 member 내에선 순서 보장, 부하 분산)
+            // 2. Chunks — raw binary body로 순차 전송 (multipart parsing 이슈 회피)
             for (let i = 0; i < totalChunks; i++) {
                 if (controller.signal.aborted) throw new Error("aborted");
                 const start = i * CHUNK_SIZE;
                 const end = Math.min(start + CHUNK_SIZE, file.size);
                 const chunk = file.slice(start, end);
-                const fd = new FormData();
-                fd.append("file", chunk, file.name);
 
                 const chunkRes = await fetch(
                     `/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/${uploadId}/${i}`,
-                    { method: "POST", headers: { ...authHeader }, body: fd, signal: controller.signal },
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/octet-stream", ...authHeader },
+                        body: chunk,
+                        signal: controller.signal,
+                    },
                 );
-                if (!chunkRes.ok) throw new Error(`청크 ${i} 실패 (${chunkRes.status})`);
+                if (!chunkRes.ok) {
+                    const errTxt = await chunkRes.text().catch(() => "");
+                    throw new Error(`청크 ${i} 실패 (${chunkRes.status}) ${errTxt}`);
+                }
 
                 const pct = Math.round(((i + 1) / totalChunks) * 100);
                 setUploads(prev => ({ ...prev, [memberId]: { progress: pct, uploading: true } }));

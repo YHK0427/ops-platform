@@ -7,7 +7,7 @@ import shutil
 import uuid
 from datetime import datetime, time, timedelta, timezone
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile, status
 
 logger = logging.getLogger(__name__)
 from sqlalchemy import func, select, update
@@ -1560,10 +1560,11 @@ async def upload_chunk(
     member_id: int,
     upload_id: str,
     chunk_idx: int,
-    file: UploadFile = File(...),
+    request: Request,
     _: str = Depends(get_current_user),
 ):
-    """개별 청크 수신 — 50MB 이하 권장 (Cloudflare 100MB 제한)"""
+    """개별 청크 수신 — raw binary body를 스트리밍으로 디스크에 저장.
+    multipart/form-data를 쓰지 않아 Cloudflare/nginx 프록시 호환성 ↑"""
     chunks_dir = os.path.join(VIDEO_DIR, f"session_{session_id}", ".chunks", upload_id)
     if not os.path.isdir(chunks_dir):
         raise HTTPException(status_code=404, detail="업로드 세션 없음 (만료되었거나 취소됨)")
@@ -1571,10 +1572,13 @@ async def upload_chunk(
     chunk_path = os.path.join(chunks_dir, f"chunk_{chunk_idx:05d}")
     tmp_path = chunk_path + ".tmp"
 
+    size = 0
     try:
         with open(tmp_path, "wb") as f:
-            while data := await file.read(4 * 1024 * 1024):
-                await asyncio.to_thread(f.write, data)
+            async for data in request.stream():
+                if data:
+                    await asyncio.to_thread(f.write, data)
+                    size += len(data)
         await asyncio.to_thread(os.replace, tmp_path, chunk_path)
     except Exception as e:
         try:
@@ -1584,7 +1588,8 @@ async def upload_chunk(
         logger.error(f"chunk_upload_failed session={session_id} member={member_id} upload={upload_id} idx={chunk_idx} err={e}")
         raise HTTPException(status_code=500, detail=f"청크 저장 실패: {e}")
 
-    return {"received": chunk_idx}
+    logger.audit(f"chunk_received session={session_id} member={member_id} idx={chunk_idx} size={size}")
+    return {"received": chunk_idx, "size": size}
 
 
 @router.post("/{session_id}/videos/{member_id}/chunks/{upload_id}/complete")
