@@ -1,8 +1,8 @@
 FROM python:3.12-slim
 
-# Playwright 의존성 (Chromium)
+# Playwright 의존성 (Chromium) + ffmpeg (영상 압축)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl wget gnupg ca-certificates \
+    curl wget gnupg ca-certificates ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

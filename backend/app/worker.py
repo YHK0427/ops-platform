@@ -108,9 +108,11 @@ async def task_upload_videos(ctx, session_id: int, videos: list | None = None):
 
 async def task_r2_pull_to_disk(ctx, session_id: int, member_id: int, r2_key: str, filename: str):
     """R2에서 영상을 로컬 디스크로 pull + R2 삭제.
-    사용자 업로드 완료 후 background 에서 실행."""
+    사용자 업로드 완료 후 background 에서 실행.
+    파일이 크면 (>300MB) 압축 태스크를 뒤이어 큐잉."""
     import os
     from app.services import r2 as r2_svc
+    from app.services.video_compress import COMPRESS_THRESHOLD_MB
 
     logger.info(f"task_r2_pull_to_disk start session={session_id} member={member_id} key={r2_key}")
     try:
@@ -151,9 +153,59 @@ async def task_r2_pull_to_disk(ctx, session_id: int, member_id: int, r2_key: str
 
         size_mb = round(size / (1024 * 1024), 1)
         logger.log(25, f"r2_pull_complete session={session_id} member={member_id} file={save_name} size={size_mb}MB")
+
+        # 큰 파일이면 압축 태스크 큐잉 (별도로 돌아 non-blocking)
+        if size_mb > COMPRESS_THRESHOLD_MB:
+            redis = ctx.get("redis")
+            if redis:
+                await redis.enqueue_job(
+                    "task_compress_video",
+                    session_id=session_id,
+                    member_id=member_id,
+                    path=save_path,
+                )
+                logger.info(f"compress_queued session={session_id} member={member_id} size={size_mb}MB")
+
         return {"status": "complete", "size_mb": size_mb, "path": save_path}
     except Exception as e:
         logger.error(f"task_r2_pull_to_disk failed session={session_id} member={member_id}: {e}", exc_info=True)
+        raise
+
+
+async def task_compress_video(ctx, session_id: int, member_id: int, path: str):
+    """영상 ffmpeg 압축 (in-place, CRF 23 H.264).
+    네이버 카페 업로드 전에 용량 축소. 화질은 거의 동일."""
+    import os
+    from app.services.video_compress import compress_in_place, is_ffmpeg_available
+
+    if not is_ffmpeg_available():
+        logger.warning("ffmpeg 미설치 — 압축 스킵")
+        return {"status": "skipped", "reason": "ffmpeg unavailable"}
+
+    if not os.path.isfile(path):
+        logger.warning(f"compress: 파일 없음 path={path}")
+        return {"status": "skipped", "reason": "file not found"}
+
+    logger.info(f"task_compress_video start session={session_id} member={member_id} path={path}")
+    try:
+        original, compressed = await compress_in_place(path)
+        ratio = round(compressed / original * 100, 1) if original else 0
+        saved_mb = round((original - compressed) / (1024 * 1024), 1)
+        logger.log(
+            25,
+            f"compress_complete session={session_id} member={member_id} "
+            f"original={round(original / (1024 * 1024), 1)}MB "
+            f"compressed={round(compressed / (1024 * 1024), 1)}MB "
+            f"ratio={ratio}% saved={saved_mb}MB"
+        )
+        return {
+            "status": "complete",
+            "original_mb": round(original / (1024 * 1024), 1),
+            "compressed_mb": round(compressed / (1024 * 1024), 1),
+            "saved_mb": saved_mb,
+        }
+    except Exception as e:
+        logger.error(f"task_compress_video failed session={session_id} member={member_id}: {e}", exc_info=True)
         raise
 
 
@@ -215,7 +267,7 @@ async def task_naver_health_check(ctx):
 
 
 class WorkerSettings:
-    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), task_naver_login, task_naver_health_check]
+    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     on_startup = startup
     cron_jobs = [
