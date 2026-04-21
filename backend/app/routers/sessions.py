@@ -1844,8 +1844,8 @@ async def list_videos(
 
     videos = []
     for fname in sorted(os.listdir(session_dir)):
-        # .partial (업로드 중) 및 .chunks 디렉토리는 무시
-        if fname.endswith(".partial") or fname.startswith("."):
+        # 진행 중/중간 파일 모두 제외 — .partial(청크 업로드 진행중), .tmp(R2 pull 진행중), 숨김(.chunks 등)
+        if fname.endswith(".partial") or fname.endswith(".tmp") or fname.startswith("."):
             continue
         fpath = os.path.join(session_dir, fname)
         if not os.path.isfile(fpath):
