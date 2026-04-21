@@ -64,6 +64,8 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     // 큐에서 대기 중인 업로드 (memberId → File)
     const uploadQueueRef = useRef<Array<{ memberId: number; file: File }>>([]);
     const activeUploadsRef = useRef<number>(0);
+    // R2 업로드는 끝났지만 서버 pull 이 아직 안 된 멤버들 (= 서버 처리 중)
+    const [pendingPull, setPendingPull] = useState<Set<number>>(new Set());
 
     // 네이버 업로드 대상 체크
     const [selectedForNaver, setSelectedForNaver] = useState<Set<number>>(new Set());
@@ -82,6 +84,24 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         presenters.forEach(p => { if (videoMap.has(p.member_id)) uploaded.add(p.member_id); });
         setSelectedForNaver(uploaded);
     }, [uploadedVideos]);
+
+    // videos 리스트에 파일이 나타나면 pendingPull 에서 제거 (= 서버 처리 완료)
+    useEffect(() => {
+        if (pendingPull.size === 0) return;
+        let changed = false;
+        const next = new Set(pendingPull);
+        for (const id of Array.from(next)) {
+            if (videoMap.has(id)) { next.delete(id); changed = true; }
+        }
+        if (changed) setPendingPull(next);
+    }, [uploadedVideos]);
+
+    // pendingPull 있으면 videos 리스트 주기적으로 refetch
+    useEffect(() => {
+        if (pendingPull.size === 0) return;
+        const interval = setInterval(() => refetch(), 2000);
+        return () => clearInterval(interval);
+    }, [pendingPull.size, refetch]);
 
     // 개별 카페 제목 오버라이드
     const [titleOverrides, setTitleOverrides] = useState<Record<number, string>>({});
@@ -202,7 +222,6 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             if (aborted) throw new Error("aborted");
 
             // 3. 서버 finalize → ARQ pull 태스크 큐잉
-            setUploads(prev => ({ ...prev, [memberId]: { progress: 96, uploading: true } }));
             const finalizeRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/r2/finalize`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeader },
@@ -213,27 +232,12 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                 throw new Error(`finalize 실패 (${finalizeRes.status}) ${errTxt}`);
             }
 
-            // 4. ARQ 작업 완료 대기 — videos 리스트에 파일 나타날 때까지 폴링
-            setUploads(prev => ({ ...prev, [memberId]: { progress: 98, uploading: true } }));
-            const pollStart = Date.now();
-            const pollTimeout = 60_000; // 60초
-            while (Date.now() - pollStart < pollTimeout) {
-                await new Promise(r => setTimeout(r, 1500));
-                try {
-                    const r = await fetch(`/api/v1/sessions/${sessionId}/videos`, {
-                        headers: { ...authHeader },
-                    });
-                    const data = await r.json();
-                    if (Array.isArray(data) && data.some((v: any) => v.member_id === memberId)) {
-                        break;
-                    }
-                } catch {
-                    // ignore poll error
-                }
-            }
-
+            // R2 업로드 끝! 사용자는 이 시점에 사이트 나가도 됨.
+            // 서버 pull 은 백그라운드에서 진행 → pendingPull 에 기록해두고
+            // useSessionVideos 폴링으로 완료 감지되면 자동 제거됨
             setUploads(prev => ({ ...prev, [memberId]: { progress: 100, uploading: false } }));
-            toast.success("영상 업로드 완료");
+            setPendingPull(prev => new Set(prev).add(memberId));
+            toast.success("R2 업로드 완료 — 서버에서 처리 중");
             refetch();
         } catch (err: any) {
             if (aborted || err?.message === "aborted") {
@@ -360,6 +364,9 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     const uploadedCount = presenters.filter(p => videoMap.has(p.member_id)).length;
     const selectedCount = selectedForNaver.size;
     const uploadingCount = Object.values(uploads).filter(u => u.uploading).length;
+    // 선택됐지만 아직 서버에 파일 없는(= pendingPull) 멤버들 — 네이버 업로드 차단 조건
+    const selectedPendingPull = Array.from(selectedForNaver).filter(id => !videoMap.has(id) && pendingPull.has(id));
+    const naverDisabled = selectedCount === 0 || isStartingNaver || selectedPendingPull.length > 0;
 
     return (
         <div className="space-y-4">
@@ -375,12 +382,17 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                 </div>
                 <Button
                     onClick={handleNaverUpload}
-                    disabled={selectedCount === 0 || isStartingNaver}
+                    disabled={naverDisabled}
                     className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
                     size="sm"
+                    title={selectedPendingPull.length > 0 ? "서버에서 처리 중인 영상이 있습니다. 잠시 기다려주세요." : undefined}
                 >
                     <UploadCloud className="w-4 h-4 mr-1" />
-                    {isStartingNaver ? "시작 중..." : `네이버 업로드 (${selectedCount}개)`}
+                    {isStartingNaver
+                        ? "시작 중..."
+                        : selectedPendingPull.length > 0
+                            ? `서버 처리 중 (${selectedPendingPull.length}개)`
+                            : `네이버 업로드 (${selectedCount}개)`}
                 </Button>
             </div>
 
@@ -475,15 +487,16 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                                     const isUploading = uploadState?.uploading;
                                     const isChecked = selectedForNaver.has(p.member_id);
                                     const naverStatus = naverProgress?.find(np => np.presenter === p.member_name)?.status;
+                                    const isPendingPull = pendingPull.has(p.member_id) && !video;
 
                                     return (
                                         <div key={p.member_id} className="px-3 md:px-4 py-2.5 md:py-3 space-y-1.5">
                                             <div className="flex flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5">
-                                                {/* 체크박스 */}
+                                                {/* 체크박스 — 서버 처리 중이어도 선택은 가능 (네이버 버튼에서 대기) */}
                                                 <Checkbox
                                                     checked={isChecked}
                                                     onCheckedChange={() => toggleNaver(p.member_id)}
-                                                    disabled={!video}
+                                                    disabled={!video && !isPendingPull}
                                                     className="flex-shrink-0"
                                                 />
 
@@ -501,6 +514,13 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                                                         </span>
                                                     )}
                                                 </div>
+
+                                                {/* 서버 처리 중 배지 (R2 업로드 끝, 서버 pull 대기) */}
+                                                {isPendingPull && (
+                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold border bg-amber-500/10 text-amber-600 border-amber-500/20 animate-pulse flex-shrink-0">
+                                                        서버 처리 중
+                                                    </span>
+                                                )}
 
                                                 {/* 카페 업로드 상태 배지 */}
                                                 {naverStatus && (
