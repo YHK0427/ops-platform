@@ -51,10 +51,10 @@ interface UploadState {
 
 // 동시 업로드 개수 제한 — 대용량 영상 동시에 올리면 네트워크/서버 불안정
 const MAX_CONCURRENT_UPLOADS = 2;
-// 청크 크기 — Cloudflare 100MB 제한 여유두고 50MB
-const CHUNK_SIZE = 50 * 1024 * 1024;
+// 청크 크기 — Cloudflare 100MB 제한 여유두고 80MB (청크 수 최소화 → 오버헤드 ↓)
+const CHUNK_SIZE = 80 * 1024 * 1024;
 // 이 크기 이하면 단일 요청, 초과면 청크 업로드
-const CHUNK_THRESHOLD = 80 * 1024 * 1024;
+const CHUNK_THRESHOLD = 90 * 1024 * 1024;
 // 청크 병렬 전송 수 — 모바일 대역폭 포화시키기 위함
 const PARALLEL_CHUNKS_PER_UPLOAD = 3;
 
@@ -209,11 +209,16 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
 
         let uploadId: string = "";
         try {
-            // 1. Init
+            // 1. Init (chunk_size 포함 — 서버가 offset 계산)
             const initRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/chunks/init`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeader },
-                body: JSON.stringify({ filename: file.name, total_size: file.size, total_chunks: totalChunks }),
+                body: JSON.stringify({
+                    filename: file.name,
+                    total_size: file.size,
+                    total_chunks: totalChunks,
+                    chunk_size: CHUNK_SIZE,
+                }),
             });
             if (!initRes.ok) throw new Error(`init 실패 (${initRes.status})`);
             const initData = await initRes.json();
