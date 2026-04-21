@@ -1447,6 +1447,101 @@ async def update_presenter_order(
     return {"status": "ok", "updated": len(body)}
 
 
+# ── R2 직접 업로드 (Cloudflare Tunnel 100MB 제한 우회) ────────────────────────
+# 흐름: 클라 → 서버에서 presigned URL 요청 → R2로 직접 PUT → 서버에 finalize 알림
+#       → ARQ worker가 R2에서 로컬로 pull + R2 오브젝트 삭제
+
+
+@router.post("/{session_id}/videos/{member_id}/r2/presign")
+async def r2_presign_upload(
+    session_id: int,
+    member_id: int,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """R2 업로드용 presigned URL 발급 (15분 유효)"""
+    from app.services import r2 as r2_svc
+    if not r2_svc.is_configured():
+        raise HTTPException(status_code=501, detail="R2가 설정되지 않았습니다 (서버 env 확인)")
+
+    member = await db.get(Member, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
+
+    filename = body.get("filename") or "video.mp4"
+    content_type = body.get("content_type") or "application/octet-stream"
+    size = int(body.get("size", 0))
+
+    # R2 오브젝트 키: 중복 방지용 uuid 포함. pull 시 삭제되므로 길게 유지 X
+    key = f"uploads/session_{session_id}/{member_id}/{uuid.uuid4().hex}_{filename}"
+
+    upload_url = r2_svc.presign_put(key, expires_in=900, content_type=content_type)
+
+    logger.audit(f"r2_presign session={session_id} member={member_id} key={key} size={size}")
+    return {
+        "upload_url": upload_url,
+        "key": key,
+        "method": "PUT",
+        "content_type": content_type,
+        "expires_in": 900,
+    }
+
+
+@router.post("/{session_id}/videos/{member_id}/r2/finalize")
+async def r2_finalize_upload(
+    session_id: int,
+    member_id: int,
+    request: Request,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """R2 업로드 완료 알림 → ARQ worker에 pull/삭제 태스크 큐잉"""
+    from app.services import r2 as r2_svc
+    if not r2_svc.is_configured():
+        raise HTTPException(status_code=501, detail="R2가 설정되지 않았습니다")
+
+    member = await db.get(Member, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
+
+    key = body.get("key")
+    filename = body.get("filename") or "video.mp4"
+    if not key:
+        raise HTTPException(status_code=400, detail="key 필요")
+
+    # R2에 실제로 존재하는지 확인 (auth 우회 방지)
+    try:
+        meta = await r2_svc.head(key)
+        r2_size = int(meta.get("ContentLength", 0))
+    except Exception as e:
+        logger.error(f"r2_finalize_head_failed key={key} err={e}")
+        raise HTTPException(status_code=404, detail="R2에 업로드된 오브젝트가 없습니다")
+
+    # ARQ에 pull 태스크 큐잉
+    pool = getattr(request.app.state, "arq_pool", None)
+    if not pool:
+        raise HTTPException(status_code=503, detail="ARQ pool not initialized")
+
+    job = await pool.enqueue_job(
+        "task_r2_pull_to_disk",
+        session_id=session_id,
+        member_id=member_id,
+        r2_key=key,
+        filename=filename,
+    )
+    logger.audit(
+        f"r2_finalize session={session_id} member={member_id} key={key} size={r2_size} job={job.job_id if job else None}"
+    )
+
+    return {
+        "status": "queued",
+        "job_id": job.job_id if job else None,
+        "size": r2_size,
+    }
+
+
 # ── 영상 직접 업로드 ──────────────────────────────────────────────────────────
 
 

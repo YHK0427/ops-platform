@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     TELEGRAM_ALERT_CHAT_ID: str = ""
     TELEGRAM_AUDIT_CHAT_ID: str = ""
 
+    # Cloudflare R2 (영상 업로드 직통 — Cloudflare Tunnel 100MB 제한 우회)
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = ""
+
     class Config:
         env_file = ".env"
         extra = "ignore"

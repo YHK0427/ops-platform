@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from arq.connections import RedisSettings
@@ -105,6 +106,57 @@ async def task_upload_videos(ctx, session_id: int, videos: list | None = None):
         logger.error(f"task_upload_videos failed session={session_id}: {e}", exc_info=True)
         raise
 
+async def task_r2_pull_to_disk(ctx, session_id: int, member_id: int, r2_key: str, filename: str):
+    """R2에서 영상을 로컬 디스크로 pull + R2 삭제.
+    사용자 업로드 완료 후 background 에서 실행."""
+    import os
+    from app.services import r2 as r2_svc
+
+    logger.info(f"task_r2_pull_to_disk start session={session_id} member={member_id} key={r2_key}")
+    try:
+        video_dir = "/app/files/video"
+        session_dir = os.path.join(video_dir, f"session_{session_id}")
+        await asyncio.to_thread(os.makedirs, session_dir, exist_ok=True)
+
+        # 기존 해당 멤버 영상 정리 (교체)
+        def _cleanup():
+            for existing in os.listdir(session_dir):
+                full = os.path.join(session_dir, existing)
+                if os.path.isfile(full) and existing.startswith(f"{member_id}_"):
+                    try:
+                        os.remove(full)
+                    except OSError:
+                        pass
+        await asyncio.to_thread(_cleanup)
+
+        save_name = f"{member_id}_{filename}"
+        save_path = os.path.join(session_dir, save_name)
+        tmp_path = save_path + ".tmp"
+
+        try:
+            size = await r2_svc.pull_to_disk(r2_key, tmp_path)
+            await asyncio.to_thread(os.replace, tmp_path, save_path)
+        except Exception as e:
+            try:
+                await asyncio.to_thread(os.remove, tmp_path)
+            except OSError:
+                pass
+            raise RuntimeError(f"R2 pull 실패: {e}")
+
+        # 성공 시 R2 오브젝트 삭제 (무료 저장 한도 유지)
+        try:
+            await r2_svc.delete(r2_key)
+        except Exception as e:
+            logger.warning(f"r2_delete_failed key={r2_key} err={e} (파일은 이미 로컬 저장됨)")
+
+        size_mb = round(size / (1024 * 1024), 1)
+        logger.log(25, f"r2_pull_complete session={session_id} member={member_id} file={save_name} size={size_mb}MB")
+        return {"status": "complete", "size_mb": size_mb, "path": save_path}
+    except Exception as e:
+        logger.error(f"task_r2_pull_to_disk failed session={session_id} member={member_id}: {e}", exc_info=True)
+        raise
+
+
 async def task_naver_login(ctx, username: str, password: str):
     """네이버 로그인 태스크 (아이디/비번 자동화)"""
     logger.info("task_naver_login start")
@@ -163,7 +215,7 @@ async def task_naver_health_check(ctx):
 
 
 class WorkerSettings:
-    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), task_naver_login, task_naver_health_check]
+    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), task_naver_login, task_naver_health_check]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     on_startup = startup
     cron_jobs = [
