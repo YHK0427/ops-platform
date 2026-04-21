@@ -5,7 +5,33 @@ on:
     branches: [main]
 
 jobs:
+  # 빌드 검증 — deploy 서버 건드리기 전에 TS/의존성/도커 빌드 에러 선차단
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: false
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Build backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: false
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
   deploy:
+    needs: build-check
     runs-on: ubuntu-latest
     steps:
       - name: Install cloudflared
