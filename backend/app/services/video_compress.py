@@ -2,7 +2,8 @@
 
 방침:
 - 1순위: h264_vaapi — Intel Quick Sync, CPU 거의 안 씀, 실시간 대비 8배 빠름
-  비트레이트 5Mbps (1080p 화질 충분)
+  Rate control: CQP (Constant QP) — Intel iHD 드라이버가 이 GPU 에서 VBR 미지원.
+  QP 22 ≈ libx264 CRF 23 체감 화질.
 - 2순위 fallback: libx264 CRF 23 medium — VAAPI 실패 시 (device 없음, driver 이슈 등)
 - 해상도/fps 유지, 오디오는 128k AAC 재인코딩
 - +faststart: moov atom 앞으로 → 웹 스트리밍 시작 빠름
@@ -20,10 +21,9 @@ logger = logging.getLogger(__name__)
 # 이 크기(MB) 초과 파일만 압축 시도
 COMPRESS_THRESHOLD_MB = 300
 
-# VAAPI 비트레이트 (목표/최대)
-VAAPI_BITRATE = "5M"
-VAAPI_MAXRATE = "6M"
-VAAPI_BUFSIZE = "10M"
+# VAAPI 품질 파라미터 (CQP 모드)
+# 낮을수록 고화질·대용량. 18~28 권장, 22 는 libx264 CRF 23 근접.
+VAAPI_QP = 22
 VAAPI_DEVICE = "/dev/dri/renderD128"
 
 # libx264 fallback CRF
@@ -40,7 +40,7 @@ def is_vaapi_available() -> bool:
 
 
 def _run_ffmpeg_vaapi(src: str, dst: str) -> None:
-    """Intel VAAPI 하드웨어 H.264 인코딩."""
+    """Intel VAAPI 하드웨어 H.264 인코딩 (CQP 모드)."""
     cmd = [
         "ffmpeg", "-y",
         "-hwaccel", "vaapi",
@@ -49,9 +49,8 @@ def _run_ffmpeg_vaapi(src: str, dst: str) -> None:
         "-i", src,
         "-vf", "scale_vaapi=format=nv12",
         "-c:v", "h264_vaapi",
-        "-b:v", VAAPI_BITRATE,
-        "-maxrate", VAAPI_MAXRATE,
-        "-bufsize", VAAPI_BUFSIZE,
+        "-rc_mode", "CQP",
+        "-qp", str(VAAPI_QP),
         "-c:a", "aac",
         "-b:a", "128k",
         "-movflags", "+faststart",
