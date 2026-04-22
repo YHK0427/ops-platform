@@ -71,6 +71,7 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     const iosWarnShownRef = useRef<boolean>(false);
 
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const isAndroid = /Android/i.test(navigator.userAgent);
 
     const acquireWakeLock = useCallback(async () => {
         if (wakeLockRef.current) return;
@@ -319,9 +320,15 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                 }
             });
         } catch (err: any) {
-            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: `백그라운드 시작 실패: ${err?.message ?? ""}` } }));
-            toast.error(`백그라운드 업로드 시작 실패 — 일반 업로드로 전환`);
-            // fallback: 기존 r2Upload 로
+            const errMsg = err?.message ?? "알 수 없음";
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: `백그라운드 시작 실패: ${errMsg}` } }));
+            if (isAndroid) {
+                // Android 는 fallback 안 함 — 에러 표시하고 종료
+                toast.error(`Background Fetch 실패: ${errMsg}`);
+                onDone();
+                return;
+            }
+            toast.error("백그라운드 실패 — foreground 업로드로 전환");
             await r2Upload(memberId, file, onDone);
             return;
         }
@@ -436,18 +443,39 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         };
 
         if (file.size > R2_THRESHOLD) {
-            // Background Fetch 지원되면 백그라운드로 (Chromium Android 계열)
             const presenter = presenters.find(p => p.member_id === memberId);
             const displayName = presenter?.member_name ?? `#${memberId}`;
-            if (await supportsBackgroundFetch()) {
-                r2UploadBackground(memberId, file, displayName, finishAndDrain);
+            const bgSupported = await supportsBackgroundFetch();
+
+            // Android: 무조건 Background Fetch 사용 (지원 안 되면 명시적 에러)
+            if (isAndroid) {
+                if (bgSupported) {
+                    r2UploadBackground(memberId, file, displayName, finishAndDrain);
+                } else {
+                    setUploads(prev => ({
+                        ...prev,
+                        [memberId]: {
+                            progress: 0,
+                            uploading: false,
+                            error: "백그라운드 업로드 실패 — 브라우저가 Background Fetch/Service Worker 미지원. 페이지 새로고침(캐시 삭제) 후 재시도",
+                        },
+                    }));
+                    toast.error("Background Fetch 불가 — 캐시 삭제 후 재시도 필요");
+                    finishAndDrain();
+                    return;
+                }
             } else {
-                r2Upload(memberId, file, finishAndDrain);
+                // iOS 등 — 기본 foreground (Wake Lock 적용)
+                if (bgSupported) {
+                    r2UploadBackground(memberId, file, displayName, finishAndDrain);
+                } else {
+                    r2Upload(memberId, file, finishAndDrain);
+                }
             }
         } else {
             singleUpload(memberId, file, finishAndDrain);
         }
-    }, [sessionId, refetch, releaseWakeLockIfIdle, presenters]);
+    }, [sessionId, refetch, releaseWakeLockIfIdle, presenters, isAndroid]);
 
     const handleFileSelect = useCallback((memberId: number, file: File) => {
         // Wake Lock 확보 (화면 자동 꺼짐 방지) — 이미 잡혀있으면 no-op
