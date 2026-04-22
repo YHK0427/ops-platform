@@ -206,6 +206,115 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         xhr.send(formData);
     };
 
+    // IndexedDB 에 업로드 메타 저장 (SW 가 finalize 시 참조)
+    const saveUploadMeta = async (uploadId: string, meta: any) => {
+        return new Promise<void>((resolve, reject) => {
+            const req = indexedDB.open("univpt-upload", 1);
+            req.onupgradeneeded = () => {
+                req.result.createObjectStore("uploads", { keyPath: "id" });
+            };
+            req.onsuccess = () => {
+                const db = req.result;
+                const tx = db.transaction("uploads", "readwrite");
+                tx.objectStore("uploads").put({ id: uploadId, ...meta });
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            };
+            req.onerror = () => reject(req.error);
+        });
+    };
+
+    // Background Fetch 지원 여부
+    const supportsBackgroundFetch = async (): Promise<boolean> => {
+        if (!("serviceWorker" in navigator)) return false;
+        try {
+            const reg = await navigator.serviceWorker.ready;
+            // @ts-ignore — BackgroundFetchManager
+            return !!reg.backgroundFetch;
+        } catch {
+            return false;
+        }
+    };
+
+    // SW → main thread 메시지 수신 (업로드 완료/실패 알림)
+    useEffect(() => {
+        if (!("serviceWorker" in navigator)) return;
+        const handler = (event: MessageEvent) => {
+            const { type, memberId, success } = event.data ?? {};
+            if (type === "upload-complete" && typeof memberId === "number") {
+                setUploads(prev => ({ ...prev, [memberId]: { progress: 100, uploading: false } }));
+                if (success !== false) {
+                    setPendingPull(prev => new Set(prev).add(memberId));
+                    toast.success("백그라운드 업로드 완료 — 서버에서 처리 중");
+                    refetch();
+                }
+            } else if (type === "upload-failed" || type === "upload-aborted") {
+                if (typeof memberId === "number") {
+                    setUploads(prev => ({
+                        ...prev,
+                        [memberId]: { progress: 0, uploading: false, error: type === "upload-aborted" ? "취소됨" : "백그라운드 업로드 실패" },
+                    }));
+                }
+                toast.error(type === "upload-aborted" ? "업로드가 취소되었습니다" : "백그라운드 업로드 실패");
+            }
+        };
+        navigator.serviceWorker.addEventListener("message", handler);
+        return () => navigator.serviceWorker.removeEventListener("message", handler);
+    }, [refetch]);
+
+    // Background Fetch 버전 r2Upload — 지원 브라우저(Chromium Android 등)에서만 사용
+    const r2UploadBackground = async (memberId: number, file: File, displayName: string, onDone: () => void) => {
+        const token = getToken();
+        const authHeader: Record<string, string> = token ? { "Authorization": `Bearer ${token}` } : {};
+
+        try {
+            // 1. presign (기존과 동일)
+            const presignRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/r2/presign`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...authHeader },
+                body: JSON.stringify({ filename: file.name, content_type: file.type || "application/octet-stream", size: file.size }),
+            });
+            if (!presignRes.ok) throw new Error(`presign 실패 (${presignRes.status})`);
+            const { upload_url, key, content_type } = await presignRes.json();
+
+            // 2. SW 에 finalize 메타 저장 (SW 가 bgfetch 성공 시 사용)
+            const uploadId = `upload-${sessionId}-${memberId}-${Date.now()}`;
+            await saveUploadMeta(uploadId, {
+                key,
+                filename: file.name,
+                memberId,
+                displayName,
+                token: token ?? "",
+                finalizeUrl: `/api/v1/sessions/${sessionId}/videos/${memberId}/r2/finalize`,
+            });
+
+            // 3. Background Fetch 실행 — 브라우저가 알림 표시하며 백그라운드 전송
+            const reg = await navigator.serviceWorker.ready;
+            const request = new Request(upload_url, {
+                method: "PUT",
+                headers: { "Content-Type": content_type || "application/octet-stream" },
+                body: file,
+            });
+            // @ts-ignore
+            await reg.backgroundFetch.fetch(uploadId, [request], {
+                title: `${displayName} 영상 업로드 중`,
+                icons: [{ src: "/favicon.ico", sizes: "64x64", type: "image/x-icon" }],
+                downloadTotal: file.size,
+            });
+
+            // 4. 즉시 "처리 중" 상태로 표시 (실제 업로드는 SW 가 진행)
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 1, uploading: true } }));
+            toast.success("백그라운드 업로드 시작 — 화면 닫고 앱 나가도 됩니다");
+        } catch (err: any) {
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: `백그라운드 시작 실패: ${err?.message ?? ""}` } }));
+            toast.error(`백그라운드 업로드 시작 실패 — 일반 업로드로 전환`);
+            // fallback: 기존 r2Upload 로
+            await r2Upload(memberId, file, onDone);
+            return;
+        }
+        onDone();
+    };
+
     // R2 직접 업로드: Cloudflare Tunnel 안 거침 → 빠름
     // 서버 presign → 클라 PUT to R2 → 서버 finalize(ARQ pull 트리거)
     const r2Upload = async (memberId: number, file: File, onDone: () => void) => {
@@ -297,7 +406,7 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         onDone();
     };
 
-    const startActualUpload = useCallback((memberId: number, file: File) => {
+    const startActualUpload = useCallback(async (memberId: number, file: File) => {
         activeUploadsRef.current += 1;
         setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: true } }));
 
@@ -314,11 +423,18 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         };
 
         if (file.size > R2_THRESHOLD) {
-            r2Upload(memberId, file, finishAndDrain);
+            // Background Fetch 지원되면 백그라운드로 (Chromium Android 계열)
+            const presenter = presenters.find(p => p.member_id === memberId);
+            const displayName = presenter?.member_name ?? `#${memberId}`;
+            if (await supportsBackgroundFetch()) {
+                r2UploadBackground(memberId, file, displayName, finishAndDrain);
+            } else {
+                r2Upload(memberId, file, finishAndDrain);
+            }
         } else {
             singleUpload(memberId, file, finishAndDrain);
         }
-    }, [sessionId, refetch, releaseWakeLockIfIdle]);
+    }, [sessionId, refetch, releaseWakeLockIfIdle, presenters]);
 
     const handleFileSelect = useCallback((memberId: number, file: File) => {
         // Wake Lock 확보 (화면 자동 꺼짐 방지) — 이미 잡혀있으면 no-op
