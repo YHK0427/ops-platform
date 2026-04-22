@@ -29,7 +29,8 @@ def is_ffmpeg_available() -> bool:
 
 
 def _run_ffmpeg(src: str, dst: str) -> None:
-    """동기 ffmpeg 실행 (블로킹). 실패 시 CalledProcessError."""
+    """동기 ffmpeg 실행 (블로킹). 실패 시 CalledProcessError.
+    출력 파일이 .tmp 확장자라 자동 포맷 추정 실패하므로 -f mp4 로 명시."""
     cmd = [
         "ffmpeg", "-y",
         "-i", src,
@@ -39,6 +40,7 @@ def _run_ffmpeg(src: str, dst: str) -> None:
         "-c:a", "aac",
         "-b:a", "128k",
         "-movflags", "+faststart",
+        "-f", "mp4",
         "-loglevel", "error",
         dst,
     ]
