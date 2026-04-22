@@ -66,6 +66,32 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     const activeUploadsRef = useRef<number>(0);
     // R2 업로드는 끝났지만 서버 pull 이 아직 안 된 멤버들 (= 서버 처리 중)
     const [pendingPull, setPendingPull] = useState<Set<number>>(new Set());
+    // Wake Lock — 업로드 중 화면 자동 꺼짐 방지 (iOS/Android 공통)
+    const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+    const iosWarnShownRef = useRef<boolean>(false);
+
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+    const acquireWakeLock = useCallback(async () => {
+        if (wakeLockRef.current) return;
+        try {
+            // @ts-ignore — Wake Lock API
+            if (navigator.wakeLock) {
+                // @ts-ignore
+                wakeLockRef.current = await navigator.wakeLock.request("screen");
+            }
+        } catch { /* 권한 거부 or 미지원 — 무시 */ }
+    }, []);
+
+    const releaseWakeLockIfIdle = useCallback(async () => {
+        // 진행 중인 업로드가 하나도 없고 대기 중도 없으면 해제
+        if (activeUploadsRef.current > 0 || uploadQueueRef.current.length > 0) return;
+        const lock = wakeLockRef.current;
+        if (lock) {
+            try { await lock.release(); } catch { /* noop */ }
+            wakeLockRef.current = null;
+        }
+    }, []);
 
     // 네이버 업로드 대상 체크
     const [selectedForNaver, setSelectedForNaver] = useState<Set<number>>(new Set());
@@ -95,6 +121,26 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         }
         if (changed) setPendingPull(next);
     }, [uploadedVideos]);
+
+    // 탭 다시 보이면 업로드 진행 중일 경우 Wake Lock 재획득
+    // (visibilitychange 시 브라우저가 Wake Lock을 자동 해제함)
+    useEffect(() => {
+        const onVis = () => {
+            if (document.visibilityState === "visible" && activeUploadsRef.current > 0) {
+                acquireWakeLock();
+            }
+        };
+        document.addEventListener("visibilitychange", onVis);
+        return () => document.removeEventListener("visibilitychange", onVis);
+    }, [acquireWakeLock]);
+
+    // 컴포넌트 unmount 시 Wake Lock 정리
+    useEffect(() => {
+        return () => {
+            const lock = wakeLockRef.current;
+            if (lock) { lock.release().catch(() => {}); wakeLockRef.current = null; }
+        };
+    }, []);
 
     // pendingPull 있거나 압축 중인 영상 있으면 주기적으로 refetch
     const anyCompressing = (uploadedVideos ?? []).some(v => v.is_compressing);
@@ -259,7 +305,12 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
             delete xhrRefs.current[memberId];
             const next = uploadQueueRef.current.shift();
-            if (next) startActualUpload(next.memberId, next.file);
+            if (next) {
+                startActualUpload(next.memberId, next.file);
+            } else {
+                // 더 이상 진행/대기 업로드가 없을 때만 Wake Lock 해제
+                releaseWakeLockIfIdle();
+            }
         };
 
         if (file.size > R2_THRESHOLD) {
@@ -267,9 +318,21 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         } else {
             singleUpload(memberId, file, finishAndDrain);
         }
-    }, [sessionId, refetch]);
+    }, [sessionId, refetch, releaseWakeLockIfIdle]);
 
     const handleFileSelect = useCallback((memberId: number, file: File) => {
+        // Wake Lock 확보 (화면 자동 꺼짐 방지) — 이미 잡혀있으면 no-op
+        acquireWakeLock();
+
+        // iOS 안내 — 업로드 시작 시 1회만
+        if (isIOS && !iosWarnShownRef.current) {
+            iosWarnShownRef.current = true;
+            toast.warning(
+                "iOS는 Apple 정책상 백그라운드 업로드 안 됩니다. 화면 나가지 말아주세요 (꼬우면 안드로이드 쓰던강ㅋ)",
+                { duration: 10_000 }
+            );
+        }
+
         // 이미 진행 중인 같은 멤버 업로드가 있으면 중단
         const existing = xhrRefs.current[memberId];
         if (existing) {
@@ -285,7 +348,7 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, queued: true } }));
             toast.info(`업로드 대기 중 (앞 ${uploadQueueRef.current.length}개)`);
         }
-    }, [startActualUpload]);
+    }, [startActualUpload, acquireWakeLock, isIOS]);
 
     const cancelUpload = useCallback((memberId: number) => {
         // 큐 대기 중이면 큐에서 제거
@@ -294,6 +357,7 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             uploadQueueRef.current = uploadQueueRef.current.filter(q => q.memberId !== memberId);
             setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false } }));
             toast.info("대기 중 업로드를 취소했습니다.");
+            releaseWakeLockIfIdle();
             return;
         }
         const xhr = xhrRefs.current[memberId];
@@ -301,7 +365,8 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             xhr.abort();
             delete xhrRefs.current[memberId];
         }
-    }, []);
+        // xhr.abort() 는 onabort 핸들러로 흘러가 finishAndDrain 호출 → 거기서 releaseWakeLockIfIdle
+    }, [releaseWakeLockIfIdle]);
 
     // 분반별 그룹화 (분반 번호 오름차순 고정)
     const groups: Record<string, PresenterSlot[]> = {};
