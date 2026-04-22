@@ -224,11 +224,15 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         });
     };
 
-    // Background Fetch 지원 여부
+    // Background Fetch 지원 여부 — navigator.serviceWorker.ready 가 SW 미등록 시 무한 대기하므로 타임아웃 필수
     const supportsBackgroundFetch = async (): Promise<boolean> => {
         if (!("serviceWorker" in navigator)) return false;
         try {
-            const reg = await navigator.serviceWorker.ready;
+            const reg = await Promise.race([
+                navigator.serviceWorker.ready,
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+            ]);
+            if (!reg) return false;
             // @ts-ignore — BackgroundFetchManager
             return !!reg.backgroundFetch;
         } catch {
@@ -296,15 +300,24 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                 body: file,
             });
             // @ts-ignore
-            await reg.backgroundFetch.fetch(uploadId, [request], {
+            const bgFetch = await reg.backgroundFetch.fetch(uploadId, [request], {
                 title: `${displayName} 영상 업로드 중`,
                 icons: [{ src: "/favicon.ico", sizes: "64x64", type: "image/x-icon" }],
                 downloadTotal: file.size,
             });
 
-            // 4. 즉시 "처리 중" 상태로 표시 (실제 업로드는 SW 가 진행)
+            // 4. Progress 이벤트 연결 — BackgroundFetchRegistration 의 uploaded 값 주기적 확인
             setUploads(prev => ({ ...prev, [memberId]: { progress: 1, uploading: true } }));
             toast.success("백그라운드 업로드 시작 — 화면 닫고 앱 나가도 됩니다");
+
+            bgFetch.addEventListener("progress", () => {
+                const total = bgFetch.uploadTotal || file.size;
+                const uploaded = bgFetch.uploaded || 0;
+                if (total > 0) {
+                    const pct = Math.max(1, Math.min(99, Math.round((uploaded / total) * 100)));
+                    setUploads(prev => ({ ...prev, [memberId]: { progress: pct, uploading: true } }));
+                }
+            });
         } catch (err: any) {
             setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: `백그라운드 시작 실패: ${err?.message ?? ""}` } }));
             toast.error(`백그라운드 업로드 시작 실패 — 일반 업로드로 전환`);
