@@ -52,8 +52,12 @@ interface UploadState {
 // 동시 업로드 개수 제한 — R2는 Cloudflare 엣지로 분산되지만 클라 대역폭은 여전히 공유
 const MAX_CONCURRENT_UPLOADS = 3;
 // 이 크기 이하면 서버 직접 업로드 (Cloudflare 100MB 제한 안 걸림)
-// 초과면 R2 direct upload 시도 (구성된 경우). 실패 시 서버 chunked fallback
+// 초과면 R2 direct upload. Android + BG Fetch 지원 + 이 임계값 초과면 multipart BG Fetch 경로.
 const R2_THRESHOLD = 50 * 1024 * 1024;
+// Multipart BG Fetch 청크 크기 — S3 multipart 최소 5MB. BG Fetch 저장소 부담 완화를 위해 20MB.
+const MULTIPART_CHUNK_SIZE = 20 * 1024 * 1024;
+// 이 크기 초과부터 multipart 고려 (청크 5개 이상 → 오버헤드 정당화)
+const MULTIPART_THRESHOLD = 100 * 1024 * 1024;
 
 export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult }: VideoUploadPanelProps) {
     const { data: uploadedVideos, refetch } = useSessionVideos(sessionId);
@@ -92,6 +96,24 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             try { await lock.release(); } catch { /* noop */ }
             wakeLockRef.current = null;
         }
+    }, []);
+
+    // SW / Background Fetch 상태 진단 (UI 표시용)
+    const [swStatus, setSwStatus] = useState<"checking" | "ready" | "no-sw" | "no-bgfetch">("checking");
+    useEffect(() => {
+        (async () => {
+            if (!("serviceWorker" in navigator)) { setSwStatus("no-sw"); return; }
+            try {
+                const reg = await Promise.race([
+                    navigator.serviceWorker.ready,
+                    new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+                ]);
+                if (!reg) { setSwStatus("no-sw"); return; }
+                // @ts-ignore
+                if (!reg.backgroundFetch) { setSwStatus("no-bgfetch"); return; }
+                setSwStatus("ready");
+            } catch { setSwStatus("no-sw"); }
+        })();
     }, []);
 
     // 네이버 업로드 대상 체크
@@ -225,22 +247,6 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         });
     };
 
-    // Background Fetch 지원 여부 — navigator.serviceWorker.ready 가 SW 미등록 시 무한 대기하므로 타임아웃 필수
-    const supportsBackgroundFetch = async (): Promise<boolean> => {
-        if (!("serviceWorker" in navigator)) return false;
-        try {
-            const reg = await Promise.race([
-                navigator.serviceWorker.ready,
-                new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
-            ]);
-            if (!reg) return false;
-            // @ts-ignore — BackgroundFetchManager
-            return !!reg.backgroundFetch;
-        } catch {
-            return false;
-        }
-    };
-
     // SW → main thread 메시지 수신 (업로드 완료/실패 알림)
     useEffect(() => {
         if (!("serviceWorker" in navigator)) return;
@@ -267,52 +273,69 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         return () => navigator.serviceWorker.removeEventListener("message", handler);
     }, [refetch]);
 
-    // Background Fetch 버전 r2Upload — 지원 브라우저(Chromium Android 등)에서만 사용
-    const r2UploadBackground = async (memberId: number, file: File, displayName: string, onDone: () => void) => {
+    // Multipart R2 + Background Fetch — Android 에서 대용량(>100MB) 파일을 진짜 백그라운드로 업로드.
+    // 파일을 20MB 청크로 쪼개 각 청크별 presigned PUT URL 받아 단일 BG Fetch 에 Request[] 배열로 전달.
+    // SW 가 성공 시 모든 part 응답에서 ETag 수집 → /multipart/complete 호출.
+    const r2MultipartUploadBackground = async (memberId: number, file: File, displayName: string, onDone: () => void) => {
         const token = getToken();
         const authHeader: Record<string, string> = token ? { "Authorization": `Bearer ${token}` } : {};
 
         try {
-            // 1. presign (기존과 동일)
-            const presignRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/r2/presign`, {
+            // 1. Multipart init → 모든 part presigned URL 일괄 수신
+            const initRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/r2/multipart/init`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeader },
-                body: JSON.stringify({ filename: file.name, content_type: file.type || "application/octet-stream", size: file.size }),
+                body: JSON.stringify({
+                    filename: file.name,
+                    content_type: file.type || "application/octet-stream",
+                    size: file.size,
+                    chunk_size: MULTIPART_CHUNK_SIZE,
+                }),
             });
-            if (!presignRes.ok) throw new Error(`presign 실패 (${presignRes.status})`);
-            const { upload_url, key, content_type } = await presignRes.json();
+            if (!initRes.ok) throw new Error(`multipart init 실패 (${initRes.status})`);
+            const { key, uploadId, chunkSize, numParts, partUrls, contentType } = await initRes.json();
 
-            // 2. SW 에 finalize 메타 저장 (SW 가 bgfetch 성공 시 사용)
-            const uploadId = `upload-${sessionId}-${memberId}-${Date.now()}`;
-            await saveUploadMeta(uploadId, {
+            // 2. 각 청크를 file.slice() 로 자른 Request 배열 생성
+            const requests: Request[] = partUrls.map((p: { partNumber: number; url: string }) => {
+                const idx = p.partNumber - 1;
+                const start = idx * chunkSize;
+                const end = Math.min(start + chunkSize, file.size);
+                return new Request(p.url, {
+                    method: "PUT",
+                    headers: { "Content-Type": contentType || "application/octet-stream" },
+                    body: file.slice(start, end),
+                });
+            });
+
+            // 3. SW 에 완료 처리용 메타 저장
+            const bgId = `upload-${sessionId}-${memberId}-${Date.now()}`;
+            await saveUploadMeta(bgId, {
+                kind: "multipart",
                 key,
+                uploadId,
                 filename: file.name,
                 memberId,
                 displayName,
                 token: token ?? "",
-                finalizeUrl: `/api/v1/sessions/${sessionId}/videos/${memberId}/r2/finalize`,
+                numParts,
+                finalizeUrl: `/api/v1/sessions/${sessionId}/videos/${memberId}/r2/multipart/complete`,
+                abortUrl: `/api/v1/sessions/${sessionId}/videos/${memberId}/r2/multipart/abort`,
             });
 
-            // 3. Background Fetch 실행 — 브라우저가 알림 표시하며 백그라운드 전송
+            // 4. Background Fetch 실행 — 단일 알림, 여러 Request
             const reg = await navigator.serviceWorker.ready;
-            const request = new Request(upload_url, {
-                method: "PUT",
-                headers: { "Content-Type": content_type || "application/octet-stream" },
-                body: file,
-            });
-            // @ts-ignore
-            const bgFetch = await reg.backgroundFetch.fetch(uploadId, [request], {
-                title: `${displayName} 영상 업로드 중`,
+            // @ts-ignore — BackgroundFetchManager 미지원 타입
+            const bgFetch = await reg.backgroundFetch.fetch(bgId, requests, {
+                title: `${displayName} 영상 업로드 중 (${numParts}청크)`,
                 icons: [{ src: "/favicon.ico", sizes: "64x64", type: "image/x-icon" }],
                 downloadTotal: file.size,
             });
 
-            // 4. Progress 이벤트 연결 — BackgroundFetchRegistration 의 uploaded 값 주기적 확인
             setUploads(prev => ({ ...prev, [memberId]: { progress: 1, uploading: true } }));
             toast.success("백그라운드 업로드 시작 — 화면 닫고 앱 나가도 됩니다");
 
             bgFetch.addEventListener("progress", () => {
-                const total = bgFetch.uploadTotal || file.size;
+                const total = file.size;
                 const uploaded = bgFetch.uploaded || 0;
                 if (total > 0) {
                     const pct = Math.max(1, Math.min(99, Math.round((uploaded / total) * 100)));
@@ -322,13 +345,7 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         } catch (err: any) {
             const errMsg = err?.message ?? "알 수 없음";
             setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: `백그라운드 시작 실패: ${errMsg}` } }));
-            if (isAndroid) {
-                // Android 는 fallback 안 함 — 에러 표시하고 종료
-                toast.error(`Background Fetch 실패: ${errMsg}`);
-                onDone();
-                return;
-            }
-            toast.error("백그라운드 실패 — foreground 업로드로 전환");
+            toast.error(`백그라운드 실패 — foreground 로 전환: ${errMsg}`);
             await r2Upload(memberId, file, onDone);
             return;
         }
@@ -442,40 +459,21 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             }
         };
 
-        if (file.size > R2_THRESHOLD) {
-            const presenter = presenters.find(p => p.member_id === memberId);
-            const displayName = presenter?.member_name ?? `#${memberId}`;
-            const bgSupported = await supportsBackgroundFetch();
+        // 업로드 경로 분기:
+        // - Android + BG Fetch 지원 + >100MB → R2 Multipart + Background Fetch (진짜 백그라운드)
+        // - >50MB → R2 직접 업로드 (foreground, Wake Lock)
+        // - ≤50MB → 서버 직접 업로드 (Cloudflare 100MB 제한 미만)
+        const presenter = presenters.find(p => p.member_id === memberId);
+        const displayName = presenter?.member_name ?? "영상";
 
-            // Android: 무조건 Background Fetch 사용 (지원 안 되면 명시적 에러)
-            if (isAndroid) {
-                if (bgSupported) {
-                    r2UploadBackground(memberId, file, displayName, finishAndDrain);
-                } else {
-                    setUploads(prev => ({
-                        ...prev,
-                        [memberId]: {
-                            progress: 0,
-                            uploading: false,
-                            error: "백그라운드 업로드 실패 — 브라우저가 Background Fetch/Service Worker 미지원. 페이지 새로고침(캐시 삭제) 후 재시도",
-                        },
-                    }));
-                    toast.error("Background Fetch 불가 — 캐시 삭제 후 재시도 필요");
-                    finishAndDrain();
-                    return;
-                }
-            } else {
-                // iOS 등 — 기본 foreground (Wake Lock 적용)
-                if (bgSupported) {
-                    r2UploadBackground(memberId, file, displayName, finishAndDrain);
-                } else {
-                    r2Upload(memberId, file, finishAndDrain);
-                }
-            }
+        if (isAndroid && swStatus === "ready" && file.size > MULTIPART_THRESHOLD) {
+            r2MultipartUploadBackground(memberId, file, displayName, finishAndDrain);
+        } else if (file.size > R2_THRESHOLD) {
+            r2Upload(memberId, file, finishAndDrain);
         } else {
             singleUpload(memberId, file, finishAndDrain);
         }
-    }, [sessionId, refetch, releaseWakeLockIfIdle, presenters, isAndroid]);
+    }, [sessionId, refetch, releaseWakeLockIfIdle, isAndroid, swStatus, presenters]);
 
     const handleFileSelect = useCallback((memberId: number, file: File) => {
         // Wake Lock 확보 (화면 자동 꺼짐 방지) — 이미 잡혀있으면 no-op
@@ -601,13 +599,34 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         <div className="space-y-4">
             {/* 헤더 */}
             <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                     <Film className="w-4 h-4 text-[var(--color-accent)]" />
                     <span className="text-sm font-medium">영상 직접 업로드</span>
                     <span className="text-xs text-[var(--color-text-muted)]">
                         {uploadedCount}/{totalPresenters}개 완료
                         {uploadingCount > 0 && ` · ${uploadingCount}개 업로드 중`}
                     </span>
+                    {/* SW / Background Fetch 진단 배지 — Android 에서만 표시 */}
+                    {isAndroid && (
+                        <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${
+                                swStatus === "ready" ? "bg-green-500/10 text-green-600 border-green-500/20" :
+                                swStatus === "checking" ? "bg-gray-100 text-gray-500 border-gray-200" :
+                                "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                            }`}
+                            title={
+                                swStatus === "ready" ? "100MB 초과 영상은 백그라운드로 전송됩니다 (Multipart + Background Fetch)" :
+                                swStatus === "checking" ? "Service Worker 준비 중..." :
+                                swStatus === "no-sw" ? "Service Worker 등록 실패 — 페이지 완전 새로고침(Ctrl+Shift+R 또는 캐시 삭제) 후 재시도" :
+                                "이 브라우저는 Background Fetch 미지원 — foreground 업로드로 전환"
+                            }
+                        >
+                            {swStatus === "ready" ? "✓ 백그라운드 업로드 가능" :
+                             swStatus === "checking" ? "SW 확인 중..." :
+                             swStatus === "no-sw" ? "⚠ SW 없음" :
+                             "⚠ BG 미지원"}
+                        </span>
+                    )}
                 </div>
                 <Button
                     onClick={handleNaverUpload}

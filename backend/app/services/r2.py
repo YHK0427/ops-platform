@@ -94,3 +94,69 @@ def _blocking_head(key: str) -> dict:
 async def head(key: str) -> dict:
     """오브젝트 메타데이터 조회 (존재 확인 + 크기)"""
     return await asyncio.to_thread(_blocking_head, key)
+
+
+# ── Multipart Upload ─────────────────────────────────────────────────────────
+# 대용량 파일을 청크로 쪼개 업로드 — Background Fetch storage quota 회피 목적.
+# 흐름: create_multipart → (part N개 PUT) → complete_multipart
+#       중단 시 abort_multipart 로 R2 측 unfinished upload 정리.
+
+
+def _blocking_create_multipart(key: str, content_type: str) -> str:
+    resp = _client().create_multipart_upload(
+        Bucket=settings.R2_BUCKET_NAME,
+        Key=key,
+        ContentType=content_type,
+    )
+    return resp["UploadId"]
+
+
+async def create_multipart(key: str, content_type: str) -> str:
+    """멀티파트 업로드 시작. 반환: uploadId"""
+    return await asyncio.to_thread(_blocking_create_multipart, key, content_type)
+
+
+def presign_part(key: str, upload_id: str, part_number: int, expires_in: int = 3600) -> str:
+    """개별 part PUT presigned URL (기본 1시간). part_number 는 1-indexed."""
+    return _client().generate_presigned_url(
+        "upload_part",
+        Params={
+            "Bucket": settings.R2_BUCKET_NAME,
+            "Key": key,
+            "UploadId": upload_id,
+            "PartNumber": part_number,
+        },
+        ExpiresIn=expires_in,
+    )
+
+
+def _blocking_complete_multipart(key: str, upload_id: str, parts: list[dict]) -> dict:
+    # parts: [{"PartNumber": 1, "ETag": '"abc"'}, ...]  — PartNumber 순 정렬 필수
+    sorted_parts = sorted(parts, key=lambda p: p["PartNumber"])
+    return _client().complete_multipart_upload(
+        Bucket=settings.R2_BUCKET_NAME,
+        Key=key,
+        UploadId=upload_id,
+        MultipartUpload={"Parts": sorted_parts},
+    )
+
+
+async def complete_multipart(key: str, upload_id: str, parts: list[dict]) -> dict:
+    """멀티파트 업로드 완료. parts 형식: [{'PartNumber': int, 'ETag': str}, ...]"""
+    return await asyncio.to_thread(_blocking_complete_multipart, key, upload_id, parts)
+
+
+def _blocking_abort_multipart(key: str, upload_id: str) -> None:
+    try:
+        _client().abort_multipart_upload(
+            Bucket=settings.R2_BUCKET_NAME,
+            Key=key,
+            UploadId=upload_id,
+        )
+    except Exception as e:
+        logger.warning(f"abort_multipart_failed key={key} upload_id={upload_id} err={e}")
+
+
+async def abort_multipart(key: str, upload_id: str) -> None:
+    """멀티파트 업로드 중단 — 서버 측 미완료 파트 정리."""
+    await asyncio.to_thread(_blocking_abort_multipart, key, upload_id)

@@ -1547,6 +1547,162 @@ async def r2_finalize_upload(
     }
 
 
+# ── R2 Multipart Upload (Background Fetch storage quota 회피) ────────────────
+# 청크 크기 20MB × N개 → 각 청크별 presigned PUT URL 일괄 발급 → 클라가 BG Fetch 로 전체 업로드
+# 완료 시 SW 가 part ETag 수집 → /complete 호출 → 서버가 R2 complete + ARQ pull 큐잉
+
+
+@router.post("/{session_id}/videos/{member_id}/r2/multipart/init")
+async def r2_multipart_init(
+    session_id: int,
+    member_id: int,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """멀티파트 업로드 시작 + 모든 part presigned URL 일괄 발급"""
+    from app.services import r2 as r2_svc
+    if not r2_svc.is_configured():
+        raise HTTPException(status_code=501, detail="R2가 설정되지 않았습니다 (서버 env 확인)")
+
+    member = await db.get(Member, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
+
+    filename = body.get("filename") or "video.mp4"
+    content_type = body.get("content_type") or "application/octet-stream"
+    size = int(body.get("size", 0))
+    chunk_size = int(body.get("chunk_size", 20 * 1024 * 1024))
+
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="size 가 0 이하입니다")
+    # R2/S3 multipart 제약: part 최소 5MB (마지막 제외), 최대 10000개
+    if chunk_size < 5 * 1024 * 1024:
+        chunk_size = 5 * 1024 * 1024
+    num_parts = (size + chunk_size - 1) // chunk_size
+    if num_parts > 10000:
+        raise HTTPException(status_code=400, detail="청크 개수 초과 (최대 10000)")
+
+    key = f"uploads/session_{session_id}/{member_id}/{uuid.uuid4().hex}_{filename}"
+    upload_id = await r2_svc.create_multipart(key, content_type)
+
+    # 청크 개수만큼 presigned URL 일괄 생성 (6시간 유효 — 느린 모바일 업로드 대비)
+    part_urls = [
+        {"partNumber": i + 1, "url": r2_svc.presign_part(key, upload_id, i + 1, expires_in=6 * 3600)}
+        for i in range(num_parts)
+    ]
+
+    size_mb = round(size / (1024 * 1024), 1)
+    logger.audit(f"🎬 멀티파트 업로드 시작 — {member.name} ({size_mb}MB, {num_parts}개 청크)")
+
+    return {
+        "key": key,
+        "uploadId": upload_id,
+        "chunkSize": chunk_size,
+        "numParts": num_parts,
+        "partUrls": part_urls,
+        "method": "PUT",
+        "contentType": content_type,
+    }
+
+
+@router.post("/{session_id}/videos/{member_id}/r2/multipart/complete")
+async def r2_multipart_complete(
+    session_id: int,
+    member_id: int,
+    request: Request,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """멀티파트 업로드 완료 → R2 오브젝트 결합 → ARQ pull 태스크 큐잉"""
+    from app.services import r2 as r2_svc
+    if not r2_svc.is_configured():
+        raise HTTPException(status_code=501, detail="R2가 설정되지 않았습니다")
+
+    member = await db.get(Member, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
+
+    key = body.get("key")
+    upload_id = body.get("uploadId")
+    filename = body.get("filename") or "video.mp4"
+    parts = body.get("parts") or []
+    if not key or not upload_id or not parts:
+        raise HTTPException(status_code=400, detail="key / uploadId / parts 모두 필요")
+
+    # parts 정규화 — SW 에서 온 { PartNumber, ETag } 리스트
+    norm_parts = []
+    for p in parts:
+        pn = p.get("PartNumber") or p.get("partNumber")
+        et = p.get("ETag") or p.get("etag")
+        if pn is None or not et:
+            raise HTTPException(status_code=400, detail="parts 원소에 PartNumber/ETag 필수")
+        norm_parts.append({"PartNumber": int(pn), "ETag": et})
+
+    # R2 complete 호출
+    try:
+        await r2_svc.complete_multipart(key, upload_id, norm_parts)
+    except Exception as e:
+        logger.error(f"r2_multipart_complete_failed key={key} upload_id={upload_id} err={e}")
+        # R2 측 cleanup 시도
+        try:
+            await r2_svc.abort_multipart(key, upload_id)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"multipart complete 실패: {e}")
+
+    # 실제 오브젝트 크기 확인
+    try:
+        meta = await r2_svc.head(key)
+        r2_size = int(meta.get("ContentLength", 0))
+    except Exception as e:
+        logger.error(f"r2_multipart_head_failed key={key} err={e}")
+        raise HTTPException(status_code=500, detail="multipart 완료되었으나 오브젝트 조회 실패")
+
+    # ARQ pull 태스크 큐잉 (기존 r2/finalize 와 동일 태스크 사용)
+    pool = getattr(request.app.state, "arq_pool", None)
+    if not pool:
+        raise HTTPException(status_code=503, detail="ARQ pool not initialized")
+
+    job = await pool.enqueue_job(
+        "task_r2_pull_to_disk",
+        session_id=session_id,
+        member_id=member_id,
+        r2_key=key,
+        filename=filename,
+    )
+    size_mb = round(r2_size / (1024 * 1024), 1) if r2_size else 0
+    logger.audit(f"📦 R2 멀티파트 업로드 완료 — {member.name} ({size_mb}MB, {len(norm_parts)}청크)")
+
+    return {
+        "status": "queued",
+        "job_id": job.job_id if job else None,
+        "size": r2_size,
+    }
+
+
+@router.post("/{session_id}/videos/{member_id}/r2/multipart/abort")
+async def r2_multipart_abort(
+    session_id: int,
+    member_id: int,
+    body: dict = Body(...),
+    _: str = Depends(get_current_user),
+):
+    """멀티파트 업로드 중단 — R2 측 미완료 파트 정리"""
+    from app.services import r2 as r2_svc
+    if not r2_svc.is_configured():
+        raise HTTPException(status_code=501, detail="R2가 설정되지 않았습니다")
+
+    key = body.get("key")
+    upload_id = body.get("uploadId")
+    if not key or not upload_id:
+        raise HTTPException(status_code=400, detail="key / uploadId 필요")
+
+    await r2_svc.abort_multipart(key, upload_id)
+    return {"status": "aborted"}
+
+
 # ── 영상 직접 업로드 ──────────────────────────────────────────────────────────
 
 
