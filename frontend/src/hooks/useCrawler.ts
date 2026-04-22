@@ -233,6 +233,12 @@ export function useSessionVideos(sessionId: number) {
             return data;
         },
         enabled: !!sessionId,
+        // 압축 중인 영상 있으면 3초, 아니면 10초마다 refetch
+        refetchInterval: (query) => {
+            const data = query.state.data;
+            if (Array.isArray(data) && data.some(v => v.is_compressing)) return 3000;
+            return 10_000;
+        },
     });
 }
 
