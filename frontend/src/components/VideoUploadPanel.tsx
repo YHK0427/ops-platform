@@ -637,8 +637,12 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                                                 ) : video && !isUploading ? (
                                                     <div className="flex items-center gap-2 w-full md:w-auto md:flex-1 min-w-0 order-last md:order-none">
                                                         <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                                                        <span className="text-xs text-green-600 truncate flex-1">
-                                                            {video.filename} ({video.size_mb} MB)
+                                                        {/* 파일명만 truncate, 용량은 항상 보이도록 분리 */}
+                                                        <span className="text-xs text-green-600 truncate flex-1 min-w-0">
+                                                            {video.filename}
+                                                        </span>
+                                                        <span className="text-xs text-green-600 tabular-nums flex-shrink-0">
+                                                            {video.size_mb} MB
                                                         </span>
                                                         <div className="flex gap-1 flex-shrink-0">
                                                             <FileInputButton memberId={p.member_id} onSelect={handleFileSelect} label="교체" small />
