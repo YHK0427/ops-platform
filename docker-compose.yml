@@ -69,6 +69,12 @@ services:
       - ./backend:/app
       - ./files:/app/files
     env_file: .env
+    # Intel iGPU (VAAPI) 영상 압축용 — /dev/dri 가 없으면 libx264 로 자동 fallback
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "993"                        # render group (호스트 /dev/dri/renderD128 소유)
+      - "44"                         # video group (안전 여유)
     depends_on:
       db:
         condition: service_healthy

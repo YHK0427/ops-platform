@@ -23,6 +23,22 @@ async def startup(ctx):
     setup_logging()
     logger.info("Worker started")
 
+    # 좀비 정리 — 이전 워커가 중간에 죽어서 남겨둔 임시 파일/락 제거
+    from app.services.video_compress import cleanup_stale_tmp_files
+    removed = cleanup_stale_tmp_files("/app/files/video")
+    if removed:
+        logger.info(f"startup_cleanup: stale .compressed.tmp {removed}개 삭제")
+
+    # Redis compress 락 stale 해제
+    redis = ctx.get("redis")
+    if redis:
+        try:
+            existed = await redis.delete("compress:global_lock")
+            if existed:
+                logger.info("startup_cleanup: 좀비 compress 락 해제")
+        except Exception as e:
+            logger.warning(f"startup_cleanup: 락 해제 실패 {e}")
+
 
 # 태스크 함수들
 async def task_scan_ppt(ctx, session_id: int, mode: str):
@@ -250,29 +266,43 @@ async def task_compress_video(ctx, session_id: int, member_id: int, path: str):
         return {"status": "deferred"}
 
     import os as _os
+    # 파일 존재 재확인 — 중간에 삭제되었을 수도
+    if not _os.path.isfile(path):
+        logger.warning(f"compress: 실행 시점에 파일 없음 path={path} — 스킵")
+        return {"status": "skipped", "reason": "file vanished"}
+
     original_mb_start = round(_os.path.getsize(path) / (1024 * 1024), 1)
     logger.log(25, f"🗜️ 압축 시작 — {member_name} ({original_mb_start}MB)")
     try:
-        original, compressed = await compress_in_place(path)
+        original, compressed, encoder = await compress_in_place(path)
         original_mb = round(original / (1024 * 1024), 1)
         compressed_mb = round(compressed / (1024 * 1024), 1)
         saved_mb = round(original_mb - compressed_mb, 1)
         ratio = round(compressed / original * 100, 1) if original else 0
+        encoder_label = "VAAPI" if encoder == "h264_vaapi" else "libx264"
         if saved_mb > 0:
             logger.log(
                 25,
-                f"✅ 압축 완료 — {member_name} ({original_mb}MB → {compressed_mb}MB, "
+                f"✅ 압축 완료 — {member_name} ({encoder_label}: {original_mb}MB → {compressed_mb}MB, "
                 f"{saved_mb}MB 절약, {100 - round(ratio)}% 감소)"
             )
         else:
             logger.log(25, f"✅ 압축 완료 — {member_name} (이미 최적 용량, 원본 유지)")
         return {
             "status": "complete",
+            "encoder": encoder,
             "original_mb": original_mb,
             "compressed_mb": compressed_mb,
             "saved_mb": saved_mb,
         }
     except Exception as e:
+        # 실패 시 남아있을 수 있는 tmp 정리
+        tmp_path = path + ".compressed.tmp"
+        if _os.path.isfile(tmp_path):
+            try:
+                _os.remove(tmp_path)
+            except OSError:
+                pass
         logger.error(f"❌ 압축 실패 — {member_name}: {e}", exc_info=True)
         raise
     finally:
