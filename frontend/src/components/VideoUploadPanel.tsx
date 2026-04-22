@@ -273,12 +273,42 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         return () => navigator.serviceWorker.removeEventListener("message", handler);
     }, [refetch]);
 
-    // Multipart R2 + Background Fetch — Android 에서 대용량(>100MB) 파일을 진짜 백그라운드로 업로드.
-    // 파일을 20MB 청크로 쪼개 각 청크별 presigned PUT URL 받아 단일 BG Fetch 에 Request[] 배열로 전달.
-    // SW 가 성공 시 모든 part 응답에서 ETag 수집 → /multipart/complete 호출.
-    const r2MultipartUploadBackground = async (memberId: number, file: File, displayName: string, onDone: () => void) => {
+    // Multipart R2 Foreground Upload — 대용량(>100MB) 파일을 청크로 쪼개 병렬 XHR PUT.
+    // Background Fetch 는 Chromium multi-Request 배열 지원이 사실상 no-op 이라 사용 안 함.
+    // 대신 Wake Lock + 탭 백그라운드 허용 (Chrome Android 는 백그라운드 탭 수분간 네트워크 유지)
+    // 청크 병렬 3개 → 속도 개선. 각 청크 XHR 로 정확한 진행률 추적.
+    const r2MultipartUploadForeground = async (memberId: number, file: File, displayName: string, onDone: () => void) => {
         const token = getToken();
         const authHeader: Record<string, string> = token ? { "Authorization": `Bearer ${token}` } : {};
+
+        let aborted = false;
+        const activeXhrs: XMLHttpRequest[] = [];
+        xhrRefs.current[memberId] = {
+            abort: () => {
+                aborted = true;
+                for (const x of activeXhrs) { try { x.abort(); } catch {} }
+            },
+        } as any;
+
+        const bail = (err: string) => {
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: err } }));
+            toast.error(err);
+            onDone();
+        };
+
+        let key: string | null = null;
+        let uploadId: string | null = null;
+
+        const abortRemote = async () => {
+            if (!key || !uploadId) return;
+            try {
+                await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/r2/multipart/abort`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", ...authHeader },
+                    body: JSON.stringify({ key, uploadId }),
+                });
+            } catch {}
+        };
 
         try {
             // 1. Multipart init → 모든 part presigned URL 일괄 수신
@@ -293,61 +323,116 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                 }),
             });
             if (!initRes.ok) throw new Error(`multipart init 실패 (${initRes.status})`);
-            const { key, uploadId, chunkSize, numParts, partUrls, contentType } = await initRes.json();
+            const initBody = await initRes.json();
+            key = initBody.key;
+            uploadId = initBody.uploadId;
+            const { chunkSize, numParts, partUrls, contentType } = initBody;
 
-            // 2. 각 청크를 file.slice() 로 자른 Request 배열 생성
-            const requests: Request[] = partUrls.map((p: { partNumber: number; url: string }) => {
-                const idx = p.partNumber - 1;
-                const start = idx * chunkSize;
-                const end = Math.min(start + chunkSize, file.size);
-                return new Request(p.url, {
-                    method: "PUT",
-                    headers: { "Content-Type": contentType || "application/octet-stream" },
-                    body: file.slice(start, end),
-                });
-            });
+            toast.success(`${displayName} 업로드 시작 — ${numParts}개 청크 병렬 전송`);
 
-            // 3. SW 에 완료 처리용 메타 저장
-            const bgId = `upload-${sessionId}-${memberId}-${Date.now()}`;
-            await saveUploadMeta(bgId, {
-                kind: "multipart",
-                key,
-                uploadId,
-                filename: file.name,
-                memberId,
-                displayName,
-                token: token ?? "",
-                numParts,
-                finalizeUrl: `/api/v1/sessions/${sessionId}/videos/${memberId}/r2/multipart/complete`,
-                abortUrl: `/api/v1/sessions/${sessionId}/videos/${memberId}/r2/multipart/abort`,
-            });
+            // 2. 각 part 를 병렬(최대 3개) 로 PUT + ETag 수집
+            const parts: { PartNumber: number; ETag: string }[] = [];
+            const uploadedBytes = new Array<number>(numParts).fill(0);
+            const CONCURRENCY = 3;
 
-            // 4. Background Fetch 실행 — 단일 알림, 여러 Request
-            const reg = await navigator.serviceWorker.ready;
-            // @ts-ignore — BackgroundFetchManager 미지원 타입
-            const bgFetch = await reg.backgroundFetch.fetch(bgId, requests, {
-                title: `${displayName} 영상 업로드 중 (${numParts}청크)`,
-                icons: [{ src: "/favicon.ico", sizes: "64x64", type: "image/x-icon" }],
-                downloadTotal: file.size,
-            });
-
-            setUploads(prev => ({ ...prev, [memberId]: { progress: 1, uploading: true } }));
-            toast.success("백그라운드 업로드 시작 — 화면 닫고 앱 나가도 됩니다");
-
-            bgFetch.addEventListener("progress", () => {
+            const updateProgress = () => {
                 const total = file.size;
-                const uploaded = bgFetch.uploaded || 0;
-                if (total > 0) {
-                    const pct = Math.max(1, Math.min(99, Math.round((uploaded / total) * 100)));
-                    setUploads(prev => ({ ...prev, [memberId]: { progress: pct, uploading: true } }));
-                }
+                const done = uploadedBytes.reduce((a, b) => a + b, 0);
+                const pct = Math.max(1, Math.min(99, Math.round((done / total) * 95)));
+                setUploads(prev => ({ ...prev, [memberId]: { progress: pct, uploading: true } }));
+            };
+
+            const uploadPart = (partNumber: number, url: string): Promise<void> => {
+                return new Promise((resolve, reject) => {
+                    if (aborted) { reject(new Error("aborted")); return; }
+                    const idx = partNumber - 1;
+                    const start = idx * chunkSize;
+                    const end = Math.min(start + chunkSize, file.size);
+                    const blob = file.slice(start, end);
+
+                    const xhr = new XMLHttpRequest();
+                    xhr.open("PUT", url);
+                    xhr.setRequestHeader("Content-Type", contentType || "application/octet-stream");
+
+                    xhr.upload.onprogress = (e) => {
+                        if (e.lengthComputable) {
+                            uploadedBytes[idx] = e.loaded;
+                            updateProgress();
+                        }
+                    };
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            const etag = xhr.getResponseHeader("ETag") || xhr.getResponseHeader("etag");
+                            if (!etag) {
+                                reject(new Error(`part ${partNumber} ETag 헤더 없음 — R2 CORS 확인`));
+                                return;
+                            }
+                            parts.push({ PartNumber: partNumber, ETag: etag });
+                            uploadedBytes[idx] = blob.size;
+                            updateProgress();
+                            resolve();
+                        } else {
+                            reject(new Error(`part ${partNumber} PUT 실패 (${xhr.status})`));
+                        }
+                    };
+                    xhr.onerror = () => reject(new Error(`part ${partNumber} 네트워크 오류`));
+                    xhr.onabort = () => reject(new Error("aborted"));
+
+                    activeXhrs.push(xhr);
+                    xhr.send(blob);
+                });
+            };
+
+            // 동시성 제한된 큐
+            const queue = [...partUrls] as { partNumber: number; url: string }[];
+            const workers: Promise<void>[] = [];
+            for (let i = 0; i < Math.min(CONCURRENCY, queue.length); i++) {
+                const worker = (async () => {
+                    while (queue.length > 0 && !aborted) {
+                        const next = queue.shift();
+                        if (!next) break;
+                        // part 1회 재시도
+                        try {
+                            await uploadPart(next.partNumber, next.url);
+                        } catch (e: any) {
+                            if (aborted || e?.message === "aborted") throw e;
+                            // 1회 재시도
+                            await uploadPart(next.partNumber, next.url);
+                        }
+                    }
+                })();
+                workers.push(worker);
+            }
+            await Promise.all(workers);
+
+            if (aborted) throw new Error("aborted");
+
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 97, uploading: true } }));
+
+            // 3. /multipart/complete — 서버가 R2 complete + ARQ pull 큐잉
+            const completeRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/r2/multipart/complete`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...authHeader },
+                body: JSON.stringify({ key, uploadId, filename: file.name, parts }),
             });
+            if (!completeRes.ok) {
+                const errTxt = await completeRes.text().catch(() => "");
+                throw new Error(`complete 실패 (${completeRes.status}) ${errTxt}`);
+            }
+
+            setUploads(prev => ({ ...prev, [memberId]: { progress: 100, uploading: false } }));
+            setPendingPull(prev => new Set(prev).add(memberId));
+            toast.success("업로드 완료 — 서버에서 처리 중");
+            refetch();
         } catch (err: any) {
-            const errMsg = err?.message ?? "알 수 없음";
-            setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: `백그라운드 시작 실패: ${errMsg}` } }));
-            toast.error(`백그라운드 실패 — foreground 로 전환: ${errMsg}`);
-            await r2Upload(memberId, file, onDone);
-            return;
+            if (aborted || err?.message === "aborted") {
+                setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false } }));
+                toast.info("업로드가 중지되었습니다.");
+                abortRemote();
+            } else {
+                await abortRemote();
+                bail(`업로드 실패: ${err?.message ?? "알 수 없음"}`);
+            }
         }
         onDone();
     };
@@ -459,21 +544,16 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             }
         };
 
-        // 업로드 경로 분기:
-        // - Android + BG Fetch 지원 + >100MB → R2 Multipart + Background Fetch (진짜 백그라운드)
-        // - >50MB → R2 직접 업로드 (foreground, Wake Lock)
+        // 업로드 경로 분기 (단순화):
+        // - >50MB → R2 단일 PUT (foreground XHR) — Cloudflare Tunnel 우회
         // - ≤50MB → 서버 직접 업로드 (Cloudflare 100MB 제한 미만)
-        const presenter = presenters.find(p => p.member_id === memberId);
-        const displayName = presenter?.member_name ?? "영상";
-
-        if (isAndroid && swStatus === "ready" && file.size > MULTIPART_THRESHOLD) {
-            r2MultipartUploadBackground(memberId, file, displayName, finishAndDrain);
-        } else if (file.size > R2_THRESHOLD) {
+        // Multipart 경로는 미사용 (코드는 남김 — 단일 PUT 재검증 결과 따라 재활성화 가능)
+        if (file.size > R2_THRESHOLD) {
             r2Upload(memberId, file, finishAndDrain);
         } else {
             singleUpload(memberId, file, finishAndDrain);
         }
-    }, [sessionId, refetch, releaseWakeLockIfIdle, isAndroid, swStatus, presenters]);
+    }, [sessionId, refetch, releaseWakeLockIfIdle]);
 
     const handleFileSelect = useCallback((memberId: number, file: File) => {
         // Wake Lock 확보 (화면 자동 꺼짐 방지) — 이미 잡혀있으면 no-op
