@@ -218,6 +218,7 @@ export interface SessionVideo {
     member_name: string;
     filename: string;
     size_mb: number;
+    is_compressing?: boolean;
 }
 
 export const videoKeys = {

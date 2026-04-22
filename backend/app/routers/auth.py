@@ -201,7 +201,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             logger.info("totp_pending user=%s ip=%s", user.username, ip)
             return TokenResponse(requires_totp=True, totp_pending_token=pending_token)
 
-    logger.audit("login_success user=%s ip=%s role=%s", user.username, ip, user.role)
+    logger.audit(f"🔑 로그인 성공 — {user.username} ({user.role}) from {ip}")
     token = _create_access_token(user.username, user.role)
     return TokenResponse(access_token=token)
 
@@ -230,7 +230,7 @@ async def verify_totp(body: VerifyTotpRequest, request: Request, db: AsyncSessio
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP 코드가 올바르지 않습니다")
 
     await _delete_totp_pending(body.token)
-    logger.audit("login_success user=%s ip=%s role=%s (totp)", user.username, ip, user.role)
+    logger.audit(f"🔑 로그인 성공 (2FA) — {user.username} ({user.role}) from {ip}")
     token = _create_access_token(user.username, user.role)
     return TokenResponse(access_token=token)
 

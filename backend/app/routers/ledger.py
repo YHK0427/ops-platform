@@ -111,8 +111,14 @@ async def give_merit(
     for entry in created_entries:
         await db.refresh(entry)
 
+    # 멤버명 조회해서 읽기 좋게
+    from app.models import Member as _M
+    names = {}
     for entry in created_entries:
-        logger.audit(f"merit member_id={entry.member_id} score=+{req.score_delta} reason={req.reason} by={current_user['username']}")
+        m = await db.get(_M, entry.member_id)
+        names[entry.member_id] = m.name if m else f"#{entry.member_id}"
+    for entry in created_entries:
+        logger.audit(f"🏆 상점 부여 — {names.get(entry.member_id)} (+{req.score_delta}점, {req.reason})")
 
     return created_entries
 
@@ -171,7 +177,13 @@ async def give_penalty(
     await recalculate_deposit_after(db, req.member_id)
     await db.commit()
     await db.refresh(entry)
-    logger.audit(f"penalty member_id={req.member_id} score={req.score_delta} deposit={req.deposit_delta} desc={req.description} by={current_user['username']}")
+    from app.models import Member as _M
+    m = await db.get(_M, req.member_id)
+    mname = m.name if m else f"#{req.member_id}"
+    score_str = f"{req.score_delta:+d}점" if req.score_delta else ""
+    dep_str = f"{req.deposit_delta:+,}원" if req.deposit_delta else ""
+    parts = [s for s in [score_str, dep_str] if s]
+    logger.audit(f"⚠️ 벌점 부여 — {mname} ({', '.join(parts)}) [{req.description}]")
     return entry
 
 @router.post("/transaction", response_model=LedgerResponse)
@@ -240,7 +252,17 @@ async def create_transaction(
     await recalculate_deposit_after(db, req.member_id)
     await db.commit()
     await db.refresh(entry)
-    logger.audit(f"transaction member_id={req.member_id} type={req.type} amount={req.amount_krw} by={current_user['username']}")
+    from app.models import Member as _M
+    m = await db.get(_M, req.member_id)
+    mname = m.name if m else f"#{req.member_id}"
+    TYPE_KR = {
+        "DEPOSIT_RECHARGE": "디파짓 충전", "DEPOSIT_ADJUST": "디파짓 조정",
+        "DEPOSIT_REFUND": "디파짓 환급", "DEPOSIT_FORFEIT": "디파짓 몰수",
+        "FINE": "벌금", "MILESTONE_FINE": "누적벌점 벌금",
+        "ADJUSTMENT": "조정",
+    }
+    type_kr = TYPE_KR.get(req.type, req.type)
+    logger.audit(f"💰 장부 거래 — {mname}: {type_kr} {req.amount_krw:+,}원")
 
     return entry
 
@@ -741,7 +763,7 @@ async def create_treasury_expense(
     db.add(expense)
     await db.commit()
     await db.refresh(expense)
-    logger.audit(f"treasury_expense amount={req.amount_krw} desc={req.description} by={current_user['username']}")
+    logger.audit(f"💳 금고 지출 — {req.amount_krw:,}원 [{req.description}]")
     return {
         "id": expense.id,
         "amount_krw": expense.amount_krw,

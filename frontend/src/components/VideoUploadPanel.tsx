@@ -96,12 +96,13 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         if (changed) setPendingPull(next);
     }, [uploadedVideos]);
 
-    // pendingPull 있으면 videos 리스트 주기적으로 refetch
+    // pendingPull 있거나 압축 중인 영상 있으면 주기적으로 refetch
+    const anyCompressing = (uploadedVideos ?? []).some(v => v.is_compressing);
     useEffect(() => {
-        if (pendingPull.size === 0) return;
-        const interval = setInterval(() => refetch(), 2000);
+        if (pendingPull.size === 0 && !anyCompressing) return;
+        const interval = setInterval(() => refetch(), 3000);
         return () => clearInterval(interval);
-    }, [pendingPull.size, refetch]);
+    }, [pendingPull.size, anyCompressing, refetch]);
 
     // 개별 카페 제목 오버라이드
     const [titleOverrides, setTitleOverrides] = useState<Record<number, string>>({});
@@ -364,9 +365,15 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     const uploadedCount = presenters.filter(p => videoMap.has(p.member_id)).length;
     const selectedCount = selectedForNaver.size;
     const uploadingCount = Object.values(uploads).filter(u => u.uploading).length;
-    // 선택됐지만 아직 서버에 파일 없는(= pendingPull) 멤버들 — 네이버 업로드 차단 조건
+    // 압축 진행 중 멤버 집합
+    const compressingMembers = new Set<number>(
+        (uploadedVideos ?? []).filter(v => v.is_compressing).map(v => v.member_id)
+    );
+    // 선택됐지만 아직 서버에 파일 없는(pendingPull) 또는 압축 중인 멤버들 — 네이버 업로드 차단
     const selectedPendingPull = Array.from(selectedForNaver).filter(id => !videoMap.has(id) && pendingPull.has(id));
-    const naverDisabled = selectedCount === 0 || isStartingNaver || selectedPendingPull.length > 0;
+    const selectedCompressing = Array.from(selectedForNaver).filter(id => compressingMembers.has(id));
+    const selectedBlocked = selectedPendingPull.length + selectedCompressing.length;
+    const naverDisabled = selectedCount === 0 || isStartingNaver || selectedBlocked > 0;
 
     return (
         <div className="space-y-4">
@@ -385,14 +392,16 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                     disabled={naverDisabled}
                     className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
                     size="sm"
-                    title={selectedPendingPull.length > 0 ? "서버에서 처리 중인 영상이 있습니다. 잠시 기다려주세요." : undefined}
+                    title={selectedBlocked > 0 ? "서버 처리/압축 중인 영상이 있습니다. 잠시 기다려주세요." : undefined}
                 >
                     <UploadCloud className="w-4 h-4 mr-1" />
                     {isStartingNaver
                         ? "시작 중..."
                         : selectedPendingPull.length > 0
                             ? `서버 처리 중 (${selectedPendingPull.length}개)`
-                            : `네이버 업로드 (${selectedCount}개)`}
+                            : selectedCompressing.length > 0
+                                ? `압축 중 (${selectedCompressing.length}개)`
+                                : `네이버 업로드 (${selectedCount}개)`}
                 </Button>
             </div>
 
@@ -488,6 +497,7 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                                     const isChecked = selectedForNaver.has(p.member_id);
                                     const naverStatus = naverProgress?.find(np => np.presenter === p.member_name)?.status;
                                     const isPendingPull = pendingPull.has(p.member_id) && !video;
+                                    const isCompressing = video?.is_compressing === true;
 
                                     return (
                                         <div key={p.member_id} className="px-3 md:px-4 py-2.5 md:py-3 space-y-1.5">
@@ -519,6 +529,12 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                                                 {isPendingPull && (
                                                     <span className="px-1.5 py-0.5 rounded text-[10px] font-bold border bg-amber-500/10 text-amber-600 border-amber-500/20 animate-pulse flex-shrink-0">
                                                         서버 처리 중
+                                                    </span>
+                                                )}
+                                                {/* 압축 중 배지 */}
+                                                {isCompressing && (
+                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold border bg-indigo-500/10 text-indigo-600 border-indigo-500/20 animate-pulse flex-shrink-0">
+                                                        압축 중
                                                     </span>
                                                 )}
 

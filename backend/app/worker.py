@@ -27,19 +27,22 @@ async def startup(ctx):
 # 태스크 함수들
 async def task_scan_ppt(ctx, session_id: int, mode: str):
     """PPT 이메일 스캔 태스크 (IMAP)"""
-    logger.info(f"task_scan_ppt start session={session_id} mode={mode}")
+    label = await _get_session_label(session_id)
+    logger.log(25, f"📧 PPT 이메일 스캔 시작 — {label} (mode={mode})")
     try:
         async with AsyncSessionLocal() as db:
             result = await scan_ppt(session_id, mode, db)
-        logger.info(f"task_scan_ppt complete session={session_id}")
+        found = result.get("found", "?") if isinstance(result, dict) else "?"
+        logger.log(25, f"✅ PPT 스캔 완료 — {label} ({found}건 처리)")
         return result
     except Exception as e:
-        logger.error(f"task_scan_ppt failed session={session_id}: {e}", exc_info=True)
+        logger.error(f"❌ PPT 스캔 실패 — {label}: {e}", exc_info=True)
         raise
 
 async def task_scan_homework(ctx, session_id: int):
     """과제 스캔 태스크"""
-    logger.info(f"task_scan_homework start session={session_id}")
+    label = await _get_session_label(session_id)
+    logger.log(25, f"📝 과제 스캔 시작 — {label}")
     try:
         async with AsyncSessionLocal() as db:
             # 세션 정보 조회
@@ -66,15 +69,17 @@ async def task_scan_homework(ctx, session_id: int):
                 fb_count = await scan_feedback_comments(session.id, session.week_num, members, db, deadline_post=deadline_post)
 
             result = {"status": "complete", "homework_count": hw_count, "feedback_count": fb_count}
-        logger.info(f"task_scan_homework complete session={session_id}")
+        logger.log(25, f"✅ 과제 스캔 완료 — {label} (과제 {hw_count}건, 피드백 {fb_count}건)")
         return result
     except Exception as e:
-        logger.error(f"task_scan_homework failed session={session_id}: {e}", exc_info=True)
+        logger.error(f"❌ 과제 스캔 실패 — {label}: {e}", exc_info=True)
         raise
 
 async def task_scan_excuses(ctx, session_id: int, mode: str):
     """사유서 스캔 태스크 (PRE or POST 모드)"""
-    logger.info(f"task_scan_excuses start session={session_id} mode={mode}")
+    label = await _get_session_label(session_id)
+    mode_kr = "사전" if mode == "PRE" else "사후"
+    logger.log(25, f"📄 {mode_kr}사유서 스캔 시작 — {label}")
     try:
         async with AsyncSessionLocal() as db:
             session = await db.get(Session, session_id)
@@ -86,25 +91,58 @@ async def task_scan_excuses(ctx, session_id: int, mode: str):
 
             count = await scan_excuses(session.id, session.week_num, members, mode, db, session_date=session.date)
             result = {"status": "complete", "excuse_count": count, "mode": mode}
-        logger.info(f"task_scan_excuses complete session={session_id}")
+        logger.log(25, f"✅ {mode_kr}사유서 스캔 완료 — {label} ({count}건 처리)")
         return result
     except Exception as e:
-        logger.error(f"task_scan_excuses failed session={session_id}: {e}", exc_info=True)
+        logger.error(f"❌ {mode_kr}사유서 스캔 실패 — {label}: {e}", exc_info=True)
         raise
 
 async def task_upload_videos(ctx, session_id: int, videos: list | None = None):
-    """영상 업로드 태스크"""
-    logger.info(f"task_upload_videos start session={session_id}")
+    """영상 업로드 태스크 (네이버 카페)"""
+    label = await _get_session_label(session_id)
+    video_count = len(videos) if videos else "?"
+    logger.log(25, f"🚀 네이버 카페 업로드 시작 — {label} ({video_count}개 영상)")
     try:
         redis = ctx.get("redis")
         job_id = ctx.get("job_id")
         async with AsyncSessionLocal() as db:
             result = await upload_all_videos(session_id, db, redis=redis, job_id=job_id, videos=videos)
-        logger.info(f"task_upload_videos complete session={session_id}")
+        # result 는 각 영상 결과 리스트
+        if isinstance(result, list):
+            success = sum(1 for r in result if r.get("success"))
+            failed = len(result) - success
+            if failed == 0:
+                logger.log(25, f"✅ 네이버 카페 업로드 완료 — {label} ({success}/{len(result)})")
+            else:
+                logger.warning(f"⚠️ 네이버 카페 업로드 일부 실패 — {label} ({success}/{len(result)} 성공, {failed}건 실패)")
+        else:
+            logger.log(25, f"✅ 네이버 카페 업로드 완료 — {label}")
         return result
     except Exception as e:
-        logger.error(f"task_upload_videos failed session={session_id}: {e}", exc_info=True)
+        logger.error(f"❌ 네이버 카페 업로드 실패 — {label}: {e}", exc_info=True)
         raise
+
+async def _get_member_name(member_id: int) -> str:
+    """멤버 ID → 이름 조회. 실패 시 #id 반환."""
+    try:
+        async with AsyncSessionLocal() as db:
+            m = await db.get(Member, member_id)
+            return m.name if m else f"#{member_id}"
+    except Exception:
+        return f"#{member_id}"
+
+
+async def _get_session_label(session_id: int) -> str:
+    """세션 ID → '{week}주차 {title}' 라벨. 실패 시 #id 반환."""
+    try:
+        async with AsyncSessionLocal() as db:
+            s = await db.get(Session, session_id)
+            if not s:
+                return f"#{session_id}"
+            return f"{s.week_num}주차 {s.title}"
+    except Exception:
+        return f"#{session_id}"
+
 
 async def task_r2_pull_to_disk(ctx, session_id: int, member_id: int, r2_key: str, filename: str):
     """R2에서 영상을 로컬 디스크로 pull + R2 삭제.
@@ -114,6 +152,7 @@ async def task_r2_pull_to_disk(ctx, session_id: int, member_id: int, r2_key: str
     from app.services import r2 as r2_svc
     from app.services.video_compress import COMPRESS_THRESHOLD_MB
 
+    member_name = await _get_member_name(member_id)
     logger.info(f"task_r2_pull_to_disk start session={session_id} member={member_id} key={r2_key}")
     try:
         video_dir = "/app/files/video"
@@ -152,7 +191,7 @@ async def task_r2_pull_to_disk(ctx, session_id: int, member_id: int, r2_key: str
             logger.warning(f"r2_delete_failed key={r2_key} err={e} (파일은 이미 로컬 저장됨)")
 
         size_mb = round(size / (1024 * 1024), 1)
-        logger.log(25, f"r2_pull_complete session={session_id} member={member_id} file={save_name} size={size_mb}MB")
+        logger.log(25, f"💾 서버 저장 완료 — {member_name} ({size_mb}MB)")
 
         # 큰 파일이면 압축 태스크 큐잉 (별도로 돌아 non-blocking)
         if size_mb > COMPRESS_THRESHOLD_MB:
@@ -168,13 +207,16 @@ async def task_r2_pull_to_disk(ctx, session_id: int, member_id: int, r2_key: str
 
         return {"status": "complete", "size_mb": size_mb, "path": save_path}
     except Exception as e:
-        logger.error(f"task_r2_pull_to_disk failed session={session_id} member={member_id}: {e}", exc_info=True)
+        logger.error(f"task_r2_pull_to_disk failed session={session_id} member={member_id} ({member_name}): {e}", exc_info=True)
         raise
 
 
 async def task_compress_video(ctx, session_id: int, member_id: int, path: str):
     """영상 ffmpeg 압축 (in-place, CRF 23 H.264).
-    네이버 카페 업로드 전에 용량 축소. 화질은 거의 동일."""
+    네이버 카페 업로드 전에 용량 축소. 화질은 거의 동일.
+
+    동시성: Redis 락으로 서버 전체에서 한 번에 1개만 실행.
+    다른 압축이 진행 중이면 30초 후 재시도로 defer (ARQ slot 안 잡아먹음)."""
     import os
     from app.services.video_compress import compress_in_place, is_ffmpeg_available
 
@@ -186,27 +228,60 @@ async def task_compress_video(ctx, session_id: int, member_id: int, path: str):
         logger.warning(f"compress: 파일 없음 path={path}")
         return {"status": "skipped", "reason": "file not found"}
 
-    logger.info(f"task_compress_video start session={session_id} member={member_id} path={path}")
+    member_name = await _get_member_name(member_id)
+    redis = ctx.get("redis")
+    lock_key = "compress:global_lock"
+    # SETNX + TTL — 락 획득 시도. 실패하면 다른 압축 작업 진행중
+    # ex=3600 으로 1시간 만료 (워커 죽어도 락 자동 해제)
+    acquired = False
+    if redis:
+        acquired = bool(await redis.set(lock_key, "1", nx=True, ex=3600))
+    if not acquired:
+        # 30초 후 재시도로 defer — ARQ slot을 sleep으로 잡아먹지 않음
+        logger.info(f"compress_locked session={session_id} member={member_id} — 30초 후 재시도")
+        if redis:
+            await redis.enqueue_job(
+                "task_compress_video",
+                session_id=session_id,
+                member_id=member_id,
+                path=path,
+                _defer_by=30,
+            )
+        return {"status": "deferred"}
+
+    import os as _os
+    original_mb_start = round(_os.path.getsize(path) / (1024 * 1024), 1)
+    logger.log(25, f"🗜️ 압축 시작 — {member_name} ({original_mb_start}MB)")
     try:
         original, compressed = await compress_in_place(path)
+        original_mb = round(original / (1024 * 1024), 1)
+        compressed_mb = round(compressed / (1024 * 1024), 1)
+        saved_mb = round(original_mb - compressed_mb, 1)
         ratio = round(compressed / original * 100, 1) if original else 0
-        saved_mb = round((original - compressed) / (1024 * 1024), 1)
-        logger.log(
-            25,
-            f"compress_complete session={session_id} member={member_id} "
-            f"original={round(original / (1024 * 1024), 1)}MB "
-            f"compressed={round(compressed / (1024 * 1024), 1)}MB "
-            f"ratio={ratio}% saved={saved_mb}MB"
-        )
+        if saved_mb > 0:
+            logger.log(
+                25,
+                f"✅ 압축 완료 — {member_name} ({original_mb}MB → {compressed_mb}MB, "
+                f"{saved_mb}MB 절약, {100 - round(ratio)}% 감소)"
+            )
+        else:
+            logger.log(25, f"✅ 압축 완료 — {member_name} (이미 최적 용량, 원본 유지)")
         return {
             "status": "complete",
-            "original_mb": round(original / (1024 * 1024), 1),
-            "compressed_mb": round(compressed / (1024 * 1024), 1),
+            "original_mb": original_mb,
+            "compressed_mb": compressed_mb,
             "saved_mb": saved_mb,
         }
     except Exception as e:
-        logger.error(f"task_compress_video failed session={session_id} member={member_id}: {e}", exc_info=True)
+        logger.error(f"❌ 압축 실패 — {member_name}: {e}", exc_info=True)
         raise
+    finally:
+        # 락 해제
+        if redis:
+            try:
+                await redis.delete(lock_key)
+            except Exception:
+                pass
 
 
 async def task_naver_login(ctx, username: str, password: str):

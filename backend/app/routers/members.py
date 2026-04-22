@@ -74,7 +74,7 @@ async def create_member(
     db.add(member)
     await db.commit()
     await db.refresh(member)
-    logger.audit(f"member_created id={member.id} name={member.name}")
+    logger.audit(f"👤 멤버 추가 — {member.name}")
     return member
 
 
@@ -105,7 +105,7 @@ async def update_member(
         member.deactivated_at = None
     await db.commit()
     await db.refresh(member)
-    logger.audit(f"member_updated id={member_id} fields={list(update_data.keys())}")
+    logger.audit(f"✏️ 멤버 수정 — {member.name} ({', '.join(update_data.keys())})")
     return member
 
 
@@ -141,7 +141,7 @@ async def delete_member(
 
     member.current_deposit = 0
     await db.commit()
-    logger.audit(f"member_deleted id={member_id} name={member.name} forfeit={forfeit_amount}")
+    logger.audit(f"🚪 멤버 이탈 — {member.name} (디파짓 몰수 {forfeit_amount:,}원)")
 
 
 @router.post("/{member_id}/graduate", status_code=status.HTTP_200_OK)
@@ -176,7 +176,7 @@ async def graduate_member(
 
     member.current_deposit = 0
     await db.commit()
-    logger.audit(f"member_graduated id={member_id} name={member.name} refund={refund_amount}")
+    logger.audit(f"🎓 멤버 수료 — {member.name} (환급 {refund_amount:,}원)")
     return {"id": member.id, "name": member.name, "refund_amount": refund_amount}
 
 

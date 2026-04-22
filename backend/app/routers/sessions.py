@@ -174,7 +174,7 @@ async def create_session(
         video_dir = f"/app/files/video/session_{session.id}"
         os.makedirs(video_dir, exist_ok=True)
 
-        logger.audit(f"session_created id={session.id} week={session.week_num} title={session.title}")
+        logger.audit(f"📅 세션 생성 — {session.week_num}주차 {session.title} ({session.type})")
         return {"id": session.id, "week_num": session.week_num, "status": "created"}
 
     except HTTPException:
@@ -248,7 +248,7 @@ async def delete_session(
 
     await db.delete(session)
     await db.commit()
-    logger.audit(f"session_deleted id={session_id} title={session.title}")
+    logger.audit(f"🗑️ 세션 삭제 — {session.week_num}주차 {session.title}")
 
 
 @router.patch("/{session_id}/config")
@@ -446,7 +446,11 @@ async def update_session_status(
         )
 
     await db.commit()
-    logger.audit(f"session_status id={session_id} {current}→{target}")
+    STATUS_KR = {
+        "SETUP": "세팅", "PREP": "출석", "OPS": "과제 준비",
+        "POST": "과제 검사", "SETTLEMENT": "정산", "FINALIZED": "마감",
+    }
+    logger.audit(f"🔄 세션 상태 변경 — #{session_id}: {STATUS_KR.get(current, current)} → {STATUS_KR.get(target, target)}")
 
     # Eager-load relationships to avoid MissingGreenlet error during response serialization
     stmt = (
@@ -618,7 +622,8 @@ async def update_attendance(
         setattr(attendance, field, value)
     
     await db.commit()
-    logger.audit(f"attendance_updated session={session_id} member={member_id} fields={list(update_data.keys())}")
+    # 빈번한 이벤트라 info 로그만 남김 (Telegram 스팸 방지). 강제 변경은 아래 엔드포인트에서 audit.
+    logger.info(f"attendance_updated session={session_id} member={member_id} fields={list(update_data.keys())}")
     return attendance
 
 
@@ -681,7 +686,7 @@ async def force_update_attendance(
     db.add(ledger)
 
     await db.commit()
-    logger.audit(f"attendance_forced session={session_id} member={member_id} {old_status}→{body.status or old_status} reason={body.reason}")
+    logger.audit(f"⚡ 출석 강제변경 — {member.name}: {old_status} → {body.status or old_status} [{body.reason}]")
     return attendance
 
 
@@ -1280,10 +1285,10 @@ async def finalize_session_api(
     try:
         await finalize_session(session_id, db, overrides_dict, body.skip_merit_indices)
         await db.commit() # 트랜잭션 확정
-        logger.audit(f"session_finalized id={session_id}")
-
-        # 갱신된 세션 정보 조회하여 finalized_at 반환
+        # 세션 정보 조회 — 라벨 구성 + finalized_at
         updated_session = await db.get(SessionModel, session_id)
+        label = f"{updated_session.week_num}주차 {updated_session.title}" if updated_session else f"#{session_id}"
+        logger.audit(f"🔒 세션 마감 — {label}")
         
         return SessionFinalizeResponse(
             status="ok",
@@ -1478,7 +1483,8 @@ async def r2_presign_upload(
 
     upload_url = r2_svc.presign_put(key, expires_in=900, content_type=content_type)
 
-    logger.audit(f"r2_presign session={session_id} member={member_id} key={key} size={size}")
+    size_mb = round(size / (1024 * 1024), 1) if size else 0
+    logger.audit(f"🎬 영상 업로드 시작 — {member.name} ({size_mb}MB)")
     return {
         "upload_url": upload_url,
         "key": key,
@@ -1531,9 +1537,8 @@ async def r2_finalize_upload(
         r2_key=key,
         filename=filename,
     )
-    logger.audit(
-        f"r2_finalize session={session_id} member={member_id} key={key} size={r2_size} job={job.job_id if job else None}"
-    )
+    size_mb = round(r2_size / (1024 * 1024), 1) if r2_size else 0
+    logger.audit(f"📦 R2 업로드 완료 — {member.name} ({size_mb}MB)")
 
     return {
         "status": "queued",
@@ -1858,11 +1863,14 @@ async def list_videos(
         except ValueError:
             continue
         size_mb = round(os.path.getsize(fpath) / (1024 * 1024), 1)
+        # 압축 진행 중이면 {path}.compressed.tmp 가 존재
+        is_compressing = os.path.isfile(fpath + ".compressed.tmp")
         videos.append({
             "member_id": mid,
             "member_name": name_map.get(mid, f"#{mid}"),
             "filename": parts[1],
             "size_mb": size_mb,
+            "is_compressing": is_compressing,
         })
 
     return videos

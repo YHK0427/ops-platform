@@ -96,7 +96,7 @@ async def start_scan_ppt(
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
     job = await pool.enqueue_job("task_scan_ppt", session_id=body.session_id, mode=body.mode)
-    logger.audit(f"crawler_start type=scan_ppt session={body.session_id} mode={body.mode}")
+    logger.info(f"crawler_start type=scan_ppt session={body.session_id} mode={body.mode}")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 
@@ -112,7 +112,7 @@ async def start_scan_homework(
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
     job = await pool.enqueue_job("task_scan_homework", session_id=body.session_id)
-    logger.audit(f"crawler_start type=scan_homework session={body.session_id}")
+    logger.info(f"crawler_start type=scan_homework session={body.session_id}")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 
@@ -132,7 +132,7 @@ async def start_scan_excuses(
         session_id=body.session_id,
         mode=body.mode,
     )
-    logger.audit(f"crawler_start type=scan_excuses session={body.session_id} mode={body.mode}")
+    logger.info(f"crawler_start type=scan_excuses session={body.session_id} mode={body.mode}")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 
@@ -168,7 +168,7 @@ async def start_upload_videos(
         videos_raw = [v.model_dump() for v in body.videos]
 
     job = await pool.enqueue_job("task_upload_videos", session_id=body.session_id, videos=videos_raw)
-    logger.audit(f"crawler_start type=upload_videos session={body.session_id}")
+    logger.info(f"crawler_start type=upload_videos session={body.session_id}")
 
     # 활성 태스크 Redis 등록 (다중 사용자 공유용, TTL 2시간)
     redis = pool
@@ -304,7 +304,7 @@ async def trigger_board_sync(
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
     job = await pool.enqueue_job("task_naver_health_check")
-    logger.audit("crawler_start type=naver_health_check")
+    logger.info("crawler_start type=naver_health_check")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
 
 
@@ -368,5 +368,5 @@ async def start_naver_login(
         username=body.username,
         password=body.password
     )
-    logger.audit(f"crawler_start type=naver_login")
+    logger.info(f"crawler_start type=naver_login")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
