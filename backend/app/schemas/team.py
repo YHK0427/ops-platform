@@ -29,6 +29,7 @@ class TeamResponse(BaseModel):
     id: int
     session_id: int
     name: str
+    presenter_order: Optional[int] = None
     created_at: datetime
     # 멤버 정보 포함 (선택적)
     members: list[MemberResponse] = []

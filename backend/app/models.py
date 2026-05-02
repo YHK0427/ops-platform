@@ -118,6 +118,7 @@ class Team(Base):
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"))
     name = Column(String(50), nullable=False)
+    presenter_order = Column(Integer)  # 발표 순서 (NULL = 미지정)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     # Relationships

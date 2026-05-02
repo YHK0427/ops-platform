@@ -149,11 +149,14 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
     );
     const hasGroups = teams.some((t: any) => t.name?.includes("분반"));
 
-    const teamOrderItems = sessionType === "TEAM" ? teams.map((t: any) => ({
-        id: t.id,
-        name: t.name,
-        memberNames: t.members.map((m: any) => m.name),
-    })) : undefined;
+    const teamOrderItems = sessionType === "TEAM" ? [...teams]
+        .sort((a: any, b: any) => (a.presenter_order ?? 999) - (b.presenter_order ?? 999))
+        .map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            presenter_order: t.presenter_order ?? null,
+            memberNames: t.members.map((m: any) => m.name),
+        })) : undefined;
 
     return (
         <div className="space-y-4">

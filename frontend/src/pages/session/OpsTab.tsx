@@ -578,8 +578,9 @@ export default function OpsTab() {
 
                     // 팀 세션: 팀당 1개 슬롯 (첫 멤버 id를 파일 저장 앵커로 사용)
                     const teamPresenters = isTeamSession
-                        ? (session.teams ?? [])
+                        ? [...(session.teams ?? [])]
                             .filter(t => (t.members?.length ?? 0) > 0)
+                            .sort((a, b) => ((a as any).presenter_order ?? 999) - ((b as any).presenter_order ?? 999))
                             .map((t, idx) => {
                                 const firstMember = t.members![0];
                                 const memberNames = t.members!.map(m => m.name).join(", ");
@@ -588,7 +589,7 @@ export default function OpsTab() {
                                     member_name: t.name,
                                     sub_label: memberNames,
                                     group_num: null,
-                                    presenter_order: idx + 1,
+                                    presenter_order: (t as any).presenter_order ?? idx + 1,
                                 };
                             })
                         : [];

@@ -1452,6 +1452,24 @@ async def update_presenter_order(
     return {"status": "ok", "updated": len(body)}
 
 
+@router.patch("/{session_id}/team-order")
+async def update_team_order(
+    session_id: int,
+    body: list[dict],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+):
+    """팀 발표 순서 일괄 저장 — [{team_id, presenter_order}]"""
+    for item in body:
+        await db.execute(
+            update(Team)
+            .where(Team.session_id == session_id, Team.id == item["team_id"])
+            .values(presenter_order=item["presenter_order"])
+        )
+    await db.commit()
+    return {"status": "ok", "updated": len(body)}
+
+
 # ── R2 직접 업로드 (Cloudflare Tunnel 100MB 제한 우회) ────────────────────────
 # 흐름: 클라 → 서버에서 presigned URL 요청 → R2로 직접 PUT → 서버에 finalize 알림
 #       → ARQ worker가 R2에서 로컬로 pull + R2 오브젝트 삭제

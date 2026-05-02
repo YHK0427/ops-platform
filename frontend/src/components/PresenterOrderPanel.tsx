@@ -41,7 +41,7 @@ interface PresenterOrderPanelProps {
     absentItems?: AbsentItem[];
     hasGroups: boolean;
     isTeamSession: boolean;
-    teamItems?: { id: number; name: string; memberNames: string[] }[];
+    teamItems?: { id: number; name: string; memberNames: string[]; presenter_order?: number | null }[];
 }
 
 function DraggableRow({ id, name, index, isTeam, subtext, isFirst, isLast, onMoveUp, onMoveDown }: {
@@ -139,6 +139,14 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
         });
     };
 
+    const saveTeamOrder = (order: { team_id: number; presenter_order: number }[]) => {
+        api.patch(`/sessions/${sessionId}/team-order`, order).then(() => {
+            queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
+        }).catch(() => {
+            toast.error("팀 순서 저장 실패");
+        });
+    };
+
     const handleDragEnd = (groupKey: string) => (event: DragEndEvent) => {
         const { active, over } = event;
         if (!over || active.id === over.id) return;
@@ -170,7 +178,9 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
     const moveTeam = (fromIdx: number, toIdx: number) => {
         setTeams(prev => {
             if (fromIdx < 0 || fromIdx >= prev.length || toIdx < 0 || toIdx >= prev.length) return prev;
-            return arrayMove(prev, fromIdx, toIdx);
+            const reordered = arrayMove(prev, fromIdx, toIdx);
+            saveTeamOrder(reordered.map((t, idx) => ({ team_id: t.id, presenter_order: idx + 1 })));
+            return reordered;
         });
     };
 
@@ -182,8 +192,9 @@ export function PresenterOrderPanel({ sessionId, items, absentItems, hasGroups, 
             const oldIdx = prev.findIndex(t => t.id === active.id);
             const newIdx = prev.findIndex(t => t.id === over.id);
             if (oldIdx === -1 || newIdx === -1) return prev;
-            return arrayMove(prev, oldIdx, newIdx);
-            // TODO: 팀 순서 저장 (현재 Attendance 기반이라 팀용 별도 필요)
+            const reordered = arrayMove(prev, oldIdx, newIdx);
+            saveTeamOrder(reordered.map((t, idx) => ({ team_id: t.id, presenter_order: idx + 1 })));
+            return reordered;
         });
     };
 
