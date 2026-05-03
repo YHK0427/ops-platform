@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { UserPlus, Wand2, Save, X, Search, Pencil, MoveRight, Inbox } from "lucide-react";
+import { UserPlus, Wand2, Save, X, Search, Pencil, MoveRight, Inbox, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import {
     DndContext,
@@ -72,33 +72,46 @@ function DraggableMember({
             ref={setNodeRef}
             style={style}
             className={cn(
-                "p-3 rounded border text-sm mb-2 cursor-grab active:cursor-grabbing transition-all shadow-sm flex justify-between items-center select-none",
+                "rounded border text-sm mb-2 transition-all shadow-sm flex items-stretch select-none overflow-hidden",
                 isSelected
                     ? "bg-[var(--color-accent)]/15 border-[var(--color-accent)]/60"
                     : isConflict
                     ? "bg-yellow-500/5 border-yellow-500/50 hover:border-yellow-500"
                     : "bg-[var(--color-elevated)] border-[var(--color-border)] hover:border-[var(--color-accent)]/50"
             )}
-            {...attributes}
-            {...listeners}
-            onClick={(e) => {
-                e.stopPropagation();
-                onToggleSelect(id);
-            }}
         >
-            <div className="flex items-center gap-2">
+            {/* 카드 본문 — 탭으로 선택 */}
+            <button
+                type="button"
+                className="flex-1 flex items-center gap-2 p-3 text-left min-w-0 cursor-pointer"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleSelect(id);
+                }}
+            >
                 <div className={cn(
-                    "w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center",
+                    "w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center",
                     isSelected
                         ? "bg-[var(--color-accent)] border-[var(--color-accent)]"
                         : "border-[var(--color-border)]"
                 )}>
-                    {isSelected && <span className="text-white text-[8px] font-bold">✓</span>}
+                    {isSelected && <span className="text-white text-[9px] font-bold">✓</span>}
                 </div>
-                <span className="font-medium">{member?.name ?? id}</span>
+                <span className="font-medium truncate">{member?.name ?? id}</span>
                 {member?.tags?.includes("leader") && (
-                    <span className="text-[10px] px-1 bg-[var(--color-accent)]/20 text-[var(--color-accent)] rounded border border-[var(--color-accent)]/30">L</span>
+                    <span className="text-[10px] px-1 bg-[var(--color-accent)]/20 text-[var(--color-accent)] rounded border border-[var(--color-accent)]/30 flex-shrink-0">L</span>
                 )}
+            </button>
+            {/* 드래그 핸들 — 손잡이 영역만 드래그 */}
+            <div
+                {...attributes}
+                {...listeners}
+                className="flex items-center justify-center px-3 cursor-grab active:cursor-grabbing touch-none border-l border-[var(--color-border)]/40 bg-black/[0.02] hover:bg-black/[0.05] transition-colors"
+                style={{ touchAction: "none" }}
+                title="드래그하여 다른 팀으로 이동"
+                aria-label="드래그 핸들"
+            >
+                <GripVertical className="w-4 h-4 text-[var(--color-text-muted)]" />
             </div>
         </div>
     );
@@ -245,10 +258,10 @@ export function TeamBuildingEditor({
         });
     }, []);
 
-    // Mouse는 8px 이동으로 활성화, Touch는 150ms 길게 눌러야 활성화 (스크롤과 충돌 방지)
+    // Mouse: 5px 이동으로 활성화. Touch: 핸들 전용 + touch-action:none 이라 즉시 활성화 가능 (8px tolerance만)
     const sensors = useSensors(
-        useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-        useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+        useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 0, tolerance: 8 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
 
@@ -459,10 +472,9 @@ export function TeamBuildingEditor({
                     {fixedColumns ? "자동 분배" : "자동 생성"}
                 </Button>
             </div>
-            {/* 사용 안내 — 모바일은 탭 이동 권장, 데스크톱은 드래그도 OK */}
+            {/* 사용 안내 */}
             <p className="text-[11px] text-[var(--color-text-muted)] -mt-2">
-                <span className="md:hidden">💡 카드를 탭해 선택 → <span className="font-medium text-[var(--color-text-secondary)]">[이동]</span> 버튼으로 팀 선택. 드래그도 가능 (길게 누르기).</span>
-                <span className="hidden md:inline">💡 카드를 클릭해 선택 → 드래그로 이동하거나, <span className="font-medium text-[var(--color-text-secondary)]">[이동]</span> 버튼으로 팀 선택.</span>
+                💡 카드 본문을 탭해 선택 → <span className="font-medium text-[var(--color-text-secondary)]">[이동]</span> 버튼으로 팀 선택, 또는 우측 손잡이(<GripVertical className="inline w-3 h-3 -mt-0.5" />)를 드래그해서 이동.
             </p>
 
             {/* DnD Board */}
