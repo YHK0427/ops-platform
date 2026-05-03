@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useSetFeedbackTargets, useRandomAssignFeedback, useActiveUploadTask, useUpdateSessionConfig, useCancelUpload, useUploadResult } from "@/hooks";
 import { useMembers } from "@/hooks/useMembers";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Loader2, CheckCircle2, XCircle, UserMinus } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, UserMinus, Download, Upload } from "lucide-react";
 import type { Session } from "@/hooks/useSessions";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
