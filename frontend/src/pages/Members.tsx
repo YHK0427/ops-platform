@@ -2,24 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Filter, AlertTriangle, AlertOctagon } from "lucide-react";
 import { useMembers, useTreasury } from "@/hooks";
-
-// 위험 판단:
-// - net_score >= 0 (잘하고 있음) → 표시 안 함
-// - net_score < 0 + 다음 마일스톤(-10, -20, ...)까지 가까우면 위험도 부여
-// 시스템적으로 마일스톤은 minus_score만 보지만, 사용자 직관상 plus가 많으면 위험 신호 노이즈가 됨.
-function penaltyRisk(
-    minusScore: number,
-    netScore: number,
-): { level: "danger" | "warning" | null; distance: number; nextThreshold: number } | null {
-    if (minusScore >= 0) return null;
-    if (netScore >= 0) return null;
-    const abs = Math.abs(minusScore);
-    const nextThreshold = -((Math.floor(abs / 10) + 1) * 10);
-    const distance = minusScore - nextThreshold; // minus - more_minus = positive
-    if (distance <= 3) return { level: "danger", distance, nextThreshold };
-    if (distance <= 10) return { level: "warning", distance, nextThreshold };
-    return null;
-}
+import { penaltyRisk } from "@/lib/penaltyRisk";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { MemberAddSheet } from "@/components/MemberAddSheet";

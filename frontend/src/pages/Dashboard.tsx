@@ -7,6 +7,11 @@ import {
     Users,
     Lock,
     CheckCircle2,
+    AlertOctagon,
+    AlertTriangle,
+    Wallet,
+    Receipt,
+    UserX,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -14,6 +19,7 @@ import { renderSafeHangul } from "@/components/SafeText";
 import { WarningBanner } from "@/components/WarningBanner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, useImportNaverSession, useNaverLogin, useCrawlerTask, useTreasury, crawlerKeys } from "@/hooks";
+import { penaltyRisk } from "@/lib/penaltyRisk";
 import { toast } from "sonner";
 
 function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
@@ -197,6 +203,13 @@ export default function Dashboard() {
     // Eviction Risk: net_score <= -12 (Eviction) or <= -8 (Warning)
     const riskScoreMembers = sortedMembers?.filter((m) => (m.net_score || 0) <= -8) || [];
 
+    // 벌점 위험도 (마일스톤 임박/주의)
+    const penaltyDangerMembers = sortedMembers?.filter(m => penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "danger") || [];
+    const penaltyWarningMembers = sortedMembers?.filter(m => penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "warning") || [];
+    const evictionMembers = sortedMembers?.filter((m) => (m.net_score || 0) <= -13) || [];
+
+    const totalRiskCount = penaltyDangerMembers.length + penaltyWarningMembers.length + lowDepositMembers.length + unpaidMilestoneByMember.length + evictionMembers.length;
+
     const isLoading = isLoadingMembers || isSessionLoading || isNaverLoading;
 
     if (isLoading) {
@@ -217,6 +230,71 @@ export default function Dashboard() {
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
                 {/* 1. Naver Session Card */}
                 <NaverSessionCard naverStatus={naverStatus} />
+
+                {/* 2. 위험 인물 한눈에 */}
+                <div className="space-y-4">
+                    <h2 className="text-sm font-bold text-[var(--color-text-secondary)] uppercase tracking-wider flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-orange-500" />
+                        위험 인물 한눈에
+                        <span className="text-[10px] font-medium text-[var(--color-text-muted)] tracking-normal normal-case">
+                            (클릭 시 멤버 페이지로 이동)
+                        </span>
+                    </h2>
+                    {totalRiskCount === 0 ? (
+                        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-green-500/20 bg-green-500/5 text-green-600 text-sm">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>현재 위험 신호가 감지된 멤버가 없습니다.</span>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                            <RiskCard
+                                title="퇴출 위험"
+                                count={evictionMembers.length}
+                                members={evictionMembers}
+                                tone="danger"
+                                icon={UserX}
+                                hint="순점수 -13 이하"
+                                onMemberClick={(id) => navigate(`/members/${id}`)}
+                            />
+                            <RiskCard
+                                title="벌금 임박"
+                                count={penaltyDangerMembers.length}
+                                members={penaltyDangerMembers}
+                                tone="danger"
+                                icon={AlertOctagon}
+                                hint="다음 마일스톤 3점 이내"
+                                onMemberClick={(id) => navigate(`/members/${id}`)}
+                            />
+                            <RiskCard
+                                title="벌점 주의"
+                                count={penaltyWarningMembers.length}
+                                members={penaltyWarningMembers}
+                                tone="warning"
+                                icon={AlertTriangle}
+                                hint="다음 마일스톤 10점 이내"
+                                onMemberClick={(id) => navigate(`/members/${id}`)}
+                            />
+                            <RiskCard
+                                title="디파짓 부족"
+                                count={lowDepositMembers.length}
+                                members={lowDepositMembers}
+                                tone="warning"
+                                icon={Wallet}
+                                hint="잔액 10,000원 미만"
+                                onMemberClick={(id) => navigate(`/members/${id}`)}
+                            />
+                            <RiskCard
+                                title="벌금 미납"
+                                count={unpaidMilestoneByMember.length}
+                                members={unpaidMilestoneByMember.map(m => ({ id: m.member_id, name: m.name }))}
+                                tone="danger"
+                                icon={Receipt}
+                                hint="누적 벌금 미납"
+                                onMemberClick={(id) => navigate(`/members/${id}`)}
+                            />
+                        </div>
+                    )}
+                </div>
 
                 {/* 2. Current Session Card */}
                 <div className="space-y-4">
@@ -359,6 +437,74 @@ export default function Dashboard() {
                     </div>
                 </div>
             </div>
+        </div>
+    );
+}
+
+function RiskCard({
+    title,
+    count,
+    members,
+    tone,
+    icon: Icon,
+    hint,
+    onMemberClick,
+}: {
+    title: string;
+    count: number;
+    members: { id: number; name: string }[];
+    tone: "danger" | "warning";
+    icon: React.ElementType;
+    hint: string;
+    onMemberClick: (id: number) => void;
+}) {
+    const empty = count === 0;
+    const toneCls = empty
+        ? "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]"
+        : tone === "danger"
+            ? "border-rose-500/30 bg-rose-500/5"
+            : "border-orange-500/30 bg-orange-500/5";
+    const iconCls = empty
+        ? "text-[var(--color-text-muted)]"
+        : tone === "danger" ? "text-rose-600" : "text-orange-600";
+    const countCls = empty
+        ? "text-[var(--color-text-muted)]"
+        : tone === "danger" ? "text-rose-600" : "text-orange-600";
+
+    return (
+        <div className={`rounded-xl border p-4 ${toneCls}`}>
+            <div className="flex items-center gap-2 mb-2">
+                <Icon className={`w-4 h-4 ${iconCls}`} />
+                <span className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">{title}</span>
+            </div>
+            <div className="flex items-baseline gap-1.5 mb-1">
+                <span className={`text-2xl font-bold tabular-nums ${countCls}`}>{count}</span>
+                <span className="text-xs text-[var(--color-text-muted)]">명</span>
+            </div>
+            <div className="text-[10px] text-[var(--color-text-muted)] mb-2">{hint}</div>
+            {!empty && (
+                <div className="flex flex-wrap gap-1">
+                    {members.slice(0, 5).map(m => (
+                        <button
+                            key={m.id}
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onMemberClick(m.id); }}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium border hover:opacity-80 transition-opacity ${
+                                tone === "danger"
+                                    ? "bg-rose-500/15 text-rose-700 border-rose-500/30"
+                                    : "bg-orange-500/15 text-orange-700 border-orange-500/30"
+                            }`}
+                        >
+                            {m.name}
+                        </button>
+                    ))}
+                    {members.length > 5 && (
+                        <span className="px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)]">
+                            +{members.length - 5}
+                        </span>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
