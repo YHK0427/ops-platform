@@ -41,7 +41,6 @@ export default function Members() {
     const lowDepositCount = members?.filter(m => m.is_active && (m.current_deposit || 0) < 10000).length || 0;
     const unpaidMilestoneCount = (treasuryData?.by_member ?? []).filter((m: any) => (m.milestone_unpaid || 0) > 0).length;
     const penaltyDangerCount = members?.filter(m => m.is_active && penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "danger").length || 0;
-    const penaltyWarningCount = members?.filter(m => m.is_active && penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "warning").length || 0;
 
     const filteredMembers = members?.filter((m) => {
         if (riskOnly) {
@@ -61,7 +60,7 @@ export default function Members() {
         <div className="flex flex-col h-full">
             <PageHeader
                 title="멤버"
-                subtitle={`총 ${members?.length || 0}명${lowDepositCount > 0 ? ` · 디파짓 충전 필요 ${lowDepositCount}명` : ""}${unpaidMilestoneCount > 0 ? ` · 벌금 미납 ${unpaidMilestoneCount}명` : ""}${penaltyDangerCount > 0 ? ` · 벌금 임박 ${penaltyDangerCount}명` : ""}${penaltyWarningCount > 0 ? ` · 벌점 주의 ${penaltyWarningCount}명` : ""}`}
+                subtitle={`총 ${members?.length || 0}명${lowDepositCount > 0 ? ` · 디파짓 충전 필요 ${lowDepositCount}명` : ""}${unpaidMilestoneCount > 0 ? ` · 벌금 미납 ${unpaidMilestoneCount}명` : ""}${penaltyDangerCount > 0 ? ` · 벌금 임박 ${penaltyDangerCount}명` : ""}`}
                 actions={<MemberAddSheet />}
             />
 
@@ -147,8 +146,7 @@ export default function Members() {
                                     <TableRow
                                         key={member.id}
                                         className={`cursor-pointer border-b-[var(--color-border-subtle)] hover:bg-[var(--color-hover)] transition-colors ${
-                                            rowRisk?.level === "danger" ? "bg-rose-500/[0.04]" :
-                                            rowRisk?.level === "warning" ? "bg-orange-500/[0.03]" : ""
+                                            rowRisk?.level === "danger" ? "bg-rose-500/[0.04]" : ""
                                         }`}
                                         onClick={() => navigate(`/members/${member.id}`)}
                                     >
@@ -207,12 +205,6 @@ export default function Members() {
                                                                 벌금임박
                                                             </span>
                                                         )}
-                                                        {risk?.level === "warning" && (
-                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 5,000원 추가 벌금 (${risk.distance}점 남음)`}>
-                                                                <AlertTriangle className="w-3 h-3" />
-                                                                주의
-                                                            </span>
-                                                        )}
                                                         <span className="text-rose-500">
                                                             {member.total_minus_score ? member.total_minus_score : "-"}
                                                         </span>
@@ -252,7 +244,6 @@ export default function Members() {
                                     onClick={() => navigate(`/members/${member.id}`)}
                                     className={`rounded-lg border bg-[var(--color-surface)] p-3 active:bg-[var(--color-hover)] transition-colors ${
                                         risk?.level === "danger" ? "border-rose-500/40 bg-rose-500/[0.04]" :
-                                        risk?.level === "warning" ? "border-orange-500/40 bg-orange-500/[0.03]" :
                                         "border-[var(--color-border)]"
                                     }`}
                                 >
@@ -265,12 +256,6 @@ export default function Members() {
                                                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 5,000원 추가 벌금 (${risk.distance}점 남음)`}>
                                                         <AlertOctagon className="w-2.5 h-2.5" />
                                                         벌금임박
-                                                    </span>
-                                                )}
-                                                {risk?.level === "warning" && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 5,000원 추가 벌금 (${risk.distance}점 남음)`}>
-                                                        <AlertTriangle className="w-2.5 h-2.5" />
-                                                        주의
                                                     </span>
                                                 )}
                                                 {!member.is_active && <StatusBadge status="ABSENT" className="px-1.5 py-0 text-[10px]" />}

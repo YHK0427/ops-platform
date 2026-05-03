@@ -198,9 +198,8 @@ export default function Dashboard() {
 
     const lowDepositMembers = sortedMembers?.filter((m) => (m.current_deposit || 0) < 10000) || [];
 
-    // 벌점 위험도 (누적벌점 5천원 부과 임박/주의)
+    // 벌점 위험도 (누적벌점 5천원 부과 임박)
     const penaltyDangerMembers = sortedMembers?.filter(m => penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "danger") || [];
-    const penaltyWarningMembers = sortedMembers?.filter(m => penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "warning") || [];
     // 퇴출 위험: 순점수 -13점 이하 (즉시 조치)
     // 퇴출 경고: -8 ~ -12 (퇴출 임박)
     const evictionMembers = sortedMembers?.filter((m) => (m.net_score || 0) <= -13) || [];
@@ -209,7 +208,7 @@ export default function Dashboard() {
         return net <= -8 && net > -13;
     }) || [];
 
-    const totalRiskCount = penaltyDangerMembers.length + penaltyWarningMembers.length + lowDepositMembers.length + unpaidMilestoneByMember.length + evictionMembers.length + evictionWarnMembers.length;
+    const totalRiskCount = penaltyDangerMembers.length + lowDepositMembers.length + unpaidMilestoneByMember.length + evictionMembers.length + evictionWarnMembers.length;
 
     const isLoading = isLoadingMembers || isSessionLoading || isNaverLoading;
 
@@ -331,7 +330,7 @@ export default function Dashboard() {
                             <span>현재 위험 신호가 감지된 멤버가 없습니다.</span>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3">
                             <RiskCard
                                 title="퇴출 위험"
                                 count={evictionMembers.length}
@@ -357,15 +356,6 @@ export default function Dashboard() {
                                 tone="danger"
                                 icon={AlertOctagon}
                                 hint="누적벌점 5천원 부과까지 3점 이내"
-                                onMemberClick={(id) => navigate(`/members/${id}`)}
-                            />
-                            <RiskCard
-                                title="벌점 주의"
-                                count={penaltyWarningMembers.length}
-                                members={penaltyWarningMembers}
-                                tone="warning"
-                                icon={AlertTriangle}
-                                hint="누적벌점 5천원 부과까지 10점 이내"
                                 onMemberClick={(id) => navigate(`/members/${id}`)}
                             />
                             <RiskCard
