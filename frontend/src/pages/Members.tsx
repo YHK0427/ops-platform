@@ -61,7 +61,7 @@ export default function Members() {
         <div className="flex flex-col h-full">
             <PageHeader
                 title="멤버"
-                subtitle={`총 ${members?.length || 0}명${lowDepositCount > 0 ? ` · 충전 필요 ${lowDepositCount}명` : ""}${unpaidMilestoneCount > 0 ? ` · 벌금 미납 ${unpaidMilestoneCount}명` : ""}${penaltyDangerCount > 0 ? ` · 벌점 임박 ${penaltyDangerCount}명` : ""}${penaltyWarningCount > 0 ? ` · 주의 ${penaltyWarningCount}명` : ""}`}
+                subtitle={`총 ${members?.length || 0}명${lowDepositCount > 0 ? ` · 디파짓 충전 필요 ${lowDepositCount}명` : ""}${unpaidMilestoneCount > 0 ? ` · 벌금 미납 ${unpaidMilestoneCount}명` : ""}${penaltyDangerCount > 0 ? ` · 벌금 임박 ${penaltyDangerCount}명` : ""}${penaltyWarningCount > 0 ? ` · 벌점 주의 ${penaltyWarningCount}명` : ""}`}
                 actions={<MemberAddSheet />}
             />
 
@@ -202,13 +202,13 @@ export default function Members() {
                                                 return (
                                                     <div className="flex items-center justify-end gap-1.5">
                                                         {risk?.level === "danger" && (
-                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30" title={`다음 벌금(${risk.nextThreshold}점)까지 ${risk.distance}점 남음`}>
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 5,000원 추가 벌금 (${risk.distance}점 남음)`}>
                                                                 <AlertOctagon className="w-3 h-3" />
                                                                 벌금임박
                                                             </span>
                                                         )}
                                                         {risk?.level === "warning" && (
-                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/30" title={`다음 벌금(${risk.nextThreshold}점)까지 ${risk.distance}점 남음`}>
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 5,000원 추가 벌금 (${risk.distance}점 남음)`}>
                                                                 <AlertTriangle className="w-3 h-3" />
                                                                 주의
                                                             </span>
@@ -262,13 +262,13 @@ export default function Members() {
                                                 <span className="text-xs text-[var(--color-text-muted)]">#{index + 1}</span>
                                                 <span className="font-medium text-sm text-[var(--color-text-primary)] truncate">{member.name}</span>
                                                 {risk?.level === "danger" && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30" title={`다음 벌금(${risk.nextThreshold}점)까지 ${risk.distance}점 남음`}>
+                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 5,000원 추가 벌금 (${risk.distance}점 남음)`}>
                                                         <AlertOctagon className="w-2.5 h-2.5" />
                                                         벌금임박
                                                     </span>
                                                 )}
                                                 {risk?.level === "warning" && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/30" title={`다음 벌금(${risk.nextThreshold}점)까지 ${risk.distance}점 남음`}>
+                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 5,000원 추가 벌금 (${risk.distance}점 남음)`}>
                                                         <AlertTriangle className="w-2.5 h-2.5" />
                                                         주의
                                                     </span>
