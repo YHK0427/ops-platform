@@ -201,9 +201,15 @@ export default function Dashboard() {
     // 벌점 위험도 (누적벌점 5천원 부과 임박/주의)
     const penaltyDangerMembers = sortedMembers?.filter(m => penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "danger") || [];
     const penaltyWarningMembers = sortedMembers?.filter(m => penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "warning") || [];
+    // 퇴출 위험: 순점수 -13점 이하 (즉시 조치)
+    // 퇴출 경고: -8 ~ -12 (퇴출 임박)
     const evictionMembers = sortedMembers?.filter((m) => (m.net_score || 0) <= -13) || [];
+    const evictionWarnMembers = sortedMembers?.filter((m) => {
+        const net = m.net_score || 0;
+        return net <= -8 && net > -13;
+    }) || [];
 
-    const totalRiskCount = penaltyDangerMembers.length + penaltyWarningMembers.length + lowDepositMembers.length + unpaidMilestoneByMember.length + evictionMembers.length;
+    const totalRiskCount = penaltyDangerMembers.length + penaltyWarningMembers.length + lowDepositMembers.length + unpaidMilestoneByMember.length + evictionMembers.length + evictionWarnMembers.length;
 
     const isLoading = isLoadingMembers || isSessionLoading || isNaverLoading;
 
@@ -325,7 +331,7 @@ export default function Dashboard() {
                             <span>현재 위험 신호가 감지된 멤버가 없습니다.</span>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
                             <RiskCard
                                 title="퇴출 위험"
                                 count={evictionMembers.length}
@@ -333,6 +339,15 @@ export default function Dashboard() {
                                 tone="danger"
                                 icon={UserX}
                                 hint="순점수 -13점 이하"
+                                onMemberClick={(id) => navigate(`/members/${id}`)}
+                            />
+                            <RiskCard
+                                title="퇴출 경고"
+                                count={evictionWarnMembers.length}
+                                members={evictionWarnMembers}
+                                tone="warning"
+                                icon={UserX}
+                                hint="순점수 -8 ~ -12점 (퇴출 임박)"
                                 onMemberClick={(id) => navigate(`/members/${id}`)}
                             />
                             <RiskCard
