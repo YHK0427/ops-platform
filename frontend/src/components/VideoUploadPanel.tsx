@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle, UserMinus, Users } from "lucide-react";
+import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle, UserMinus, Users, Loader2, StopCircle } from "lucide-react";
 import { useSessionVideos, useDeleteSessionVideo, useUploadVideos } from "@/hooks";
 import type { SessionVideo } from "@/hooks";
 import { getToken } from "@/lib/api";
@@ -38,9 +38,11 @@ interface VideoUploadPanelProps {
     absentMembers?: AbsentMember[];
     hasGroups: boolean;
     onNaverUploadStarted?: (taskId: string) => void;
-    naverProgress?: { file: string; presenter: string; status: string; error?: string | null }[] | null;
+    naverProgress?: { file: string; presenter: string; status: string; error?: string | null; started_at?: string | null }[] | null;
     naverStatus?: "queued" | "in_progress" | "complete" | "failed" | "unknown" | null;
     naverResult?: NaverResultItem[] | null;
+    onCancelNaverUpload?: () => void;
+    isCancellingNaver?: boolean;
 }
 
 interface UploadState {
@@ -56,7 +58,7 @@ const MAX_CONCURRENT_UPLOADS = 3;
 // 초과면 R2 direct upload 시도 (구성된 경우). 실패 시 서버 chunked fallback
 const R2_THRESHOLD = 50 * 1024 * 1024;
 
-export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult }: VideoUploadPanelProps) {
+export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult, onCancelNaverUpload, isCancellingNaver }: VideoUploadPanelProps) {
     const { data: uploadedVideos, refetch } = useSessionVideos(sessionId);
     const { mutate: deleteVideo, isPending: isDeleting } = useDeleteSessionVideo();
     const { mutate: startNaverUpload, isPending: isStartingNaver } = useUploadVideos();
@@ -500,6 +502,46 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             <p className="text-xs text-[var(--color-text-muted)]">
                 체크된 영상만 네이버 카페에 업로드됩니다. 1분반 → 2분반 순서로 발표 순서대로 진행됩니다.
             </p>
+
+            {/* 네이버 업로드 진행 중 인디케이터 */}
+            {(naverStatus === "in_progress" || naverStatus === "queued") && (() => {
+                const progressItems = naverProgress ?? [];
+                const total = progressItems.length;
+                const doneCount = progressItems.filter(p => p.status === "done").length;
+                const activeItem = progressItems.find(p => p.status === "uploading");
+                return (
+                    <div className="rounded-lg border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 p-3">
+                        <div className="flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin text-[var(--color-accent)]" />
+                            <span className="text-sm font-bold text-[var(--color-accent)]">
+                                네이버 카페 업로드 진행 중
+                            </span>
+                            {total > 0 && (
+                                <span className="text-xs tabular-nums text-[var(--color-text-muted)]">
+                                    {doneCount}/{total} 완료
+                                </span>
+                            )}
+                            {onCancelNaverUpload && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={onCancelNaverUpload}
+                                    disabled={isCancellingNaver}
+                                    className="ml-auto h-6 px-2 text-xs border-red-300 text-red-500 hover:bg-red-50 hover:text-red-600"
+                                >
+                                    <StopCircle className="w-3 h-3 mr-1" />
+                                    {isCancellingNaver ? "중단 중..." : "중단"}
+                                </Button>
+                            )}
+                        </div>
+                        {activeItem && (
+                            <div className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+                                현재 업로드중: <span className="font-medium text-[var(--color-text-secondary)]">{activeItem.presenter}</span>
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
 
             {/* 네이버 업로드 결과 배너 */}
             {(naverStatus === "complete" || naverStatus === "failed") && Array.isArray(naverResult) && naverResult.length > 0 && (() => {

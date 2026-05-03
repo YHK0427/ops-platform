@@ -1,12 +1,12 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, AlertTriangle, Users, Shuffle, RotateCcw, StopCircle, ClipboardCopy } from "lucide-react";
+import { AlertTriangle, Users, Shuffle, RotateCcw, ClipboardCopy } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
 import { useSetFeedbackTargets, useRandomAssignFeedback, useActiveUploadTask, useUpdateSessionConfig, useCancelUpload, useUploadResult } from "@/hooks";
 import { useMembers } from "@/hooks/useMembers";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Loader2, CheckCircle2, XCircle, UserMinus, Download, Upload } from "lucide-react";
+import { UserMinus } from "lucide-react";
 import type { Session } from "@/hooks/useSessions";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -40,27 +40,6 @@ export default function OpsTab() {
             refetchResult();
         }
     }, [taskStatus?.status]);
-
-    // 업로드 중인 영상의 elapsed time 1초 갱신용 tick
-    const [, setNowTick] = useState(0);
-    useEffect(() => {
-        const hasActive = (taskStatus?.progress ?? []).some(
-            (p: any) => p.status === "uploading" && p.started_at
-        );
-        if (!hasActive) return;
-        const id = setInterval(() => setNowTick(t => t + 1), 1000);
-        return () => clearInterval(id);
-    }, [taskStatus?.progress]);
-
-    const formatElapsed = useCallback((startedAt: string | null | undefined): string => {
-        if (!startedAt) return "";
-        const ms = Date.now() - new Date(startedAt).getTime();
-        if (ms < 0) return "";
-        const sec = Math.floor(ms / 1000);
-        const m = Math.floor(sec / 60);
-        const s = sec % 60;
-        return m > 0 ? `${m}분 ${s}초` : `${s}초`;
-    }, []);
 
     // D+1 Warning Logic
     const sessionDate = new Date(session.date);
@@ -206,97 +185,6 @@ export default function OpsTab() {
         });
     };
 
-    const renderTaskStatus = () => {
-        if (!uploadTaskId || !taskStatus) return null;
-
-        const isActive = taskStatus.status === "in_progress" || taskStatus.status === "queued";
-        const progress = taskStatus.progress;
-        const result = taskStatus.result;
-
-        return (
-            <div className="bg-[var(--color-base)] rounded-lg border border-[var(--color-border)] overflow-hidden">
-                {/* Header */}
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)]">
-                    {isActive ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-[var(--color-accent)]" />
-                    ) : taskStatus.status === "complete" ? (
-                        <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    ) : (
-                        <XCircle className="w-4 h-4 text-red-500" />
-                    )}
-                    <span className="text-sm font-medium">
-                        {isActive ? "업로드 진행 중..." : taskStatus.status === "complete" ? "업로드 완료" : "업로드 실패"}
-                    </span>
-                    <span className="ml-auto flex items-center gap-2">
-                        <span className="text-xs text-[var(--color-text-muted)]">
-                            {uploadTaskId.slice(0, 8)}
-                        </span>
-                        {isActive && (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleCancelUpload}
-                                disabled={isCancelling}
-                                className="h-6 px-2 text-xs border-red-300 text-red-500 hover:bg-red-50 hover:text-red-600"
-                            >
-                                <StopCircle className="w-3 h-3 mr-1" />
-                                {isCancelling ? "중단 중..." : "중단"}
-                            </Button>
-                        )}
-                    </span>
-                </div>
-
-                {/* Per-video progress */}
-                {progress && progress.length > 0 && (
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="text-[var(--color-text-muted)] text-xs border-b border-[var(--color-border)]">
-                                <th className="text-left px-4 py-1.5 w-[50px]">순서</th>
-                                <th className="text-left px-4 py-1.5">발표자</th>
-                                <th className="text-right px-4 py-1.5 w-[80px]">용량</th>
-                                <th className="text-left px-4 py-1.5 w-[120px]">상태</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--color-border)]">
-                            {progress.map((item: any, idx: number) => (
-                                <tr key={idx} className="hover:bg-gray-50">
-                                    <td className="px-4 py-1.5 text-xs tabular-nums text-[var(--color-text-muted)]">
-                                        {item.order === 9999 ? "-" : item.order}
-                                    </td>
-                                    <td className="px-4 py-1.5 text-[var(--color-text-secondary)] text-xs">{item.presenter}</td>
-                                    <td className="px-4 py-1.5 text-right text-xs tabular-nums text-[var(--color-text-muted)]">
-                                        {item.size_mb ? `${item.size_mb} MB` : "-"}
-                                    </td>
-                                    <td className="px-4 py-1.5">
-                                        <VideoStatusBadge status={item.status} error={item.error} />
-                                        {item.status === "uploading" && item.started_at && (
-                                            <span className="ml-2 text-[10px] text-[var(--color-text-muted)] tabular-nums">
-                                                {formatElapsed(item.started_at)} 경과
-                                            </span>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-
-                {/* Final result summary */}
-                {taskStatus.status === "complete" && result && Array.isArray(result) && (
-                    <div className="px-4 py-2.5 border-t border-[var(--color-border)] text-xs">
-                        <span className="text-green-600">{result.filter((r: any) => r.success).length}</span>
-                        <span className="text-[var(--color-text-muted)]">/{result.length} 업로드 성공</span>
-                        {result.some((r: any) => !r.success) && (
-                            <span className="text-rose-500 ml-2">
-                                ({result.filter((r: any) => !r.success).length}건 실패)
-                            </span>
-                        )}
-                    </div>
-                )}
-
-            </div>
-        );
-    };
 
     return (
         <div className="space-y-8">
@@ -367,21 +255,12 @@ export default function OpsTab() {
                             naverProgress={taskStatus?.progress ?? null}
                             naverStatus={taskStatus?.status ?? null}
                             naverResult={Array.isArray(taskStatus?.result) ? taskStatus.result : null}
+                            onCancelNaverUpload={handleCancelUpload}
+                            isCancellingNaver={isCancelling}
                         />
                     );
                 })()}
             </div>
-
-            {/* 네이버 카페 업로드 진행 상태 (별도 섹션 — 어디서 시작했든 동일하게 표시) */}
-            {uploadTaskId && (
-                <div className="bg-[var(--color-surface)] p-4 md:p-6 rounded-xl border border-[var(--color-border)]">
-                    <h3 className="font-bold text-base md:text-lg mb-3 flex items-center gap-2">
-                        <UploadCloud className="w-4 h-4 text-[var(--color-accent)]" />
-                        네이버 카페 업로드 진행 상태
-                    </h3>
-                    {renderTaskStatus()}
-                </div>
-            )}
 
             {/* Feedback Target Designation Panel */}
             {session.config?.has_feedback !== false && feedbackAssignments.length > 0 && (
@@ -533,27 +412,6 @@ export default function OpsTab() {
                 </div>
             )}
         </div>
-    );
-}
-
-function VideoStatusBadge({ status, error }: { status: VideoProgress["status"]; error?: string | null }) {
-    const config: Record<string, { label: string; className: string; icon?: React.ReactNode }> = {
-        pending:     { label: "대기",       className: "bg-gray-100 text-gray-500 border-gray-200" },
-        downloading: { label: "다운로드 중", className: "bg-blue-500/10 text-blue-600 border-blue-500/20", icon: <Download className="w-3 h-3 animate-pulse" /> },
-        uploading:   { label: "업로드 중",   className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20", icon: <Upload className="w-3 h-3 animate-pulse" /> },
-        done:        { label: "완료",       className: "bg-green-500/10 text-green-600 border-green-500/20", icon: <CheckCircle2 className="w-3 h-3" /> },
-        failed:      { label: "실패",       className: "bg-red-500/10 text-red-500 border-red-500/20", icon: <XCircle className="w-3 h-3" /> },
-        cancelled:   { label: "취소",       className: "bg-orange-500/10 text-orange-500 border-orange-500/20", icon: <StopCircle className="w-3 h-3" /> },
-    };
-    const c = config[status] ?? config.pending;
-    return (
-        <span
-            className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border ${c.className}`}
-            title={error ?? undefined}
-        >
-            {c.icon}
-            {c.label}
-        </span>
     );
 }
 
