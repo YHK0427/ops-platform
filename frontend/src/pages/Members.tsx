@@ -3,9 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { Search, Filter, AlertTriangle, AlertOctagon } from "lucide-react";
 import { useMembers, useTreasury } from "@/hooks";
 
-// 다음 벌금 마일스톤(-10, -20, ...)까지 남은 점수. minus_score >= 0이면 null.
-function penaltyRisk(minusScore: number): { level: "danger" | "warning" | null; distance: number; nextThreshold: number } | null {
+// 위험 판단:
+// - net_score >= 0 (잘하고 있음) → 표시 안 함
+// - net_score < 0 + 다음 마일스톤(-10, -20, ...)까지 가까우면 위험도 부여
+// 시스템적으로 마일스톤은 minus_score만 보지만, 사용자 직관상 plus가 많으면 위험 신호 노이즈가 됨.
+function penaltyRisk(
+    minusScore: number,
+    netScore: number,
+): { level: "danger" | "warning" | null; distance: number; nextThreshold: number } | null {
     if (minusScore >= 0) return null;
+    if (netScore >= 0) return null;
     const abs = Math.abs(minusScore);
     const nextThreshold = -((Math.floor(abs / 10) + 1) * 10);
     const distance = minusScore - nextThreshold; // minus - more_minus = positive
@@ -50,12 +57,12 @@ export default function Members() {
 
     const lowDepositCount = members?.filter(m => m.is_active && (m.current_deposit || 0) < 10000).length || 0;
     const unpaidMilestoneCount = (treasuryData?.by_member ?? []).filter((m: any) => (m.milestone_unpaid || 0) > 0).length;
-    const penaltyDangerCount = members?.filter(m => m.is_active && penaltyRisk(m.total_minus_score || 0)?.level === "danger").length || 0;
-    const penaltyWarningCount = members?.filter(m => m.is_active && penaltyRisk(m.total_minus_score || 0)?.level === "warning").length || 0;
+    const penaltyDangerCount = members?.filter(m => m.is_active && penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "danger").length || 0;
+    const penaltyWarningCount = members?.filter(m => m.is_active && penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "warning").length || 0;
 
     const filteredMembers = members?.filter((m) => {
         if (riskOnly) {
-            const risk = penaltyRisk(m.total_minus_score || 0);
+            const risk = penaltyRisk(m.total_minus_score || 0, m.net_score || 0);
             const hasUnpaid = (unpaidMap.get(m.id) ?? 0) > 0;
             const lowDeposit = m.is_active && (m.current_deposit || 0) < 10000;
             if (!risk && !hasUnpaid && !lowDeposit) return false;
@@ -152,7 +159,7 @@ export default function Members() {
                                 </TableRow>
                             ) : (
                                 filteredMembers?.map((member, index) => {
-                                    const rowRisk = penaltyRisk(member.total_minus_score || 0);
+                                    const rowRisk = penaltyRisk(member.total_minus_score || 0, member.net_score || 0);
                                     return (
                                     <TableRow
                                         key={member.id}
@@ -208,7 +215,7 @@ export default function Members() {
                                         </TableCell>
                                         <TableCell className="text-right text-sm">
                                             {(() => {
-                                                const risk = penaltyRisk(member.total_minus_score || 0);
+                                                const risk = penaltyRisk(member.total_minus_score || 0, member.net_score || 0);
                                                 return (
                                                     <div className="flex items-center justify-end gap-1.5">
                                                         {risk?.level === "danger" && (
@@ -255,7 +262,7 @@ export default function Members() {
                             const lowDeposit = member.is_active && (member.current_deposit || 0) < 10000;
                             const unpaid = unpaidMap.get(member.id) ?? 0;
                             const net = member.net_score || 0;
-                            const risk = penaltyRisk(member.total_minus_score || 0);
+                            const risk = penaltyRisk(member.total_minus_score || 0, member.net_score || 0);
                             return (
                                 <div
                                     key={member.id}
