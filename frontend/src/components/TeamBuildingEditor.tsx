@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { UserPlus, Wand2, Save, X, Search, Pencil } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { UserPlus, Wand2, Save, X, Search, Pencil, MoveRight, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import {
     DndContext,
@@ -338,6 +339,24 @@ export function TeamBuildingEditor({
         });
     };
 
+    // 모바일/탭 이동: 선택한 멤버들을 지정한 팀(또는 미배정)으로 일괄 이동
+    const moveSelectedTo = useCallback((targetTeamId: string) => {
+        if (selectedIds.size === 0) return;
+        setTeams((prev) => {
+            const next: Record<string, number[]> = {};
+            // 선택된 멤버를 모든 컨테이너에서 제거
+            for (const [key, val] of Object.entries(prev)) {
+                next[key] = val.filter((id) => !selectedIds.has(id));
+            }
+            // 타겟에 추가 (선택 순서 유지: members 배열 순서가 아니라 selectedIds Set의 삽입 순서)
+            const incoming = Array.from(selectedIds);
+            next[targetTeamId] = [...(next[targetTeamId] ?? []), ...incoming];
+            return next;
+        });
+        setSelectedIds(new Set());
+        toast.success(`${selectedIds.size}명을 ${targetTeamId === "unassigned" ? "미배정" : targetTeamId}으로 이동`);
+    }, [selectedIds]);
+
     const handleAutoGenerate = () => {
         if (autoGenerateFn) {
             const result = autoGenerateFn(members);
@@ -377,9 +396,57 @@ export function TeamBuildingEditor({
                     </Button>
                     )}
                     {selectedIds.size > 0 && (
-                        <span className="text-xs text-[var(--color-accent)] bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 px-2 py-1 rounded-full">
-                            {selectedIds.size}명 선택됨 — 드래그로 이동
-                        </span>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    size="sm"
+                                    className="h-8 px-3 text-xs bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] gap-1.5"
+                                >
+                                    <span className="font-bold tabular-nums">{selectedIds.size}명</span>
+                                    <MoveRight className="w-3.5 h-3.5" />
+                                    <span>이동</span>
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="w-56 p-1.5">
+                                <div className="px-2 py-1.5 text-[11px] text-[var(--color-text-muted)] border-b border-[var(--color-border)] mb-1">
+                                    선택된 {selectedIds.size}명을 어디로?
+                                </div>
+                                <div className="max-h-72 overflow-y-auto space-y-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => moveSelectedTo("unassigned")}
+                                        className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded hover:bg-gray-50 text-left"
+                                    >
+                                        <Inbox className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                                        <span>미배정</span>
+                                    </button>
+                                    {Object.keys(teams)
+                                        .filter((k) => k !== "unassigned")
+                                        .map((teamId) => (
+                                            <button
+                                                key={teamId}
+                                                type="button"
+                                                onClick={() => moveSelectedTo(teamId)}
+                                                className="w-full flex items-center justify-between gap-2 px-2 py-2 text-sm rounded hover:bg-[var(--color-accent)]/5 text-left"
+                                            >
+                                                <span className="font-medium">{teamId}</span>
+                                                <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums">
+                                                    {teams[teamId].length}명
+                                                </span>
+                                            </button>
+                                        ))}
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                    )}
+                    {selectedIds.size > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setSelectedIds(new Set())}
+                            className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] underline underline-offset-2"
+                        >
+                            선택 해제
+                        </button>
                     )}
                 </div>
                 <Button
@@ -392,9 +459,10 @@ export function TeamBuildingEditor({
                     {fixedColumns ? "자동 분배" : "자동 생성"}
                 </Button>
             </div>
-            {/* 모바일 안내 — 길게 누른 후 드래그해야 함 (스크롤과 충돌 방지) */}
-            <p className="md:hidden text-[11px] text-[var(--color-text-muted)] -mt-2">
-                💡 모바일: 카드를 <span className="font-medium text-[var(--color-text-secondary)]">길게 누른 뒤</span> 다른 팀으로 끌어다 놓으세요.
+            {/* 사용 안내 — 모바일은 탭 이동 권장, 데스크톱은 드래그도 OK */}
+            <p className="text-[11px] text-[var(--color-text-muted)] -mt-2">
+                <span className="md:hidden">💡 카드를 탭해 선택 → <span className="font-medium text-[var(--color-text-secondary)]">[이동]</span> 버튼으로 팀 선택. 드래그도 가능 (길게 누르기).</span>
+                <span className="hidden md:inline">💡 카드를 클릭해 선택 → 드래그로 이동하거나, <span className="font-medium text-[var(--color-text-secondary)]">[이동]</span> 버튼으로 팀 선택.</span>
             </p>
 
             {/* DnD Board */}
