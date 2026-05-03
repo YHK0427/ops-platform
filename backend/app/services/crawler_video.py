@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import os
-import re
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from google.oauth2 import service_account
@@ -192,48 +192,36 @@ async def upload_all_videos(
     job_id: Optional[str] = None,
     videos: Optional[List[dict]] = None,
 ) -> List[dict]:
-    """전체 비디오 업로드 (페이지 1개 재사용 + 순차 업로드 + 다운로드 선행)"""
+    """전체 비디오 업로드 (페이지 1개 재사용 + 순차 업로드, 직접 업로드 영상만)"""
     session = await db.get(Session, session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
 
     storage = await _get_naver_storage_state(db)
 
-    if videos:
-        drive_files = sorted(videos, key=lambda v: (v.get("group") or 0, v.get("order", 9999)))
-    else:
-        cfg = session.config or {}
-        drive_folder_id = cfg.get("drive_video_folder_id") or cfg.get("drive_folder_id")
-        if drive_folder_id:
-            drive_files = list_drive_videos_by_folder(drive_folder_id)
-        else:
-            drive_files = list_drive_videos(session.week_num)
-
-    if not drive_files:
-        logger.warning(f"No videos found in Drive for week {session.week_num}")
+    if not videos:
+        logger.warning(f"No videos provided for session {session_id}")
         return []
+    video_items = sorted(videos, key=lambda v: (v.get("group") or 0, v.get("order", 9999)))
 
-    total = len(drive_files)
+    total = len(video_items)
     MAX_UPLOAD_RETRIES = 2
 
     # 초기 progress
     progress_list = []
-    for f in drive_files:
+    for f in video_items:
         name = f.get("name", f.get("id", "unknown"))
         progress_list.append({
             "file": name,
-            "presenter": f.get("presenter", parse_presenter_name(name)),
+            "presenter": f.get("presenter", name),
             "order": f.get("order", 9999),
             "status": "pending",
             "error": None,
+            "started_at": None,
         })
     await _set_progress(redis, job_id, progress_list)
 
     results = []
-    # job별 임시 디렉토리 — 중복 실행 시 파일 충돌 방지
-    safe_job_id = (job_id or "default").replace(":", "_")[:32]
-    tmp_dir = f"/app/files/video/{safe_job_id}"
-    os.makedirs(tmp_dir, exist_ok=True)
 
     # 중단 시그널 + browser 참조 (즉시 중단용)
     abort_event = asyncio.Event()
@@ -262,27 +250,19 @@ async def upload_all_videos(
 
     cancel_poller = asyncio.create_task(poll_cancel())
 
-    # 파일별 메타 미리 계산 + 크기 정보
+    # 파일별 메타 미리 계산 + 크기 정보 (모든 영상은 local_path)
     file_metas = []
-    for i, drive_file in enumerate(drive_files):
-        raw_name = drive_file.get("name", drive_file.get("id", "unknown"))
-        file_id = drive_file.get("id", drive_file.get("file_id"))
-        tmp_path = os.path.join(tmp_dir, raw_name)
-        size_mb = round(int(drive_file.get("size", 0)) / (1024 * 1024), 1) if drive_file.get("size") else None
-        file_metas.append({"raw_name": raw_name, "file_id": file_id, "tmp_path": tmp_path, "size_mb": size_mb})
+    for i, video_item in enumerate(video_items):
+        raw_name = video_item.get("name", video_item.get("id", "unknown"))
+        local_path = video_item.get("local_path")
+        size_mb = None
+        if local_path and os.path.exists(local_path):
+            try:
+                size_mb = round(os.path.getsize(local_path) / (1024 * 1024), 1)
+            except OSError:
+                size_mb = None
+        file_metas.append({"raw_name": raw_name, "local_path": local_path, "size_mb": size_mb})
         progress_list[i]["size_mb"] = size_mb
-
-    # 다음 영상 1개만 미리 다운로드하는 헬퍼
-    prefetch_task: Optional[asyncio.Task] = None
-
-    async def prefetch_download(idx: int):
-        meta = file_metas[idx]
-        try:
-            progress_list[idx]["status"] = "downloading"
-            await _set_progress(redis, job_id, progress_list)
-            await asyncio.to_thread(download_drive_file, meta["file_id"], meta["tmp_path"])
-        except Exception as e:
-            logger.error(f"[{idx+1}/{total}] {meta['raw_name']} 다운로드 실패: {e}")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -294,16 +274,15 @@ async def upload_all_videos(
 
         page = await pw_ctx.new_page()
 
-        for idx, drive_file in enumerate(drive_files):
+        for idx, video_item in enumerate(video_items):
             raw_name = file_metas[idx]["raw_name"]
-            file_id = file_metas[idx]["file_id"]
-            tmp_path = file_metas[idx]["tmp_path"]
-            presenter = drive_file.get("presenter", parse_presenter_name(raw_name))
+            local_path = file_metas[idx]["local_path"]
+            presenter = video_item.get("presenter", raw_name)
 
-            order = drive_file.get("order", 9999)
-            cafe_title = drive_file.get("cafe_title")
+            order = video_item.get("order", 9999)
+            cafe_title = video_item.get("cafe_title")
             if not cafe_title:
-                group = drive_file.get("group")
+                group = video_item.get("group")
                 if group is not None:
                     order_suffix = f"({group}분반 {order}번째)" if order != 9999 else f"({group}분반)"
                 else:
@@ -320,37 +299,17 @@ async def upload_all_videos(
             logger.info(f"[{idx+1}/{total}] 처리 시작: {raw_name} -> {cafe_title}")
 
             try:
-                # 로컬 파일 여부 확인 (직접 업로드된 영상)
-                local_path = drive_file.get("local_path")
-                is_local = bool(local_path and os.path.exists(local_path))
+                if not local_path or not os.path.exists(local_path):
+                    raise FileNotFoundError(f"local_path 없음 또는 파일 없음: {local_path}")
 
-                if is_local:
-                    # 로컬 파일 — Drive 다운로드 스킵, 경로만 지정
-                    tmp_path = local_path
-                else:
-                    # 1. Drive 다운로드 (prefetch로 이미 받았으면 대기, 아니면 직접)
-                    if prefetch_task and not os.path.exists(tmp_path):
-                        await prefetch_task
-                        prefetch_task = None
-
-                    if not os.path.exists(tmp_path):
-                        progress_list[idx]["status"] = "downloading"
-                        await _set_progress(redis, job_id, progress_list)
-                        await asyncio.to_thread(download_drive_file, file_id, tmp_path)
-
-                # 2. 업로드 시작 → 다음 영상 미리 다운로드
+                # 업로드 시작
                 progress_list[idx]["status"] = "uploading"
+                progress_list[idx]["started_at"] = datetime.now(timezone.utc).isoformat()
                 await _set_progress(redis, job_id, progress_list)
-
-                # 다음 영상 prefetch (Drive 파일만 — 로컬 파일은 이미 존재)
-                next_file = drive_files[idx + 1] if idx + 1 < total else None
-                next_is_local = bool(next_file and next_file.get("local_path"))
-                if idx + 1 < total and not abort_event.is_set() and not next_is_local:
-                    prefetch_task = asyncio.create_task(prefetch_download(idx + 1))
 
                 ok = False
                 for attempt in range(1, MAX_UPLOAD_RETRIES + 1):
-                    ok = await _upload_single(page, tmp_path, cafe_title)
+                    ok = await _upload_single(page, local_path, cafe_title)
                     if ok:
                         break
                     if attempt < MAX_UPLOAD_RETRIES:
@@ -394,21 +353,11 @@ async def upload_all_videos(
                 await _set_progress(redis, job_id, progress_list)
                 results.append({"file": raw_name, "title": cafe_title, "success": False, "error": str(e)})
 
-            finally:
-                # 로컬 파일은 삭제하지 않음 (직접 업로드된 파일은 사용자가 관리)
-                if not is_local and os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except Exception:
-                        pass
-
         # browser가 cancel poller에 의해 이미 close되었을 수 있음
         if browser.is_connected():
             await browser.close()
 
     # 정리
-    if prefetch_task:
-        prefetch_task.cancel()
     cancel_poller.cancel()
 
     # 남은 pending → cancelled
@@ -416,18 +365,6 @@ async def upload_all_videos(
         for p in progress_list:
             if p["status"] == "pending":
                 p["status"] = "cancelled"
-
-    # 임시 디렉토리 전체 삭제 (job별 격리)
-    import shutil
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-
-    # (하위 호환) 개별 파일 정리도 시도
-    for meta in file_metas:
-        if os.path.exists(meta["tmp_path"]):
-            try:
-                os.remove(meta["tmp_path"])
-            except Exception:
-                pass
 
     # 결과 요약
     success_count = sum(1 for r in results if r["success"])
