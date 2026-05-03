@@ -219,6 +219,16 @@ async def scan_feedback_comments(
 
     logger.info(f"Found {len(video_articles)} video articles for week {week_num}")
 
+    # 팀세션 피드백 매칭용 — 팀 이름 → 그 팀의 멤버 ID 리스트
+    teams_stmt = select(Team).where(Team.session_id == session_id)
+    teams_result = await db.execute(teams_stmt)
+    session_teams = teams_result.scalars().all()
+    team_to_member_ids: dict[str, list[int]] = {}
+    for team in session_teams:
+        tm_stmt = select(TeamMember.member_id).where(TeamMember.team_id == team.id)
+        tm_result = await db.execute(tm_stmt)
+        team_to_member_ids[team.name] = [row[0] for row in tm_result.all()]
+
     # 2. 각 게시글의 저자 매핑 및 댓글 수집
     # member_id → set[article_id]: 이 멤버가 올린 영상들
     member_to_articles: dict[int, set[int]] = {}
@@ -233,16 +243,28 @@ async def scan_feedback_comments(
             continue
         article_id = int(article_id)
 
-        # 영상 저자 매칭: 제목에 멤버 이름이 포함되어 있는지로 판단
-        # 예: "연합UP 32기 11주차 발표-[시초윺]-김민지P(1분반 1번째)"
+        # 영상 저자 매칭: 제목에서 prefix(`...]-`) 이후의 가변 부분만 검사
+        # 예: "연합UP 33기 7주차 발표-[짝짜꿍]-주제01 신념(김다은P, 도민희P)"
+        #     → variable_part = "주제01 신념(김다은P, 도민희P)"
+        # 팀명 매칭 + 멤버 이름 다중 매칭을 union으로 owner 등록.
         title = article.get("subject", "")
-        owner = None
+        sep_idx = title.find("]-")
+        variable_part = title[sep_idx + 2:] if sep_idx >= 0 else title
+
+        owner_member_ids: set[int] = set()
+
+        # 팀명 매칭 — 팀세션이면 팀명 substring 매치되는 모든 팀의 멤버 등록
+        for team_name, mids in team_to_member_ids.items():
+            if team_name and team_name in variable_part:
+                owner_member_ids.update(mids)
+
+        # 멤버 이름 다중 매칭 — break 없이 모든 매치 수집
         for m in members:
-            if m.name in title:
-                owner = m
-                break
-        if owner:
-            member_to_articles.setdefault(owner.id, set()).add(article_id)
+            if m.name in variable_part:
+                owner_member_ids.add(m.id)
+
+        for mid in owner_member_ids:
+            member_to_articles.setdefault(mid, set()).add(article_id)
 
         # 댓글 작성자 수집 (텍스트 포함)
         try:
