@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle, UserMinus } from "lucide-react";
+import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle, UserMinus, Users } from "lucide-react";
 import { useSessionVideos, useDeleteSessionVideo, useUploadVideos } from "@/hooks";
 import type { SessionVideo } from "@/hooks";
 import { getToken } from "@/lib/api";
@@ -721,11 +721,12 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                                                         <Button
                                                             variant={nameToggle.has(p.member_id) ? "default" : "outline"}
                                                             size="sm"
-                                                            className="h-6 px-2 text-[10px] flex-shrink-0"
+                                                            className="h-6 px-2 text-[10px] flex-shrink-0 gap-1 whitespace-nowrap"
                                                             onClick={() => toggleName(p.member_id)}
-                                                            title="제목에 멤버 이름 포함"
+                                                            title="제목에 팀원 이름 추가"
                                                         >
-                                                            이름
+                                                            <Users className="w-3 h-3" />
+                                                            {nameToggle.has(p.member_id) ? "팀원명 표시중" : "팀원명 추가"}
                                                         </Button>
                                                     )}
                                                 </div>
