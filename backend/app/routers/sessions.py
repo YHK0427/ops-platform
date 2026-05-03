@@ -1729,6 +1729,7 @@ VIDEO_DIR = "/app/files/video"
 
 @router.post("/{session_id}/videos/{member_id}")
 async def upload_video(
+    request: Request,
     session_id: int,
     member_id: int,
     file: UploadFile = File(...),
@@ -1782,6 +1783,19 @@ async def upload_video(
 
     size_mb = round(size / (1024 * 1024), 1)
     logger.audit(f"video_uploaded session={session_id} member={member_id} file={save_name} size={size_mb}MB")
+
+    # 큰 파일이면 압축 태스크 큐잉 (네이버 업로드 전 용량 축소)
+    from app.services.video_compress import COMPRESS_THRESHOLD_MB
+    if size_mb > COMPRESS_THRESHOLD_MB:
+        pool = getattr(request.app.state, "arq_pool", None)
+        if pool:
+            await pool.enqueue_job(
+                "task_compress_video",
+                session_id=session_id,
+                member_id=member_id,
+                path=save_path,
+            )
+            logger.info(f"compress_queued session={session_id} member={member_id} size={size_mb}MB")
 
     return {
         "member_id": member_id,
@@ -1919,6 +1933,7 @@ async def upload_chunk(
 
 @router.post("/{session_id}/videos/{member_id}/chunks/{upload_id}/complete")
 async def complete_chunk_upload(
+    request: Request,
     session_id: int,
     member_id: int,
     upload_id: str,
@@ -1967,6 +1982,19 @@ async def complete_chunk_upload(
     filename = meta.get("filename") or "video.mp4"
     save_name = f"{member_id}_{filename}"
     logger.audit(f"video_uploaded_chunked session={session_id} member={member_id} file={save_name} size={size_mb}MB chunks={total}")
+
+    # 큰 파일이면 압축 태스크 큐잉 (네이버 업로드 전 용량 축소)
+    from app.services.video_compress import COMPRESS_THRESHOLD_MB
+    if size_mb > COMPRESS_THRESHOLD_MB:
+        pool = getattr(request.app.state, "arq_pool", None)
+        if pool:
+            await pool.enqueue_job(
+                "task_compress_video",
+                session_id=session_id,
+                member_id=member_id,
+                path=final_path,
+            )
+            logger.info(f"compress_queued session={session_id} member={member_id} size={size_mb}MB")
 
     return {
         "member_id": member_id,
