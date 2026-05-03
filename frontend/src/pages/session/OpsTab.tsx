@@ -5,7 +5,7 @@ import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
 import { useSetFeedbackTargets, useRandomAssignFeedback, useActiveUploadTask, useUpdateSessionConfig, useCancelUpload, useUploadResult } from "@/hooks";
 import { useMembers } from "@/hooks/useMembers";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Loader2, CheckCircle2, XCircle, UserMinus } from "lucide-react";
 import type { Session } from "@/hooks/useSessions";
 import { useSessionTask } from "@/hooks/useSessionTask";
@@ -40,6 +40,27 @@ export default function OpsTab() {
             refetchResult();
         }
     }, [taskStatus?.status]);
+
+    // 업로드 중인 영상의 elapsed time 1초 갱신용 tick
+    const [, setNowTick] = useState(0);
+    useEffect(() => {
+        const hasActive = (taskStatus?.progress ?? []).some(
+            (p: any) => p.status === "uploading" && p.started_at
+        );
+        if (!hasActive) return;
+        const id = setInterval(() => setNowTick(t => t + 1), 1000);
+        return () => clearInterval(id);
+    }, [taskStatus?.progress]);
+
+    const formatElapsed = useCallback((startedAt: string | null | undefined): string => {
+        if (!startedAt) return "";
+        const ms = Date.now() - new Date(startedAt).getTime();
+        if (ms < 0) return "";
+        const sec = Math.floor(ms / 1000);
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return m > 0 ? `${m}분 ${s}초` : `${s}초`;
+    }, []);
 
     // D+1 Warning Logic
     const sessionDate = new Date(session.date);
@@ -248,6 +269,11 @@ export default function OpsTab() {
                                     </td>
                                     <td className="px-4 py-1.5">
                                         <VideoStatusBadge status={item.status} error={item.error} />
+                                        {item.status === "uploading" && item.started_at && (
+                                            <span className="ml-2 text-[10px] text-[var(--color-text-muted)] tabular-nums">
+                                                {formatElapsed(item.started_at)} 경과
+                                            </span>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
