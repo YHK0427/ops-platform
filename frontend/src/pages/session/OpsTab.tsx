@@ -1,6 +1,6 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Users, Shuffle, RotateCcw, ClipboardCopy } from "lucide-react";
+import { AlertTriangle, Users, Shuffle, RotateCcw, ClipboardCopy, X, Plus, ChevronsUpDown, Check } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
 import { useSetFeedbackTargets, useRandomAssignFeedback, useActiveUploadTask, useUpdateSessionConfig, useCancelUpload, useUploadResult } from "@/hooks";

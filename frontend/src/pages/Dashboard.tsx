@@ -370,7 +370,7 @@ export default function Dashboard() {
                             <RiskCard
                                 title="벌금 미납"
                                 count={unpaidMilestoneByMember.length}
-                                members={unpaidMilestoneByMember.map(m => ({ id: m.member_id, name: m.name }))}
+                                members={unpaidMilestoneByMember.map((m: { member_id: number; name: string; unpaid: number }) => ({ id: m.member_id, name: m.name }))}
                                 tone="danger"
                                 icon={Receipt}
                                 hint="누적벌점 벌금 미납"
