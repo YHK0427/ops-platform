@@ -1,15 +1,12 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, AlertTriangle, Users, Check, ChevronsUpDown, X, Plus, Film, ExternalLink, Shuffle, RotateCcw, StopCircle, PlayCircle, ClipboardCopy } from "lucide-react";
+import { UploadCloud, AlertTriangle, Users, Shuffle, RotateCcw, StopCircle, ClipboardCopy } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
-import { useUploadVideos, useSetFeedbackTargets, useRandomAssignFeedback, useDriveVideos, useActiveUploadTask, useUpdateSessionConfig, useCancelUpload, useUploadResult } from "@/hooks";
-import type { VideoProgress, DriveVideoItem } from "@/hooks/useCrawler";
-import { crawlerKeys } from "@/hooks/useCrawler";
+import { useSetFeedbackTargets, useRandomAssignFeedback, useActiveUploadTask, useUpdateSessionConfig, useCancelUpload, useUploadResult } from "@/hooks";
 import { useMembers } from "@/hooks/useMembers";
-import { useState, useMemo, useEffect, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, CheckCircle2, XCircle, Download, Upload, UserMinus } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Loader2, CheckCircle2, XCircle, UserMinus } from "lucide-react";
 import type { Session } from "@/hooks/useSessions";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,51 +19,13 @@ export default function OpsTab() {
     const { session } = useOutletContext<{ session: Session }>();
 
     const { taskId: uploadTaskId, setTaskId: setUploadTaskId, taskStatus } = useSessionTask(session.id, "video-upload");
-    const { mutate: uploadVideos, isPending: isUploading } = useUploadVideos();
-    const { refetch: fetchDriveVideos, isFetching: isLoadingDrive, data: driveVideos } = useDriveVideos(session.id);
     const { mutate: setFeedbackTargets, isPending: isSettingTarget } = useSetFeedbackTargets();
     const { mutate: randomAssign, isPending: isRandomAssigning } = useRandomAssignFeedback();
     const { mutate: updateConfig } = useUpdateSessionConfig();
     const { data: allMembers } = useMembers();
     const { data: activeTask } = useActiveUploadTask(session.id);
     const { mutate: cancelUpload, isPending: isCancelling } = useCancelUpload();
-    const { data: previousResult, refetch: refetchResult } = useUploadResult(session.id);
-    const queryClient = useQueryClient();
-    const [uploadedFromDirect, setUploadedFromDirect] = useState(false);
-
-    // 순서 변경 시 React Query 캐시를 직접 업데이트 (탭 이동해도 유지됨)
-    const updateVideoOrder = useCallback((videoId: string, newOrder: number) => {
-        queryClient.setQueryData<DriveVideoItem[]>(
-            crawlerKeys.driveVideos(session.id),
-            (old) => old?.map(v => v.id === videoId ? { ...v, order: newOrder } : v),
-        );
-    }, [queryClient, session.id]);
-
-    const updateVideoTitle = useCallback((videoId: string, newTitle: string) => {
-        queryClient.setQueryData<DriveVideoItem[]>(
-            crawlerKeys.driveVideos(session.id),
-            (old) => old?.map(v => v.id === videoId ? { ...v, cafe_title: newTitle } : v),
-        );
-    }, [queryClient, session.id]);
-
-    // 제목 접두어 — 뒤에 발표자(순서) 자동 붙음
-    const defaultPrefix = `연합UP 33기 ${session.week_num}주차 발표-[${session.title}]-`;
-    const [titlePrefix, setTitlePrefix] = useState(defaultPrefix);
-
-    // 접두어 + 발표자 + (순서) 로 제목 생성
-    const buildTitle = useCallback((v: DriveVideoItem) => {
-        const orderPart = v.group != null
-            ? `${v.group}분반 ${v.order !== 9999 ? `${v.order}번째` : ""}`
-            : (v.order !== 9999 ? `${v.order}번째` : "");
-        return `${titlePrefix}${v.presenter}${orderPart ? `(${orderPart})` : ""}`;
-    }, [titlePrefix]);
-
-    const applyTemplate = useCallback(() => {
-        queryClient.setQueryData<DriveVideoItem[]>(
-            crawlerKeys.driveVideos(session.id),
-            (old) => old?.map(v => ({ ...v, cafe_title: buildTitle(v) })),
-        );
-    }, [queryClient, session.id, buildTitle]);
+    const { refetch: refetchResult } = useUploadResult(session.id);
 
     // Auto-discover active upload task from other admins
     useEffect(() => {
@@ -75,11 +34,10 @@ export default function OpsTab() {
         }
     }, [activeTask, uploadTaskId]);
 
-    // 태스크 완료 시 이전 결과 갱신 + 직접 업로드 플래그 리셋
+    // 태스크 완료 시 이전 결과 갱신
     useEffect(() => {
         if (taskStatus?.status === "complete" || taskStatus?.status === "failed") {
             refetchResult();
-            setUploadedFromDirect(false);
         }
     }, [taskStatus?.status]);
 
@@ -220,36 +178,6 @@ export default function OpsTab() {
     }, [feedbackAssignments, memberNameMap]);
 
 
-    const handleCafeUpload = (resumeMode: boolean = false) => {
-        let videosToUpload = driveVideos ?? undefined;
-
-        if (resumeMode && previousResult) {
-            const doneFiles = new Set(
-                previousResult.filter(p => p.status === "done").map(p => p.file)
-            );
-            videosToUpload = driveVideos?.filter(v => !doneFiles.has(v.name));
-            if (!videosToUpload || videosToUpload.length === 0) {
-                toast.info("이어서 할 영상이 없습니다.");
-                return;
-            }
-            toast.info(`${videosToUpload.length}개 영상 이어서 업로드`);
-        }
-
-        uploadVideos({ sessionId: session.id, videos: videosToUpload }, {
-            onSuccess: (data) => {
-                toast.success("업로드 작업이 시작되었습니다.");
-                setUploadTaskId(data.task_id);
-            },
-            onError: (err: any) => {
-                if (err?.response?.status === 409) {
-                    toast.error(err.response.data?.detail ?? "이미 업로드가 진행 중입니다.");
-                } else {
-                    toast.error("요청 실패");
-                }
-            },
-        });
-    };
-
     const handleCancelUpload = () => {
         cancelUpload({ sessionId: session.id }, {
             onSuccess: () => toast.info("업로드를 중단하고 있습니다..."),
@@ -258,11 +186,7 @@ export default function OpsTab() {
     };
 
     const renderTaskStatus = () => {
-        if (!uploadTaskId || !taskStatus) return (
-            <div className="bg-[var(--color-base)] rounded-lg p-4 border border-[var(--color-border)] min-h-[60px] flex items-center justify-center text-[var(--color-text-muted)] text-sm">
-                업로드 상태가 여기에 표시됩니다.
-            </div>
-        );
+        if (!uploadTaskId || !taskStatus) return null;
 
         const isActive = taskStatus.status === "in_progress" || taskStatus.status === "queued";
         const progress = taskStatus.progress;
@@ -344,34 +268,6 @@ export default function OpsTab() {
                     </div>
                 )}
 
-                {/* Resume / Restart options */}
-                {!isActive && taskStatus.status === "complete" && result && Array.isArray(result) && result.some((r: any) => !r.success) && driveVideos && driveVideos.length > 0 && (
-                    <div className="flex items-center gap-2 px-4 py-3 border-t border-[var(--color-border)] bg-amber-50/50">
-                        <span className="text-xs text-amber-700">미완료 영상이 있습니다.</span>
-                        <span className="ml-auto flex gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleCafeUpload(true)}
-                                disabled={isUploading}
-                                className="h-7 px-3 text-xs border-[var(--color-accent)]/30 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/5"
-                            >
-                                <PlayCircle className="w-3.5 h-3.5 mr-1" />
-                                이어서 하기
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleCafeUpload(false)}
-                                disabled={isUploading}
-                                className="h-7 px-3 text-xs border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-gray-50"
-                            >
-                                <RotateCcw className="w-3.5 h-3.5 mr-1" />
-                                처음부터
-                            </Button>
-                        </span>
-                    </div>
-                )}
             </div>
         );
     };
@@ -387,189 +283,6 @@ export default function OpsTab() {
                 />
             )}
 
-            {/* Video Upload Panel */}
-            <div className="bg-[var(--color-surface)] p-4 md:p-6 rounded-xl border border-[var(--color-border)]">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
-                    <div>
-                        <h3 className="font-bold text-base md:text-lg mb-1 flex items-center gap-2 flex-wrap">
-                            영상 업로드 (드라이브)
-                            <span className="px-2 py-0.5 rounded-md text-[10px] md:text-xs font-bold bg-orange-500/15 text-orange-600 border border-orange-500/30">
-                                ⚠ 폐기 예정
-                            </span>
-                            {session.config?.drive_folder_id && (
-                                <a
-                                    href={`https://drive.google.com/drive/folders/${session.config.drive_folder_id}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs font-normal text-[var(--color-accent)] hover:underline"
-                                >
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                    드라이브 폴더
-                                </a>
-                            )}
-                        </h3>
-                        <p className="text-xs md:text-sm text-[var(--color-text-secondary)]">
-                            구글 드라이브 경유 방식입니다. 아래 "영상 직접 업로드" 사용을 권장합니다.
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => fetchDriveVideos()}
-                            disabled={isLoadingDrive}
-                            className="border-[var(--color-border)] hover:bg-gray-50"
-                        >
-                            {isLoadingDrive
-                                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                : <Film className="w-4 h-4 mr-2" />}
-                            드라이브 확인
-                        </Button>
-                        <Button size="sm" onClick={() => handleCafeUpload(false)} disabled={isUploading} className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]">
-                            <UploadCloud className="w-4 h-4 mr-2" />
-                            {isUploading ? "시작 중..." : "업로드 시작"}
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Drive Video List */}
-                {driveVideos && driveVideos.length > 0 && (
-                    <div className="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
-                        <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[var(--color-border)]">
-                            <Film className="w-4 h-4 text-[var(--color-accent)]" />
-                            <span className="text-sm font-medium">드라이브 영상 목록</span>
-                            <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20">
-                                총 {driveVideos.length}개
-                            </span>
-                        </div>
-                        {/* Title Prefix + Apply */}
-                        <div className="px-4 py-2.5 bg-gray-50/80 border-b border-[var(--color-border)] space-y-2">
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">제목 접두어</span>
-                                <input
-                                    type="text"
-                                    className="flex-1 bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2.5 py-1 text-xs text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
-                                    value={titlePrefix}
-                                    onChange={(e) => setTitlePrefix(e.target.value)}
-                                />
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={applyTemplate}
-                                    className="h-7 px-3 text-xs border-[var(--color-border)] hover:bg-gray-50 whitespace-nowrap"
-                                >
-                                    일괄 적용
-                                </Button>
-                            </div>
-                            <div className="text-[10px] text-[var(--color-text-muted)]">
-                                미리보기: <span className="text-[var(--color-text-muted)]">{driveVideos[0] ? buildTitle(driveVideos[0]) : ""}</span>
-                            </div>
-                        </div>
-                        {/* Desktop 테이블 */}
-                        <table className="hidden md:table w-full text-sm">
-                            <thead>
-                                <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">
-                                    <th className="text-left px-4 py-2 w-[60px]">순서</th>
-                                    <th className="text-left px-4 py-2 w-[140px]">발표자</th>
-                                    <th className="text-left px-4 py-2">카페 게시글 제목</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[var(--color-border)]">
-                                {[...driveVideos]
-                                    .sort((a, b) => {
-                                        const ga = a.group ?? 0, gb = b.group ?? 0;
-                                        if (ga !== gb) return ga - gb;
-                                        return a.order - b.order;
-                                    })
-                                    .map((v) => (
-                                        <tr key={v.id} className="hover:bg-gray-50 group/vrow">
-                                            <td className="px-4 py-1.5">
-                                                <input
-                                                    type="number"
-                                                    min={1}
-                                                    className="w-14 bg-transparent border border-[var(--color-border)] rounded px-2 py-1 text-xs text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                    value={v.order === 9999 ? "" : v.order}
-                                                    placeholder="-"
-                                                    onChange={(e) => {
-                                                        const val = parseInt(e.target.value);
-                                                        updateVideoOrder(v.id, isNaN(val) ? 9999 : val);
-                                                    }}
-                                                />
-                                            </td>
-                                            <td className="px-4 py-1.5 whitespace-nowrap">
-                                                <span className="font-medium text-[var(--color-text-primary)]">{v.presenter}</span>
-                                                {v.group != null && (
-                                                    <span className="ml-1 text-[10px] text-blue-600 bg-blue-500/10 px-1 py-0.5 rounded border border-blue-500/20">
-                                                        {v.group}분반
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-1.5">
-                                                <input
-                                                    type="text"
-                                                    className="hangul-fallback w-full bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
-                                                    value={v.cafe_title}
-                                                    onChange={(e) => updateVideoTitle(v.id, e.target.value)}
-                                                    title={`원본: ${v.name}`}
-                                                />
-                                            </td>
-                                        </tr>
-                                    ))}
-                            </tbody>
-                        </table>
-                        {/* Mobile 카드 */}
-                        <div className="md:hidden divide-y divide-[var(--color-border)]">
-                            {[...driveVideos]
-                                .sort((a, b) => {
-                                    const ga = a.group ?? 0, gb = b.group ?? 0;
-                                    if (ga !== gb) return ga - gb;
-                                    return a.order - b.order;
-                                })
-                                .map((v) => (
-                                    <div key={v.id} className="px-3 py-2.5 space-y-1.5">
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                className="w-12 bg-transparent border border-[var(--color-border)] rounded px-1.5 py-1 text-xs text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                value={v.order === 9999 ? "" : v.order}
-                                                placeholder="-"
-                                                onChange={(e) => {
-                                                    const val = parseInt(e.target.value);
-                                                    updateVideoOrder(v.id, isNaN(val) ? 9999 : val);
-                                                }}
-                                            />
-                                            <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">{v.presenter}</span>
-                                            {v.group != null && (
-                                                <span className="text-[10px] text-blue-600 bg-blue-500/10 px-1 py-0.5 rounded border border-blue-500/20 flex-shrink-0">
-                                                    {v.group}분반
-                                                </span>
-                                            )}
-                                        </div>
-                                        <input
-                                            type="text"
-                                            className="w-full bg-[var(--color-base)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]"
-                                            value={v.cafe_title}
-                                            onChange={(e) => updateVideoTitle(v.id, e.target.value)}
-                                            title={`원본: ${v.name}`}
-                                        />
-                                    </div>
-                                ))}
-                        </div>
-                        <div className="px-4 py-1.5 bg-gray-50/80 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)]">
-                            접두어 수정 후 "일괄 적용"을 누르면 전체 제목이 변경됩니다. 개별 제목도 직접 수정 가능합니다.
-                        </div>
-                    </div>
-                )}
-                {driveVideos && driveVideos.length === 0 && (
-                    <div className="mb-4 py-8 text-center text-sm text-[var(--color-text-muted)] rounded-lg border border-[var(--color-border)]">
-                        드라이브에 영상이 없습니다.
-                    </div>
-                )}
-
-                {/* 직접 업로드에서 시작된 task면 여기에 표시 안 함 (VideoUploadPanel에서 인라인 표시) */}
-                {!uploadedFromDirect && renderTaskStatus()}
-            </div>
 
             {/* 영상 직접 업로드 Panel */}
             <div className="bg-[var(--color-surface)] p-6 rounded-xl border border-[var(--color-border)]">
@@ -623,17 +336,25 @@ export default function OpsTab() {
                             presenters={isTeamSession ? teamPresenters : individualPresenters}
                             absentMembers={absentForIndividual}
                             hasGroups={!isTeamSession && !!session.config?.has_groups}
-                            onNaverUploadStarted={(taskId) => {
-                                setUploadTaskId(taskId);
-                                setUploadedFromDirect(true);
-                            }}
+                            onNaverUploadStarted={(taskId) => setUploadTaskId(taskId)}
                             naverProgress={taskStatus?.progress ?? null}
                             naverStatus={taskStatus?.status ?? null}
-                            naverResult={uploadedFromDirect && Array.isArray(taskStatus?.result) ? taskStatus.result : null}
+                            naverResult={Array.isArray(taskStatus?.result) ? taskStatus.result : null}
                         />
                     );
                 })()}
             </div>
+
+            {/* 네이버 카페 업로드 진행 상태 (별도 섹션 — 어디서 시작했든 동일하게 표시) */}
+            {uploadTaskId && (
+                <div className="bg-[var(--color-surface)] p-4 md:p-6 rounded-xl border border-[var(--color-border)]">
+                    <h3 className="font-bold text-base md:text-lg mb-3 flex items-center gap-2">
+                        <UploadCloud className="w-4 h-4 text-[var(--color-accent)]" />
+                        네이버 카페 업로드 진행 상태
+                    </h3>
+                    {renderTaskStatus()}
+                </div>
+            )}
 
             {/* Feedback Target Designation Panel */}
             {session.config?.has_feedback !== false && feedbackAssignments.length > 0 && (

@@ -20,8 +20,20 @@ export interface VideoProgress {
     file: string;
     presenter: string;
     order: number;
-    status: "pending" | "downloading" | "uploading" | "done" | "failed" | "cancelled";
+    status: "pending" | "uploading" | "done" | "failed" | "cancelled";
     error?: string | null;
+    size_mb?: number | null;
+    started_at?: string | null;
+}
+
+export interface NaverVideoUploadItem {
+    id: string;
+    name: string;
+    presenter: string;
+    order: number;
+    group?: number | null;
+    cafe_title?: string;
+    local_path?: string;
 }
 
 // Keys
@@ -29,7 +41,6 @@ export const crawlerKeys = {
     all: ["crawler"] as const,
     task: (id: string) => [...crawlerKeys.all, "task", id] as const,
     naverSession: () => [...crawlerKeys.all, "naverSession"] as const,
-    driveVideos: (sessionId: number) => [...crawlerKeys.all, "drive-videos", sessionId] as const,
     activeTask: (sessionId: number) => [...crawlerKeys.all, "active-task", sessionId] as const,
 };
 
@@ -125,36 +136,13 @@ export function useScanHomework() {
 export function useUploadVideos() {
     return useMutation({
         networkMode: "always",
-        mutationFn: async ({ sessionId, videos }: { sessionId: number; videos?: DriveVideoItem[] }) => {
+        mutationFn: async ({ sessionId, videos }: { sessionId: number; videos: NaverVideoUploadItem[] }) => {
             const { data } = await api.post<CrawlerTaskResponse>("/crawler/upload-videos", {
                 session_id: sessionId,
-                videos: videos ?? undefined,
+                videos,
             });
             return data;
         },
-    });
-}
-
-export interface DriveVideoItem {
-    id: string;
-    name: string;
-    presenter: string;
-    order: number;
-    group?: number | null;
-    cafe_title: string;
-}
-
-export function useDriveVideos(sessionId: number) {
-    return useQuery({
-        queryKey: crawlerKeys.driveVideos(sessionId),
-        queryFn: async () => {
-            const { data } = await api.get<{ videos: DriveVideoItem[] }>(
-                `/crawler/drive-videos?session_id=${sessionId}`
-            );
-            return data.videos;
-        },
-        enabled: false,
-        staleTime: 5 * 60 * 1000,
     });
 }
 
