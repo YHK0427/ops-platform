@@ -51,84 +51,6 @@ def create_drive_folder(folder_name: str, parent_id: str | None = None) -> str:
     return folder["id"]
 
 
-def list_drive_videos_by_folder(folder_id: str) -> List[dict]:
-    """특정 폴더 ID에서 영상 목록 조회"""
-    service = get_drive_service()
-    query = f"'{folder_id}' in parents and mimeType contains 'video/' and trashed=false"
-    results = service.files().list(
-        q=query,
-        fields="files(id, name, size)",
-        orderBy="name",
-    ).execute()
-    files = results.get("files", [])
-
-    def sort_key(f):
-        m = re.search(r'\((\d+)번째\)', f["name"])
-        return int(m.group(1)) if m else 9999
-
-    return sorted(files, key=sort_key)
-
-
-def list_drive_videos(week_num: int) -> List[dict]:
-    """
-    드라이브 폴더에서 해당 주차 영상 목록을 순서대로 가져옴.
-    파일명에 (N번째) 포함 → 번호 기준 오름차순 정렬.
-    주차 필터링? -> spec에는 week_num 인자가 있지만, 
-    만약 폴더에 여러 주차가 섞여있다면 필터링 필요.
-    하지만 spec: "드라이브 폴더에서 해당 주차 영상 목록을..."
-    파일명에 주차가 포함되어 있나? -> "김민준(8번째).mp4". 주차 정보 없음.
-    아마도 폴더 자체가 해당 주차 폴더이거나,
-    운영자가 해당 주차 영상만 넣어놓는다고 가정. (spec "1. Admin이 구글 드라이브 폴더에 영상을 순서대로 정리")
-    """
-    if not settings.GOOGLE_DRIVE_FOLDER_ID:
-        raise ValueError("GOOGLE_DRIVE_FOLDER_ID is not set")
-
-    service = get_drive_service()
-    
-    # 쿼리: 폴더 ID + video mimeType
-    # trash 제외
-    query = f"'{settings.GOOGLE_DRIVE_FOLDER_ID}' in parents and mimeType contains 'video/' and trashed=false"
-    
-    results = service.files().list(
-        q=query,
-        fields="files(id, name, size)",
-        orderBy="name"
-    ).execute()
-    
-    files = results.get("files", [])
-    
-    def sort_key(f):
-        name = f["name"]
-        # 분반 → (분반, 순서) 기준 정렬
-        m = re.search(r'\((\d+)분반\s*(\d+)번째\)', name)
-        if m:
-            return (int(m.group(1)), int(m.group(2)))
-        m = re.search(r'\((\d+)번째\)', name)
-        return (0, int(m.group(1))) if m else (9999, 9999)
-
-    return sorted(files, key=sort_key)
-
-
-def parse_presenter_name(filename: str) -> str:
-    """
-    '김민준(8번째).mp4' → '김민준'
-    '장영진P(2분반 6번째).mp4' → '장영진'
-    '연합UP 32기 12주차 발표-[모의PT면접]-장영진P(2분반 6번째).mp4' → '장영진'
-    파싱 실패 시 확장자 제거한 전체 이름 반환
-    """
-    # 마지막 ( 앞의 이름 부분을 찾음 — 하이픈 구분자 뒤의 마지막 세그먼트 우선
-    basename = os.path.splitext(filename)[0].strip()
-    # 괄호 앞 부분 추출
-    m = re.match(r'^(.+?)\s*\(', basename)
-    if not m:
-        return basename
-    before_paren = m.group(1).strip()
-    # 하이픈(-) 구분자가 있으면 마지막 세그먼트 사용 (e.g., "연합UP 32기...-장영진P" → "장영진P")
-    if "-" in before_paren:
-        before_paren = before_paren.rsplit("-", 1)[-1].strip()
-    return before_paren or basename
-
-
 def upload_file_to_drive(file_bytes: bytes, filename: str, folder_id: str, mime_type: str = "application/octet-stream") -> str:
     """Google Drive에 파일 업로드 후 file_id 반환"""
     import io
@@ -189,16 +111,6 @@ def download_drive_file_bytes(file_id: str) -> tuple[bytes, str]:
     while not done:
         _, done = downloader.next_chunk()
     return buf.getvalue(), filename
-
-
-def download_drive_file(file_id: str, dest_path: str) -> None:
-    service = get_drive_service()
-    request = service.files().get_media(fileId=file_id)
-    with open(dest_path, "wb") as f:
-        downloader = MediaIoBaseDownload(f, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
 
 
 class NaverSessionExpiredError(Exception):

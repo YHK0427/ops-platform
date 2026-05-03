@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -19,34 +18,14 @@ from app.schemas.crawler import (
     VideoUploadRequest,
     NaverLoginRequest,
     CrawlerTaskStartRequest,
-    DriveVideoListResponse,
-    DriveVideoItem,
     ScanExcusesRequest,
 )
 from app.services.naver_session import import_session
-from app.services.crawler_video import list_drive_videos, list_drive_videos_by_folder, parse_presenter_name
 
 import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
-
-
-def _parse_order(name: str) -> int:
-    """'(8번째)' → 8, '(2분반 6번째)' → 6"""
-    # 분반 형식: (N분반 M번째)
-    m = re.search(r'\(\d+분반\s*(\d+)번째\)', name)
-    if m:
-        return int(m.group(1))
-    # 일반 형식: (N번째)
-    m = re.search(r'\((\d+)번째\)', name)
-    return int(m.group(1)) if m else 9999
-
-
-def _parse_group(name: str) -> int | None:
-    """'(2분반 6번째)' → 2, 분반 없으면 None"""
-    m = re.search(r'\((\d+)분반', name)
-    return int(m.group(1)) if m else None
 
 
 @router.post("/naver/import", response_model=NaverSessionStatus)
@@ -306,50 +285,6 @@ async def trigger_board_sync(
     job = await pool.enqueue_job("task_naver_health_check")
     logger.info("crawler_start type=naver_health_check")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
-
-
-@router.get("/drive-videos", response_model=DriveVideoListResponse)
-async def list_drive_videos_api(
-    session_id: int,
-    db: AsyncSession = Depends(get_db),
-    _: str = Depends(get_current_user),
-):
-    """드라이브 영상 목록 조회 (Google Drive API, 동기 → thread offload)"""
-    session = await db.get(SessionModel, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    try:
-        cfg = session.config or {}
-        drive_folder_id = cfg.get("drive_video_folder_id") or cfg.get("drive_folder_id")
-        if drive_folder_id:
-            files = await asyncio.to_thread(list_drive_videos_by_folder, drive_folder_id)
-        else:
-            files = await asyncio.to_thread(list_drive_videos, session.week_num)
-    except ValueError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Drive API 오류: {e}")
-
-    videos = []
-    for f in files:
-        presenter = parse_presenter_name(f["name"])
-        order = _parse_order(f["name"])
-        group = _parse_group(f["name"])
-        # 카페 게시글 제목 자동 생성
-        order_suffix = f"({order}번째)" if order != 9999 else ""
-        if group is not None:
-            order_suffix = f"({group}분반 {order}번째)" if order != 9999 else f"({group}분반)"
-        cafe_title = f"연합UP 33기 {session.week_num}주차 발표-[{session.title}]-{presenter}{order_suffix}"
-        videos.append(DriveVideoItem(
-            id=f["id"],
-            name=f["name"],
-            presenter=presenter,
-            order=order,
-            group=group,
-            cafe_title=cafe_title,
-        ))
-    return DriveVideoListResponse(videos=videos)
 
 
 @router.post("/naver/login", response_model=CrawlerTaskResponse)

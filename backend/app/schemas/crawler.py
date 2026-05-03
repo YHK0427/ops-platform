@@ -44,17 +44,6 @@ class NaverLoginRequest(BaseModel):
     username: str
     password: str
 
-class DriveVideoItem(BaseModel):
-    id: str
-    name: str
-    presenter: str
-    order: int            # parsed from (N번째), 9999 if absent
-    group: Optional[int] = None   # 분반 번호
-    cafe_title: str = ""  # 자동 생성된 카페 게시글 제목
-
-class DriveVideoListResponse(BaseModel):
-    videos: list[DriveVideoItem]
-
 class ScanExcusesRequest(BaseModel):
     session_id: int
     mode: Literal["PRE", "POST"]
