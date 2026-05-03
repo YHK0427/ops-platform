@@ -296,13 +296,14 @@ export default function OpsTab() {
                             .sort((a, b) => ((a as any).presenter_order ?? 999) - ((b as any).presenter_order ?? 999))
                             .map((t, idx) => {
                                 const firstMember = t.members![0];
-                                const memberNames = t.members!.map(m => m.name).join(", ");
+                                const memberNames = t.members!.map(m => m.name);
                                 return {
                                     member_id: firstMember.id,
                                     member_name: t.name,
-                                    sub_label: memberNames,
+                                    sub_label: memberNames.join(", "),
                                     group_num: null,
                                     presenter_order: (t as any).presenter_order ?? idx + 1,
+                                    member_names: memberNames,
                                 };
                             })
                         : [];

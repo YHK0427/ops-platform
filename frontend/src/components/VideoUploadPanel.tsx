@@ -14,6 +14,7 @@ interface PresenterSlot {
     sub_label?: string | null;
     group_num: number | null;
     presenter_order: number | null;
+    member_names?: string[];  // 팀세션일 때 팀 멤버 이름 배열 (이름 붙이기 토글용)
 }
 
 interface AbsentMember {
@@ -152,6 +153,23 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
 
     // 개별 카페 제목 오버라이드
     const [titleOverrides, setTitleOverrides] = useState<Record<number, string>>({});
+
+    // 팀세션 "이름 붙이기" 토글: 슬롯 anchor member_id 단위
+    const [nameToggle, setNameToggle] = useState<Set<number>>(new Set());
+
+    const toggleName = (memberId: number) => {
+        setNameToggle(prev => {
+            const next = new Set(prev);
+            next.has(memberId) ? next.delete(memberId) : next.add(memberId);
+            return next;
+        });
+        // 토글 시 인라인 override 제거 → 자동 형식으로 즉시 반영
+        setTitleOverrides(prev => {
+            const next = { ...prev };
+            delete next[memberId];
+            return next;
+        });
+    };
 
     const getTitle = (p: PresenterSlot) => titleOverrides[p.member_id] ?? buildTitle(p);
 
@@ -387,7 +405,15 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         const orderPart = hasGroups && p.group_num
             ? `${p.group_num}분반 ${p.presenter_order ?? ""}번째`
             : p.presenter_order ? `${p.presenter_order}번째` : "";
-        return `${titlePrefix}${p.member_name}${orderPart ? `(${orderPart})` : ""}`;
+        const orderSuffix = orderPart ? `(${orderPart})` : "";
+
+        // 팀세션 + 토글 ON → "팀명(이름P, 이름P)(N번째)"
+        if (p.member_names && p.member_names.length > 0 && nameToggle.has(p.member_id)) {
+            const namesPart = p.member_names.map(n => `${n}P`).join(", ");
+            return `${titlePrefix}${p.member_name}(${namesPart})${orderSuffix}`;
+        }
+
+        return `${titlePrefix}${p.member_name}${orderSuffix}`;
     };
 
     // 네이버 업로드 시작
@@ -681,16 +707,27 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                                                     </div>
                                                 )}
                                             </div>
-                                            {/* 카페 제목 인라인 편집 */}
+                                            {/* 카페 제목 인라인 편집 + 이름 붙이기 토글 */}
                                             {video && (
-                                                <div className="ml-0 md:ml-14">
+                                                <div className="ml-0 md:ml-14 flex items-center gap-1.5">
                                                     <input
                                                         type="text"
-                                                        className="hangul-fallback w-full h-6 text-[11px] px-2 border border-[var(--color-border)] rounded bg-white text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+                                                        className="hangul-fallback flex-1 h-6 text-[11px] px-2 border border-[var(--color-border)] rounded bg-white text-[var(--color-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
                                                         value={getTitle(p)}
                                                         onChange={(e) => setTitleOverrides(prev => ({ ...prev, [p.member_id]: e.target.value }))}
                                                         placeholder="카페 게시글 제목"
                                                     />
+                                                    {p.member_names && p.member_names.length > 0 && (
+                                                        <Button
+                                                            variant={nameToggle.has(p.member_id) ? "default" : "outline"}
+                                                            size="sm"
+                                                            className="h-6 px-2 text-[10px] flex-shrink-0"
+                                                            onClick={() => toggleName(p.member_id)}
+                                                            title="제목에 멤버 이름 포함"
+                                                        >
+                                                            이름
+                                                        </Button>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
