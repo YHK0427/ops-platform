@@ -423,7 +423,7 @@ function RiskCard({
             <div className="text-[10px] text-[var(--color-text-muted)] mb-2">{hint}</div>
             {!empty && (
                 <div className="flex flex-wrap gap-1">
-                    {members.slice(0, 5).map(m => (
+                    {members.map(m => (
                         <button
                             key={m.id}
                             type="button"
@@ -437,11 +437,6 @@ function RiskCard({
                             {m.name}
                         </button>
                     ))}
-                    {members.length > 5 && (
-                        <span className="px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)]">
-                            +{members.length - 5}
-                        </span>
-                    )}
                 </div>
             )}
         </div>
