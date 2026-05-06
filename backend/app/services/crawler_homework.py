@@ -95,15 +95,6 @@ async def scan_homework_all(
             if not _is_match_week(title, week_num):
                 continue
 
-            # 이름 추출 및 멤버 매칭
-            # 1. 제목에서 추출 시도
-            extracted_name = extract_name_from_title(title)
-            member = match_member_by_name(extracted_name, members)
-
-            # 2. 제목 매칭 실패 시 작성자 닉네임 매칭 시도 (보조)
-            if not member and writer_name:
-                member = match_member_by_name(writer_name, members)
-
             article_id = article.get("articleId") or article.get("article_id")
             article_raw = {"article_id": int(article_id), "menu_id": menu_id} if article_id else None
 
@@ -115,26 +106,39 @@ async def scan_homework_all(
                 is_late = write_dt > deadline_post
             status = "MISSING" if is_late else "PASS"
 
-            if member:
-                # DB Upsert
-                await upsert_assignment(db, session_id, member.id, assign_type, status, raw_data=article_raw)
-                total_processed += 1
-                if is_late:
-                    logger.info(f"Late {assign_type}: {member.name} (written after deadline)")
-            elif assign_type == "PPT" and team_map:
-                # 멤버 매칭 실패 시, 팀명 매칭 시도 (PPT 게시판 업로드: "과제16주차_1팀")
-                team_name = _extract_team_from_title(title)
-                matched_team = team_map.get(team_name) if team_name else None
-                if matched_team:
-                    mids = team_member_ids.get(matched_team.id, [])
-                    for mid in mids:
+            if assign_type == "PPT":
+                # PPT는 multi-presenter 가능 (팀세션 등). 제목에 등장하는 모든 멤버 이름 +
+                # 팀명을 union으로 매칭. (예: "PPT07주차_주제01(욕망)_이서정P, 이수인P")
+                matched_ids: set[int] = _match_ppt_owners(title, members, team_map, team_member_ids)
+
+                if not matched_ids and writer_name:
+                    # fallback: 작성자 닉네임 매칭
+                    fallback = match_member_by_name(writer_name, members)
+                    if fallback:
+                        matched_ids = {fallback.id}
+
+                if matched_ids:
+                    for mid in matched_ids:
                         await upsert_assignment(db, session_id, mid, "PPT", status, raw_data=article_raw)
-                    total_processed += len(mids)
-                    logger.info(f"PPT team match: '{team_name}' → {len(mids)} members{' (LATE)' if is_late else ''}")
+                    total_processed += len(matched_ids)
+                    if is_late:
+                        logger.info(f"Late PPT: article={article_id} → {len(matched_ids)} members")
                 else:
-                    logger.warning(f"Member/team not found for article: {title} (writer: {writer_name})")
+                    logger.warning(f"PPT: no match for article: {title} (writer: {writer_name})")
             else:
-                logger.warning(f"Member not found for article: {title} (writer: {writer_name})")
+                # REVIEW 등 개인 단위 게시글: 단일 매칭
+                extracted_name = extract_name_from_title(title)
+                member = match_member_by_name(extracted_name, members)
+                if not member and writer_name:
+                    member = match_member_by_name(writer_name, members)
+
+                if member:
+                    await upsert_assignment(db, session_id, member.id, assign_type, status, raw_data=article_raw)
+                    total_processed += 1
+                    if is_late:
+                        logger.info(f"Late {assign_type}: {member.name} (written after deadline)")
+                else:
+                    logger.warning(f"Member not found for article: {title} (writer: {writer_name})")
 
     # 결석/공결 멤버의 REVIEW/FEEDBACK 면제(EXEMPT) 처리
     absent_stmt = select(Attendance.member_id).where(
@@ -358,16 +362,25 @@ async def scan_feedback_comments(
     return count
 
 
-def _extract_team_from_title(title: str) -> str | None:
-    """제목에서 팀명 추출 (예: '과제16주차_1팀' → '1팀', '과제16주차_1조' → '1조')"""
-    if "_" not in title:
-        return None
-    parts = title.split("_")
-    possible_team = parts[-1].strip()
-    # "1팀", "2팀", "1조", "2조", "A팀" 등의 패턴
-    if re.search(r"^.+(팀|조)$", possible_team):
-        return possible_team
-    return None
+def _match_ppt_owners(
+    title: str,
+    members: list[Member],
+    team_map: dict[str, Team],
+    team_member_ids: dict[int, list[int]],
+) -> set[int]:
+    """
+    PPT 게시글 제목에서 owner(s) 추출.
+    - 제목에 이름이 substring 매치되는 모든 멤버 + 팀명이 substring 매치되는 모든 팀의 멤버
+    - 다발표자(팀세션)도 모두 매칭됨. (예: "PPT07주차_주제01(욕망)_이서정P, 이수인P")
+    """
+    owners: set[int] = set()
+    for m in members:
+        if m.name and m.name in title:
+            owners.add(m.id)
+    for team_name, team in team_map.items():
+        if team_name and team_name in title:
+            owners.update(team_member_ids.get(team.id, []))
+    return owners
 
 
 def _is_match_week(title: str, week_num: int) -> bool:
