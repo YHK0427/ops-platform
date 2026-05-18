@@ -40,15 +40,26 @@ def is_vaapi_available() -> bool:
 
 
 def _run_ffmpeg_vaapi(src: str, dst: str) -> None:
-    """Intel VAAPI 하드웨어 H.264 인코딩 (CQP 모드)."""
+    """Intel VAAPI 하드웨어 인코딩 — HW 디코드 + HW 인코드 (CQP 모드).
+
+    GPU의 VPP(VideoProc)가 비활성이라 scale_vaapi 포맷 변환 불가.
+    대신 HW 디코드 → hwdownload → CPU nv12 변환 → hwupload → HW 인코드.
+    디코딩·인코딩은 GPU, 픽셀 포맷 변환만 CPU 경유.
+    """
     cmd = [
         "ffmpeg", "-y",
+        # HW 디코드 + HW 인코드 모두 GPU. GPU VPP(scale_vaapi)가 비활성이라
+        # 10bit→8bit nv12 변환만 hwdownload→format→hwupload 로 CPU 경유.
+        "-init_hw_device", f"vaapi=va:{VAAPI_DEVICE}",
         "-hwaccel", "vaapi",
-        "-hwaccel_device", VAAPI_DEVICE,
+        "-hwaccel_device", "va",
         "-hwaccel_output_format", "vaapi",
+        "-filter_hw_device", "va",
         "-i", src,
-        "-vf", "scale_vaapi=format=nv12",
+        "-vf", "hwdownload,format=p010le,format=nv12,hwupload",
+        # GPU 인코더가 LP(VDEnc) 엔트리포인트만 살아있어 -low_power 1 필수.
         "-c:v", "h264_vaapi",
+        "-low_power", "1",
         "-rc_mode", "CQP",
         "-qp", str(VAAPI_QP),
         "-c:a", "aac",
