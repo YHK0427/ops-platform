@@ -175,30 +175,34 @@ async def task_r2_pull_to_disk(ctx, session_id: int, member_id: int, r2_key: str
         session_dir = os.path.join(video_dir, f"session_{session_id}")
         await asyncio.to_thread(os.makedirs, session_dir, exist_ok=True)
 
-        # 기존 해당 멤버 영상 정리 (교체)
-        def _cleanup():
-            for existing in os.listdir(session_dir):
-                full = os.path.join(session_dir, existing)
-                if os.path.isfile(full) and existing.startswith(f"{member_id}_"):
-                    try:
-                        os.remove(full)
-                    except OSError:
-                        pass
-        await asyncio.to_thread(_cleanup)
-
         save_name = f"{member_id}_{filename}"
         save_path = os.path.join(session_dir, save_name)
         tmp_path = save_path + ".tmp"
 
+        # R2 pull 을 먼저 tmp 로 받는다.
+        # pull 성공이 확인되기 전에는 기존 영상을 절대 삭제하지 않는다.
+        # (R2 오브젝트가 없을 때 기존 영상까지 잃는 사고 방지)
         try:
             size = await r2_svc.pull_to_disk(r2_key, tmp_path)
-            await asyncio.to_thread(os.replace, tmp_path, save_path)
         except Exception as e:
             try:
                 await asyncio.to_thread(os.remove, tmp_path)
             except OSError:
                 pass
             raise RuntimeError(f"R2 pull 실패: {e}")
+
+        # pull 성공 후에만 기존 해당 멤버 영상 정리(교체) + 원자적 교체
+        def _cleanup():
+            for existing in os.listdir(session_dir):
+                full = os.path.join(session_dir, existing)
+                if (os.path.isfile(full) and existing.startswith(f"{member_id}_")
+                        and full != tmp_path and full != save_path):
+                    try:
+                        os.remove(full)
+                    except OSError:
+                        pass
+        await asyncio.to_thread(_cleanup)
+        await asyncio.to_thread(os.replace, tmp_path, save_path)
 
         # 성공 시 R2 오브젝트 삭제 (무료 저장 한도 유지)
         try:
