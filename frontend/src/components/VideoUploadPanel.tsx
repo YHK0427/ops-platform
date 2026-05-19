@@ -107,11 +107,27 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     const videoMap = new Map<number, SessionVideo>();
     (uploadedVideos ?? []).forEach(v => videoMap.set(v.member_id, v));
 
-    // 영상 업로드된 발표자 auto-select
+    // 영상 업로드된 발표자 auto-select.
+    // 주의: uploadedVideos 가 폴링(refetch)으로 갱신될 때마다 선택을 전체로
+    // 리셋하면 안 됨 — 사용자가 일부 해제해도 되돌아가는 버그가 됨.
+    // 따라서 "새로 영상이 나타난 멤버"만 1회 자동 추가하고, 사용자의
+    // 수동 선택/해제는 보존한다.
+    const autoSelectedRef = useRef<Set<number>>(new Set());
     useEffect(() => {
-        const uploaded = new Set<number>();
-        presenters.forEach(p => { if (videoMap.has(p.member_id)) uploaded.add(p.member_id); });
-        setSelectedForNaver(uploaded);
+        const newlyUploaded: number[] = [];
+        presenters.forEach(p => {
+            if (videoMap.has(p.member_id) && !autoSelectedRef.current.has(p.member_id)) {
+                newlyUploaded.push(p.member_id);
+                autoSelectedRef.current.add(p.member_id);
+            }
+        });
+        if (newlyUploaded.length > 0) {
+            setSelectedForNaver(prev => {
+                const next = new Set(prev);
+                newlyUploaded.forEach(id => next.add(id));
+                return next;
+            });
+        }
     }, [uploadedVideos]);
 
     // videos 리스트에 파일이 나타나면 pendingPull 에서 제거 (= 서버 처리 완료)
