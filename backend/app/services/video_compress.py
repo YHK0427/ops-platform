@@ -1,12 +1,15 @@
 """영상 압축 서비스 — Intel iGPU 하드웨어 가속 (VAAPI) 우선, libx264 fallback.
 
 방침:
-- 1순위: h264_vaapi — Intel Quick Sync, CPU 거의 안 씀, 실시간 대비 8배 빠름
-  Rate control: CQP (Constant QP) — Intel iHD 드라이버가 이 GPU 에서 VBR 미지원.
-  QP 22 ≈ libx264 CRF 23 체감 화질.
-- 2순위 fallback: libx264 CRF 23 medium — VAAPI 실패 시 (device 없음, driver 이슈 등)
-- 해상도/fps 유지, 오디오는 128k AAC 재인코딩
-- +faststart: moov atom 앞으로 → 웹 스트리밍 시작 빠름
+- 1순위: h264_vaapi — HW 디코드 + HW 인코드. Rate control: CQP, QP 22.
+- 2순위 fallback: libx264 CRF 23 — VAAPI 실패 시 (device 없음, driver 이슈 등)
+- 1080p 다운스케일: 입력이 1080p 초과면 긴 변을 1920px로 축소(업스케일 안 함).
+  네이버 카페 영상엔 4K 불필요 — 출력 크기·인코딩 부하 동시 감소.
+- 오디오는 128k AAC 재인코딩, +faststart: moov atom 앞으로(웹 스트리밍 빠름)
+
+GPU VPP(scale_vaapi) 미가용 환경 대응:
+  iHD 드라이버에서 VideoProc 엔트리포인트가 없어 scale_vaapi 사용 불가.
+  대신 hwdownload → CPU(스케일+nv12 변환) → hwupload. 디코드·인코드는 GPU 유지.
 """
 from __future__ import annotations
 
@@ -29,6 +32,13 @@ VAAPI_DEVICE = "/dev/dri/renderD128"
 # libx264 fallback CRF
 LIBX264_CRF = 23
 
+# 다운스케일 — 긴 변 기준 상한(px). 초과 시 비율 유지하며 축소, 미만이면 그대로.
+# scale 필터 표현식: 1920×1920 박스에 decrease-fit → 가로/세로 영상 모두 안전.
+DOWNSCALE_VF = (
+    "scale=w='min(1920,iw)':h='min(1920,ih)'"
+    ":force_original_aspect_ratio=decrease:force_divisible_by=2"
+)
+
 
 def is_ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
@@ -42,21 +52,25 @@ def is_vaapi_available() -> bool:
 def _run_ffmpeg_vaapi(src: str, dst: str) -> None:
     """Intel VAAPI 하드웨어 인코딩 — HW 디코드 + HW 인코드 (CQP 모드).
 
-    GPU의 VPP(VideoProc)가 비활성이라 scale_vaapi 포맷 변환 불가.
-    대신 HW 디코드 → hwdownload → CPU nv12 변환 → hwupload → HW 인코드.
-    디코딩·인코딩은 GPU, 픽셀 포맷 변환만 CPU 경유.
+    GPU VPP(VideoProc) 미가용이라 스케일·픽셀포맷 변환만 CPU 경유:
+      HW 디코드 → (자동 RAM 다운로드) → CPU(다운스케일+nv12) → hwupload → HW 인코드.
+
+    중요: '-hwaccel_output_format vaapi' 와 수동 'hwdownload' 필터를 쓰지 않는다.
+      그 조합은 8비트 입력(디코드 표면 nv12)에 'format=p010le' 를 강제하면
+      stride 오독으로 화면 절반이 깨진다(왼쪽 쏠림+초록). 대신 '-hwaccel vaapi'
+      만 주면 ffmpeg 가 디코드 프레임을 알맞은 SW 포맷으로 자동 다운로드하므로
+      8/10비트 입력 모두 안전하다. (배포 서버 8비트 h264·10비트 HEVC 둘 다 검증)
     """
     cmd = [
         "ffmpeg", "-y",
-        # HW 디코드 + HW 인코드 모두 GPU. GPU VPP(scale_vaapi)가 비활성이라
-        # 10bit→8bit nv12 변환만 hwdownload→format→hwupload 로 CPU 경유.
-        "-init_hw_device", f"vaapi=va:{VAAPI_DEVICE}",
+        # HW 디코드 — hwaccel_output_format 미지정 → 프레임 자동 RAM 다운로드.
         "-hwaccel", "vaapi",
-        "-hwaccel_device", "va",
-        "-hwaccel_output_format", "vaapi",
+        "-hwaccel_device", VAAPI_DEVICE,
+        # hwupload(인코더 입력)용 디바이스.
+        "-init_hw_device", f"vaapi=va:{VAAPI_DEVICE}",
         "-filter_hw_device", "va",
         "-i", src,
-        "-vf", "hwdownload,format=p010le,format=nv12,hwupload",
+        "-vf", f"{DOWNSCALE_VF},format=nv12,hwupload",
         # GPU 인코더가 LP(VDEnc) 엔트리포인트만 살아있어 -low_power 1 필수.
         "-c:v", "h264_vaapi",
         "-low_power", "1",
@@ -73,10 +87,11 @@ def _run_ffmpeg_vaapi(src: str, dst: str) -> None:
 
 
 def _run_ffmpeg_libx264(src: str, dst: str) -> None:
-    """CPU H.264 (libx264) 인코딩 — VAAPI fallback."""
+    """CPU H.264 (libx264) 인코딩 — VAAPI fallback. 다운스케일 + 코어 제한."""
     cmd = [
         "ffmpeg", "-y",
         "-i", src,
+        "-vf", DOWNSCALE_VF,
         "-c:v", "libx264",
         "-preset", "medium",
         "-crf", str(LIBX264_CRF),
