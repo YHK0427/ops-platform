@@ -201,11 +201,11 @@ export default function Dashboard() {
     // 벌점 위험도 (누적벌점 5천원 부과 임박)
     const penaltyDangerMembers = sortedMembers?.filter(m => penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "danger") || [];
     // 퇴출 위험: 순점수 -13점 이하 (즉시 조치)
-    // 퇴출 경고: -8 ~ -12 (퇴출 임박)
+    // 퇴출 경고: -7 ~ -12 (퇴출 임박)
     const evictionMembers = sortedMembers?.filter((m) => (m.net_score || 0) <= -13) || [];
     const evictionWarnMembers = sortedMembers?.filter((m) => {
         const net = m.net_score || 0;
-        return net <= -8 && net > -13;
+        return net <= -7 && net > -13;
     }) || [];
 
     const totalRiskCount = penaltyDangerMembers.length + lowDepositMembers.length + unpaidMilestoneByMember.length + evictionMembers.length + evictionWarnMembers.length;

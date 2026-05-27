@@ -8,7 +8,7 @@ interface ScoreDisplayProps {
 }
 
 const EVICTION_THRESHOLD = -13;
-const WARNING_THRESHOLD = -10;
+const WARNING_THRESHOLD = -7;
 
 export function ScoreDisplay({
     totalPlus,
