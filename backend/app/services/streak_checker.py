@@ -14,8 +14,7 @@ async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
     규칙:
     - 해당 세션 포함, FINALIZED 세션 + 현재 세션을 날짜 역순으로 확인
     - PRESENT: 카운팅 +1
-    - EXCUSED: 스트릭 유지, 카운팅 건너뜀
-    - 그 외 (LATE, ABSENT 등): 스트릭 종료
+    - 그 외 (EXCUSED, LATE, ABSENT 등): 스트릭 종료
     - 가능한 스트릭 = 연속 출석 수 // 4
     - 이미 부여된 스트릭 수(현재 연속 구간 내)를 차감
       → 8주 연속 출석 시 4주차에 1번, 8주차에 또 1번 = 총 2번 스트릭
@@ -78,12 +77,10 @@ async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
         present_count = 0
         run_sessions: list[int] = []  # oldest-first로 재정렬할 PRESENT 세션들
 
-        # 최신순으로 연속 출석 카운팅 (EXCUSED 건너뜀, 나머지로 중단)
+        # 최신순으로 연속 출석 카운팅 (PRESENT만 카운트, 나머지로 중단)
         for sid in session_ids:
             status = member_att.get(sid)
-            if status == "EXCUSED":
-                continue
-            elif status == "PRESENT":
+            if status == "PRESENT":
                 present_count += 1
                 run_sessions.append(sid)
             else:
