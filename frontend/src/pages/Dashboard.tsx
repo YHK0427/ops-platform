@@ -346,7 +346,7 @@ export default function Dashboard() {
                                 members={evictionWarnMembers}
                                 tone="warning"
                                 icon={UserX}
-                                hint="순점수 -8 ~ -12점 (퇴출 임박)"
+                                hint="순점수 -7 ~ -12점 (퇴출 임박)"
                                 onMemberClick={(id) => navigate(`/members/${id}`)}
                             />
                             <RiskCard
