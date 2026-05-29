@@ -1187,9 +1187,23 @@ function GrowthReflectionsSection({ roundId }: { roundId: number }) {
         const text = reflections
             .map((r) => `▶ ${r.member_name}\n${r.growth_reflection.trim()}`)
             .join("\n\n──────────────\n\n");
+        setCopying(true);
         try {
-            setCopying(true);
-            await navigator.clipboard.writeText(text);
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                // HTTP/non-secure context (개발 서버 등) 폴백
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                ta.style.position = "fixed";
+                ta.style.left = "-9999px";
+                ta.setAttribute("readonly", "");
+                document.body.appendChild(ta);
+                ta.select();
+                const ok = document.execCommand("copy");
+                document.body.removeChild(ta);
+                if (!ok) throw new Error("execCommand copy failed");
+            }
             toast.success(`${submittedCount}건 클립보드에 복사됨`);
         } catch {
             toast.error("복사에 실패했습니다");
