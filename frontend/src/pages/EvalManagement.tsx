@@ -16,6 +16,8 @@ import {
     CheckCircle2,
     Circle,
     Copy,
+    MessageSquareHeart,
+    ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -60,6 +62,7 @@ import {
     useMyAssignments,
     useEvalResults,
     useMemberResult,
+    useEvalReflections,
     type EvalRound,
     type EvalAssignment,
     type MemberResultSummary,
@@ -1107,6 +1110,7 @@ function ResultsTab({
 }) {
     const { data: rounds } = useEvalRounds();
     const { data: results, isLoading } = useEvalResults(selectedRoundId ?? 0);
+    const selectedRound = rounds?.find((r) => r.id === selectedRoundId);
     const [expandedId, setExpandedId] = useState<number | null>(null);
 
     return (
@@ -1133,6 +1137,11 @@ function ResultsTab({
                     </SelectContent>
                 </Select>
             </div>
+
+            {/* 성장 회고 모아보기 — FINAL 라운드에서만 의미 있음 */}
+            {selectedRoundId && selectedRound?.round_type === "FINAL" && (
+                <GrowthReflectionsSection roundId={selectedRoundId} />
+            )}
 
             {/* Content */}
             {!selectedRoundId ? (
@@ -1162,6 +1171,109 @@ function ResultsTab({
                     ))}
                 </div>
             )}
+        </div>
+    );
+}
+
+function GrowthReflectionsSection({ roundId }: { roundId: number }) {
+    const { data: reflections, isLoading } = useEvalReflections(roundId);
+    const [open, setOpen] = useState(false);
+    const [copying, setCopying] = useState(false);
+
+    const submittedCount = reflections?.length ?? 0;
+
+    const handleCopyAll = async () => {
+        if (!reflections?.length) return;
+        const text = reflections
+            .map((r) => `▶ ${r.member_name}\n${r.growth_reflection.trim()}`)
+            .join("\n\n──────────────\n\n");
+        try {
+            setCopying(true);
+            await navigator.clipboard.writeText(text);
+            toast.success(`${submittedCount}건 클립보드에 복사됨`);
+        } catch {
+            toast.error("복사에 실패했습니다");
+        } finally {
+            setCopying(false);
+        }
+    };
+
+    return (
+        <div className="rounded-xl border border-rose-200 bg-rose-50/30">
+            <button
+                onClick={() => setOpen((v) => !v)}
+                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-rose-50/60 transition-colors text-left"
+            >
+                <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center shrink-0">
+                    <MessageSquareHeart className="w-4 h-4 text-rose-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-[var(--color-text-primary)]">
+                        성장 회고 모아보기
+                    </p>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                        자기평가 서술형 응답 — Q. 유니브피티 활동을 통해 가장 크게 성장했다고 느끼는 점
+                    </p>
+                </div>
+                <span className="text-xs text-[var(--color-text-muted)] shrink-0">
+                    {isLoading ? "..." : `${submittedCount}건`}
+                </span>
+                <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                    <ChevronDown className="w-5 h-5 text-[var(--color-text-muted)]" />
+                </motion.div>
+            </button>
+
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                        className="overflow-hidden border-t border-rose-200"
+                    >
+                        <div className="px-5 py-4 space-y-4">
+                            <div className="flex items-center justify-end">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleCopyAll}
+                                    disabled={!submittedCount || copying}
+                                    className="h-7 text-xs"
+                                >
+                                    <Copy className="w-3 h-3 mr-1.5" />
+                                    전체 복사
+                                </Button>
+                            </div>
+                            {isLoading ? (
+                                <div className="flex justify-center py-6">
+                                    <Loader2 className="w-5 h-5 animate-spin text-[var(--color-text-muted)]" />
+                                </div>
+                            ) : !submittedCount ? (
+                                <p className="text-sm text-[var(--color-text-muted)] text-center py-6">
+                                    아직 성장 회고 응답이 없습니다.
+                                </p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {reflections!.map((r) => (
+                                        <div
+                                            key={r.member_id}
+                                            className="rounded-lg border border-[var(--color-border)] bg-white p-4"
+                                        >
+                                            <p className="text-sm font-bold text-[var(--color-text-primary)] mb-2">
+                                                {r.member_name}
+                                            </p>
+                                            <p className="text-sm text-[var(--color-text-secondary)] leading-[1.9] whitespace-pre-wrap [word-break:keep-all]">
+                                                {r.growth_reflection}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

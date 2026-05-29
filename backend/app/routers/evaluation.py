@@ -152,6 +152,13 @@ class MemberResultDetail(BaseModel):
     growth_reflection: str | None = None
 
 
+class GrowthReflectionEntry(BaseModel):
+    member_id: int
+    member_name: str
+    growth_reflection: str
+    submitted_at: datetime | None = None
+
+
 class PendingSelfEval(BaseModel):
     round_id: int
     round_title: str
@@ -1024,6 +1031,40 @@ async def get_round_results(
         )
 
     return results
+
+
+@router.get(
+    "/rounds/{round_id}/reflections",
+    response_model=list[GrowthReflectionEntry],
+)
+async def get_round_reflections(
+    round_id: int,
+    _: dict = Depends(require_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    """라운드의 자기평가 성장 회고 서술형 응답 모음 (제출 + 비어있지 않음만)."""
+    await _get_round_or_404(db, round_id)
+    q = await db.execute(
+        select(EvalAssignment, Member)
+        .join(Member, Member.id == EvalAssignment.presenter_member_id)
+        .where(
+            EvalAssignment.round_id == round_id,
+            EvalAssignment.eval_type == "SELF",
+            EvalAssignment.submitted_at.isnot(None),
+            EvalAssignment.growth_reflection.isnot(None),
+        )
+        .order_by(Member.name)
+    )
+    return [
+        GrowthReflectionEntry(
+            member_id=m.id,
+            member_name=m.name,
+            growth_reflection=a.growth_reflection,
+            submitted_at=a.submitted_at,
+        )
+        for a, m in q.all()
+        if a.growth_reflection and a.growth_reflection.strip()
+    ]
 
 
 @router.get("/rounds/{round_id}/results/{member_id}", response_model=MemberResultDetail)

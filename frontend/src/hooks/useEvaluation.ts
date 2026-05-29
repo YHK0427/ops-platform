@@ -84,7 +84,15 @@ export const evalKeys = {
     results: (roundId: number) => [...evalKeys.all, "results", roundId] as const,
     memberResult: (roundId: number, memberId: number) =>
         [...evalKeys.all, "result", roundId, memberId] as const,
+    reflections: (roundId: number) => [...evalKeys.all, "reflections", roundId] as const,
 };
+
+export interface GrowthReflectionEntry {
+    member_id: number;
+    member_name: string;
+    growth_reflection: string;
+    submitted_at: string | null;
+}
 
 // ── Rounds ───────────────────────────────────────────────────────────────────
 
@@ -384,5 +392,18 @@ export function useMemberResult(roundId: number, memberId: number) {
             return data;
         },
         enabled: !!roundId && !!memberId,
+    });
+}
+
+export function useEvalReflections(roundId: number) {
+    return useQuery({
+        queryKey: evalKeys.reflections(roundId),
+        queryFn: async () => {
+            const { data } = await api.get<GrowthReflectionEntry[]>(
+                `/evaluations/rounds/${roundId}/reflections`
+            );
+            return data;
+        },
+        enabled: !!roundId,
     });
 }
