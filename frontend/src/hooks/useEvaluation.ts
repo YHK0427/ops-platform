@@ -61,6 +61,7 @@ export interface OpsResultDetail {
     combined_scores_by_domain: Record<string, number | null>;
     stage: string | null;
     type: string | null;
+    growth_reflection: string | null;
 }
 
 // ── Query Keys ───────────────────────────────────────────────────────────────

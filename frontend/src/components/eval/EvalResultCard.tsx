@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, MessageSquareHeart } from "lucide-react";
 import { cn } from "@/lib/utils";
 import GrowthReportContent, {
     DOMAINS,
@@ -23,6 +23,7 @@ interface DetailData {
     type: string | null;
     self_scores_by_question: Record<string, number | null>;
     audience_scores_by_question: Record<string, number | null>;
+    growth_reflection?: string | null;
 }
 
 interface EvalResultCardProps {
@@ -145,6 +146,24 @@ export default function EvalResultCard({
                         className="overflow-hidden"
                     >
                         <div className="px-5 pb-6 pt-4 border-t border-[var(--color-border-subtle)] space-y-5">
+                            {detail?.growth_reflection && detail.growth_reflection.trim() && (
+                                <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-5">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="w-7 h-7 rounded-lg bg-rose-100 flex items-center justify-center">
+                                            <MessageSquareHeart className="w-3.5 h-3.5 text-rose-500" />
+                                        </div>
+                                        <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
+                                            성장 회고 응답
+                                        </h3>
+                                        <span className="text-[10px] text-[var(--color-text-muted)] ml-auto">
+                                            유니브피티 활동을 통해 가장 크게 성장했다고 느끼는 점
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-[var(--color-text-secondary)] leading-[1.9] whitespace-pre-wrap [word-break:keep-all]">
+                                        {detail.growth_reflection}
+                                    </p>
+                                </div>
+                            )}
                             {growthData && (
                                 <GrowthReportContent
                                     data={growthData}

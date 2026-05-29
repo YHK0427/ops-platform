@@ -105,6 +105,8 @@ class AssignmentResponse(BaseModel):
 
 class ScoreSubmitRequest(BaseModel):
     scores: dict[str, int]
+    # FINAL 라운드 자기평가에서 입력하는 성장 회고 서술형 (선택)
+    growth_reflection: str | None = None
 
 
 class AudienceSubmitRequest(BaseModel):
@@ -147,6 +149,7 @@ class MemberResultDetail(BaseModel):
     combined_scores_by_domain: dict[str, float | None]
     stage: str | None = None
     type: str | None = None
+    growth_reflection: str | None = None
 
 
 class PendingSelfEval(BaseModel):
@@ -161,6 +164,8 @@ class PendingSelfEval(BaseModel):
 class SelfEvalForm(BaseModel):
     questions: list[dict]
     responses: dict[str, int]
+    round_type: str
+    growth_reflection: str | None = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -207,6 +212,18 @@ async def _build_member_result(
     db: AsyncSession, round_id: int, member_id: int, member_name: str
 ) -> MemberResultDetail:
     """단일 멤버의 상세 결과 구성."""
+    # 자기평가 배정 (성장 회고 서술형 포함)
+    self_assign_q = await db.execute(
+        select(EvalAssignment).where(
+            EvalAssignment.round_id == round_id,
+            EvalAssignment.presenter_member_id == member_id,
+            EvalAssignment.eval_type == "SELF",
+            EvalAssignment.submitted_at.isnot(None),
+        )
+    )
+    self_assignment = self_assign_q.scalar_one_or_none()
+    growth_reflection = self_assignment.growth_reflection if self_assignment else None
+
     # 자기평가 응답
     self_q = await db.execute(
         select(EvalResponse)
@@ -267,6 +284,7 @@ async def _build_member_result(
         combined_scores_by_domain=combined_by_domain,
         stage=stage,
         type=ptype,
+        growth_reflection=growth_reflection,
     )
 
 
@@ -1099,7 +1117,12 @@ async def member_self_eval_form(
 
     existing_responses = {r.question_key: r.score for r in assignment.responses}
 
-    return SelfEvalForm(questions=questions, responses=existing_responses)
+    return SelfEvalForm(
+        questions=questions,
+        responses=existing_responses,
+        round_type=round_.round_type,
+        growth_reflection=assignment.growth_reflection,
+    )
 
 
 @router.post("/member/round/{round_id}/submit")
@@ -1116,6 +1139,16 @@ async def member_self_eval_submit(
         raise HTTPException(status_code=400, detail="평가가 마감되었습니다")
 
     _validate_scores(body.scores)
+
+    # FINAL 라운드에 한해 성장 회고 서술형 필수 입력 검증
+    reflection_text: str | None = None
+    if round_.round_type == "FINAL":
+        reflection_text = (body.growth_reflection or "").strip()
+        if not reflection_text:
+            raise HTTPException(
+                status_code=400,
+                detail="성장 회고 응답은 필수입니다. 서술형 답변을 입력해 주세요.",
+            )
 
     # SELF 배정 확인
     assign_q = await db.execute(
@@ -1142,6 +1175,9 @@ async def member_self_eval_submit(
             )
         )
     assignment.submitted_at = datetime.now(timezone.utc)
+
+    if round_.round_type == "FINAL":
+        assignment.growth_reflection = reflection_text
 
     await db.commit()
     logger.info(f"self_eval_submit round={round_id} member={member['member_id']}")

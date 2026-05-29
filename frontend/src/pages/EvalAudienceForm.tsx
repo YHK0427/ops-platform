@@ -274,25 +274,57 @@ export default function EvalAudienceForm() {
 
                     {/* Intro card */}
                     <div className="rounded-xl border border-[var(--color-border)] bg-white p-6 sm:p-7">
-                        <div className="text-sm text-[var(--color-text-secondary)] leading-[2.0] space-y-5 [word-break:keep-all]">
-                            <p>
-                                유니브피티 33기 운영진 여러분 안녕하세요.
-                            </p>
-                            <p>
-                                본 평가는 유니브피티 교육과정 전후의 변화를 함께 확인하기 위한 <strong className="text-[var(--color-text-primary)]">성장 기록</strong>의 한 과정입니다.
-                            </p>
-                            <p>
-                                운영진 여러분의 평가는 기수들의 자기평가와 함께 정리되어, 한 사람의 발표 여정을 보다 <strong className="text-[var(--color-text-primary)]">입체적으로 보여주는 소중한 기준</strong>이 됩니다.
-                                평가는 개인 1 세션 발표와 최종 개인 발표를 기준으로 <strong className="text-[var(--color-text-primary)]">총 두 차례</strong> 진행됩니다.
-                            </p>
-                            <p>
-                                운영진 평가는 우열을 가리기 위한 절대적 잣대가 아니라, 발표자가 인지하지 못했을 수 있는 <strong className="text-[var(--color-text-primary)]">강점과 보완점</strong>을 외부의 시각으로 비춰주는 역할을 합니다.
-                                이를 통해 기수들의 현재 위치를 보다 선명하게 확인하고, 다음 단계로 나아갈 방향을 제시하게 됩니다.
-                            </p>
-                            <p className="font-medium text-[var(--color-text-primary)]">
-                                따라서 개인적 호불호보다는 평가 문항의 기준에 따라 <span className="text-[var(--color-accent)]">일관되고 객관적인 시각</span>으로 판단해 주시기 바랍니다.
-                            </p>
-                        </div>
+                        {round?.round_type === "FINAL" ? (
+                            <div className="text-sm text-[var(--color-text-secondary)] leading-[2.0] space-y-5 [word-break:keep-all]">
+                                <p>
+                                    유니브피티 33기 운영진 여러분 안녕하세요.
+                                </p>
+                                <p>
+                                    본 평가는 개인 발표를 마무리하며 유니브피티 교육과정 전후의 변화를 함께 확인하기 위한 <strong className="text-[var(--color-text-primary)]">후기 평가</strong>입니다.
+                                </p>
+                                <p>
+                                    운영진 여러분의 평가는 기수들의 자기평가와 함께 정리되어, 한 사람의 발표 여정을 보다 <strong className="text-[var(--color-text-primary)]">입체적으로 보여주는 소중한 기준</strong>이 됩니다.
+                                </p>
+                                <p>
+                                    여러분의 응답은 초기 평가 결과와 함께 분석되어, 기수들에게 <strong className="text-[var(--color-accent)]">최종 개인별 발표 성장 리포트</strong>로 제공됩니다.
+                                </p>
+                                <p>
+                                    운영진 평가는 우열을 가리기 위한 절대적 잣대가 아니라, 발표자가 인지하지 못했을 수 있는 <strong className="text-[var(--color-text-primary)]">강점과 보완점</strong>을 외부의 시각으로 비춰주는 역할을 합니다.
+                                </p>
+                                <p>
+                                    이를 통해 기수들의 현재 위치를 보다 선명하게 확인하고, <strong className="text-[var(--color-text-primary)]">다음 단계로 나아갈 방향</strong>을 제시하게 됩니다.
+                                </p>
+                                <p className="font-medium text-[var(--color-text-primary)]">
+                                    따라서 개인적 호불호나 단순한 인상보다는, 처음 평가했을 때의 기준을 바탕으로 기수들이 보여준 변화와 성장을 <span className="text-[var(--color-accent)]">일관되고 객관적인 시각</span>으로 판단해 주시기 바랍니다.
+                                </p>
+                                <p className="text-[var(--color-text-secondary)]">
+                                    바쁜 학기 중에도 기수들의 성장을 위해 늘 가장 가까이서 애써주시는 운영진 여러분께 진심으로 감사드립니다.
+                                </p>
+                                <p className="text-xs text-[var(--color-text-muted)] pt-2 border-t border-[var(--color-border-subtle)]">
+                                    발표성장리포트 TF 일동 (장영진, 이현아, 김태형, 김영헌)
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="text-sm text-[var(--color-text-secondary)] leading-[2.0] space-y-5 [word-break:keep-all]">
+                                <p>
+                                    유니브피티 33기 운영진 여러분 안녕하세요.
+                                </p>
+                                <p>
+                                    본 평가는 유니브피티 교육과정 전후의 변화를 함께 확인하기 위한 <strong className="text-[var(--color-text-primary)]">성장 기록</strong>의 한 과정입니다.
+                                </p>
+                                <p>
+                                    운영진 여러분의 평가는 기수들의 자기평가와 함께 정리되어, 한 사람의 발표 여정을 보다 <strong className="text-[var(--color-text-primary)]">입체적으로 보여주는 소중한 기준</strong>이 됩니다.
+                                    평가는 개인 1 세션 발표와 최종 개인 발표를 기준으로 <strong className="text-[var(--color-text-primary)]">총 두 차례</strong> 진행됩니다.
+                                </p>
+                                <p>
+                                    운영진 평가는 우열을 가리기 위한 절대적 잣대가 아니라, 발표자가 인지하지 못했을 수 있는 <strong className="text-[var(--color-text-primary)]">강점과 보완점</strong>을 외부의 시각으로 비춰주는 역할을 합니다.
+                                    이를 통해 기수들의 현재 위치를 보다 선명하게 확인하고, 다음 단계로 나아갈 방향을 제시하게 됩니다.
+                                </p>
+                                <p className="font-medium text-[var(--color-text-primary)]">
+                                    따라서 개인적 호불호보다는 평가 문항의 기준에 따라 <span className="text-[var(--color-accent)]">일관되고 객관적인 시각</span>으로 판단해 주시기 바랍니다.
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     {/* Question intro section */}

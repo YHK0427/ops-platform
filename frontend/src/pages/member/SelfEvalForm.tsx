@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSelfEvalForm, useSubmitSelfEval } from "@/hooks/useMemberEvaluation";
 import { LikertScale } from "@/components/eval/LikertScale";
 import { motion } from "framer-motion";
-import { ArrowLeft, Send, CheckCircle2, ClipboardList, Sparkles } from "lucide-react";
+import { ArrowLeft, Send, CheckCircle2, ClipboardList, Sparkles, MessageSquareHeart } from "lucide-react";
 
 const DOMAIN_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
     PLANNING: { label: "기획", color: "text-blue-600", bg: "bg-blue-50", border: "border-l-blue-500" },
@@ -19,6 +19,8 @@ const SCALE_LABELS: Record<number, string> = {
     5: "매우 그렇다",
 };
 
+type Step = "intro" | "reflection" | "questions";
+
 export default function SelfEvalForm() {
     const { roundId } = useParams<{ roundId: string }>();
     const navigate = useNavigate();
@@ -26,7 +28,17 @@ export default function SelfEvalForm() {
     const submitMutation = useSubmitSelfEval();
 
     const [scores, setScores] = useState<Record<string, number>>({});
-    const [step, setStep] = useState<"intro" | "questions">("intro");
+    const [reflection, setReflection] = useState<string>("");
+    const [step, setStep] = useState<Step>("intro");
+
+    const isFinal = data?.round_type === "FINAL";
+
+    // 기존 reflection 로드
+    useEffect(() => {
+        if (data?.growth_reflection) {
+            setReflection(data.growth_reflection);
+        }
+    }, [data?.growth_reflection]);
 
     const effectiveScores = useMemo(() => {
         if (!data?.responses) return scores;
@@ -59,12 +71,20 @@ export default function SelfEvalForm() {
         setScores((prev) => ({ ...prev, [key]: value }));
     };
 
+    const reflectionTrimmed = reflection.trim();
+    const reflectionMissing = isFinal && reflectionTrimmed.length === 0;
+
     const handleSubmit = async () => {
         if (!roundId || !allAnswered) return;
+        if (reflectionMissing) {
+            setStep("reflection");
+            return;
+        }
         try {
             await submitMutation.mutateAsync({
                 roundId,
                 scores: effectiveScores,
+                growth_reflection: isFinal ? reflectionTrimmed : undefined,
             });
             if (!isAlreadySubmitted) {
                 navigate(`/member/eval/${roundId}/complete`, { replace: true });
@@ -133,10 +153,12 @@ export default function SelfEvalForm() {
                                 UnivPT 33기
                             </span>
                             <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900 mb-1.5">
-                                나의 발표 성장 기록
+                                {isFinal ? "발표 성장 리포트 · 후기 평가" : "나의 발표 성장 기록"}
                             </h2>
                             <p className="text-sm text-gray-500">
-                                자기 평가를 통해 나의 변화를 확인해 보세요
+                                {isFinal
+                                    ? "처음의 나와 지금의 나를 비교하는 마지막 성장 기록"
+                                    : "자기 평가를 통해 나의 변화를 확인해 보세요"}
                             </p>
                         </motion.div>
                     </div>
@@ -148,29 +170,60 @@ export default function SelfEvalForm() {
                         transition={{ delay: 0.2, duration: 0.4 }}
                         className="p-5 sm:p-6 rounded-xl bg-white border border-gray-200 shadow-sm"
                     >
-                        <div className="text-sm text-gray-600 leading-[2.0] space-y-5 [word-break:keep-all]">
-                            <p>
-                                유니브피티 33기 기수 여러분 안녕하세요.
-                            </p>
-                            <p>
-                                본 평가는 유니브피티 교육 과정의 시작과 끝에서 <strong className="text-gray-800">나의 변화를 직접 확인</strong>해 보기 위한 성장 기록입니다.
-                                평가는 개인 1 세션 발표와 최종 개인 발표를 기준으로 <strong className="text-gray-800">총 두 차례</strong> 진행됩니다.
-                            </p>
-                            <p>
-                                여러분의 응답은 <strong className="text-rose-600">개인별 발표 성장 리포트</strong>로 정리되어, 지금의 강점과 앞으로 더 발전시킬 방향을 제시해 드립니다.
-                                이를 통해 스스로의 가능성을 구체적인 목표로 연결할 수 있도록 돕고자 합니다.
-                            </p>
-                            <p>
-                                또한 사전·사후 결과를 비교하여, <strong className="text-gray-800">내가 얼마나 성장했는지를 직접 확인</strong>할 수 있습니다.
-                                수상 여부와 관계없이, 나의 노력과 변화의 과정을 수치와 피드백으로 남길 수 있다는 점에서 의미가 있습니다.
-                            </p>
-                            <p className="text-gray-700 font-medium">
-                                이 평가는 경쟁을 위한 자리가 아니라, <span className="text-rose-600">어제의 나보다 더 나아진 오늘의 나</span>를 확인하는 과정입니다.
-                            </p>
-                            <p>
-                                정답은 없으니 나를 있는 그대로 바라보고, 현재 나의 모습에 가장 가까운 항목에 <strong className="text-gray-800">솔직하게 응답</strong>해 주세요.
-                            </p>
-                        </div>
+                        {isFinal ? (
+                            <div className="text-sm text-gray-600 leading-[2.0] space-y-5 [word-break:keep-all]">
+                                <p>
+                                    유니브피티 33기 기수 여러분 안녕하세요.
+                                </p>
+                                <p>
+                                    본 평가는 유니브피티 개인 발표를 마무리하며, <strong className="text-gray-800">처음의 나와 지금의 나를 비교</strong>해 보는 마지막 성장 기록입니다.
+                                    초기 평가와 동일한 기준으로 진행되며, 여러분의 발표가 어떤 방향으로 변화하고 성장했는지를 확인하기 위해 마련되었습니다.
+                                </p>
+                                <p>
+                                    여러분의 응답은 <strong className="text-rose-600">초기 평가 결과와 함께 분석</strong>되어, <strong className="text-rose-600">개인별 발표 성장 리포트</strong>로 제공됩니다.
+                                    이를 통해 단순한 점수 변화뿐만 아니라 어떤 영역이 성장했는지, 어떤 강점이 더욱 뚜렷해졌는지, 앞으로 어떤 방향으로 발전해 나갈 수 있는지를 함께 확인할 수 있습니다.
+                                    유니브피티에서의 발표 경험, 피드백, 팀 활동, 연습 과정 속에서 여러분 각자가 만들어낸 <strong className="text-gray-800">변화와 성장의 흔적을 돌아보는 기회</strong>가 되길 바랍니다.
+                                </p>
+                                <p>
+                                    정답은 없으니 처음 평가했을 때와 비교하며, 현재의 나에게 가장 가까운 모습에 <strong className="text-gray-800">솔직하게 응답</strong>해 주세요.
+                                </p>
+                                <p className="text-gray-700">
+                                    바쁜 학기와 유피를 병행하며 여기까지 오신 여러분 모두 수고 많으셨고 잘하셨다고 말씀드리고 싶습니다.
+                                    여러분의 열정 가득한 성장 과정을 가장 가까이서 지켜보고 함께할 수 있어 참 뜻깊게 생각합니다.
+                                    총 6번의 개인 발표를 통해 <span className="text-rose-600 font-medium">멋지게 성장하셨을 여러분의 모습</span>이 무척 기대됩니다!
+                                </p>
+                                <p className="text-gray-700">
+                                    개인 발표는 이제 마무리 단계이지만, 앞으로 남은 대형 팀 프로젝트 BP와 피날래까지 여러분의 계속될 성장을 늘 응원하겠습니다.
+                                </p>
+                                <p className="text-xs text-gray-400 pt-2 border-t border-gray-100">
+                                    발표성장리포트 TF 일동 (장영진, 이현아, 김태형, 김영헌)
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="text-sm text-gray-600 leading-[2.0] space-y-5 [word-break:keep-all]">
+                                <p>
+                                    유니브피티 33기 기수 여러분 안녕하세요.
+                                </p>
+                                <p>
+                                    본 평가는 유니브피티 교육 과정의 시작과 끝에서 <strong className="text-gray-800">나의 변화를 직접 확인</strong>해 보기 위한 성장 기록입니다.
+                                    평가는 개인 1 세션 발표와 최종 개인 발표를 기준으로 <strong className="text-gray-800">총 두 차례</strong> 진행됩니다.
+                                </p>
+                                <p>
+                                    여러분의 응답은 <strong className="text-rose-600">개인별 발표 성장 리포트</strong>로 정리되어, 지금의 강점과 앞으로 더 발전시킬 방향을 제시해 드립니다.
+                                    이를 통해 스스로의 가능성을 구체적인 목표로 연결할 수 있도록 돕고자 합니다.
+                                </p>
+                                <p>
+                                    또한 사전·사후 결과를 비교하여, <strong className="text-gray-800">내가 얼마나 성장했는지를 직접 확인</strong>할 수 있습니다.
+                                    수상 여부와 관계없이, 나의 노력과 변화의 과정을 수치와 피드백으로 남길 수 있다는 점에서 의미가 있습니다.
+                                </p>
+                                <p className="text-gray-700 font-medium">
+                                    이 평가는 경쟁을 위한 자리가 아니라, <span className="text-rose-600">어제의 나보다 더 나아진 오늘의 나</span>를 확인하는 과정입니다.
+                                </p>
+                                <p>
+                                    정답은 없으니 나를 있는 그대로 바라보고, 현재 나의 모습에 가장 가까운 항목에 <strong className="text-gray-800">솔직하게 응답</strong>해 주세요.
+                                </p>
+                            </div>
+                        )}
                     </motion.div>
                 </motion.main>
 
@@ -178,11 +231,92 @@ export default function SelfEvalForm() {
                     <div className="mx-auto max-w-2xl px-4 py-3">
                         <motion.button
                             whileTap={{ scale: 0.97 }}
-                            onClick={() => setStep("questions")}
+                            onClick={() => setStep(isFinal ? "reflection" : "questions")}
                             className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 text-white text-sm font-bold hover:from-rose-600 hover:to-rose-700 transition-all shadow-lg shadow-rose-500/25"
                         >
                             <Sparkles className="w-4 h-4" />
-                            평가 시작하기
+                            {isFinal ? "다음으로" : "평가 시작하기"}
+                        </motion.button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (step === "reflection") {
+        return (
+            <div className="member-page">
+                <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200">
+                    <div className="mx-auto max-w-2xl flex items-center gap-3 px-4 py-3">
+                        <button
+                            onClick={() => setStep("intro")}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                            <ArrowLeft className="w-5 h-5" />
+                        </button>
+                        <h1 className="text-base font-bold text-gray-900">
+                            나의 성장 돌아보기
+                        </h1>
+                    </div>
+                </header>
+
+                <motion.main
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                    className="mx-auto w-full max-w-2xl px-4 py-6 pb-28"
+                >
+                    <div className="mb-6 p-5 sm:p-6 rounded-xl bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-100">
+                        <div className="flex items-start gap-3">
+                            <div className="shrink-0 mt-0.5 w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center">
+                                <MessageSquareHeart className="w-4 h-4 text-rose-500" />
+                            </div>
+                            <div className="text-sm text-gray-600 leading-[1.9] space-y-3 [word-break:keep-all]">
+                                <p>
+                                    이번 평가는 단순히 현재의 발표 역량을 확인하는 것을 넘어, <strong className="text-gray-800">유니브피티 활동을 통해 어떤 변화와 성장을 경험했는지 돌아보기</strong> 위해 마련되었습니다.
+                                </p>
+                                <p>
+                                    본격적인 평가에 앞서 아래 질문을 통해 스스로의 성장을 자유롭게 되돌아보세요.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-5 sm:p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
+                        <label className="block">
+                            <p className="text-sm font-bold text-gray-900 mb-3 leading-[1.8] [word-break:keep-all]">
+                                Q. 유니브피티 활동을 통해, 가장 크게 성장했다고 느끼는 점은 무엇인가요?
+                                <span className="ml-1.5 text-rose-500">*</span>
+                            </p>
+                            <textarea
+                                value={reflection}
+                                onChange={(e) => setReflection(e.target.value)}
+                                placeholder="자유롭게 작성해 주세요. (필수)"
+                                rows={8}
+                                className="w-full px-4 py-3 rounded-lg border border-gray-200 text-sm text-gray-700 leading-[1.8] focus:outline-none focus:ring-2 focus:ring-rose-300 focus:border-rose-300 resize-y min-h-[180px]"
+                            />
+                            <div className="flex items-center justify-between mt-2">
+                                <p className="text-xs text-rose-500 font-medium">
+                                    * 필수 응답 항목입니다
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                    {reflection.length.toLocaleString()}자
+                                </p>
+                            </div>
+                        </label>
+                    </div>
+                </motion.main>
+
+                <div className="fixed bottom-0 inset-x-0 z-10 bg-white/90 backdrop-blur-md border-t border-gray-200">
+                    <div className="mx-auto max-w-2xl px-4 py-3">
+                        <motion.button
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => setStep("questions")}
+                            disabled={reflectionTrimmed.length === 0}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 text-white text-sm font-bold hover:from-rose-600 hover:to-rose-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-rose-500/25"
+                        >
+                            <Sparkles className="w-4 h-4" />
+                            {reflectionTrimmed.length === 0 ? "성장 회고를 입력해 주세요" : "평가 시작하기"}
                         </motion.button>
                     </div>
                 </div>
@@ -198,7 +332,7 @@ export default function SelfEvalForm() {
             <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200">
                 <div className="mx-auto max-w-2xl flex items-center gap-3 px-4 py-3">
                     <button
-                        onClick={() => navigate("/member")}
+                        onClick={() => setStep(isFinal ? "reflection" : "intro")}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
                     >
                         <ArrowLeft className="w-5 h-5" />
@@ -342,9 +476,11 @@ export default function SelfEvalForm() {
                             ? "제출 중..."
                             : !allAnswered
                               ? `${totalQuestions - answeredCount}개 문항이 남았습니다`
-                              : isAlreadySubmitted
-                                ? "재제출하기"
-                                : "평가 제출하기"}
+                              : reflectionMissing
+                                ? "성장 회고 입력이 필요합니다"
+                                : isAlreadySubmitted
+                                  ? "재제출하기"
+                                  : "평가 제출하기"}
                     </motion.button>
 
                     {submitMutation.isError && (

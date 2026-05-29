@@ -24,6 +24,8 @@ export interface SelfEvalQuestion {
 export interface SelfEvalFormData {
     questions: SelfEvalQuestion[];
     responses: Record<string, number>;   // existing responses {question_key: score}
+    round_type: "INITIAL" | "FINAL" | "COMBINED";
+    growth_reflection: string | null;
 }
 
 export interface MemberResultDetail {
@@ -36,6 +38,7 @@ export interface MemberResultDetail {
     combined_scores_by_domain: Record<string, number | null>;
     stage: string | null;
     type: string | null;
+    growth_reflection: string | null;
 }
 
 // ── Query Keys ─────────────────────────────────────────────────────────
@@ -97,14 +100,16 @@ export function useSubmitSelfEval() {
         mutationFn: async ({
             roundId,
             scores,
+            growth_reflection,
         }: {
             roundId: number | string;
             scores: Record<string, number>;
+            growth_reflection?: string | null;
         }) => {
             const id = Number(roundId);
             const { data } = await memberApi.post(
                 `/evaluations/member/round/${id}/submit`,
-                { scores },
+                { scores, growth_reflection },
             );
             return { ...data, roundId: id };
         },

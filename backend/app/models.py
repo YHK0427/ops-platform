@@ -325,6 +325,8 @@ class EvalAssignment(Base):
     presenter_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
     eval_type = Column(String(20), nullable=False)
     submitted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    # FINAL 라운드 SELF 평가에서 입력하는 성장 회고 서술형 (그 외에는 NULL)
+    growth_reflection = Column(Text, nullable=True)
 
     __table_args__ = (
         CheckConstraint("eval_type IN ('SELF','AUDIENCE')", name="ck_eval_assign_type"),
