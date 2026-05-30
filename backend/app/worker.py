@@ -195,6 +195,11 @@ async def task_r2_pull_to_disk(ctx, session_id: int, member_id: int, r2_key: str
         def _cleanup():
             for existing in os.listdir(session_dir):
                 full = os.path.join(session_dir, existing)
+                # 진행 중인 압축/업로드 임시파일은 절대 건드리지 않는다.
+                # (.compressed.tmp / .tmp 가 member prefix 로 시작해도 보호 —
+                #  중복 업로드 시 진행 중이던 압축의 tmp 를 지워 VAAPI 가 깨지는 버그 방지)
+                if existing.endswith(".compressed.tmp") or existing.endswith(".tmp"):
+                    continue
                 if (os.path.isfile(full) and existing.startswith(f"{member_id}_")
                         and full != tmp_path and full != save_path):
                     try:
@@ -238,7 +243,11 @@ async def task_compress_video(ctx, session_id: int, member_id: int, path: str):
     동시성: Redis 락으로 서버 전체에서 한 번에 1개만 실행.
     다른 압축이 진행 중이면 30초 후 재시도로 defer (ARQ slot 안 잡아먹음)."""
     import os
-    from app.services.video_compress import compress_in_place, is_ffmpeg_available
+    from app.services.video_compress import (
+        compress_in_place,
+        is_ffmpeg_available,
+        COMPRESS_THRESHOLD_MB,
+    )
 
     if not is_ffmpeg_available():
         logger.warning("ffmpeg 미설치 — 압축 스킵")
@@ -276,6 +285,15 @@ async def task_compress_video(ctx, session_id: int, member_id: int, path: str):
         return {"status": "skipped", "reason": "file vanished"}
 
     original_mb_start = round(_os.path.getsize(path) / (1024 * 1024), 1)
+    # 실행 시점 크기가 임계값 이하면 재압축 불필요 — 스킵.
+    # (중복 업로드로 이미 압축된 작은 파일이 다시 큐잉되는 경우 GPU/락 낭비 방지)
+    if original_mb_start <= COMPRESS_THRESHOLD_MB:
+        logger.info(
+            f"compress_skip_small session={session_id} member={member_id} "
+            f"size={original_mb_start}MB (<= {COMPRESS_THRESHOLD_MB}MB) — 재압축 생략"
+        )
+        return {"status": "skipped", "reason": "below_threshold", "size_mb": original_mb_start}
+
     logger.log(25, f"🗜️ 압축 시작 — {member_name} ({original_mb_start}MB)")
     try:
         original, compressed, encoder = await compress_in_place(path)
