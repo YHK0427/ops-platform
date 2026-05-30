@@ -1470,6 +1470,48 @@ async def update_team_order(
     return {"status": "ok", "updated": len(body)}
 
 
+# ── 클라이언트 업로드 진단 로그 (브라우저→R2 직접 PUT 실패는 서버를 안 거치므로
+#    프론트가 각 단계 결과를 여기로 보고 → 서버 로그/텔레그램으로 원인 파악) ──────
+# 인증 없음: 토큰 만료(401) 상황에서도 진단을 받아야 하기 때문. 정보성이라 부작용 없음.
+
+
+@router.post("/{session_id}/videos/{member_id}/upload-diag")
+async def upload_diag(
+    session_id: int,
+    member_id: int,
+    request: Request,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """프론트엔드 업로드 단계별 진단 보고 수신 (presign/r2_put/finalize 등)."""
+    m = await db.get(Member, member_id)
+    name = m.name if m else f"#{member_id}"
+    ip = get_real_ip(request) if "get_real_ip" in globals() else (request.client.host if request.client else "?")
+
+    stage = str(body.get("stage", "?"))
+    ok = bool(body.get("ok", False))
+    status_code = body.get("status")
+    message = body.get("message")
+    size_mb = body.get("size_mb")
+    elapsed_ms = body.get("elapsed_ms")
+    presign_age_ms = body.get("presign_age_ms")
+    ua = body.get("ua")
+    filename = body.get("filename")
+
+    line = (
+        f"📡 업로드진단 [{stage}] {'OK' if ok else '실패'} — {name} "
+        f"session={session_id} member={member_id} status={status_code} "
+        f"size={size_mb}MB elapsed={elapsed_ms}ms presign_age={presign_age_ms}ms "
+        f"file={filename} ip={ip} msg={message} ua={ua}"
+    )
+    if ok:
+        logger.info(line)
+    else:
+        # 실패는 WARNING → 텔레그램 alert 채널로도 즉시 전송
+        logger.warning(line)
+    return {"ok": True}
+
+
 # ── R2 직접 업로드 (Cloudflare Tunnel 100MB 제한 우회) ────────────────────────
 # 흐름: 클라 → 서버에서 presigned URL 요청 → R2로 직접 PUT → 서버에 finalize 알림
 #       → ARQ worker가 R2에서 로컬로 pull + R2 오브젝트 삭제

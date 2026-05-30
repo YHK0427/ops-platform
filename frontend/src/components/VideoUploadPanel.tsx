@@ -6,6 +6,7 @@ import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle
 import { useSessionVideos, useDeleteSessionVideo, useUploadVideos } from "@/hooks";
 import type { SessionVideo } from "@/hooks";
 import { getToken } from "@/lib/api";
+import { reportUploadDiag } from "@/lib/uploadDiag";
 import { toast } from "sonner";
 
 interface PresenterSlot {
@@ -210,6 +211,9 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
         const token = getToken();
         if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
+        const sizeMb = Math.round((file.size / 1024 / 1024) * 10) / 10;
+        const t0 = Date.now();
+
         xhr.upload.onprogress = (e) => {
             if (e.lengthComputable) {
                 const pct = Math.round((e.loaded / e.total) * 100);
@@ -217,7 +221,14 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             }
         };
         xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
+            const okStatus = xhr.status >= 200 && xhr.status < 300;
+            reportUploadDiag({
+                session_id: sessionId, member_id: memberId, stage: "single",
+                ok: okStatus, status: xhr.status, size_mb: sizeMb,
+                elapsed_ms: Date.now() - t0, filename: file.name,
+                message: okStatus ? null : "single upload non-2xx",
+            });
+            if (okStatus) {
                 setUploads(prev => ({ ...prev, [memberId]: { progress: 100, uploading: false } }));
                 toast.success("영상 업로드 완료");
                 refetch();
@@ -228,6 +239,12 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             onDone();
         };
         xhr.onerror = () => {
+            reportUploadDiag({
+                session_id: sessionId, member_id: memberId, stage: "single",
+                ok: false, status: xhr.status || 0, size_mb: sizeMb,
+                elapsed_ms: Date.now() - t0, filename: file.name,
+                message: "single upload network error (xhr.onerror)",
+            });
             setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false, error: "네트워크 오류 — 다시 시도해주세요" } }));
             toast.error("네트워크 오류");
             onDone();
@@ -259,8 +276,12 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             onDone();
         };
 
+        const sizeMb = Math.round((file.size / 1024 / 1024) * 10) / 10;
+        let presignAt = 0; // presign 발급 시각 (R2 PUT 만료 판단용)
+
         try {
             // 1. presign
+            const presignT0 = Date.now();
             const presignRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/r2/presign`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeader },
@@ -275,10 +296,20 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                 toast.info("R2 미설정 — 서버 직접 업로드로 전환");
                 return singleUpload(memberId, file, onDone);
             }
-            if (!presignRes.ok) throw new Error(`presign 실패 (${presignRes.status})`);
+            if (!presignRes.ok) {
+                reportUploadDiag({
+                    session_id: sessionId, member_id: memberId, stage: "presign",
+                    ok: false, status: presignRes.status, size_mb: sizeMb,
+                    elapsed_ms: Date.now() - presignT0, filename: file.name,
+                    message: "presign non-ok",
+                });
+                throw new Error(`presign 실패 (${presignRes.status})`);
+            }
             const { upload_url, key, content_type } = await presignRes.json();
+            presignAt = Date.now();
 
-            // 2. R2 PUT (XHR로 progress 추적)
+            // 2. R2 PUT (XHR로 progress 추적) — 브라우저→R2 직접, 백엔드 미경유
+            const putT0 = Date.now();
             await new Promise<void>((resolve, reject) => {
                 if (aborted) { reject(new Error("aborted")); return; }
                 const xhr = new XMLHttpRequest();
@@ -293,10 +324,37 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                     }
                 };
                 xhr.onload = () => {
-                    if (xhr.status >= 200 && xhr.status < 300) resolve();
+                    const okStatus = xhr.status >= 200 && xhr.status < 300;
+                    reportUploadDiag({
+                        session_id: sessionId, member_id: memberId, stage: "r2_put",
+                        ok: okStatus, status: xhr.status, size_mb: sizeMb,
+                        elapsed_ms: Date.now() - putT0, presign_age_ms: Date.now() - presignAt,
+                        filename: file.name,
+                        message: okStatus ? null : "R2 PUT non-2xx (만료/CORS/거부 가능)",
+                    });
+                    if (okStatus) resolve();
                     else reject(new Error(`R2 PUT 실패 (${xhr.status})`));
                 };
-                xhr.onerror = () => reject(new Error("R2 네트워크 오류"));
+                xhr.onerror = () => {
+                    // status 0 = CORS 차단 / 네트워크 끊김 — 가장 흔한 무로그 실패
+                    reportUploadDiag({
+                        session_id: sessionId, member_id: memberId, stage: "r2_put",
+                        ok: false, status: xhr.status || 0, size_mb: sizeMb,
+                        elapsed_ms: Date.now() - putT0, presign_age_ms: Date.now() - presignAt,
+                        filename: file.name,
+                        message: "R2 PUT network/CORS error (xhr.onerror, status=0이면 CORS/차단 의심)",
+                    });
+                    reject(new Error("R2 네트워크 오류"));
+                };
+                xhr.ontimeout = () => {
+                    reportUploadDiag({
+                        session_id: sessionId, member_id: memberId, stage: "r2_put",
+                        ok: false, status: xhr.status || 0, size_mb: sizeMb,
+                        elapsed_ms: Date.now() - putT0, presign_age_ms: Date.now() - presignAt,
+                        filename: file.name, message: "R2 PUT timeout",
+                    });
+                    reject(new Error("R2 PUT 타임아웃"));
+                };
                 xhr.onabort = () => reject(new Error("aborted"));
                 xhrRefs.current[memberId] = xhr as any;
                 xhr.send(file);
@@ -305,6 +363,7 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             if (aborted) throw new Error("aborted");
 
             // 3. 서버 finalize → ARQ pull 태스크 큐잉
+            const finalizeT0 = Date.now();
             const finalizeRes = await fetch(`/api/v1/sessions/${sessionId}/videos/${memberId}/r2/finalize`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeader },
@@ -312,8 +371,19 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             });
             if (!finalizeRes.ok) {
                 const errTxt = await finalizeRes.text().catch(() => "");
+                reportUploadDiag({
+                    session_id: sessionId, member_id: memberId, stage: "finalize",
+                    ok: false, status: finalizeRes.status, size_mb: sizeMb,
+                    elapsed_ms: Date.now() - finalizeT0, presign_age_ms: Date.now() - presignAt,
+                    filename: file.name, message: `finalize non-ok: ${errTxt}`.slice(0, 300),
+                });
                 throw new Error(`finalize 실패 (${finalizeRes.status}) ${errTxt}`);
             }
+            reportUploadDiag({
+                session_id: sessionId, member_id: memberId, stage: "finalize",
+                ok: true, status: finalizeRes.status, size_mb: sizeMb,
+                presign_age_ms: Date.now() - presignAt, filename: file.name,
+            });
 
             // R2 업로드 끝! 사용자는 이 시점에 사이트 나가도 됨.
             // 서버 pull 은 백그라운드에서 진행 → pendingPull 에 기록해두고
@@ -327,6 +397,12 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                 setUploads(prev => ({ ...prev, [memberId]: { progress: 0, uploading: false } }));
                 toast.info("업로드가 중지되었습니다.");
             } else {
+                reportUploadDiag({
+                    session_id: sessionId, member_id: memberId, stage: "catch",
+                    ok: false, size_mb: sizeMb,
+                    presign_age_ms: presignAt ? Date.now() - presignAt : null,
+                    filename: file.name, message: `catch: ${err?.message ?? "unknown"}`,
+                });
                 bail(`업로드 실패: ${err?.message ?? "알 수 없음"}`);
             }
         }
