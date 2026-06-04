@@ -88,6 +88,15 @@ export default function FinalGrowthReport({
         return { rows, crown };
     }, [initialCombined, finalCombined]);
 
+    // 종합 평균 (초기/후기) — 성장 요약용
+    const summary = useMemo(() => {
+        const vals = (s: Record<string, number>) => DOMAINS.map((d) => s[d]).filter((v) => v > 0);
+        const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+        const oi = mean(vals(initialCombined));
+        const of = mean(vals(finalCombined));
+        return { overallInit: oi, overallFinal: of, delta: of - oi };
+    }, [initialCombined, finalCombined]);
+
     // 인식 비교 (후기 기준 + 초기→후기 전환)
     const perception = useMemo(() => {
         const finSelf = avg(final.self_scores_by_domain);
@@ -99,6 +108,14 @@ export default function FinalGrowthReport({
         const finCode = perceptionCode(finSelf, finAud);
         return { finPerc, initCode, finCode, transition: getPerceptionTransition(initCode, finCode) };
     }, [final, initial]);
+
+    // 자기/청중 — 초기→후기(전후) 불릿 데이터 (후기=막대, 초기=기준선)
+    const perceptionBars = useMemo(() =>
+        DOMAINS.map((d) => ({
+            d,
+            자기: { si: initial.self_scores_by_domain[d] ?? 0, sf: final.self_scores_by_domain[d] ?? 0, color: "#3b82f6" },
+            청중: { si: initial.audience_scores_by_domain[d] ?? 0, sf: final.audience_scores_by_domain[d] ?? 0, color: "#ec4899" },
+        })), [initial, final]);
 
     const finalType = final.type ?? "균형형";
     const typeInfo = TYPE_DESCRIPTIONS[finalType] ?? TYPE_DESCRIPTIONS["균형형"];
@@ -140,6 +157,50 @@ export default function FinalGrowthReport({
                     </div>
                 </div>
             )}
+
+            {/* ─── 성장 요약 (Hero) ─── */}
+            <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-pink-50/60 to-white p-5 sm:p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                    <Sparkles className="w-4 h-4 text-rose-500" />
+                    <h3 className="text-sm font-bold text-gray-900">성장 요약</h3>
+                    <span className="ml-auto px-2.5 py-1 rounded-full bg-rose-500 text-white text-[11px] font-bold shadow-sm">
+                        {perception.transition.name}
+                    </span>
+                </div>
+
+                {/* 종합 점수 초기 → 후기 */}
+                <div className="flex items-center justify-center gap-4 sm:gap-6 mb-4">
+                    <div className="text-center">
+                        <p className="text-[11px] font-semibold text-slate-400 mb-0.5">초기</p>
+                        <p className="text-2xl font-extrabold text-slate-400 tabular-nums">{roundDisplay(summary.overallInit)}</p>
+                    </div>
+                    <div className="flex flex-col items-center">
+                        <ArrowRight className="w-6 h-6 text-rose-400" />
+                        {summary.delta !== 0 && (
+                            <span className={`mt-1 px-2 py-0.5 rounded-full text-[11px] font-bold tabular-nums ${summary.delta > 0 ? "bg-rose-100 text-rose-600" : "bg-slate-100 text-slate-500"}`}>
+                                {summary.delta > 0 ? "▲" : "▼"} {Math.abs(summary.delta).toFixed(1)}
+                            </span>
+                        )}
+                    </div>
+                    <div className="text-center">
+                        <p className="text-[11px] font-semibold text-rose-500 mb-0.5">후기</p>
+                        <p className="text-3xl font-extrabold text-rose-600 tabular-nums">{roundDisplay(summary.overallFinal)}</p>
+                    </div>
+                </div>
+
+                {/* 요약 칩 */}
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white border border-amber-200 text-amber-700 text-xs font-semibold">
+                        <Crown className="w-3.5 h-3.5" /> 가장 성장한 영역 · {DOMAIN_LABELS[growth.crown]}
+                    </span>
+                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-white border border-gray-200 text-gray-600 text-xs font-semibold">
+                        {initial.type ?? "—"} → <span className="text-rose-600 ml-1 font-bold">{final.type ?? "—"}</span>
+                    </span>
+                </div>
+                <p className="text-center text-xs text-gray-500 mt-3 leading-[1.7] [word-break:keep-all]">
+                    {perception.transition.oneLiner}
+                </p>
+            </div>
 
             {/* ─── 1. 방사형 그래프 (초기·후기 오버레이) ─── */}
             <Section title="발표 역량 방사형 그래프" icon={<BarChart3 className="w-4 h-4 text-rose-500" />} delay={0.05}>
@@ -197,8 +258,6 @@ export default function FinalGrowthReport({
                         const isCrown = d === growth.crown && delta > 0;
                         const initPct = (init / 5) * 100;
                         const finPct = (fin / 5) * 100;
-                        const lo = Math.min(initPct, finPct);
-                        const hi = Math.max(initPct, finPct);
                         return (
                             <div key={d} className={`rounded-xl border ${colors.border} ${colors.bg} p-4`}>
                                 <div className="flex items-center justify-between mb-3">
@@ -215,33 +274,50 @@ export default function FinalGrowthReport({
                                     </span>
                                 </div>
 
-                                {/* 변화 텍스트 */}
+                                {/* 변화 텍스트 (단계) */}
                                 <div className="flex items-center gap-2 mb-3 text-sm">
                                     <span className="text-gray-400">{initStage}</span>
-                                    <span className="tabular-nums text-gray-400">({roundDisplay(init)})</span>
                                     <ArrowRight className="w-4 h-4 text-rose-400 shrink-0" />
                                     <span className={`font-bold ${colors.text}`}>{finStage}</span>
-                                    <span className="tabular-nums font-bold text-gray-900">({roundDisplay(fin)})</span>
                                 </div>
 
-                                {/* 0~5 트랙 + 초기/후기 점 */}
-                                <div className="relative h-2.5 bg-white/80 rounded-full mb-3">
-                                    <div className="absolute h-2.5 rounded-full" style={{ left: `${lo}%`, width: `${hi - lo}%`, backgroundColor: colors.bar, opacity: 0.35 }} />
-                                    <div className="absolute -top-0.5 w-4 h-4 rounded-full bg-white border-2 border-slate-400 -translate-x-1/2" style={{ left: `${initPct}%` }} title={`초기 ${roundDisplay(init)}`} />
-                                    <div className="absolute -top-0.5 w-4 h-4 rounded-full bg-white -translate-x-1/2" style={{ left: `${finPct}%`, borderWidth: 2, borderStyle: "solid", borderColor: colors.bar }} title={`후기 ${roundDisplay(fin)}`} />
+                                {/* 덤벨: 초기(빈 점) ──→ 후기(찬 점), 0~5 축 위 이동 */}
+                                <div className="relative mb-3" style={{ height: 46, marginTop: 6 }}>
+                                    {/* 기준 트랙 */}
+                                    <div className="absolute left-0 right-0 rounded-full bg-gray-100" style={{ top: 21, height: 6 }} />
+                                    {/* 변화 구간 */}
+                                    <div className="absolute rounded-full" style={{ top: 21, height: 6, left: `${Math.min(initPct, finPct)}%`, width: `${Math.abs(finPct - initPct)}%`, backgroundColor: delta >= 0 ? colors.bar : "#cbd5e1", opacity: 0.45 }} />
+                                    {/* 후기 값(위) */}
+                                    <span className="absolute text-[10px] font-bold tabular-nums whitespace-nowrap" style={{ left: `${finPct}%`, top: 0, transform: "translateX(-50%)", color: colors.bar }}>후기 {roundDisplay(fin)}</span>
+                                    {/* 초기 값(아래) */}
+                                    <span className="absolute text-[10px] tabular-nums text-slate-400 whitespace-nowrap" style={{ left: `${initPct}%`, bottom: 0, transform: "translateX(-50%)" }}>초기 {roundDisplay(init)}</span>
+                                    {/* 초기 점(빈) */}
+                                    <div className="absolute w-3.5 h-3.5 rounded-full bg-white border-2 border-slate-400" style={{ left: `${initPct}%`, top: 17, transform: "translateX(-50%)" }} />
+                                    {/* 후기 점(찬) */}
+                                    <div className="absolute w-4 h-4 rounded-full border-2 border-white shadow" style={{ left: `${finPct}%`, top: 16, transform: "translateX(-50%)", backgroundColor: colors.bar }} />
                                 </div>
 
-                                {/* 단계 설명 (초기 + 후기) */}
+                                {/* 단계 설명 — 단계가 같으면 한 번만, 다르면 초기·후기 둘 다 */}
                                 <div className="space-y-1.5">
-                                    {DOMAIN_STAGE_DESCRIPTIONS[d]?.[initStage] && (
-                                        <p className="text-xs text-gray-400 leading-[1.7] [word-break:keep-all] text-pretty">
-                                            <span className="font-semibold text-slate-400">초기 · {initStage}</span> — {DOMAIN_STAGE_DESCRIPTIONS[d][initStage]}
-                                        </p>
-                                    )}
-                                    {DOMAIN_STAGE_DESCRIPTIONS[d]?.[finStage] && (
-                                        <p className="text-xs text-gray-600 leading-[1.7] [word-break:keep-all] text-pretty">
-                                            <span className={`font-semibold ${colors.text}`}>후기 · {finStage}</span> — {DOMAIN_STAGE_DESCRIPTIONS[d][finStage]}
-                                        </p>
+                                    {initStage === finStage ? (
+                                        DOMAIN_STAGE_DESCRIPTIONS[d]?.[finStage] && (
+                                            <p className="text-xs text-gray-600 leading-[1.7] [word-break:keep-all] text-pretty">
+                                                <span className={`font-semibold ${colors.text}`}>{finStage}</span> — {DOMAIN_STAGE_DESCRIPTIONS[d][finStage]}
+                                            </p>
+                                        )
+                                    ) : (
+                                        <>
+                                            {DOMAIN_STAGE_DESCRIPTIONS[d]?.[initStage] && (
+                                                <p className="text-xs text-gray-400 leading-[1.7] [word-break:keep-all] text-pretty">
+                                                    <span className="font-semibold text-slate-400">초기 · {initStage}</span> — {DOMAIN_STAGE_DESCRIPTIONS[d][initStage]}
+                                                </p>
+                                            )}
+                                            {DOMAIN_STAGE_DESCRIPTIONS[d]?.[finStage] && (
+                                                <p className="text-xs text-gray-600 leading-[1.7] [word-break:keep-all] text-pretty">
+                                                    <span className={`font-semibold ${colors.text}`}>후기 · {finStage}</span> — {DOMAIN_STAGE_DESCRIPTIONS[d][finStage]}
+                                                </p>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -285,6 +361,44 @@ export default function FinalGrowthReport({
 
             {/* ─── 4. 자기 vs 청중 인식 비교 ─── */}
             <Section title="자기 vs 청중 인식 비교" icon={<Users className="w-4 h-4 text-rose-500" />} delay={0.2}>
+                {/* 자기/청중 — 초기(연한) 위 후기(진한) 겹친 막대. 후기 값=막대 위, 초기 값=하단 */}
+                <div className="flex items-stretch justify-around gap-2 mb-2">
+                    {perceptionBars.map(({ d, 자기, 청중 }) => {
+                        const metrics = [{ label: "자기", textCls: "text-blue-600", ...자기 }, { label: "청중", textCls: "text-pink-600", ...청중 }];
+                        return (
+                            <div key={d} className="flex-1 flex flex-col items-center">
+                                {/* 막대 + 후기 값(위) */}
+                                <div className="flex items-end justify-center gap-5 w-full border-b border-gray-200" style={{ height: 132, paddingTop: 16 }}>
+                                    {metrics.map((m) => (
+                                        <div key={m.label} className="relative flex items-end justify-center" style={{ height: "100%", width: 26 }}>
+                                            <div className="absolute bottom-0 left-1/2 rounded-t" style={{ width: 24, height: `${(m.si / 5) * 100}%`, backgroundColor: m.color, opacity: 0.2, transform: "translateX(-50%)" }} />
+                                            <div className="absolute bottom-0 left-1/2 rounded-t" style={{ width: 11, height: `${(m.sf / 5) * 100}%`, backgroundColor: m.color, transform: "translateX(-50%)" }} />
+                                            <span className="absolute left-1/2 text-[11px] font-bold tabular-nums whitespace-nowrap" style={{ bottom: `${(m.sf / 5) * 100}%`, color: m.color, transform: "translate(-50%,-2px)" }}>{roundDisplay(m.sf)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {/* 라벨 + 초기 값(아래) */}
+                                <div className="flex justify-center gap-5 w-full mt-1.5">
+                                    {metrics.map((m) => (
+                                        <div key={m.label} className="flex flex-col items-center" style={{ width: 26 }}>
+                                            <span className={`text-[11px] font-semibold ${m.textCls}`}>{m.label}</span>
+                                            <span className="text-[9px] text-gray-400 tabular-nums whitespace-nowrap">초기 {roundDisplay(m.si)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <span className="text-xs font-bold mt-1.5" style={{ color: DOMAIN_COLORS[d].bar }}>{DOMAIN_LABELS[d]}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-1">
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-2.5 rounded-sm bg-blue-500" /><span className="text-xs text-gray-500">자기</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-2.5 rounded-sm bg-pink-500" /><span className="text-xs text-gray-500">청중</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-2.5 rounded-sm bg-gray-300" /><span className="text-xs text-gray-500">연한 = 초기</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-2 h-3 rounded-sm bg-gray-500" /><span className="text-xs text-gray-500">진한 = 후기</span></div>
+                </div>
+                <p className="text-xs text-gray-400 mb-4 text-center [word-break:keep-all]">※ 막대 위 숫자=후기, 아래=초기 · 진한 막대가 높으면 성장</p>
+
                 {/* 후기 기준 */}
                 <div className="rounded-xl bg-gradient-to-br from-gray-50 to-white border border-gray-100 p-4 mb-4">
                     <p className="text-[11px] font-bold text-gray-400 mb-2">후기 기준</p>

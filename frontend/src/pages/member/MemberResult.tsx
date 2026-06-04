@@ -5,6 +5,7 @@ import { RadarChart } from "@/components/eval/RadarChart";
 import { motion } from "framer-motion";
 import { ArrowLeft, Lock, Download } from "lucide-react";
 import FinalGrowthReport from "@/components/eval/FinalGrowthReport";
+import FinalReportPdf from "@/components/eval/FinalReportPdf";
 import GrowthReportContent, {
     DOMAINS,
     DOMAIN_LABELS,
@@ -40,6 +41,8 @@ export default function MemberResult() {
 
     const pdfRef = useRef<HTMLDivElement>(null);
     const pdfRef2 = useRef<HTMLDivElement>(null);
+    const pdfRefF1 = useRef<HTMLDivElement>(null);  // 후기 비교 PDF 1페이지
+    const pdfRefF2 = useRef<HTMLDivElement>(null);  // 후기 비교 PDF 2페이지
     const [pdfLoading, setPdfLoading] = useState(false);
     const [showPdf, setShowPdf] = useState(false);
 
@@ -48,29 +51,26 @@ export default function MemberResult() {
         setPdfLoading(true);
         setShowPdf(true);
         await new Promise(r => setTimeout(r, 800));
-        const el1 = pdfRef.current;
-        const el2 = pdfRef2.current;
+        const isComparison = !!data.initial;
+        const el1 = isComparison ? pdfRefF1.current : pdfRef.current;
+        const el2 = isComparison ? pdfRefF2.current : pdfRef2.current;
         if (!el1) { setPdfLoading(false); setShowPdf(false); return; }
         try {
-            const { toPng } = await import("html-to-image");
+            const { toJpeg } = await import("html-to-image");
             const { jsPDF } = await import("jspdf");
             const pdf = new jsPDF("p", "mm", "a4");
             const pw = pdf.internal.pageSize.getWidth();
             const ph = pdf.internal.pageSize.getHeight();
 
-            // Page 1 — 꽉 채우기
-            const url1 = await toPng(el1, { pixelRatio: 2, backgroundColor: "#ffffff" });
-            const img1 = new Image(); img1.src = url1;
-            await new Promise<void>(r => { img1.onload = () => r(); });
-            pdf.addImage(url1, "PNG", 0, 0, pw, ph);
+            const url1 = await toJpeg(el1, { pixelRatio: 2, quality: 0.95, backgroundColor: "#ffffff" });
+            await new Promise<void>(r => { const i = new Image(); i.onload = () => r(); i.src = url1; });
+            pdf.addImage(url1, "JPEG", 0, 0, pw, ph);
 
-            // Page 2
             if (el2) {
-                const url2 = await toPng(el2, { pixelRatio: 2, backgroundColor: "#ffffff" });
-                const img2 = new Image(); img2.src = url2;
-                await new Promise<void>(r => { img2.onload = () => r(); });
+                const url2 = await toJpeg(el2, { pixelRatio: 2, quality: 0.95, backgroundColor: "#ffffff" });
+                await new Promise<void>(r => { const i = new Image(); i.onload = () => r(); i.src = url2; });
                 pdf.addPage();
-                pdf.addImage(url2, "PNG", 0, 0, pw, ph);
+                pdf.addImage(url2, "JPEG", 0, 0, pw, ph);
             }
 
             pdf.save(`${data.member_name}_발표 성장 리포트.pdf`);
@@ -219,6 +219,17 @@ export default function MemberResult() {
                     <div style={{ position: "fixed", top: 12, right: 16, zIndex: 10000, background: "#f43f5e", color: "#fff", padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600 }}>
                         PDF 생성 중...
                     </div>
+                    {data.initial ? (
+                        <FinalReportPdf
+                            memberName={data.member_name}
+                            final={data}
+                            initial={data.initial}
+                            growthReflection={data.growth_reflection}
+                            page1Ref={pdfRefF1}
+                            page2Ref={pdfRefF2}
+                        />
+                    ) : (
+                    <>
                     <div ref={pdfRef} style={{ width: 860, height: 1216, padding: "10px 14px", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#1f2937", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
                         {/* 배경 장식 원 */}
                         <div style={{ position: "absolute", top: -50, left: -50, width: 180, height: 180, borderRadius: "50%", background: "linear-gradient(135deg, #fce7f3, #fdf2f8)", opacity: 0.5 }} />
@@ -501,6 +512,8 @@ export default function MemberResult() {
                             <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>UnivPT</span>
                         </div>
                     </div>
+                    </>
+                    )}
                 </div>
             )}
         </div>

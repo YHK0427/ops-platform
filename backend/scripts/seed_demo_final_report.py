@@ -46,9 +46,9 @@ def hash_pw(pw: str) -> str:
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
 
 
-def rand_scores() -> dict[str, int]:
-    """문항별 랜덤 점수(2~5) 딕셔너리."""
-    return {q["key"]: random.randint(2, 5) for q in EVAL_QUESTIONS}
+def rand_scores(lo: int = 2, hi: int = 5) -> dict[str, int]:
+    """문항별 랜덤 점수(lo~hi) 딕셔너리."""
+    return {q["key"]: random.randint(lo, hi) for q in EVAL_QUESTIONS}
 
 
 async def add_responses(db, round_id, member_id, eval_type, evaluator_user_id, scores, reflection=None):
@@ -147,11 +147,12 @@ async def main():
                 await db.execute(delete(EvalResponse).where(EvalResponse.assignment_id.in_(aids)))
                 await db.execute(delete(EvalAssignment).where(EvalAssignment.id.in_(aids)))
 
-        await add_responses(db, initial.id, member.id, "SELF", None, rand_scores())
-        await add_responses(db, initial.id, member.id, "AUDIENCE", evaluator.id, rand_scores())
-        await add_responses(db, final.id, member.id, "SELF", None, rand_scores(),
+        # 김유피: 초기 낮음(2~3) → 후기 높음(4~5)으로 뚜렷한 성장
+        await add_responses(db, initial.id, member.id, "SELF", None, rand_scores(2, 3))
+        await add_responses(db, initial.id, member.id, "AUDIENCE", evaluator.id, rand_scores(2, 3))
+        await add_responses(db, final.id, member.id, "SELF", None, rand_scores(4, 5),
                             reflection="유니브피티 6번의 발표를 거치며, 무대 위에서 청중과 호흡하는 여유가 생긴 게 가장 큰 성장입니다. 준비 과정의 고민들이 결국 저를 단단하게 만들었어요.")
-        await add_responses(db, final.id, member.id, "AUDIENCE", evaluator.id, rand_scores())
+        await add_responses(db, final.id, member.id, "AUDIENCE", evaluator.id, rand_scores(4, 5))
 
         # 5) 로컬 DB 전체 비번 통일 (멤버 + 운영진)
         await db.execute(text("UPDATE users SET password_hash = :h"), {"h": pw_hash})
