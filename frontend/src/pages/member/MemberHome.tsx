@@ -1,118 +1,79 @@
 import { useNavigate } from "react-router-dom";
-import { useMemberAuth } from "@/context/MemberAuthContext";
-import { usePendingEvals } from "@/hooks/useMemberEvaluation";
 import { motion } from "framer-motion";
-import { LogOut, ClipboardList, ChevronRight, Inbox, CheckCircle2, BarChart3 } from "lucide-react";
+import { BarChart3, Wallet, ChevronRight } from "lucide-react";
+import { useMySummary } from "@/hooks/useMemberLedger";
 
 export default function MemberHome() {
-    const { member, logout } = useMemberAuth();
-    const { data: evals, isLoading } = usePendingEvals();
     const navigate = useNavigate();
+    const { data: summary, isLoading } = useMySummary();
+
+    const shortcuts = [
+        {
+            to: "/member/reports",
+            icon: BarChart3,
+            title: "발표 성장 리포트",
+            desc: "초기·후기 평가와 나의 성장 리포트 확인",
+            color: "from-rose-500 to-pink-600",
+        },
+        {
+            to: "/member/ledger",
+            icon: Wallet,
+            title: "내 점수·장부",
+            desc: "상점·벌점·디파짓과 거래 내역 확인",
+            color: "from-sky-500 to-indigo-500",
+        },
+    ];
 
     return (
-        <div className="member-page">
-            {/* Header */}
-            <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200">
-                <div className="mx-auto max-w-lg flex items-center justify-between px-4 py-3">
+        <motion.main
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="mx-auto w-full max-w-lg px-4 py-6 space-y-5"
+        >
+            {/* 한눈에 보기 */}
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <p className="text-xs font-semibold text-gray-400 mb-3">한눈에 보기</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
                     <div>
-                        <p className="text-[11px] text-gray-400 font-medium">UnivPT 33기</p>
-                        <h1 className="text-base font-bold text-gray-900">
-                            안녕하세요, {member?.name}님
-                        </h1>
+                        <p className="text-[11px] text-gray-400 mb-0.5">총점</p>
+                        <p className="text-lg font-extrabold text-gray-900 tabular-nums">{isLoading ? "—" : summary?.net_score ?? 0}</p>
                     </div>
+                    <div>
+                        <p className="text-[11px] text-gray-400 mb-0.5">상점/벌점</p>
+                        <p className="text-lg font-extrabold tabular-nums">
+                            <span className="text-emerald-600">{isLoading ? "—" : summary?.total_plus_score ?? 0}</span>
+                            <span className="text-gray-300 mx-0.5">/</span>
+                            <span className="text-rose-600">{isLoading ? "—" : summary?.total_minus_score ?? 0}</span>
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-[11px] text-gray-400 mb-0.5">디파짓</p>
+                        <p className="text-lg font-extrabold text-gray-900 tabular-nums">{isLoading ? "—" : `${((summary?.current_deposit ?? 0) / 10000).toFixed(1)}만`}</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* 바로가기 */}
+            <div className="space-y-3">
+                {shortcuts.map(({ to, icon: Icon, title, desc, color }) => (
                     <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={logout}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                        key={to}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => navigate(to)}
+                        className="w-full flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm text-left hover:bg-gray-50 transition-colors"
                     >
-                        <LogOut className="w-3.5 h-3.5" />
-                        로그아웃
+                        <div className={`shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center text-white`}>
+                            <Icon className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-gray-900">{title}</p>
+                            <p className="text-xs text-gray-400 mt-0.5 [word-break:keep-all]">{desc}</p>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-gray-300 shrink-0" />
                     </motion.button>
-                </div>
-            </header>
-
-            {/* Content */}
-            <motion.main
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-                className="mx-auto w-full max-w-lg px-4 py-6"
-            >
-                <div className="mb-6">
-                    <div className="flex items-center gap-2 mb-4">
-                        <ClipboardList className="w-4 h-4 text-rose-500" />
-                        <h2 className="text-sm font-bold text-gray-900">자기 평가</h2>
-                    </div>
-
-                    {isLoading ? (
-                        <div className="flex items-center justify-center py-12">
-                            <span className="inline-block w-5 h-5 border-2 border-gray-300 border-t-rose-500 rounded-full animate-spin" />
-                        </div>
-                    ) : !evals || evals.length === 0 ? (
-                        <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
-                            <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                            <p className="text-sm text-gray-500">
-                                현재 진행 중인 평가가 없습니다
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {evals.map((item, index) => (
-                                <motion.div
-                                    key={item.round_id}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: index * 0.05, duration: 0.3 }}
-                                    className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
-                                >
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <p className="text-sm font-bold text-gray-900 truncate">
-                                            {item.round_title}
-                                        </p>
-                                        {item.submitted && (
-                                            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200 shrink-0">
-                                                <CheckCircle2 className="w-2.5 h-2.5" />
-                                                제출 완료
-                                            </span>
-                                        )}
-                                    </div>
-                                    {item.session_title && (
-                                        <p className="text-xs text-gray-400 mb-3">
-                                            {item.session_title}
-                                        </p>
-                                    )}
-                                    <div className="flex items-center gap-2">
-                                        {item.is_open && (
-                                            <button
-                                                onClick={() => navigate(`/member/eval/${item.round_id}`)}
-                                                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                                                    item.submitted
-                                                        ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                                        : "bg-rose-500 text-white hover:bg-rose-600 shadow-sm shadow-rose-500/20"
-                                                }`}
-                                            >
-                                                <ClipboardList className="w-3.5 h-3.5" />
-                                                {item.submitted ? "수정하기" : "평가하기"}
-                                                <ChevronRight className="w-3 h-3" />
-                                            </button>
-                                        )}
-                                        {item.results_open && (
-                                            <button
-                                                onClick={() => navigate(`/member/eval/${item.round_id}/result`)}
-                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-sky-50 text-sky-600 border border-sky-200 hover:bg-sky-100 transition-colors"
-                                            >
-                                                <BarChart3 className="w-3.5 h-3.5" />
-                                                결과 보기
-                                                <ChevronRight className="w-3 h-3" />
-                                            </button>
-                                        )}
-                                    </div>
-                                </motion.div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </motion.main>
-        </div>
+                ))}
+            </div>
+        </motion.main>
     );
 }

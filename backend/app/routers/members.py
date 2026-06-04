@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_current_user, get_db, require_staff
+from app.deps import get_current_member, get_current_user, get_db, require_staff
 from app.models import Attendance, Ledger, Member, Session as SessionModel, User
 from app.schemas.member import MemberCreate, MemberResponse, MemberUpdate
 
@@ -39,6 +39,62 @@ async def get_me(
     if not user:
         return {"username": current_user["username"], "role": current_user["role"], "display_name": current_user["username"], "department": None}
     return {"username": user.username, "role": user.role, "display_name": user.display_name, "department": user.department}
+
+
+# ── 기수(멤버) 본인 전용 ─────────────────────────────────────────────────────
+# 주의: literal 경로는 반드시 "/{member_id}" 보다 먼저 등록 (라우트 매칭 순서)
+
+@router.get("/my-summary")
+async def my_summary(
+    member: dict = Depends(get_current_member),
+    db: AsyncSession = Depends(get_db),
+):
+    """로그인한 기수 본인의 점수·디파짓 요약."""
+    m = await db.get(Member, member["member_id"])
+    if not m:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
+    return {
+        "name": m.name,
+        "current_deposit": m.current_deposit,
+        "total_plus_score": m.total_plus_score,
+        "total_minus_score": m.total_minus_score,
+        "net_score": m.net_score,
+    }
+
+
+@router.get("/my-ledger")
+async def my_ledger(
+    page: int = Query(1, ge=1),
+    limit: int = Query(100, ge=1, le=300),
+    member: dict = Depends(get_current_member),
+    db: AsyncSession = Depends(get_db),
+):
+    """로그인한 기수 본인의 장부(거래/상벌점) 내역. 타 멤버 데이터 접근 불가."""
+    offset = (page - 1) * limit
+    result = await db.execute(
+        select(Ledger, SessionModel.title)
+        .outerjoin(SessionModel, Ledger.session_id == SessionModel.id)
+        .where(Ledger.member_id == member["member_id"])
+        .order_by(Ledger.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return [
+        {
+            "id": l.id,
+            "member_id": l.member_id,
+            "session_id": l.session_id,
+            "session_title": title,
+            "type": l.type,
+            "amount_krw": l.amount_krw,
+            "score_delta": l.score_delta,
+            "description": l.description,
+            "created_at": l.created_at,
+            "deposit_after": l.deposit_after,
+            "is_paid": l.is_paid,
+        }
+        for l, title in result.all()
+    ]
 
 
 @router.get("", response_model=list[MemberResponse])

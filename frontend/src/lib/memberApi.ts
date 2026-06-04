@@ -35,8 +35,8 @@ memberApi.interceptors.response.use(
     (error) => {
         if (error.response?.status === 401) {
             setMemberToken(null);
-            if (!window.location.pathname.startsWith("/member/login")) {
-                window.location.href = "/member/login";
+            if (window.location.pathname.startsWith("/member")) {
+                window.location.href = "/login";
             }
         }
         return Promise.reject(error);

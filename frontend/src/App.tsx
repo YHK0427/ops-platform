@@ -6,6 +6,8 @@ import { AuthProvider } from "@/context/AuthContext";
 import { MemberAuthProvider, useMemberAuth } from "@/context/MemberAuthContext";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Sidebar } from "@/components/Sidebar";
+import { getToken } from "@/lib/api";
+import { getMemberToken } from "@/lib/memberApi";
 
 import LoginPage from "@/pages/LoginPage";
 import SessionList from "@/pages/SessionList";
@@ -29,8 +31,10 @@ const EvalManagement = lazy(() => import("@/pages/EvalManagement"));
 const EvalAudienceForm = lazy(() => import("@/pages/EvalAudienceForm"));
 
 // ── Lazy-loaded member portal pages ────────────────────────────────────
-const MemberLoginPage = lazy(() => import("@/pages/member/MemberLoginPage"));
+const MemberLayout = lazy(() => import("@/pages/member/MemberLayout"));
 const MemberHome = lazy(() => import("@/pages/member/MemberHome"));
+const MemberReports = lazy(() => import("@/pages/member/MemberReports"));
+const MemberLedger = lazy(() => import("@/pages/member/MemberLedger"));
 const SelfEvalForm = lazy(() => import("@/pages/member/SelfEvalForm"));
 const EvalComplete = lazy(() => import("@/pages/member/EvalComplete"));
 const MemberResult = lazy(() => import("@/pages/member/MemberResult"));
@@ -49,7 +53,7 @@ function MemberGuard() {
   const { member, isLoading } = useMemberAuth();
 
   if (isLoading) return <LoadingFallback />;
-  if (!member) return <Navigate to="/member/login" replace />;
+  if (!member) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
 
@@ -91,24 +95,17 @@ function DashboardLayout() {
   );
 }
 
-// ── Hostname-based redirect ────────────────────────────────────────────
-// In production: univpt33.* -> member portal
-// In dev: access /member/* directly
-function HostnameRedirect() {
-  const isMemberPortal = window.location.hostname.startsWith("univpt33");
-  if (isMemberPortal) {
-    return <Navigate to="/member" replace />;
-  }
-  return <Navigate to="/dashboard" replace />;
+// ── 토큰 기반 루트 redirect (단일 도메인) ───────────────────────────────
+// 기수(member) 토큰 있으면 포털, 운영진(ops) 토큰 있으면 대시보드, 없으면 로그인
+function RootRedirect() {
+  if (getMemberToken()) return <Navigate to="/member" replace />;
+  if (getToken()) return <Navigate to="/dashboard" replace />;
+  return <Navigate to="/login" replace />;
 }
-
-const isMemberPortal = window.location.hostname.startsWith("univpt33");
 
 export default function App() {
   useEffect(() => {
-    if (isMemberPortal) {
-      document.title = "UnivPT 33기 성장 리포트";
-    }
+    document.title = "UnivPT Ops";
   }, []);
 
   return (
@@ -117,7 +114,11 @@ export default function App() {
         <BrowserRouter>
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
-              {/* ── Member portal routes ──────────────────────────── */}
+              {/* 통합 로그인 + 루트 redirect (단일 도메인) */}
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/" element={<RootRedirect />} />
+
+              {/* ── 기수 포털 ──────────────────────────── */}
               <Route
                 path="/member"
                 element={
@@ -126,56 +127,49 @@ export default function App() {
                   </MemberAuthProvider>
                 }
               >
-                <Route path="login" element={<MemberLoginPage />} />
+                <Route path="login" element={<Navigate to="/login" replace />} />
                 <Route element={<MemberGuard />}>
-                  <Route index element={<MemberHome />} />
+                  {/* 하단 탭 포털 (홈/성장리포트/내 점수) */}
+                  <Route element={<MemberLayout />}>
+                    <Route index element={<MemberHome />} />
+                    <Route path="reports" element={<MemberReports />} />
+                    <Route path="ledger" element={<MemberLedger />} />
+                  </Route>
+                  {/* 전체화면 (탭 없음) */}
                   <Route path="eval/:roundId" element={<SelfEvalForm />} />
                   <Route path="eval/:roundId/complete" element={<EvalComplete />} />
                   <Route path="eval/:roundId/result" element={<MemberResult />} />
                 </Route>
               </Route>
 
-              {isMemberPortal ? (
-                /* univpt33: 모든 비-member 경로 → /member로 리다이렉트 */
-                <Route path="*" element={<Navigate to="/member" replace />} />
-              ) : (
-                <>
-                  {/* Public */}
-                  <Route path="/login" element={<LoginPage />} />
-
-                  {/* Root: redirect to dashboard */}
-                  <Route path="/" element={<HostnameRedirect />} />
-
-                  {/* ── Ops protected routes ──────────────────────────── */}
-                  <Route element={<AuthGuard />}>
-                    <Route element={<DashboardLayout />}>
-                      <Route path="/dashboard" element={<Dashboard />} />
-                      <Route path="/members" element={<Members />} />
-                      <Route path="/members/:id" element={<MemberDetail />} />
-                      <Route path="/sessions" element={<SessionList />} />
-                      <Route path="/sessions/new" element={<SessionWizard />} />
-                      <Route path="/sessions/:id" element={<SessionLayout />}>
-                        <Route index element={<SessionDefaultTab />} />
-                        <Route path="prep" element={<PrepTab />} />
-                        <Route path="ops" element={<OpsTab />} />
-                        <Route path="post" element={<PostTab />} />
-                        <Route path="settlement" element={<SettlementTab />} />
-                        <Route path="team-edit" element={<TeamEditPage />} />
-                        <Route path="group-edit" element={<GroupEditPage />} />
-                      </Route>
-                      <Route path="/ledger" element={<Ledger />} />
-                      <Route path="/treasury" element={<Treasury />} />
-                      <Route path="/admin/users" element={<AdminUsers />} />
-                      <Route path="/eval" element={<EvalManagement />} />
-                    </Route>
-                    {/* Audience eval form — full-screen (no sidebar) */}
-                    <Route path="/eval/:roundId/audience" element={<EvalAudienceForm />} />
+              {/* ── 운영진 ──────────────────────────── */}
+              <Route element={<AuthGuard />}>
+                <Route element={<DashboardLayout />}>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/members" element={<Members />} />
+                  <Route path="/members/:id" element={<MemberDetail />} />
+                  <Route path="/sessions" element={<SessionList />} />
+                  <Route path="/sessions/new" element={<SessionWizard />} />
+                  <Route path="/sessions/:id" element={<SessionLayout />}>
+                    <Route index element={<SessionDefaultTab />} />
+                    <Route path="prep" element={<PrepTab />} />
+                    <Route path="ops" element={<OpsTab />} />
+                    <Route path="post" element={<PostTab />} />
+                    <Route path="settlement" element={<SettlementTab />} />
+                    <Route path="team-edit" element={<TeamEditPage />} />
+                    <Route path="group-edit" element={<GroupEditPage />} />
                   </Route>
+                  <Route path="/ledger" element={<Ledger />} />
+                  <Route path="/treasury" element={<Treasury />} />
+                  <Route path="/admin/users" element={<AdminUsers />} />
+                  <Route path="/eval" element={<EvalManagement />} />
+                </Route>
+                {/* Audience eval form — full-screen (no sidebar) */}
+                <Route path="/eval/:roundId/audience" element={<EvalAudienceForm />} />
+              </Route>
 
-                  {/* Fallback */}
-                  <Route path="*" element={<HostnameRedirect />} />
-                </>
-              )}
+              {/* Fallback */}
+              <Route path="*" element={<RootRedirect />} />
             </Routes>
           </Suspense>
         </BrowserRouter>

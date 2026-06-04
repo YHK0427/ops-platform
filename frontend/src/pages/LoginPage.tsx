@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import { useAuth } from "@/context/AuthContext";
+import { setMemberToken } from "@/lib/memberApi";
 import { motion } from "framer-motion";
 import { LogIn, ArrowLeft, Shield } from "lucide-react";
 
@@ -19,11 +21,26 @@ export default function LoginPage() {
         setError(null);
         setLoading(true);
         try {
+            // 1) 기수(member) 로그인 먼저 시도 — 인터셉터 우회 위해 raw axios
+            try {
+                const { data } = await axios.post<{ access_token: string }>(
+                    "/api/v1/auth/member-login",
+                    { username, password },
+                );
+                setMemberToken(data.access_token);
+                // 전체 네비게이션 → MemberAuthProvider가 토큰을 읽어 마운트
+                window.location.href = "/member";
+                return;
+            } catch {
+                // 기수 계정이 아니거나 비번 불일치 → 운영진 로그인 시도
+            }
+
+            // 2) 운영진(ops) 로그인 (TOTP 흐름 그대로 재사용)
             const needsTotp = await login(username, password, remember);
             if (!needsTotp) {
                 navigate("/dashboard", { replace: true });
             }
-            // If needsTotp, AuthContext sets totpPending and the UI switches to TOTP step
+            // needsTotp이면 AuthContext가 totpPending 설정 → TOTP 단계로 전환
         } catch {
             setError("아이디 또는 비밀번호가 올바르지 않습니다.");
         } finally {
@@ -68,7 +85,7 @@ export default function LoginPage() {
                                 UnivPT
                             </p>
                             <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">
-                                운영 플랫폼
+                                로그인
                             </h1>
                         </div>
 
