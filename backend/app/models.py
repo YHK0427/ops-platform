@@ -306,6 +306,10 @@ class EvalRound(Base):
     results_open = Column(Boolean, default=False, server_default="false", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     closed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    # 후기(FINAL) 라운드가 비교 대상으로 삼는 초기(INITIAL) 라운드. NULL이면 단일 리포트.
+    compare_to_round_id = Column(
+        Integer, ForeignKey("eval_rounds.id", ondelete="SET NULL"), nullable=True
+    )
 
     __table_args__ = (
         CheckConstraint("round_type IN ('INITIAL','FINAL','COMBINED')", name="ck_eval_rounds_type"),
