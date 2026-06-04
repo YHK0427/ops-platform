@@ -82,6 +82,11 @@ class MemberMeResponse(BaseModel):
     name: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)
+
+
 class UserUpdate(BaseModel):
     username: str | None = Field(None, max_length=50)
     display_name: str | None = None
@@ -316,6 +321,49 @@ async def member_me(
             detail="멤버 정보를 찾을 수 없습니다",
         )
     return MemberMeResponse(member_id=member.id, name=member.name)
+
+
+@router.post("/member-change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def member_change_password(
+    body: ChangePasswordRequest,
+    current_member: dict = Depends(get_current_member),
+    db: AsyncSession = Depends(get_db),
+):
+    """기수 본인 비밀번호 변경 (현재 비밀번호 확인 후)."""
+    result = await db.execute(
+        select(GenerationAccount).where(
+            GenerationAccount.member_id == current_member["member_id"],
+            GenerationAccount.is_active == True,
+        )
+    )
+    account = result.scalar_one_or_none()
+    if not account:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    if not verify_password(body.current_password, account.password_hash):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다")
+    account.password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
+    await db.commit()
+    logger.info("member_change_password member_id=%s", current_member["member_id"])
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """운영진 본인 비밀번호 변경 (현재 비밀번호 확인 후)."""
+    result = await db.execute(select(User).where(User.username == current_user["username"]))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다")
+    user.password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
+    await db.commit()
+    logger.audit(f"change_password user={user.username}")  # type: ignore[attr-defined]
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/member-logout")

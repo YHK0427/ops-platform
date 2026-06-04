@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useMemberAuth } from "@/context/MemberAuthContext";
 import { motion } from "framer-motion";
-import { LogOut, Home, BarChart3, Wallet } from "lucide-react";
+import { LogOut, Home, BarChart3, Wallet, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
+import memberApi from "@/lib/memberApi";
+import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 const TABS = [
     { to: "/member", label: "홈", icon: Home, end: true },
@@ -12,6 +15,7 @@ const TABS = [
 
 export default function MemberLayout() {
     const { member, logout } = useMemberAuth();
+    const [showPw, setShowPw] = useState(false);
 
     return (
         <div className="member-page pb-20">
@@ -24,16 +28,34 @@ export default function MemberLayout() {
                             안녕하세요, {member?.name}님
                         </h1>
                     </div>
-                    <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={logout}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                    >
-                        <LogOut className="w-3.5 h-3.5" />
-                        로그아웃
-                    </motion.button>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => setShowPw(true)}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                            <KeyRound className="w-3.5 h-3.5" />
+                            비밀번호
+                        </button>
+                        <motion.button
+                            whileTap={{ scale: 0.97 }}
+                            onClick={logout}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                            <LogOut className="w-3.5 h-3.5" />
+                            로그아웃
+                        </motion.button>
+                    </div>
                 </div>
             </header>
+
+            {showPw && (
+                <ChangePasswordModal
+                    onClose={() => setShowPw(false)}
+                    onSubmit={async (current_password, new_password) => {
+                        await memberApi.post("/auth/member-change-password", { current_password, new_password });
+                    }}
+                />
+            )}
 
             <Outlet />
 

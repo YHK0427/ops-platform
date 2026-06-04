@@ -13,9 +13,12 @@ import {
     ClipboardCheck,
     Menu,
     X,
+    KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
+import api from "@/lib/api";
+import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 interface NavItem {
     label: string;
@@ -35,6 +38,7 @@ export function Sidebar() {
     const navigate = useNavigate();
     const location = useLocation();
     const [mobileOpen, setMobileOpen] = useState(false);
+    const [showPw, setShowPw] = useState(false);
 
     // Close mobile sidebar on route change
     useEffect(() => {
@@ -163,15 +167,33 @@ export function Sidebar() {
             {/* Footer */}
             <div className="px-3 py-4 border-t border-[var(--color-border-subtle)] space-y-1">
                 {user && (
-                    <button
-                        onClick={logout}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                    >
-                        <LogOut className="w-4 h-4" />
-                        로그아웃
-                    </button>
+                    <>
+                        <button
+                            onClick={() => setShowPw(true)}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)] transition-colors"
+                        >
+                            <KeyRound className="w-4 h-4" />
+                            비밀번호 변경
+                        </button>
+                        <button
+                            onClick={logout}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        >
+                            <LogOut className="w-4 h-4" />
+                            로그아웃
+                        </button>
+                    </>
                 )}
             </div>
+
+            {showPw && (
+                <ChangePasswordModal
+                    onClose={() => setShowPw(false)}
+                    onSubmit={async (current_password, new_password) => {
+                        await api.post("/auth/change-password", { current_password, new_password });
+                    }}
+                />
+            )}
         </>
     );
 
