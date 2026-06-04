@@ -62,6 +62,8 @@ export interface OpsResultDetail {
     stage: string | null;
     type: string | null;
     growth_reflection: string | null;
+    round_type?: "INITIAL" | "FINAL" | "COMBINED" | null;
+    initial?: OpsResultDetail | null;
 }
 
 // ── Query Keys ───────────────────────────────────────────────────────────────

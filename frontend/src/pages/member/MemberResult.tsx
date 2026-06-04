@@ -4,6 +4,7 @@ import { useMemberOwnResult } from "@/hooks/useMemberEvaluation";
 import { RadarChart } from "@/components/eval/RadarChart";
 import { motion } from "framer-motion";
 import { ArrowLeft, Lock, Download } from "lucide-react";
+import FinalGrowthReport from "@/components/eval/FinalGrowthReport";
 import GrowthReportContent, {
     DOMAINS,
     DOMAIN_LABELS,
@@ -195,7 +196,21 @@ export default function MemberResult() {
                 transition={{ duration: 0.4, ease: "easeOut" }}
                 className="mx-auto w-full max-w-2xl px-5 py-6 space-y-5"
             >
-                <GrowthReportContent data={data} showTitle />
+                {data.initial ? (
+                    <FinalGrowthReport
+                        memberName={data.member_name}
+                        final={data}
+                        initial={data.initial}
+                        growthReflection={data.growth_reflection}
+                        showTitle
+                    />
+                ) : (
+                    <GrowthReportContent
+                        data={data}
+                        showTitle
+                        roundLabel={data.round_type === "FINAL" ? "후기 분석지" : "초기 분석지"}
+                    />
+                )}
             </motion.main>
 
             {/* ══════ PDF용 오버레이: 동일 박스, 2단 그리드 재배치 ══════ */}
@@ -212,7 +227,7 @@ export default function MemberResult() {
 
                         {/* ── 제목 카드 ── */}
                         <div style={{ background: "linear-gradient(135deg, #f43f5e, #ec4899)", borderRadius: 12, padding: "18px 22px", color: "#fff", marginBottom: 14, position: "relative" }}>
-                            <span style={{ position: "absolute", top: 14, right: 16, fontSize: 10, background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: 10, fontWeight: 600 }}>초기 분석지</span>
+                            <span style={{ position: "absolute", top: 14, right: 16, fontSize: 10, background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: 10, fontWeight: 600 }}>{data.round_type === "FINAL" ? "후기 분석지" : "초기 분석지"}</span>
                             <div style={{ fontSize: 11, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>UnivPT 33기</div>
                             <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>{data.member_name}님의 발표 성장 리포트</div>
                             <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>{data.member_name}님의 현재 발표 역량을 확인하고, 다음 성장을 위한 방향을 살펴보세요.</div>

@@ -39,6 +39,8 @@ export interface MemberResultDetail {
     stage: string | null;
     type: string | null;
     growth_reflection: string | null;
+    round_type?: "INITIAL" | "FINAL" | "COMBINED" | null;
+    initial?: MemberResultDetail | null;
 }
 
 // ── Query Keys ─────────────────────────────────────────────────────────

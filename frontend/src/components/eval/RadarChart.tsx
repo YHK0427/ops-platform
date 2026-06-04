@@ -10,6 +10,8 @@ import {
 interface RadarChartProps {
     selfScores: { PLANNING: number; DESIGN: number; SPEECH: number };
     audienceScores?: { PLANNING: number; DESIGN: number; SPEECH: number };
+    /** 초기 라운드 점수. 주어지면 후기(selfScores)와 겹쳐서 비교 표시. */
+    compareScores?: { PLANNING: number; DESIGN: number; SPEECH: number };
     size?: number;
     variant?: "dark" | "light";
 }
@@ -28,6 +30,7 @@ const DOMAIN_COLORS: Record<string, string> = {
 
 const SELF_COLOR = "#f43f5e";
 const AUD_COLOR = "#ec4899";
+const COMPARE_COLOR = "#94a3b8";  // 초기(비교) — 회색
 
 /** 소수점 둘째 자리에서 반올림하여 첫째 자리까지 표시 (IEEE 754 안전) */
 function roundScore(val: number | null): string {
@@ -44,6 +47,7 @@ export { RadarChart };
 export default function RadarChart({
     selfScores,
     audienceScores,
+    compareScores,
     size = 320,
     variant = "light",
 }: RadarChartProps) {
@@ -54,6 +58,7 @@ export default function RadarChart({
         fullMark: 5,
         self: selfScores[domain],
         ...(audienceScores ? { audience: audienceScores[domain] } : {}),
+        ...(compareScores ? { compare: compareScores[domain] } : {}),
     }));
 
     // Custom label for each axis with domain-colored text and colored scores
@@ -63,6 +68,7 @@ export default function RadarChart({
         const entry = chartData.find((d) => d.domain === label);
         const selfVal = entry?.self;
         const audVal = entry && "audience" in entry ? (entry as { audience?: number }).audience : undefined;
+        const compareVal = entry && "compare" in entry ? (entry as { compare?: number }).compare : undefined;
 
         const isTop = y < size / 2 - 20;
         const yOff = isTop ? -4 : 4;
@@ -85,13 +91,19 @@ export default function RadarChart({
                     fontWeight={600}
                     dy={isTop ? 10 : 18}
                 >
-                    <tspan fill={audVal != null ? SELF_COLOR : color}>
+                    <tspan fill={(audVal != null || compareVal != null) ? SELF_COLOR : color}>
                         {roundScore(selfVal ?? null)}
                     </tspan>
                     {audVal != null && (
                         <>
                             <tspan fill={isLight ? "#9ca3af" : "rgba(255,255,255,0.4)"}> / </tspan>
                             <tspan fill={AUD_COLOR}>{roundScore(audVal)}</tspan>
+                        </>
+                    )}
+                    {compareVal != null && (
+                        <>
+                            <tspan fill={isLight ? "#9ca3af" : "rgba(255,255,255,0.4)"}> / </tspan>
+                            <tspan fill={COMPARE_COLOR}>{roundScore(compareVal)}</tspan>
                         </>
                     )}
                 </text>
@@ -131,8 +143,20 @@ export default function RadarChart({
                         }}
                         axisLine={false}
                     />
+                    {compareScores && (
+                        <Radar
+                            name="초기"
+                            dataKey="compare"
+                            stroke={COMPARE_COLOR}
+                            fill={COMPARE_COLOR}
+                            fillOpacity={0.08}
+                            strokeWidth={2}
+                            strokeDasharray="4 3"
+                            dot={{ r: 1.5, fill: COMPARE_COLOR }}
+                        />
+                    )}
                     <Radar
-                        name="자기평가"
+                        name={compareScores ? "후기" : "자기평가"}
                         dataKey="self"
                         stroke={SELF_COLOR}
                         fill="url(#selfGrad)"

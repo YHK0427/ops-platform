@@ -6,6 +6,7 @@ import GrowthReportContent, {
     DOMAINS,
     DOMAIN_LABELS,
 } from "@/components/eval/GrowthReportContent";
+import FinalGrowthReport from "@/components/eval/FinalGrowthReport";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,8 @@ interface DetailData {
     self_scores_by_question: Record<string, number | null>;
     audience_scores_by_question: Record<string, number | null>;
     growth_reflection?: string | null;
+    round_type?: "INITIAL" | "FINAL" | "COMBINED" | null;
+    initial?: DetailData | null;
 }
 
 interface EvalResultCardProps {
@@ -164,12 +167,23 @@ export default function EvalResultCard({
                                     </p>
                                 </div>
                             )}
-                            {growthData && (
-                                <GrowthReportContent
-                                    data={growthData}
+                            {detail?.initial ? (
+                                <FinalGrowthReport
+                                    memberName={memberName}
+                                    final={detail}
+                                    initial={detail.initial}
+                                    growthReflection={detail.growth_reflection}
                                     showTitle={false}
-                                    showQuestionDetail
+                                    showReflection={false}
                                 />
+                            ) : (
+                                growthData && (
+                                    <GrowthReportContent
+                                        data={growthData}
+                                        showTitle={false}
+                                        showQuestionDetail
+                                    />
+                                )
                             )}
                         </div>
                     </motion.div>

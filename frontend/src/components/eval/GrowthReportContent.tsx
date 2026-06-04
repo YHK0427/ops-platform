@@ -36,6 +36,8 @@ export interface GrowthReportContentProps {
     };
     showTitle?: boolean;
     showQuestionDetail?: boolean;
+    /** 상단 우측 라벨 (기본 "초기 분석지"). 후기 단일 폴백 시 "후기 분석지" 전달용. */
+    roundLabel?: string;
 }
 
 // ── Constants ───────────────────────────────────────────────────────────
@@ -293,6 +295,7 @@ export default function GrowthReportContent({
     data,
     showTitle = true,
     showQuestionDetail = false,
+    roundLabel = "초기 분석지",
 }: GrowthReportContentProps) {
     const combinedScores = useMemo(() => {
         if (!data?.combined_scores_by_domain) return { PLANNING: 0, DESIGN: 0, SPEECH: 0 };
@@ -341,7 +344,7 @@ export default function GrowthReportContent({
                     {/* 초기 분석지 라벨 */}
                     <div className="absolute top-4 right-4">
                         <span className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-sm text-[10px] font-bold tracking-wide">
-                            초기 분석지
+                            {roundLabel}
                         </span>
                     </div>
 
