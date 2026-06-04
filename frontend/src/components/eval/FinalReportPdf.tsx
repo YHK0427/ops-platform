@@ -171,7 +171,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 <div style={{ display: "flex", gap: 14 }}>
                     <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column" }}>
                         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>영역별 단계 해석 — 초기 vs 후기</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 10 }}>
                             {rows.map(({ d, init, fin, delta }) => {
                                 const bc = DOMAIN_COLORS[d].bar;
                                 const iStage = getDomainStage(init);

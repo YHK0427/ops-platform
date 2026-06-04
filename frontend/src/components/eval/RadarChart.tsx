@@ -153,6 +153,7 @@ export default function RadarChart({
                             strokeWidth={2}
                             strokeDasharray="4 3"
                             dot={{ r: 1.5, fill: COMPARE_COLOR }}
+                            isAnimationActive={false}
                         />
                     )}
                     <Radar
@@ -162,6 +163,7 @@ export default function RadarChart({
                         fill="url(#selfGrad)"
                         strokeWidth={2.5}
                         dot={{ r: 1.5, fill: SELF_COLOR }}
+                        isAnimationActive={false}
                     />
                     {audienceScores && (
                         <Radar
@@ -171,6 +173,7 @@ export default function RadarChart({
                             fill="url(#audGrad)"
                             strokeWidth={2.5}
                             dot={{ r: 1.5, fill: AUD_COLOR }}
+                            isAnimationActive={false}
                         />
                     )}
                 </RechartsRadarChart>
