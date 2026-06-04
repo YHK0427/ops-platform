@@ -48,12 +48,14 @@ class RoundCreateRequest(BaseModel):
     session_id: int | None = None
     round_type: str = Field(..., pattern="^(INITIAL|FINAL|COMBINED)$")
     title: str = Field(..., min_length=1, max_length=100)
+    compare_to_round_id: int | None = None
 
 
 class RoundUpdateRequest(BaseModel):
     is_open: bool | None = None
     results_open: bool | None = None
     title: str | None = Field(None, min_length=1, max_length=100)
+    compare_to_round_id: int | None = None
 
 
 class RoundResponse(BaseModel):
@@ -63,6 +65,7 @@ class RoundResponse(BaseModel):
     title: str
     is_open: bool
     results_open: bool
+    compare_to_round_id: int | None = None
     created_at: datetime | None = None
     closed_at: datetime | None = None
 
@@ -150,6 +153,12 @@ class MemberResultDetail(BaseModel):
     stage: str | None = None
     type: str | None = None
     growth_reflection: str | None = None
+    round_type: str | None = None
+    # 후기(FINAL) + compare_to 설정 시에만 채워지는 초기 결과(재귀 1단계, growth_reflection 제외)
+    initial: "MemberResultDetail | None" = None
+
+
+MemberResultDetail.model_rebuild()
 
 
 class GrowthReflectionEntry(BaseModel):
@@ -216,9 +225,20 @@ async def _get_user_by_username(db: AsyncSession, username: str) -> User:
 
 
 async def _build_member_result(
-    db: AsyncSession, round_id: int, member_id: int, member_name: str
+    db: AsyncSession,
+    round_id: int,
+    member_id: int,
+    member_name: str,
+    include_comparison: bool = True,
 ) -> MemberResultDetail:
-    """단일 멤버의 상세 결과 구성."""
+    """단일 멤버의 상세 결과 구성.
+
+    include_comparison=True이고 라운드가 FINAL + compare_to_round_id가 있으면,
+    비교 대상 초기 라운드의 결과를 `initial`로 임베드한다(재귀 1단계).
+    """
+    round_ = await db.get(EvalRound, round_id)
+    round_type = round_.round_type if round_ else None
+
     # 자기평가 배정 (성장 회고 서술형 포함)
     self_assign_q = await db.execute(
         select(EvalAssignment).where(
@@ -281,6 +301,25 @@ async def _build_member_result(
     stage = determine_stage(overall) if overall is not None else None
     ptype = determine_type(combined_by_domain) if overall is not None else None
 
+    # 후기 라운드면 초기 결과 비교 임베드 (재귀 1단계, 비교는 더 내려가지 않음)
+    initial: MemberResultDetail | None = None
+    if (
+        include_comparison
+        and round_ is not None
+        and round_.round_type == "FINAL"
+        and round_.compare_to_round_id is not None
+    ):
+        candidate = await _build_member_result(
+            db,
+            round_.compare_to_round_id,
+            member_id,
+            member_name,
+            include_comparison=False,
+        )
+        # 비교 라운드에 해당 멤버 데이터가 전혀 없으면 비교 생략
+        if any(v is not None for v in candidate.combined_scores_by_domain.values()):
+            initial = candidate
+
     return MemberResultDetail(
         member_id=member_id,
         member_name=member_name,
@@ -292,6 +331,8 @@ async def _build_member_result(
         stage=stage,
         type=ptype,
         growth_reflection=growth_reflection,
+        round_type=round_type,
+        initial=initial,
     )
 
 
@@ -330,6 +371,7 @@ async def create_round(
         session_id=body.session_id,
         round_type=body.round_type,
         title=body.title,
+        compare_to_round_id=body.compare_to_round_id,
     )
     db.add(round_)
     await db.flush()  # round_.id 확보
@@ -401,6 +443,8 @@ async def update_round(
 
     if body.title is not None:
         round_.title = body.title
+    if body.compare_to_round_id is not None:
+        round_.compare_to_round_id = body.compare_to_round_id
     if body.results_open is not None:
         round_.results_open = body.results_open
     if body.is_open is not None:
