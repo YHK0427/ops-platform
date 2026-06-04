@@ -178,18 +178,22 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                                 const fStage = getDomainStage(fin);
                                 return (
                                     <div key={d} style={{ padding: "6px 10px", border: `1px solid ${bc}33`, borderRadius: 8, background: `${bc}08` }}>
-                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, marginBottom: 3 }}>
-                                            <span style={{ fontWeight: 700, color: bc }}>{DOMAIN_LABELS[d]} {d === crown && delta > 0 ? "👑" : ""}</span>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: bc }}>{DOMAIN_LABELS[d]} {d === crown && delta > 0 ? "👑" : ""}</span>
                                             <span style={{ fontSize: 10 }}>
-                                                <span style={{ color: "#94a3b8" }}>{iStage} {roundDisplay(init)}</span>
+                                                <span style={{ color: "#94a3b8" }}>{iStage}</span>
                                                 <span style={{ color: "#f43f5e", margin: "0 4px" }}>→</span>
-                                                <span style={{ fontWeight: 800, color: bc }}>{fStage} {roundDisplay(fin)}</span>
+                                                <span style={{ fontWeight: 800, color: bc }}>{fStage}</span>
                                             </span>
                                         </div>
-                                        {/* 단일 바 오버레이: 후기=채움, 초기=기준선 */}
-                                        <div style={{ position: "relative", height: 9, background: "#f1f5f9", borderRadius: 5, marginTop: 2, marginBottom: 5 }}>
-                                            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${(fin / 5) * 100}%`, background: bc, borderRadius: 5 }} />
-                                            <div style={{ position: "absolute", top: -3, bottom: -3, width: 3, background: "#334155", borderRadius: 2, left: `${(init / 5) * 100}%` }} />
+                                        {/* 덤벨: 초기(빈 점) ──→ 후기(찬 점) — 웹과 동일 */}
+                                        <div style={{ position: "relative", height: 38, marginBottom: 3 }}>
+                                            <div style={{ position: "absolute", left: 0, right: 0, top: 18, height: 5, background: "#f1f5f9", borderRadius: 3 }} />
+                                            <div style={{ position: "absolute", top: 18, height: 5, borderRadius: 3, left: `${Math.min((init / 5) * 100, (fin / 5) * 100)}%`, width: `${Math.abs((fin - init) / 5) * 100}%`, background: delta >= 0 ? bc : "#cbd5e1", opacity: 0.45 }} />
+                                            <span style={{ position: "absolute", left: `${(fin / 5) * 100}%`, top: 0, transform: "translateX(-50%)", fontSize: 9, fontWeight: 700, color: bc, whiteSpace: "nowrap" }}>후기 {roundDisplay(fin)}</span>
+                                            <span style={{ position: "absolute", left: `${(init / 5) * 100}%`, bottom: 0, transform: "translateX(-50%)", fontSize: 9, color: "#94a3b8", whiteSpace: "nowrap" }}>초기 {roundDisplay(init)}</span>
+                                            <div style={{ position: "absolute", left: `${(init / 5) * 100}%`, top: 14, transform: "translateX(-50%)", width: 12, height: 12, borderRadius: "50%", background: "#fff", border: "2px solid #94a3b8" }} />
+                                            <div style={{ position: "absolute", left: `${(fin / 5) * 100}%`, top: 13, transform: "translateX(-50%)", width: 14, height: 14, borderRadius: "50%", background: bc, border: "2px solid #fff" }} />
                                         </div>
                                         {/* 단계 설명 (같으면 1개, 다르면 초기·후기) */}
                                         {iStage === fStage ? (
@@ -206,30 +210,41 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                                 );
                             })}
                         </div>
-                        <div style={{ fontSize: 8, color: "#9ca3af", marginTop: 4 }}>막대=후기, 세로선=초기</div>
+                        <div style={{ display: "flex", justifyContent: "center", gap: 12, fontSize: 8, color: "#9ca3af", marginTop: 4 }}>
+                            <span>● 후기</span><span>○ 초기</span>
+                        </div>
                     </div>
 
                     <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column" }}>
                         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>자기 vs 청중 인식 (전후)</div>
-                        {/* 초기(연한·넓은) + 후기(진한·좁은) 겹친 막대 */}
-                        <div style={{ height: 168, display: "flex", alignItems: "flex-end", justifyContent: "space-around", borderBottom: "1px solid #e5e7eb", paddingTop: 16 }}>
+                        {/* 초기(연한·넓은) + 후기(진한·좁은) 겹친 막대 — 후기값 위 / 초기값 아래 (웹과 동일) */}
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-around" }}>
                             {DOMAINS.map((d) => {
                                 const metrics = [
                                     { label: "자기", si: initial.self_scores_by_domain[d] ?? 0, sf: final.self_scores_by_domain[d] ?? 0, color: "#3b82f6" },
                                     { label: "청중", si: initial.audience_scores_by_domain[d] ?? 0, sf: final.audience_scores_by_domain[d] ?? 0, color: "#ec4899" },
                                 ];
                                 return (
-                                    <div key={d} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, height: "100%", justifyContent: "flex-end" }}>
-                                        <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flex: 1, paddingTop: 4 }}>
+                                    <div key={d} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+                                        <div style={{ display: "flex", alignItems: "flex-end", gap: 12, height: 150, paddingTop: 16, borderBottom: "1px solid #e5e7eb", width: "100%", justifyContent: "center" }}>
                                             {metrics.map((m) => (
-                                                <div key={m.label} style={{ position: "relative", width: 26, height: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-                                                    <div style={{ position: "absolute", bottom: 0, width: 22, height: `${(m.si / 5) * 100}%`, background: m.color, opacity: 0.22, borderRadius: "3px 3px 0 0" }} />
+                                                <div key={m.label} style={{ position: "relative", width: 24, height: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+                                                    <div style={{ position: "absolute", bottom: 0, width: 22, height: `${(m.si / 5) * 100}%`, background: m.color, opacity: 0.2, borderRadius: "3px 3px 0 0" }} />
                                                     <div style={{ position: "absolute", bottom: 0, width: 10, height: `${(m.sf / 5) * 100}%`, background: m.color, borderRadius: "3px 3px 0 0" }} />
-                                                    <span style={{ position: "absolute", bottom: `${(m.sf / 5) * 100}%`, fontSize: 8, fontWeight: 700, color: m.color }}>{roundDisplay(m.sf)}</span>
+                                                    <span style={{ position: "absolute", bottom: `${(m.sf / 5) * 100}%`, fontSize: 9, fontWeight: 700, color: m.color, transform: "translateY(-1px)" }}>{roundDisplay(m.sf)}</span>
                                                 </div>
                                             ))}
                                         </div>
-                                        <span style={{ fontSize: 9, fontWeight: 700, color: DOMAIN_COLORS[d].bar, paddingTop: 4 }}>{DOMAIN_LABELS[d]}</span>
+                                        {/* 라벨 + 초기값 */}
+                                        <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 5 }}>
+                                            {metrics.map((m) => (
+                                                <div key={m.label} style={{ width: 24, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                                    <span style={{ fontSize: 9, fontWeight: 600, color: m.color }}>{m.label}</span>
+                                                    <span style={{ fontSize: 8, color: "#9ca3af", whiteSpace: "nowrap" }}>초기 {roundDisplay(m.si)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <span style={{ fontSize: 10, fontWeight: 700, color: DOMAIN_COLORS[d].bar, marginTop: 4 }}>{DOMAIN_LABELS[d]}</span>
                                     </div>
                                 );
                             })}
