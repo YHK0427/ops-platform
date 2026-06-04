@@ -4,6 +4,7 @@ import {
     DOMAINS,
     DOMAIN_LABELS,
     DOMAIN_COLORS,
+    DOMAIN_STAGE_DESCRIPTIONS,
     TYPE_DESCRIPTIONS,
     getDomainStage,
     roundDisplay,
@@ -32,10 +33,10 @@ interface Props {
     page2Ref: RefObject<HTMLDivElement | null>;
 }
 
+// 고정 높이 없이 콘텐츠 높이로 — PDF에서 페이지를 콘텐츠 크기에 맞춰 생성(빈 공간 제거)
 const PAGE: React.CSSProperties = {
     width: 860,
-    height: 1216,
-    padding: "14px 16px",
+    padding: "16px 18px",
     background: "#fff",
     fontFamily: "system-ui, sans-serif",
     color: "#1f2937",
@@ -93,22 +94,25 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                     </div>
                 </div>
 
-                {/* 성장 요약 줄 */}
-                <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff1f3", border: "1px solid #fecdd3", borderRadius: 10, padding: "10px 16px", marginBottom: 12 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#9f1239" }}>성장 요약</span>
-                    <span style={{ fontSize: 13 }}>
-                        <span style={{ color: "#94a3b8", fontWeight: 700 }}>{roundDisplay(overallI)}</span>
-                        <span style={{ color: "#f43f5e", margin: "0 6px" }}>→</span>
-                        <span style={{ color: "#e11d48", fontWeight: 800 }}>{roundDisplay(overallF)}</span>
-                    </span>
-                    <span style={{ fontSize: 11, color: "#6b7280" }}>· 가장 성장 <b style={{ color: "#b45309" }}>{DOMAIN_LABELS[crown]}</b></span>
-                    <span style={{ marginLeft: "auto", background: "#f43f5e", color: "#fff", fontSize: 11, fontWeight: 700, padding: "3px 12px", borderRadius: 10 }}>{transition.name}</span>
+                {/* 성장 요약 */}
+                <div style={{ background: "#fff1f3", border: "1px solid #fecdd3", borderRadius: 10, padding: "10px 16px", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#9f1239" }}>성장 요약</span>
+                        <span style={{ fontSize: 13 }}>
+                            <span style={{ color: "#94a3b8", fontWeight: 700 }}>{roundDisplay(overallI)}</span>
+                            <span style={{ color: "#f43f5e", margin: "0 6px" }}>→</span>
+                            <span style={{ color: "#e11d48", fontWeight: 800 }}>{roundDisplay(overallF)}</span>
+                        </span>
+                        <span style={{ fontSize: 11, color: "#6b7280" }}>· 가장 성장 <b style={{ color: "#b45309" }}>{DOMAIN_LABELS[crown]}</b></span>
+                        <span style={{ marginLeft: "auto", background: "#f43f5e", color: "#fff", fontSize: 11, fontWeight: 700, padding: "3px 12px", borderRadius: 10 }}>{transition.name}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: "#9f1239", marginTop: 5 }}>{transition.oneLiner}</div>
                 </div>
 
                 {/* ROW 1: 레이더+표 | 유형 변화 */}
-                <div style={{ display: "flex", gap: 14, marginBottom: 12, flex: 5 }}>
-                    <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, alignSelf: "flex-start" }}>발표 역량 방사형 그래프</div>
+                <div style={{ display: "flex", gap: 14, marginBottom: 12 }}>
+                    <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "14px 16px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, alignSelf: "flex-start" }}>발표 역량 방사형 그래프</div>
                         <div style={{ width: 210, height: 210, flexShrink: 0 }}>
                             <RadarChart selfScores={finC} compareScores={iniC} size={210} variant="light" />
                         </div>
@@ -163,11 +167,11 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                     </div>
                 </div>
 
-                {/* ROW 2: 단계 변화 | 자기 vs 청중(불릿) */}
-                <div style={{ display: "flex", gap: 14, flex: 4 }}>
+                {/* ROW 2: 단계 변화 | 자기 vs 청중 */}
+                <div style={{ display: "flex", gap: 14 }}>
                     <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column" }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>영역별 단계 해석 — 초기 vs 후기</div>
-                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, justifyContent: "center" }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>영역별 단계 해석 — 초기 vs 후기</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                             {rows.map(({ d, init, fin, delta }) => {
                                 const bc = DOMAIN_COLORS[d].bar;
                                 const iStage = getDomainStage(init);
@@ -183,10 +187,21 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                                             </span>
                                         </div>
                                         {/* 단일 바 오버레이: 후기=채움, 초기=기준선 */}
-                                        <div style={{ position: "relative", height: 9, background: "#f1f5f9", borderRadius: 5, marginTop: 2 }}>
+                                        <div style={{ position: "relative", height: 9, background: "#f1f5f9", borderRadius: 5, marginTop: 2, marginBottom: 5 }}>
                                             <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${(fin / 5) * 100}%`, background: bc, borderRadius: 5 }} />
                                             <div style={{ position: "absolute", top: -3, bottom: -3, width: 3, background: "#334155", borderRadius: 2, left: `${(init / 5) * 100}%` }} />
                                         </div>
+                                        {/* 단계 설명 (같으면 1개, 다르면 초기·후기) */}
+                                        {iStage === fStage ? (
+                                            DOMAIN_STAGE_DESCRIPTIONS[d]?.[fStage] && (
+                                                <div style={{ fontSize: 9, color: "#6b7280", lineHeight: 1.55 }}><b style={{ color: bc }}>{fStage}</b> — {DOMAIN_STAGE_DESCRIPTIONS[d][fStage]}</div>
+                                            )
+                                        ) : (
+                                            <>
+                                                {DOMAIN_STAGE_DESCRIPTIONS[d]?.[iStage] && <div style={{ fontSize: 9, color: "#94a3b8", lineHeight: 1.55 }}><b>초기·{iStage}</b> — {DOMAIN_STAGE_DESCRIPTIONS[d][iStage]}</div>}
+                                                {DOMAIN_STAGE_DESCRIPTIONS[d]?.[fStage] && <div style={{ fontSize: 9, color: "#6b7280", lineHeight: 1.55, marginTop: 2 }}><b style={{ color: bc }}>후기·{fStage}</b> — {DOMAIN_STAGE_DESCRIPTIONS[d][fStage]}</div>}
+                                            </>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -195,9 +210,9 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                     </div>
 
                     <div style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column" }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>자기 vs 청중 인식 (전후)</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>자기 vs 청중 인식 (전후)</div>
                         {/* 초기(연한·넓은) + 후기(진한·좁은) 겹친 막대 */}
-                        <div style={{ flex: 1, display: "flex", alignItems: "flex-end", justifyContent: "space-around", borderBottom: "1px solid #e5e7eb", paddingTop: 14, minHeight: 0 }}>
+                        <div style={{ height: 168, display: "flex", alignItems: "flex-end", justifyContent: "space-around", borderBottom: "1px solid #e5e7eb", paddingTop: 16 }}>
                             {DOMAINS.map((d) => {
                                 const metrics = [
                                     { label: "자기", si: initial.self_scores_by_domain[d] ?? 0, sf: final.self_scores_by_domain[d] ?? 0, color: "#3b82f6" },
@@ -224,9 +239,16 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                             <span><span style={{ display: "inline-block", width: 8, height: 8, background: "#ec4899", borderRadius: 2, marginRight: 2 }} />청중</span>
                             <span>연한=초기 · 진한=후기</span>
                         </div>
-                        <div style={{ background: "#f9fafb", borderRadius: 6, padding: "5px 8px", border: "1px solid #e5e7eb" }}>
-                            <span style={{ fontSize: 9, fontWeight: 700, color: finPerc.type === "overestimate" ? "#e11d48" : finPerc.type === "underestimate" ? "#2563eb" : "#059669" }}>{finPerc.label}</span>
-                            <span style={{ fontSize: 8, color: "#6b7280", marginLeft: 6 }}>초기 {PCODE[iniCode]} → 후기 {PCODE[finCode]}</span>
+                        <div style={{ background: "#f9fafb", borderRadius: 6, padding: "8px 10px", border: "1px solid #e5e7eb" }}>
+                            <div style={{ marginBottom: 4 }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: finPerc.type === "overestimate" ? "#e11d48" : finPerc.type === "underestimate" ? "#2563eb" : "#059669" }}>{finPerc.label}</span>
+                                <span style={{ fontSize: 8, color: "#6b7280", marginLeft: 6 }}>초기 {PCODE[iniCode]} → 후기 {PCODE[finCode]}</span>
+                            </div>
+                            <div style={{ fontSize: 9, color: "#6b7280", lineHeight: 1.6, marginBottom: 5 }}>{finPerc.description}</div>
+                            <div style={{ background: "#fff", border: "1px solid #f0f0f0", borderRadius: 5, padding: "6px 8px" }}>
+                                <div style={{ fontSize: 8, fontWeight: 700, color: "#9ca3af", marginBottom: 1 }}>피드백</div>
+                                <div style={{ fontSize: 9, color: "#374151", lineHeight: 1.6 }}>{finPerc.feedback}</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -263,9 +285,9 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 </div>
 
                 {/* 성장 PLAN 3열 (멘토링 제외, 꿀팁 포함) */}
-                <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "14px 16px", marginBottom: 14, position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "14px 16px", marginBottom: 14, position: "relative", zIndex: 1, display: "flex", flexDirection: "column" }}>
                     <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>성장 PLAN</div>
-                    <div style={{ display: "flex", gap: 10, flex: 1 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "stretch" }}>
                         {DOMAINS.map((d) => {
                             const bc = DOMAIN_COLORS[d].bar;
                             const lk = getLowestQuestionInDomain(d, final.self_scores_by_question, final.audience_scores_by_question);
@@ -284,7 +306,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                                     {paras[0] && <div style={{ fontSize: 10, color: "#6b7280", lineHeight: 1.65 }}>{paras[0]}</div>}
                                     {paras[1] && <div style={{ fontSize: 10, color: "#4b5563", lineHeight: 1.65, marginTop: 5, borderLeft: `2px solid ${bc}44`, paddingLeft: 7 }}>{paras[1]}</div>}
                                     {tips.length > 0 && (
-                                        <div style={{ marginTop: "auto", paddingTop: 8 }}>
+                                        <div style={{ marginTop: 8 }}>
                                             <div style={{ fontSize: 10, fontWeight: 700, color: "#374151", marginBottom: 4 }}>📌 그 외 꿀팁</div>
                                             {tips.slice(0, 2).map((tip, i) => (
                                                 <div key={i} style={{ background: "#fff", borderRadius: 5, padding: "5px 8px", border: "1px solid #f0f0f0", marginBottom: 4 }}>
@@ -304,9 +326,12 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 {growthReflection && growthReflection.trim() && (
                     <div style={{ border: "1px solid #fecdd3", borderRadius: 10, padding: "16px 20px", background: "#fff7f9", position: "relative", zIndex: 1 }}>
                         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: "#9f1239" }}>내가 발견한 성장</div>
-                        <p style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.8, marginTop: 0, marginBottom: 12 }}>
-                            앞선 결과가 발표 역량의 변화를 보여주는 객관적인 성장 기록이라면, 아래는 여러분이 직접 체감한 주관적인 성장 기록입니다. 객관적 성장과 주관적 성장이 만나는 지점에서 진짜 변화가 시작됩니다.
-                        </p>
+                        <div style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.8, marginBottom: 12 }}>
+                            <p style={{ margin: "0 0 7px" }}>앞선 결과가 발표 역량의 변화를 보여주는 보다 객관적인 성장 기록이라면, 아래 내용은 여러분이 직접 체감한 주관적인 성장 기록입니다.</p>
+                            <p style={{ margin: "0 0 7px" }}>유니브피티에서의 발표 경험, 피드백, 팀 활동, 그리고 수많은 연습 과정 속에서 여러분은 각자의 방식으로 성장해 왔습니다. 성장은 언제나 점수로만 설명되는 것은 아닙니다.</p>
+                            <p style={{ margin: "0 0 7px" }}>발표를 준비하며 고민했던 시간, 팀원들과 의견을 나누었던 순간, 용기를 내어 사람들 앞에 섰던 경험 하나하나가 여러분만의 성장으로 쌓여 왔습니다.</p>
+                            <p style={{ margin: 0 }}>객관적인 성장과 주관적인 성장이 만나는 지점에서 진짜 변화가 시작됩니다. 유니브피티를 통해 스스로 발견한 가장 큰 성장의 순간을 확인해 보세요.</p>
+                        </div>
                         <div style={{ background: "#fff", border: "1px solid #fecdd3", borderRadius: 8, padding: "14px 16px" }}>
                             <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 6 }}>유니브피티 활동을 통해 가장 크게 성장했다고 느끼는 점</div>
                             <p style={{ fontSize: 12, color: "#374151", lineHeight: 2.0, margin: 0, whiteSpace: "pre-wrap" }}>{growthReflection}</p>

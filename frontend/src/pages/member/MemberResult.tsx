@@ -58,19 +58,23 @@ export default function MemberResult() {
         try {
             const { toJpeg } = await import("html-to-image");
             const { jsPDF } = await import("jspdf");
-            const pdf = new jsPDF("p", "mm", "a4");
-            const pw = pdf.internal.pageSize.getWidth();
-            const ph = pdf.internal.pageSize.getHeight();
+            const PW = 210; // A4 폭(mm)
 
-            const url1 = await toJpeg(el1, { pixelRatio: 2, quality: 0.95, backgroundColor: "#ffffff" });
-            await new Promise<void>(r => { const i = new Image(); i.onload = () => r(); i.src = url1; });
-            pdf.addImage(url1, "JPEG", 0, 0, pw, ph);
+            // 각 페이지를 콘텐츠 높이에 맞춰 캡처 → 페이지 크기를 콘텐츠에 맞춰 생성(빈 공간 제거)
+            const capture = async (el: HTMLDivElement) => {
+                const url = await toJpeg(el, { pixelRatio: 2, quality: 0.95, backgroundColor: "#ffffff" });
+                const img = await new Promise<HTMLImageElement>(r => { const i = new Image(); i.onload = () => r(i); i.src = url; });
+                return { url, h: (PW * img.height) / img.width };
+            };
+
+            const p1 = await capture(el1);
+            const pdf = new jsPDF({ unit: "mm", format: [PW, p1.h] });
+            pdf.addImage(p1.url, "JPEG", 0, 0, PW, p1.h);
 
             if (el2) {
-                const url2 = await toJpeg(el2, { pixelRatio: 2, quality: 0.95, backgroundColor: "#ffffff" });
-                await new Promise<void>(r => { const i = new Image(); i.onload = () => r(); i.src = url2; });
-                pdf.addPage();
-                pdf.addImage(url2, "JPEG", 0, 0, pw, ph);
+                const p2 = await capture(el2);
+                pdf.addPage([PW, p2.h]);
+                pdf.addImage(p2.url, "JPEG", 0, 0, PW, p2.h);
             }
 
             pdf.save(`${data.member_name}_발표 성장 리포트.pdf`);

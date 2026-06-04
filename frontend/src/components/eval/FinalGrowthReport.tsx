@@ -215,8 +215,11 @@ export default function FinalGrowthReport({
                         <span className="text-xs text-gray-500">초기</span>
                     </div>
                 </div>
-                <p className="text-xs text-gray-400 leading-[1.8] mb-4 [word-break:keep-all] text-pretty">
-                    초기와 후기의 발표 역량을 겹쳐 표시했습니다. 아래 표는 후기 평가 기준(자기 · 청중)이며, 소수점 둘째 자리에서 반올림됩니다.
+                <p className="text-xs text-gray-400 leading-[1.7] mb-1 [word-break:keep-all] text-pretty">
+                    초기와 후기의 발표 역량을 겹쳐 표시했습니다.
+                </p>
+                <p className="text-xs text-gray-400 leading-[1.7] mb-4 [word-break:keep-all] text-pretty">
+                    아래 표는 후기 평가 기준(자기·청중)이며, 소수점 둘째 자리에서 반올림됩니다.
                 </p>
                 <div className="overflow-hidden rounded-xl border border-gray-200">
                     <table className="w-full text-sm">
