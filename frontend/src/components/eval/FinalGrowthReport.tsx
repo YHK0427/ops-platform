@@ -248,8 +248,41 @@ export default function FinalGrowthReport({
                 </div>
             </Section>
 
-            {/* ─── 2. 영역별 단계 해석 (초기 → 후기) ─── */}
-            <Section title="영역별 단계 해석 — 초기 vs 후기 변화" icon={<TrendingUp className="w-4 h-4 text-rose-500" />} delay={0.1}>
+            {/* ─── 2. 발표 유형 해석 ─── */}
+            <Section title="발표 유형 해석 — 변화" icon={<Target className="w-4 h-4 text-rose-500" />} delay={0.1}>
+                <div className="flex items-center justify-center gap-3 mb-4">
+                    <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-sm font-bold">{initial.type ?? "분석 중"}</span>
+                    <ArrowRight className="w-5 h-5 text-rose-400" />
+                    <span className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-600 text-sm font-bold ring-1 ring-rose-200">{final.type ?? "분석 중"}</span>
+                </div>
+                <div className="flex items-center justify-center gap-6 sm:gap-12 mb-5">
+                    {(["균형형", "강점 집중형", "보완점 명확형"] as const).map((t) => {
+                        const isActive = final.type === t;
+                        const emoji = t === "균형형" ? "triangle-balanced" : t === "강점 집중형" ? "triangle-strong" : "triangle-growth";
+                        return (
+                            <div key={t} className={`flex flex-col items-center gap-2 px-3 py-3 rounded-xl transition-all ${isActive ? "bg-gray-50 ring-2 ring-rose-200" : "opacity-40"}`}>
+                                <TriangleIcon type={emoji} size={72} />
+                                <span className={`text-xs font-semibold ${isActive ? "text-gray-900" : "text-gray-400"}`}>{t}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+                <div className="rounded-xl bg-gradient-to-br from-gray-50 to-white border border-gray-100 p-4">
+                    <p className="text-sm font-bold text-gray-900 mb-2">
+                        {final.type ?? "분석 중"}
+                        {final.type === "강점 집중형" && <span className="text-blue-600 ml-1">— {getStrongestDomain(final.combined_scores_by_domain)} 강점</span>}
+                        {final.type === "보완점 명확형" && <span className="text-amber-600 ml-1">— {getWeakestDomain(final.combined_scores_by_domain)} 보완 필요</span>}
+                    </p>
+                    <p className="text-xs text-gray-600 leading-[1.8] mb-3 [word-break:keep-all] text-pretty">{typeInfo.detail}</p>
+                    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-50/50 border border-rose-100">
+                        <TrendingUp className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+                        <p className="text-xs text-gray-700 leading-[1.8] font-medium [word-break:keep-all] text-pretty">{typeInfo.action}</p>
+                    </div>
+                </div>
+            </Section>
+
+            {/* ─── 3. 영역별 단계 해석 (초기 → 후기) ─── */}
+            <Section title="영역별 단계 해석 — 초기 vs 후기 변화" icon={<TrendingUp className="w-4 h-4 text-rose-500" />} delay={0.15}>
                 <p className="text-[11px] text-gray-400 mb-4 [word-break:keep-all]">
                     각 영역의 종합 점수(자기·청중 평균)가 초기에서 후기로 어떻게 변화했는지 보여줍니다. 가장 크게 성장한 영역에는 👑 표시가 있습니다.
                 </p>
@@ -325,39 +358,6 @@ export default function FinalGrowthReport({
                             </div>
                         );
                     })}
-                </div>
-            </Section>
-
-            {/* ─── 3. 발표 유형 변화 ─── */}
-            <Section title="발표 유형 해석 — 변화" icon={<Target className="w-4 h-4 text-rose-500" />} delay={0.15}>
-                <div className="flex items-center justify-center gap-3 mb-4">
-                    <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-sm font-bold">{initial.type ?? "분석 중"}</span>
-                    <ArrowRight className="w-5 h-5 text-rose-400" />
-                    <span className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-600 text-sm font-bold ring-1 ring-rose-200">{final.type ?? "분석 중"}</span>
-                </div>
-                <div className="flex items-center justify-center gap-6 sm:gap-12 mb-5">
-                    {(["균형형", "강점 집중형", "보완점 명확형"] as const).map((t) => {
-                        const isActive = final.type === t;
-                        const emoji = t === "균형형" ? "triangle-balanced" : t === "강점 집중형" ? "triangle-strong" : "triangle-growth";
-                        return (
-                            <div key={t} className={`flex flex-col items-center gap-2 px-3 py-3 rounded-xl transition-all ${isActive ? "bg-gray-50 ring-2 ring-rose-200" : "opacity-40"}`}>
-                                <TriangleIcon type={emoji} size={72} />
-                                <span className={`text-xs font-semibold ${isActive ? "text-gray-900" : "text-gray-400"}`}>{t}</span>
-                            </div>
-                        );
-                    })}
-                </div>
-                <div className="rounded-xl bg-gradient-to-br from-gray-50 to-white border border-gray-100 p-4">
-                    <p className="text-sm font-bold text-gray-900 mb-2">
-                        {final.type ?? "분석 중"}
-                        {final.type === "강점 집중형" && <span className="text-blue-600 ml-1">— {getStrongestDomain(final.combined_scores_by_domain)} 강점</span>}
-                        {final.type === "보완점 명확형" && <span className="text-amber-600 ml-1">— {getWeakestDomain(final.combined_scores_by_domain)} 보완 필요</span>}
-                    </p>
-                    <p className="text-xs text-gray-600 leading-[1.8] mb-3 [word-break:keep-all] text-pretty">{typeInfo.detail}</p>
-                    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-50/50 border border-rose-100">
-                        <TrendingUp className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
-                        <p className="text-xs text-gray-700 leading-[1.8] font-medium [word-break:keep-all] text-pretty">{typeInfo.action}</p>
-                    </div>
                 </div>
             </Section>
 
