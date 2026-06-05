@@ -11,6 +11,8 @@ export interface EvalRound {
     title: string;
     is_open: boolean;
     results_open: boolean;
+    compare_to_round_id?: number | null;
+    hidden_member_ids?: number[] | null;
     created_at: string | null;
     closed_at: string | null;
     // list response extras
@@ -147,6 +149,8 @@ export function useUpdateRound() {
             is_open?: boolean;
             results_open?: boolean;
             title?: string;
+            compare_to_round_id?: number | null;
+            hidden_member_ids?: number[];
         }) => {
             const { data } = await api.patch<EvalRound>(`/evaluations/rounds/${roundId}`, body);
             return data;

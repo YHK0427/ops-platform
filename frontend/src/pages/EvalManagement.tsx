@@ -188,7 +188,8 @@ function MyRoundCard({ round, navigate }: { round: EvalRound; navigate: ReturnTy
 
 export default function EvalManagement() {
     const { user } = useAuth();
-    const isAdmin = user?.role === "admin";
+    // 평가 라운드 관리 권한 = admin 또는 회장단(백엔드 require_admin_or_chairman과 동일)
+    const isAdmin = user?.role === "admin" || user?.department === "회장단";
     const [activeTab, setActiveTab] = useState<TabKey>("rounds");
     const [selectedRoundId, setSelectedRoundId] = useState<number | null>(null);
 
@@ -1138,6 +1139,11 @@ function ResultsTab({
                 </Select>
             </div>
 
+            {/* 결과 비공개 멤버 설정 (당일 결석자 등) */}
+            {selectedRoundId && selectedRound && results && results.length > 0 && (
+                <HiddenMembersPanel round={selectedRound} members={results} />
+            )}
+
             {/* 성장 회고 모아보기 — FINAL 라운드에서만 의미 있음 */}
             {selectedRoundId && selectedRound?.round_type === "FINAL" && (
                 <GrowthReflectionsSection roundId={selectedRoundId} />
@@ -1169,6 +1175,95 @@ function ResultsTab({
                             }
                         />
                     ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function HiddenMembersPanel({
+    round,
+    members,
+}: {
+    round: EvalRound;
+    members: { member_id: number; member_name: string }[];
+}) {
+    const [open, setOpen] = useState(false);
+    const [sel, setSel] = useState<Set<number>>(() => new Set(round.hidden_member_ids ?? []));
+    const updateRound = useUpdateRound();
+
+    // 라운드 변경 시 선택 동기화
+    const baseKey = `${round.id}:${(round.hidden_member_ids ?? []).join(",")}`;
+    const [syncedKey, setSyncedKey] = useState(baseKey);
+    if (syncedKey !== baseKey) {
+        setSyncedKey(baseKey);
+        setSel(new Set(round.hidden_member_ids ?? []));
+    }
+
+    const hiddenCount = round.hidden_member_ids?.length ?? 0;
+    const toggle = (id: number) => {
+        setSel((prev) => {
+            const n = new Set(prev);
+            n.has(id) ? n.delete(id) : n.add(id);
+            return n;
+        });
+    };
+    const save = () => {
+        updateRound.mutate(
+            { roundId: round.id, hidden_member_ids: [...sel] },
+            { onSuccess: () => setOpen(false) },
+        );
+    };
+
+    return (
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+            <button
+                onClick={() => setOpen((o) => !o)}
+                className="w-full flex items-center justify-between px-4 py-2.5 text-sm"
+            >
+                <span className="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                    <EyeOff className="w-4 h-4" />
+                    결과 비공개 멤버 (결석자 등)
+                    {hiddenCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-600 text-[11px] font-semibold">{hiddenCount}명 비공개</span>
+                    )}
+                </span>
+                <ChevronDown className={cn("w-4 h-4 transition-transform", open && "rotate-180")} />
+            </button>
+            {open && (
+                <div className="px-4 pb-3 border-t border-[var(--color-border-subtle)] pt-3">
+                    <p className="text-xs text-[var(--color-text-muted)] mb-3">
+                        체크한 멤버는 결과를 공개해도 본인에게 결과가 보이지 않습니다.
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-60 overflow-auto mb-3">
+                        {members.map((m) => {
+                            const checked = sel.has(m.member_id);
+                            return (
+                                <label
+                                    key={m.member_id}
+                                    className={cn(
+                                        "flex items-center gap-2 px-2.5 py-1.5 rounded-lg border cursor-pointer text-sm transition-colors",
+                                        checked
+                                            ? "border-rose-300 bg-rose-50 text-rose-700"
+                                            : "border-[var(--color-border)] hover:bg-[var(--color-hover)]"
+                                    )}
+                                >
+                                    <input type="checkbox" checked={checked} onChange={() => toggle(m.member_id)} className="accent-rose-500" />
+                                    {m.member_name}
+                                </label>
+                            );
+                        })}
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <button onClick={() => setSel(new Set())} className="px-3 py-1.5 rounded-lg text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-hover)]">전체 해제</button>
+                        <button
+                            onClick={save}
+                            disabled={updateRound.isPending}
+                            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50"
+                        >
+                            {updateRound.isPending ? "저장 중..." : "저장"}
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

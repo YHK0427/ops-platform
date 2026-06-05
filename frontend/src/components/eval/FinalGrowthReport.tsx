@@ -263,31 +263,30 @@ export default function FinalGrowthReport({
                         const finPct = (fin / 5) * 100;
                         return (
                             <div key={d} className={`rounded-xl border ${colors.border} ${colors.bg} p-4`}>
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center gap-2">
+                                {/* 도메인 + 👑 + 단계 전환 pill(오른쪽) 한 줄 */}
+                                <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                         <span className={`text-sm font-bold ${colors.text}`}>{DOMAIN_LABELS[d]}</span>
                                         {isCrown && (
                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">
                                                 <Crown className="w-3 h-3" /> 가장 크게 성장
                                             </span>
                                         )}
+                                        <span className="inline-flex items-center gap-1.5">
+                                            <span className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-slate-500 text-xs font-semibold">{initStage}</span>
+                                            <ArrowRight className="w-4 h-4 text-rose-400 shrink-0" />
+                                            <span className={`px-2.5 py-1 rounded-lg ${colors.bg} ${colors.text} border ${colors.border} text-xs font-bold`}>{finStage}</span>
+                                        </span>
                                     </div>
                                     <span className={`text-xs font-bold tabular-nums ${delta > 0 ? "text-rose-500" : delta < 0 ? "text-slate-400" : "text-gray-400"}`}>
                                         {delta > 0 ? "▲" : delta < 0 ? "▼" : "–"} {Math.abs(delta).toFixed(1)}
                                     </span>
                                 </div>
 
-                                {/* 변화 텍스트 (단계) */}
-                                <div className="flex items-center gap-2 mb-3 text-sm">
-                                    <span className="text-gray-400">{initStage}</span>
-                                    <ArrowRight className="w-4 h-4 text-rose-400 shrink-0" />
-                                    <span className={`font-bold ${colors.text}`}>{finStage}</span>
-                                </div>
-
                                 {/* 덤벨: 초기(빈 점) ──→ 후기(찬 점), 0~5 축 위 이동 */}
                                 <div className="relative mb-3" style={{ height: 46, marginTop: 6 }}>
                                     {/* 기준 트랙 */}
-                                    <div className="absolute left-0 right-0 rounded-full bg-gray-100" style={{ top: 21, height: 6 }} />
+                                    <div className="absolute left-0 right-0 rounded-full bg-gray-200" style={{ top: 21, height: 6 }} />
                                     {/* 변화 구간 */}
                                     <div className="absolute rounded-full" style={{ top: 21, height: 6, left: `${Math.min(initPct, finPct)}%`, width: `${Math.abs(finPct - initPct)}%`, backgroundColor: delta >= 0 ? colors.bar : "#cbd5e1", opacity: 0.45 }} />
                                     {/* 후기 값(위) */}
@@ -336,14 +335,14 @@ export default function FinalGrowthReport({
                     <ArrowRight className="w-5 h-5 text-rose-400" />
                     <span className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-600 text-sm font-bold ring-1 ring-rose-200">{final.type ?? "분석 중"}</span>
                 </div>
-                <div className="flex items-center justify-center gap-4 sm:gap-8 mb-4">
+                <div className="flex items-center justify-center gap-6 sm:gap-12 mb-5">
                     {(["균형형", "강점 집중형", "보완점 명확형"] as const).map((t) => {
                         const isActive = final.type === t;
                         const emoji = t === "균형형" ? "triangle-balanced" : t === "강점 집중형" ? "triangle-strong" : "triangle-growth";
                         return (
-                            <div key={t} className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg transition-all ${isActive ? "bg-gray-50 ring-2 ring-rose-200" : "opacity-40"}`}>
-                                <TriangleIcon type={emoji} />
-                                <span className={`text-[11px] font-semibold ${isActive ? "text-gray-900" : "text-gray-400"}`}>{t}</span>
+                            <div key={t} className={`flex flex-col items-center gap-2 px-3 py-3 rounded-xl transition-all ${isActive ? "bg-gray-50 ring-2 ring-rose-200" : "opacity-40"}`}>
+                                <TriangleIcon type={emoji} size={72} />
+                                <span className={`text-xs font-semibold ${isActive ? "text-gray-900" : "text-gray-400"}`}>{t}</span>
                             </div>
                         );
                     })}
@@ -364,29 +363,33 @@ export default function FinalGrowthReport({
 
             {/* ─── 4. 자기 vs 청중 인식 비교 ─── */}
             <Section title="자기 vs 청중 인식 비교" icon={<Users className="w-4 h-4 text-rose-500" />} delay={0.2}>
-                {/* 자기/청중 — 초기(연한) 위 후기(진한) 겹친 막대. 후기 값=막대 위, 초기 값=하단 */}
+                {/* 자기/청중 — 막대 바깥에 숫자(후기 진한색 위 · 초기 회색 아래), 자기=왼쪽 청중=오른쪽 */}
                 <div className="flex items-stretch justify-around gap-2 mb-2">
                     {perceptionBars.map(({ d, 자기, 청중 }) => {
-                        const metrics = [{ label: "자기", textCls: "text-blue-600", ...자기 }, { label: "청중", textCls: "text-pink-600", ...청중 }];
+                        const metrics = [{ label: "자기", side: "left" as const, textCls: "text-blue-600", ...자기 }, { label: "청중", side: "right" as const, textCls: "text-pink-600", ...청중 }];
                         return (
                             <div key={d} className="flex-1 flex flex-col items-center">
-                                {/* 막대 + 후기 값(위) */}
-                                <div className="flex items-end justify-center gap-5 w-full border-b border-gray-200" style={{ height: 132, paddingTop: 16 }}>
+                                <div className="flex items-end justify-center gap-7 w-full border-b border-gray-200" style={{ height: 140, paddingTop: 18 }}>
                                     {metrics.map((m) => (
-                                        <div key={m.label} className="relative flex items-end justify-center" style={{ height: "100%", width: 26 }}>
-                                            <div className="absolute bottom-0 left-1/2 rounded-t" style={{ width: 24, height: `${(m.si / 5) * 100}%`, backgroundColor: m.color, opacity: 0.2, transform: "translateX(-50%)" }} />
+                                        <div key={m.label} className="relative flex items-end justify-center" style={{ height: "100%", width: 24 }}>
+                                            {/* 초기(회색·넓은) */}
+                                            <div className="absolute bottom-0 left-1/2 rounded-t" style={{ width: 24, height: `${(m.si / 5) * 100}%`, backgroundColor: "#cbd5e1", transform: "translateX(-50%)" }} />
+                                            {/* 후기(색상·좁은) */}
                                             <div className="absolute bottom-0 left-1/2 rounded-t" style={{ width: 11, height: `${(m.sf / 5) * 100}%`, backgroundColor: m.color, transform: "translateX(-50%)" }} />
-                                            <span className="absolute left-1/2 text-[11px] font-bold tabular-nums whitespace-nowrap" style={{ bottom: `${(m.sf / 5) * 100}%`, color: m.color, transform: "translate(-50%,-2px)" }}>{roundDisplay(m.sf)}</span>
+                                            {/* 숫자 스택: 후기(위)·초기(아래), 막대 바깥쪽 */}
+                                            <div
+                                                className="absolute flex flex-col items-center leading-tight tabular-nums"
+                                                style={{ bottom: `${(m.sf / 5) * 100}%`, transform: "translateY(45%)", [m.side === "left" ? "right" : "left"]: "100%", paddingLeft: m.side === "right" ? 3 : 0, paddingRight: m.side === "left" ? 3 : 0 }}
+                                            >
+                                                <span className="text-[11px] font-bold" style={{ color: m.color }}>{roundDisplay(m.sf)}</span>
+                                                <span className="text-[10px] text-gray-400">{roundDisplay(m.si)}</span>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
-                                {/* 라벨 + 초기 값(아래) */}
-                                <div className="flex justify-center gap-5 w-full mt-1.5">
+                                <div className="flex justify-center gap-7 w-full mt-1.5">
                                     {metrics.map((m) => (
-                                        <div key={m.label} className="flex flex-col items-center" style={{ width: 26 }}>
-                                            <span className={`text-[11px] font-semibold ${m.textCls}`}>{m.label}</span>
-                                            <span className="text-[9px] text-gray-400 tabular-nums whitespace-nowrap">초기 {roundDisplay(m.si)}</span>
-                                        </div>
+                                        <span key={m.label} className={`text-[11px] font-semibold text-center ${m.textCls}`} style={{ width: 24 }}>{m.label}</span>
                                     ))}
                                 </div>
                                 <span className="text-xs font-bold mt-1.5" style={{ color: DOMAIN_COLORS[d].bar }}>{DOMAIN_LABELS[d]}</span>
@@ -395,12 +398,11 @@ export default function FinalGrowthReport({
                     })}
                 </div>
                 <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-1">
-                    <div className="flex items-center gap-1.5"><div className="w-3 h-2.5 rounded-sm bg-blue-500" /><span className="text-xs text-gray-500">자기</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-3 h-2.5 rounded-sm bg-pink-500" /><span className="text-xs text-gray-500">청중</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-3 h-2.5 rounded-sm bg-gray-300" /><span className="text-xs text-gray-500">연한 = 초기</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-2 h-3 rounded-sm bg-gray-500" /><span className="text-xs text-gray-500">진한 = 후기</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-slate-300" /><span className="text-xs text-gray-500">초기</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-blue-500" /><span className="text-xs text-gray-500">후기 · 자기</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-pink-500" /><span className="text-xs text-gray-500">후기 · 청중</span></div>
                 </div>
-                <p className="text-xs text-gray-400 mb-4 text-center [word-break:keep-all]">※ 막대 위 숫자=후기, 아래=초기 · 진한 막대가 높으면 성장</p>
+                <p className="text-xs text-gray-400 mb-4 text-center [word-break:keep-all]">※ 회색 막대 = 초기, 색상 막대 = 후기 · 숫자(위 후기 / 아래 초기)</p>
 
                 {/* 후기 기준 */}
                 <div className="rounded-xl bg-gradient-to-br from-gray-50 to-white border border-gray-100 p-4 mb-4">

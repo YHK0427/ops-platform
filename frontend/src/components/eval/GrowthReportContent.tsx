@@ -217,9 +217,8 @@ export function getWeakestDomain(scores: Record<string, number | null>): string 
 
 // ── Triangle SVG icons for type display ─────────────────────────────────
 
-export function TriangleIcon({ type, className }: { type: string; className?: string }) {
-    const size = 48;
-    const pad = 6;
+export function TriangleIcon({ type, className, size = 48 }: { type: string; className?: string; size?: number }) {
+    const pad = size * 0.125;
     const cx = size / 2;
 
     if (type === "triangle-balanced") {
@@ -240,7 +239,7 @@ export function TriangleIcon({ type, className }: { type: string; className?: st
         return (
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={className}>
                 <polygon
-                    points={`${cx},${pad - 3} ${cx + 8},${size - pad} ${cx - 8},${size - pad}`}
+                    points={`${cx},${pad} ${cx + size * 0.17},${size - pad} ${cx - size * 0.17},${size - pad}`}
                     fill="rgba(59,130,246,0.15)"
                     stroke="#3b82f6"
                     strokeWidth="2"
@@ -252,7 +251,7 @@ export function TriangleIcon({ type, className }: { type: string; className?: st
     return (
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={className}>
             <polygon
-                points={`${cx},${size / 2 + 6} ${size - pad + 2},${size - pad} ${pad - 2},${size - pad}`}
+                points={`${cx},${size * 0.56} ${size - pad},${size - pad} ${pad},${size - pad}`}
                 fill="rgba(245,158,11,0.15)"
                 stroke="#f59e0b"
                 strokeWidth="2"

@@ -195,7 +195,7 @@ export default function SelfEvalForm() {
                                 <p className="text-gray-700">
                                     개인 발표는 이제 마무리 단계이지만, 앞으로 남은 대형 팀 프로젝트 BP와 피날래까지 여러분의 계속될 성장을 늘 응원하겠습니다.
                                 </p>
-                                <p className="text-xs text-gray-400 pt-2 border-t border-gray-100">
+                                <p className="text-xs text-gray-400 pt-2 border-t border-gray-100 text-right">
                                     발표성장리포트 TF 일동 (장영진, 이현아, 김태형, 김영헌)
                                 </p>
                             </div>

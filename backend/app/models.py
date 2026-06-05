@@ -310,6 +310,8 @@ class EvalRound(Base):
     compare_to_round_id = Column(
         Integer, ForeignKey("eval_rounds.id", ondelete="SET NULL"), nullable=True
     )
+    # 결과 공개 시에도 결과를 숨길 멤버 id 목록(예: 당일 결석자). NULL/빈배열이면 전원 공개.
+    hidden_member_ids = Column(ARRAY(Integer), nullable=True)
 
     __table_args__ = (
         CheckConstraint("round_type IN ('INITIAL','FINAL','COMBINED')", name="ck_eval_rounds_type"),

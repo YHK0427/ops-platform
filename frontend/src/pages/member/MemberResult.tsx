@@ -5,7 +5,8 @@ import { RadarChart } from "@/components/eval/RadarChart";
 import { motion } from "framer-motion";
 import { ArrowLeft, Lock, Download } from "lucide-react";
 import FinalGrowthReport from "@/components/eval/FinalGrowthReport";
-import FinalReportPdf from "@/components/eval/FinalReportPdf";
+import { useGrowthReportPdf } from "@/hooks/useGrowthReportPdf";
+import { COVER_TITLE, COVER_PARAGRAPHS, COVER_CLOSING, COVER_SIGNATURE } from "@/constants/growthReportCover";
 import GrowthReportContent, {
     DOMAINS,
     DOMAIN_LABELS,
@@ -41,19 +42,29 @@ export default function MemberResult() {
 
     const pdfRef = useRef<HTMLDivElement>(null);
     const pdfRef2 = useRef<HTMLDivElement>(null);
-    const pdfRefF1 = useRef<HTMLDivElement>(null);  // 후기 비교 PDF 1페이지
-    const pdfRefF2 = useRef<HTMLDivElement>(null);  // 후기 비교 PDF 2페이지
+    const reportPdf = useGrowthReportPdf();  // 후기 비교 리포트(표지·결과1·결과2) 공용 훅
     const [pdfLoading, setPdfLoading] = useState(false);
     const [showPdf, setShowPdf] = useState(false);
+    const [step, setStep] = useState<"cover" | "report">("cover");  // 후기 비교 결과: 멘트 인트로 → 리포트
 
     const handleDownloadPdf = useCallback(async () => {
         if (!data) return;
+        // 후기 비교 리포트 → 공용 훅(표지 포함 3페이지)
+        if (data.initial) {
+            await reportPdf.generate({
+                memberName: data.member_name,
+                final: data,
+                initial: data.initial,
+                growthReflection: data.growth_reflection,
+            });
+            return;
+        }
+        // 초기(단일) 리포트 → 기존 bespoke 2페이지
         setPdfLoading(true);
         setShowPdf(true);
         await new Promise(r => setTimeout(r, 800));
-        const isComparison = !!data.initial;
-        const el1 = isComparison ? pdfRefF1.current : pdfRef.current;
-        const el2 = isComparison ? pdfRefF2.current : pdfRef2.current;
+        const el1 = pdfRef.current;
+        const el2 = pdfRef2.current;
         if (!el1) { setPdfLoading(false); setShowPdf(false); return; }
         try {
             const { toJpeg } = await import("html-to-image");
@@ -82,7 +93,7 @@ export default function MemberResult() {
             setShowPdf(false);
             setPdfLoading(false);
         }
-    }, [data]);
+    }, [data, reportPdf]);
 
     const combinedScores = useMemo(() => {
         if (!data?.combined_scores_by_domain) return { PLANNING: 0, DESIGN: 0, SPEECH: 0 };
@@ -155,6 +166,56 @@ export default function MemberResult() {
         );
     }
 
+    // ── 후기 비교 결과: 멘트 인트로 화면 (설문처럼 한 단계 거쳐 진입) ──
+    if (data.initial && step === "cover") {
+        return (
+            <div className="member-page">
+                <style>{`
+                    @keyframes petal-drift-c1 { 0%,100% { transform: translateY(0) rotate(-15deg);} 50%{transform:translateY(-6px) rotate(-5deg);} }
+                    @keyframes petal-drift-c2 { 0%,100% { transform: translateY(0) rotate(20deg);} 50%{transform:translateY(-8px) rotate(30deg);} }
+                `}</style>
+                <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200">
+                    <div className="mx-auto max-w-2xl flex items-center gap-3 px-4 py-3">
+                        <button onClick={() => navigate("/member/reports")} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                            <ArrowLeft className="w-5 h-5" />
+                        </button>
+                        <h1 className="text-base font-bold text-gray-900">발표 성장 리포트</h1>
+                    </div>
+                </header>
+                <motion.main
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                    className="mx-auto w-full max-w-2xl px-5 py-6 pb-28"
+                >
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 text-white p-7 mb-6">
+                        <svg className="absolute top-4 right-8 w-6 h-6 text-white/40" viewBox="0 0 20 20" style={{ animation: "petal-drift-c1 4s ease-in-out infinite" }}><ellipse cx="10" cy="8" rx="5" ry="8" fill="currentColor" transform="rotate(-15 10 8)" /></svg>
+                        <svg className="absolute top-10 right-20 w-4 h-4 text-white/30" viewBox="0 0 20 20" style={{ animation: "petal-drift-c2 5s ease-in-out infinite .5s" }}><ellipse cx="10" cy="8" rx="5" ry="8" fill="currentColor" transform="rotate(20 10 8)" /></svg>
+                        <p className="text-[11px] font-semibold text-rose-100 tracking-widest">UnivPT 33기</p>
+                        <h2 className="text-xl font-extrabold mt-1.5">{data.member_name}님의 발표 성장 리포트</h2>
+                        <p className="text-sm font-bold mt-3">🌸 {COVER_TITLE}</p>
+                    </div>
+                    <div className="rounded-2xl bg-white border border-gray-200 p-6 shadow-sm text-sm text-gray-600 leading-[2.0] space-y-4 [word-break:keep-all] text-pretty">
+                        {COVER_PARAGRAPHS.map((p, i) => <p key={i}>{p}</p>)}
+                        <p className="font-bold text-rose-600">{COVER_CLOSING}</p>
+                        <p className="text-xs text-gray-400 pt-2 border-t border-gray-100 text-right">{COVER_SIGNATURE}</p>
+                    </div>
+                </motion.main>
+                <div className="fixed bottom-0 inset-x-0 z-10 bg-white/90 backdrop-blur-md border-t border-gray-200">
+                    <div className="mx-auto max-w-2xl px-4 py-3">
+                        <motion.button
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => setStep("report")}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 text-white text-sm font-bold hover:from-rose-600 hover:to-rose-700 transition-all shadow-lg shadow-rose-500/25"
+                        >
+                            내 성장 리포트 확인하기
+                        </motion.button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     // ── Main Result ─────────────────────────────────────────────────────
     return (
         <div className="member-page">
@@ -180,15 +241,15 @@ export default function MemberResult() {
                     </div>
                     <button
                         onClick={handleDownloadPdf}
-                        disabled={pdfLoading}
+                        disabled={pdfLoading || reportPdf.generating}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
                     >
-                        {pdfLoading ? (
+                        {pdfLoading || reportPdf.generating ? (
                             <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
                         ) : (
                             <Download className="w-3.5 h-3.5" />
                         )}
-                        {pdfLoading ? "생성 중..." : "PDF 다운로드"}
+                        {pdfLoading || reportPdf.generating ? "생성 중..." : "PDF 다운로드"}
                     </button>
                 </div>
             </header>
@@ -223,17 +284,6 @@ export default function MemberResult() {
                     <div style={{ position: "fixed", top: 12, right: 16, zIndex: 10000, background: "#f43f5e", color: "#fff", padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600 }}>
                         PDF 생성 중...
                     </div>
-                    {data.initial ? (
-                        <FinalReportPdf
-                            memberName={data.member_name}
-                            final={data}
-                            initial={data.initial}
-                            growthReflection={data.growth_reflection}
-                            page1Ref={pdfRefF1}
-                            page2Ref={pdfRefF2}
-                        />
-                    ) : (
-                    <>
                     <div ref={pdfRef} style={{ width: 860, height: 1216, padding: "10px 14px", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#1f2937", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
                         {/* 배경 장식 원 */}
                         <div style={{ position: "absolute", top: -50, left: -50, width: 180, height: 180, borderRadius: "50%", background: "linear-gradient(135deg, #fce7f3, #fdf2f8)", opacity: 0.5 }} />
@@ -516,10 +566,11 @@ export default function MemberResult() {
                             <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>UnivPT</span>
                         </div>
                     </div>
-                    </>
-                    )}
                 </div>
             )}
+
+            {/* 후기 비교 PDF(표지·결과1·결과2) 오프스크린 렌더 */}
+            {reportPdf.node}
         </div>
     );
 }

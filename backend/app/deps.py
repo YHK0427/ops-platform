@@ -169,5 +169,23 @@ def require_staff(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+async def require_admin_or_chairman(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """admin 역할 또는 회장단(department) — 평가 라운드 관리 권한"""
+    if user["role"] == "admin":
+        return user
+    from app.models import User
+    result = await db.execute(select(User).where(User.username == user["username"]))
+    u = result.scalar_one_or_none()
+    if u and u.department == "회장단":
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="관리자 또는 회장단 권한이 필요합니다",
+    )
+
+
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())

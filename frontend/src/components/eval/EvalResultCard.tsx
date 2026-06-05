@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, MessageSquareHeart } from "lucide-react";
+import { ChevronDown, MessageSquareHeart, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import GrowthReportContent, {
     DOMAINS,
     DOMAIN_LABELS,
 } from "@/components/eval/GrowthReportContent";
 import FinalGrowthReport from "@/components/eval/FinalGrowthReport";
+import { useGrowthReportPdf } from "@/hooks/useGrowthReportPdf";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,8 @@ export default function EvalResultCard({
     expanded = false,
     onToggle,
 }: EvalResultCardProps) {
+    const reportPdf = useGrowthReportPdf();
+
     const growthData = useMemo(() => {
         if (!detail) return null;
         return {
@@ -168,14 +171,36 @@ export default function EvalResultCard({
                                 </div>
                             )}
                             {detail?.initial ? (
-                                <FinalGrowthReport
-                                    memberName={memberName}
-                                    final={detail}
-                                    initial={detail.initial}
-                                    growthReflection={detail.growth_reflection}
-                                    showTitle={false}
-                                    showReflection={false}
-                                />
+                                <>
+                                    <div className="flex justify-end">
+                                        <button
+                                            onClick={() => reportPdf.generate({
+                                                memberName,
+                                                final: detail,
+                                                initial: detail.initial!,
+                                                growthReflection: detail.growth_reflection,
+                                            })}
+                                            disabled={reportPdf.generating}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500 text-white hover:bg-rose-600 transition-colors disabled:opacity-50"
+                                        >
+                                            {reportPdf.generating ? (
+                                                <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            ) : (
+                                                <Download className="w-3.5 h-3.5" />
+                                            )}
+                                            {reportPdf.generating ? "생성 중..." : "PDF 다운로드"}
+                                        </button>
+                                    </div>
+                                    <FinalGrowthReport
+                                        memberName={memberName}
+                                        final={detail}
+                                        initial={detail.initial}
+                                        growthReflection={detail.growth_reflection}
+                                        showTitle={false}
+                                        showReflection={false}
+                                    />
+                                    {reportPdf.node}
+                                </>
                             ) : (
                                 growthData && (
                                     <GrowthReportContent

@@ -21,6 +21,7 @@ from app.deps import (
     get_real_ip,
     oauth2_scheme,
     require_admin,
+    require_admin_or_chairman,
     require_staff,
     verify_password,
 )
@@ -484,10 +485,10 @@ async def list_staff(
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
-    _: dict = Depends(require_admin),
+    _: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
-    """사용자 목록 (admin 전용)"""
+    """사용자 목록 (admin 또는 회장단 — 평가 배정 등에 사용). CRUD는 admin 전용."""
     result = await db.execute(select(User).order_by(User.id))
     return [UserResponse.from_user(u) for u in result.scalars().all()]
 

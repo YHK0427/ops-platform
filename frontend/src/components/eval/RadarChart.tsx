@@ -78,7 +78,7 @@ export default function RadarChart({
                 <text
                     textAnchor="middle"
                     fill={color}
-                    fontSize={14}
+                    fontSize={11}
                     fontWeight={700}
                     dy={isTop ? -6 : 2}
                 >
@@ -87,9 +87,9 @@ export default function RadarChart({
                 {/* Self score in self color, audience score in audience color */}
                 <text
                     textAnchor="middle"
-                    fontSize={11}
+                    fontSize={9}
                     fontWeight={600}
-                    dy={isTop ? 10 : 18}
+                    dy={isTop ? 9 : 16}
                 >
                     <tspan fill={(audVal != null || compareVal != null) ? SELF_COLOR : color}>
                         {roundScore(selfVal ?? null)}
@@ -114,7 +114,7 @@ export default function RadarChart({
     return (
         <div style={{ width: "100%", height: size, margin: "-8px 0" }}>
             <ResponsiveContainer width="100%" height="100%">
-                <RechartsRadarChart data={chartData} cx="50%" cy="50%" outerRadius="72%">
+                <RechartsRadarChart data={chartData} cx="50%" cy="50%" outerRadius="78%">
                     <defs>
                         <linearGradient id="selfGrad" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />

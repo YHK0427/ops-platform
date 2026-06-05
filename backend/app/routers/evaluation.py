@@ -17,7 +17,7 @@ from app.constants.eval_questions import (
     QUESTIONS_BY_DOMAIN,
     VALID_QUESTION_KEYS,
 )
-from app.deps import get_current_member, get_current_user, get_db, require_admin, require_staff
+from app.deps import get_current_member, get_current_user, get_db, require_admin_or_chairman, require_staff
 from app.models import (
     Attendance,
     EvalAssignment,
@@ -56,6 +56,7 @@ class RoundUpdateRequest(BaseModel):
     results_open: bool | None = None
     title: str | None = Field(None, min_length=1, max_length=100)
     compare_to_round_id: int | None = None
+    hidden_member_ids: list[int] | None = None
 
 
 class RoundResponse(BaseModel):
@@ -66,6 +67,7 @@ class RoundResponse(BaseModel):
     is_open: bool
     results_open: bool
     compare_to_round_id: int | None = None
+    hidden_member_ids: list[int] | None = None
     created_at: datetime | None = None
     closed_at: datetime | None = None
 
@@ -344,7 +346,7 @@ async def _build_member_result(
 @router.post("/rounds", response_model=RoundResponse, status_code=201)
 async def create_round(
     body: RoundCreateRequest,
-    _: dict = Depends(require_admin),
+    _: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 생성 + 활성 멤버 전원에 SELF 배정 자동 생성."""
@@ -435,7 +437,7 @@ async def create_round(
 async def update_round(
     round_id: int,
     body: RoundUpdateRequest,
-    _: dict = Depends(require_admin),
+    _: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 설정 변경 (열기/닫기, 결과 공개, 제목)."""
@@ -445,6 +447,9 @@ async def update_round(
         round_.title = body.title
     if body.compare_to_round_id is not None:
         round_.compare_to_round_id = body.compare_to_round_id
+    if body.hidden_member_ids is not None:
+        # 빈 배열이면 전원 공개로 초기화
+        round_.hidden_member_ids = body.hidden_member_ids or None
     if body.results_open is not None:
         round_.results_open = body.results_open
     if body.is_open is not None:
@@ -464,7 +469,7 @@ async def update_round(
 @router.delete("/rounds/{round_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_round(
     round_id: int,
-    _: dict = Depends(require_admin),
+    _: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 삭제 (cascade: 배정, 응답 모두 삭제)."""
@@ -478,7 +483,7 @@ async def delete_round(
 @router.post("/rounds/{round_id}/auto-assign")
 async def auto_assign_audience(
     round_id: int,
-    _: dict = Depends(require_admin),
+    _: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """활성 운영진 유저를 활성 멤버에 라운드로빈 배분하여 AUDIENCE 배정 생성.
@@ -582,7 +587,7 @@ async def auto_assign_audience(
 async def copy_audience_assignments(
     round_id: int,
     source_round_id: int,
-    _: dict = Depends(require_admin),
+    _: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """다른 라운드의 AUDIENCE 배정을 현재 라운드로 복사 (기존 배정 유지, 중복 스킵)."""
@@ -647,7 +652,7 @@ async def copy_audience_assignments(
 async def bulk_add_assignments(
     round_id: int,
     body: BulkAssignmentRequest,
-    _: dict = Depends(require_admin),
+    _: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """AUDIENCE 배정 수동 추가 (중복 스킵)."""
@@ -694,7 +699,7 @@ async def bulk_add_assignments(
 async def delete_assignment(
     round_id: int,
     assignment_id: int,
-    _: dict = Depends(require_admin),
+    _: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """단일 배정 삭제."""
@@ -719,7 +724,7 @@ class ReplaceAudienceRequest(BaseModel):
 async def replace_audience_assignments(
     round_id: int,
     body: ReplaceAudienceRequest,
-    _: dict = Depends(require_admin),
+    _: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """AUDIENCE 배정 diff 교체 — 제출 완료된 배정은 보호."""
@@ -1159,7 +1164,8 @@ async def member_pending_evals(
             session_title=s.title if s else None,
             submitted=a.submitted_at is not None,
             is_open=r.is_open,
-            results_open=r.results_open,
+            # 결과 비공개 대상(결석자 등)에게는 결과 공개 버튼 숨김
+            results_open=r.results_open and member["member_id"] not in (r.hidden_member_ids or []),
         )
         for a, r, s in rows
     ]
@@ -1279,6 +1285,10 @@ async def member_self_result(
     round_ = await _get_round_or_404(db, round_id)
 
     if not round_.results_open:
+        raise HTTPException(status_code=403, detail="아직 결과가 공개되지 않았습니다")
+
+    # 결과 비공개 대상(당일 결석자 등)은 공개돼도 본인 결과 접근 차단
+    if member["member_id"] in (round_.hidden_member_ids or []):
         raise HTTPException(status_code=403, detail="아직 결과가 공개되지 않았습니다")
 
     member_obj = await db.get(Member, member["member_id"])
