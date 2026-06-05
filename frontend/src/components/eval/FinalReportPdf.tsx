@@ -365,7 +365,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                                 <div key={d} style={{ flex: 1, background: `${bc}08`, border: `1px solid ${bc}33`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 7 }}>
                                         <span style={{ background: bc, color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{DOMAIN_LABELS[d]}</span>
-                                        <span style={{ fontSize: 9, color: "#9ca3af" }}>{getDomainStage(finC[d])}</span>
+                                        <span style={{ fontSize: 9, color: "#9ca3af", whiteSpace: "nowrap" }}>{getDomainStage(finC[d])}</span>
                                     </div>
                                     {qInfo && subtitle && <div style={{ fontSize: 11, fontWeight: 700, color: bc, marginBottom: 5 }}>[{qInfo.label} : {subtitle}]</div>}
                                     {paras[0] && <div style={{ fontSize: 10, color: "#6b7280", lineHeight: 1.65 }}>{paras[0]}</div>}
