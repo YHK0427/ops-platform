@@ -142,7 +142,7 @@ export default function FinalGrowthReport({
                             {DOMAINS.map((d) => {
                                 const badgeBg = d === "PLANNING" ? "bg-blue-500" : d === "DESIGN" ? "bg-emerald-500" : "bg-amber-500";
                                 return (
-                                    <span key={d} className={`px-3 py-1 rounded-full ${badgeBg} text-white text-xs font-bold shadow-sm`}>
+                                    <span key={d} className={`px-3 py-1 rounded-full ${badgeBg} text-white text-xs font-bold shadow-sm whitespace-nowrap`}>
                                         {d === growth.crown && "👑 "}
                                         [{DOMAIN_LABELS[d]}] {getDomainStage(finalCombined[d])}
                                     </span>
@@ -191,7 +191,7 @@ export default function FinalGrowthReport({
                 {/* 요약 칩 */}
                 <div className="flex flex-wrap items-center justify-center gap-2">
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white border border-amber-200 text-amber-700 text-xs font-semibold">
-                        <Crown className="w-3.5 h-3.5" /> 가장 성장한 영역 · {DOMAIN_LABELS[growth.crown]}
+                        <Crown className="w-3.5 h-3.5" /> 가장 성장한 영역 · <b className="font-extrabold">{DOMAIN_LABELS[growth.crown]}</b>
                     </span>
                     <span className="inline-flex items-center px-3 py-1 rounded-full bg-white border border-gray-200 text-gray-600 text-xs font-semibold">
                         {initial.type ?? "—"} → <span className="text-rose-600 ml-1 font-bold">{final.type ?? "—"}</span>
@@ -273,9 +273,9 @@ export default function FinalGrowthReport({
                                             </span>
                                         )}
                                         <span className="inline-flex items-center gap-1.5">
-                                            <span className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-slate-500 text-xs font-semibold">{initStage}</span>
+                                            <span className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-slate-500 text-xs font-semibold whitespace-nowrap">{initStage}</span>
                                             <ArrowRight className="w-4 h-4 text-rose-400 shrink-0" />
-                                            <span className={`px-2.5 py-1 rounded-lg ${colors.bg} ${colors.text} border ${colors.border} text-xs font-bold`}>{finStage}</span>
+                                            <span className={`px-2.5 py-1 rounded-lg ${colors.bg} ${colors.text} border ${colors.border} text-xs font-bold whitespace-nowrap`}>{finStage}</span>
                                         </span>
                                     </div>
                                     <span className={`text-xs font-bold tabular-nums ${delta > 0 ? "text-rose-500" : delta < 0 ? "text-slate-400" : "text-gray-400"}`}>

@@ -89,7 +89,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                     {/* 도메인 단계 배지 + 유형 */}
                     <div style={{ display: "flex", gap: 7, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}>
                         {DOMAINS.map((d) => (
-                            <span key={d} style={{ background: "rgba(255,255,255,0.22)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 12 }}>
+                            <span key={d} style={{ background: "rgba(255,255,255,0.22)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 12, whiteSpace: "nowrap" }}>
                                 {d === crown ? "👑 " : ""}[{DOMAIN_LABELS[d]}] {getDomainStage(finC[d])}
                             </span>
                         ))}
@@ -124,7 +124,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                             </div>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fff", border: "1px solid #fde68a", color: "#b45309", fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 999 }}>👑 가장 성장한 영역 · {DOMAIN_LABELS[crown]}</span>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fff", border: "1px solid #fde68a", color: "#b45309", fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 999, whiteSpace: "nowrap" }}>👑 가장 성장한 영역 · <b style={{ fontWeight: 800 }}>{DOMAIN_LABELS[crown]}</b></span>
                             <span style={{ background: "#fff", border: "1px solid #e5e7eb", color: "#6b7280", fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 999 }}>{initial.type ?? "—"} → <b style={{ color: "#e11d48" }}>{final.type ?? "—"}</b></span>
                         </div>
                         <div style={{ textAlign: "center", fontSize: 12, color: "#6b7280", marginTop: 12, lineHeight: 1.7 }}>{transition.oneLiner}</div>
@@ -231,9 +231,9 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                                             <span style={{ fontSize: 11, fontWeight: 700, color: bc }}>{DOMAIN_LABELS[d]} {d === crown && delta > 0 ? "👑" : ""}</span>
                                             {/* 단계 pill: 초기 → 후기 */}
                                             <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                                                <span style={{ fontSize: 9, fontWeight: 600, color: "#64748b", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, padding: "2px 7px" }}>{iStage}</span>
+                                                <span style={{ fontSize: 9, fontWeight: 600, color: "#64748b", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" }}>{iStage}</span>
                                                 <span style={{ color: "#f43f5e", fontSize: 10 }}>→</span>
-                                                <span style={{ fontSize: 9, fontWeight: 700, color: bc, background: `${bc}14`, border: `1px solid ${bc}40`, borderRadius: 6, padding: "2px 7px" }}>{fStage}</span>
+                                                <span style={{ fontSize: 9, fontWeight: 700, color: bc, background: `${bc}14`, border: `1px solid ${bc}40`, borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" }}>{fStage}</span>
                                             </span>
                                         </div>
                                         {/* 덤벨: 초기(빈 점) ──→ 후기(찬 점) — 웹과 동일 */}
