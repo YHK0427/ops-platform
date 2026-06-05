@@ -489,7 +489,7 @@ export default function FinalGrowthReport({
                 <Section title="내가 발견한 성장" icon={<Sparkles className="w-4 h-4 text-rose-500" />} delay={0.3}>
                     <div className="text-sm text-gray-600 leading-[2.0] space-y-3 [word-break:keep-all] text-pretty mb-4">
                         <p>앞선 결과가 발표 역량의 변화를 보여주는 보다 <strong className="text-gray-800">객관적인 성장 기록</strong>이라면, 아래 내용은 여러분이 직접 체감한 <strong className="text-gray-800">주관적인 성장 기록</strong>입니다.</p>
-                        <p>유니브피티에서의 발표 경험, 피드백, 팀 활동, 그리고 수많은 연습 과정 속에서 여러분은 각자의 방식으로 성장해 왔습니다. 성장은 언제나 점수로만 설명되는 것은 아닙니다.</p>
+                        <p>유니브피티에서의 발표 경험, 피드백, 팀 활동, 그리고 수많은 연습 과정 속에서 여러분은 각자의 방식으로 성장해 왔습니다. <strong className="text-gray-800">성장은 언제나 점수로만 설명되는 것은 아닙니다.</strong></p>
                         <p>발표를 준비하며 고민했던 시간, 팀원들과 의견을 나누었던 순간, 용기를 내어 사람들 앞에 섰던 경험 하나하나가 여러분만의 성장으로 쌓여 왔습니다.</p>
                         <p>객관적인 성장과 주관적인 성장이 만나는 지점에서 <strong className="text-rose-600">진짜 변화가 시작</strong>됩니다. 유니브피티를 통해 <strong className="text-gray-800">스스로 발견한 가장 큰 성장의 순간</strong>을 확인해 보세요.</p>
                     </div>

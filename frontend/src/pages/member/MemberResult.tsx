@@ -196,7 +196,7 @@ export default function MemberResult() {
                         <p className="text-sm font-bold mt-3">🌸 {COVER_TITLE}</p>
                     </div>
                     <div className="rounded-2xl bg-white border border-gray-200 p-6 shadow-sm text-sm text-gray-600 leading-[2.0] space-y-4 [word-break:keep-all] text-pretty">
-                        {COVER_PARAGRAPHS.map((p, i) => <p key={i}>{p}</p>)}
+                        {COVER_PARAGRAPHS.map((p, i) => <p key={i} className={p.emphasis ? "font-bold text-gray-800" : ""}>{p.text}</p>)}
                         <p className="font-bold text-rose-600">{COVER_CLOSING}</p>
                         <p className="text-xs text-gray-400 pt-2 border-t border-gray-100 text-right">{COVER_SIGNATURE}</p>
                     </div>
