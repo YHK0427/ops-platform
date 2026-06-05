@@ -305,7 +305,9 @@ async def member_login(
         "exp": expire,
     }
     token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-    logger.info("member_login_success user=%s member_id=%s ip=%s", account.username, account.member_id, ip)
+    member = await db.get(Member, account.member_id)
+    mname = member.name if member else account.username
+    logger.audit(f"🔓 기수 로그인 — {mname} (@{account.username}) from {ip}")  # type: ignore[attr-defined]
     return MemberTokenResponse(access_token=token)
 
 
@@ -344,7 +346,8 @@ async def member_change_password(
         raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다")
     account.password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
     await db.commit()
-    logger.info("member_change_password member_id=%s", current_member["member_id"])
+    member = await db.get(Member, current_member["member_id"])
+    logger.audit(f"🔑 기수 비밀번호 변경 — {member.name if member else account.username} (@{account.username})")  # type: ignore[attr-defined]
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -1271,7 +1271,8 @@ async def member_self_eval_submit(
         assignment.growth_reflection = reflection_text
 
     await db.commit()
-    logger.info(f"self_eval_submit round={round_id} member={member['member_id']}")
+    _m = await db.get(Member, member["member_id"])
+    logger.audit(f"📝 자기평가 제출 — {_m.name if _m else member['member_id']} ({round_.title})")  # type: ignore[attr-defined]
     return {"status": "ok"}
 
 

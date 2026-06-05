@@ -328,7 +328,7 @@ async def update_ledger_entry(
     await recalculate_deposit_after(db, entry.member_id)
     await db.commit()
     await db.refresh(entry)
-    logger.audit(f"ledger_updated id={ledger_id} by=staff")
+    logger.audit(f"✏️ 장부 수정 — {member.name} (점수 {entry.score_delta:+d} · 금액 {entry.amount_krw:+,}원)")
     return entry
 
 
@@ -361,11 +361,23 @@ async def delete_ledger_entry(
         member.net_score = member.total_plus_score + member.total_minus_score
 
     member_id = entry.member_id
+    # 로그용으로 삭제 전 내용 캡처
+    _name = member.name
+    _type = entry.type
+    _sdelta = entry.score_delta
+    _amt = entry.amount_krw
+    _desc = entry.description or ""
     await db.delete(entry)
     await db.flush()
     await recalculate_deposit_after(db, member_id)
     await db.commit()
-    logger.audit(f"ledger_deleted id={ledger_id} type={entry.type} member_id={entry.member_id}")
+    _parts = []
+    if _sdelta:
+        _parts.append(f"{_sdelta:+d}점")
+    if _amt:
+        _parts.append(f"{_amt:+,}원")
+    _detail = (" · ".join(_parts)) or _type
+    logger.audit(f"🗑️ 장부 삭제 — {_name}: {_detail}" + (f" [{_desc}]" if _desc else ""))
 
 
 @router.get("/treasury")
