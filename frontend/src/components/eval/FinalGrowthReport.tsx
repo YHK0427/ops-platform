@@ -251,9 +251,9 @@ export default function FinalGrowthReport({
             {/* ─── 2. 발표 유형 해석 ─── */}
             <Section title="발표 유형 해석 — 변화" icon={<Target className="w-4 h-4 text-rose-500" />} delay={0.1}>
                 <div className="flex items-center justify-center gap-3 mb-4">
-                    <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-sm font-bold">{initial.type ?? "분석 중"}</span>
-                    <ArrowRight className="w-5 h-5 text-rose-400" />
-                    <span className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-600 text-sm font-bold ring-1 ring-rose-200">{final.type ?? "분석 중"}</span>
+                    <span className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-sm font-bold whitespace-nowrap">{initial.type ?? "분석 중"}</span>
+                    <ArrowRight className="w-5 h-5 text-rose-400 shrink-0" />
+                    <span className="px-4 py-1.5 rounded-lg bg-rose-50 text-rose-600 text-sm font-bold ring-1 ring-rose-200 whitespace-nowrap">{final.type ?? "분석 중"}</span>
                 </div>
                 <div className="flex items-center justify-center gap-6 sm:gap-12 mb-5">
                     {(["균형형", "강점 집중형", "보완점 명확형"] as const).map((t) => {
@@ -262,7 +262,7 @@ export default function FinalGrowthReport({
                         return (
                             <div key={t} className={`flex flex-col items-center gap-2 px-3 py-3 rounded-xl transition-all ${isActive ? "bg-gray-50 ring-2 ring-rose-200" : "opacity-40"}`}>
                                 <TriangleIcon type={emoji} size={72} />
-                                <span className={`text-xs font-semibold ${isActive ? "text-gray-900" : "text-gray-400"}`}>{t}</span>
+                                <span className={`text-xs font-semibold whitespace-nowrap ${isActive ? "text-gray-900" : "text-gray-400"}`}>{t}</span>
                             </div>
                         );
                     })}
