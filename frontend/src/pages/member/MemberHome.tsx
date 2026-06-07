@@ -1,11 +1,13 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { BarChart3, Wallet, ChevronRight } from "lucide-react";
+import { BarChart3, Wallet, ChevronRight, MessageSquareHeart } from "lucide-react";
 import { useMySummary } from "@/hooks/useMemberLedger";
+import { useOpenFeedbackBoard } from "@/hooks/useLiveFeedback";
 
 export default function MemberHome() {
     const navigate = useNavigate();
     const { data: summary, isLoading } = useMySummary();
+    const { data: openBoard } = useOpenFeedbackBoard();
 
     const shortcuts = [
         {
@@ -31,6 +33,34 @@ export default function MemberHome() {
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="mx-auto w-full max-w-lg px-4 py-6 space-y-5"
         >
+            {/* 실시간 피드백 진행 중 (보드 공개 시에만 노출) */}
+            {openBoard && (
+                <motion.button
+                    initial={{ opacity: 0, scale: 0.97 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => navigate(`/member/feedback/${openBoard.id}`)}
+                    className="w-full flex items-center gap-4 rounded-2xl border border-rose-200 bg-gradient-to-br from-rose-50 to-pink-50 p-4 shadow-sm text-left"
+                >
+                    <div className="shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-white">
+                        <MessageSquareHeart className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-500" />
+                            </span>
+                            <p className="text-sm font-bold text-rose-700">실시간 피드백 진행 중</p>
+                        </div>
+                        <p className="text-xs text-rose-500/80 mt-0.5 [word-break:keep-all] truncate">
+                            {openBoard.title} · 발표자에게 익명으로 남겨보세요
+                        </p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-rose-300 shrink-0" />
+                </motion.button>
+            )}
+
             {/* 한눈에 보기 */}
             <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <p className="text-xs font-semibold text-gray-400 mb-3">한눈에 보기</p>

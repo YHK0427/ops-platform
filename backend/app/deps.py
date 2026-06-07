@@ -149,6 +149,46 @@ async def get_current_member(
     return {"member_id": member_id, "username": username}
 
 
+async def decode_ws_token(token: str, db: AsyncSession) -> dict | None:
+    """WebSocket용 토큰 검증 (브라우저 WS는 Authorization 헤더 불가 → 쿼리 토큰).
+
+    성공 시 역할별 dict 반환, 실패 시 None:
+    - 멤버(generation): {"role": "member", "member_id": int, "username": str}
+    - 운영진/스태프:     {"role": "admin",  "username": str, "user_role": str}
+    """
+    try:
+        if await is_token_blacklisted(token):
+            return None
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+    except JWTError:
+        return None
+
+    username: str | None = payload.get("sub")
+    if username is None:
+        return None
+    account_type: str | None = payload.get("account_type")
+
+    if account_type == "generation":
+        member_id: int | None = payload.get("member_id")
+        if member_id is None:
+            return None
+        from app.models import GenerationAccount
+        result = await db.execute(
+            select(GenerationAccount.is_active).where(GenerationAccount.member_id == member_id)
+        )
+        if not result.scalar_one_or_none():
+            return None
+        return {"role": "member", "member_id": member_id, "username": username}
+
+    # ops/staff 토큰 — viewer 이상이면 구독 허용(운영진 라이브 뷰)
+    role = payload.get("role") or "viewer"
+    return {"role": "admin", "username": username, "user_role": role}
+
+
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
     """admin 역할 필수"""
     if user["role"] != "admin":

@@ -29,6 +29,7 @@ import Treasury from "@/pages/Treasury";
 // ── Lazy-loaded evaluation pages (ops) ─────────────────────────────────
 const EvalManagement = lazy(() => import("@/pages/EvalManagement"));
 const EvalAudienceForm = lazy(() => import("@/pages/EvalAudienceForm"));
+const LiveFeedbackManagement = lazy(() => import("@/pages/LiveFeedbackManagement"));
 
 // ── Lazy-loaded member portal pages ────────────────────────────────────
 const MemberLayout = lazy(() => import("@/pages/member/MemberLayout"));
@@ -38,6 +39,8 @@ const MemberLedger = lazy(() => import("@/pages/member/MemberLedger"));
 const SelfEvalForm = lazy(() => import("@/pages/member/SelfEvalForm"));
 const EvalComplete = lazy(() => import("@/pages/member/EvalComplete"));
 const MemberResult = lazy(() => import("@/pages/member/MemberResult"));
+const MemberFeedbackBoard = lazy(() => import("@/pages/member/MemberFeedbackBoard"));
+const MemberFeedbackList = lazy(() => import("@/pages/member/MemberFeedbackList"));
 
 // ── Loading fallback ───────────────────────────────────────────────────
 function LoadingFallback() {
@@ -133,12 +136,14 @@ export default function App() {
                   <Route element={<MemberLayout />}>
                     <Route index element={<MemberHome />} />
                     <Route path="reports" element={<MemberReports />} />
+                    <Route path="feedback" element={<MemberFeedbackList />} />
                     <Route path="ledger" element={<MemberLedger />} />
                   </Route>
                   {/* 전체화면 (탭 없음) */}
                   <Route path="eval/:roundId" element={<SelfEvalForm />} />
                   <Route path="eval/:roundId/complete" element={<EvalComplete />} />
                   <Route path="eval/:roundId/result" element={<MemberResult />} />
+                  <Route path="feedback/:boardId" element={<MemberFeedbackBoard />} />
                 </Route>
               </Route>
 
@@ -163,6 +168,7 @@ export default function App() {
                   <Route path="/treasury" element={<Treasury />} />
                   <Route path="/admin/users" element={<AdminUsers />} />
                   <Route path="/eval" element={<EvalManagement />} />
+                  <Route path="/live-feedback" element={<LiveFeedbackManagement />} />
                 </Route>
                 {/* Audience eval form — full-screen (no sidebar) */}
                 <Route path="/eval/:roundId/audience" element={<EvalAudienceForm />} />

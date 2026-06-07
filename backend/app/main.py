@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.logging_config import setup_logging
-from app.routers import assignments, auth, crawler, evaluation, generation, members, sessions, ledger
+from app.routers import assignments, auth, crawler, evaluation, generation, live_feedback, members, sessions, ledger
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,11 @@ async def lifespan(app: FastAPI):
     logger.info("Application starting")
     # ARQ Redis Pool 생성
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+    # 실시간 피드백 Redis pub/sub 구독 시작 (워커마다 1개)
+    from app.services.live_feedback_ws import manager as live_feedback_manager
+    await live_feedback_manager.start_subscriber()
     yield
+    await live_feedback_manager.stop_subscriber()
     await app.state.arq_pool.close()
 
 
@@ -75,6 +79,7 @@ app.include_router(assignments.router, prefix="/api/v1")
 app.include_router(ledger.router, prefix="/api/v1")
 app.include_router(generation.router, prefix="/api/v1")
 app.include_router(evaluation.router, prefix="/api/v1")
+app.include_router(live_feedback.router, prefix="/api/v1")
 
 
 @app.get("/health")

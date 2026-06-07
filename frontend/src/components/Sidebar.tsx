@@ -14,6 +14,7 @@ import {
     Menu,
     X,
     KeyRound,
+    MessageSquareHeart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -134,6 +135,31 @@ export function Sidebar() {
                             )}
                             <ClipboardCheck className="w-4 h-4 shrink-0" />
                             성장리포트
+                        </>
+                    )}
+                </NavLink>
+                <NavLink
+                    to="/live-feedback"
+                    className={({ isActive }) =>
+                        cn(
+                            "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                            isActive
+                                ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
+                        )
+                    }
+                >
+                    {({ isActive }) => (
+                        <>
+                            {isActive && (
+                                <motion.div
+                                    layoutId="active-indicator"
+                                    className="absolute left-0 top-1 bottom-1 w-1 rounded-r-full bg-[var(--color-accent)] shadow-none"
+                                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                                />
+                            )}
+                            <MessageSquareHeart className="w-4 h-4 shrink-0" />
+                            실시간 피드백
                         </>
                     )}
                 </NavLink>

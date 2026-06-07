@@ -363,3 +363,87 @@ class EvalResponse(Base):
     )
 
     assignment = relationship("EvalAssignment", back_populates="responses")
+
+
+# ── 실시간 익명 상호 피드백 (Padlet 스타일) ────────────────────────────────────
+# 주의: 기존 Assignment.type='FEEDBACK'(세션 후 네이버 카페 댓글 과제)와 완전히 별개.
+
+class LiveFeedbackBoard(Base):
+    """세션별 실시간 피드백 보드 (개인/분반 세션 전용). EvalRound 라이프사이클 미러링."""
+    __tablename__ = "live_feedback_boards"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
+    title = Column(String(100), nullable=False)
+    is_open = Column(Boolean, default=False, server_default="false", nullable=False)  # 공개/비공개
+    # 조퇴자(EARLY_LEAVE)를 발표자 목록에 포함할지 (결석/공결은 항상 제외)
+    include_early_leave = Column(Boolean, default=False, server_default="false", nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    closed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    session = relationship("Session")
+    posts = relationship("LiveFeedbackPost", back_populates="board", cascade="all, delete-orphan")
+    aliases = relationship("LiveFeedbackAnonAlias", back_populates="board", cascade="all, delete-orphan")
+
+
+class LiveFeedbackPost(Base):
+    """피드백 글 — 작성자(author)는 항상 저장(운영진 실명용), is_anonymous로 멤버 노출만 제어."""
+    __tablename__ = "live_feedback_posts"
+
+    id = Column(Integer, primary_key=True)
+    board_id = Column(Integer, ForeignKey("live_feedback_boards.id", ondelete="CASCADE"), nullable=False)
+    author_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
+    presenter_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
+    # 칭찬·발전을 한 피드백에 함께 담을 수 있음(각각 선택, 최소 1개 필수)
+    praise_content = Column(Text, nullable=True)
+    improve_content = Column(Text, nullable=True)
+    is_anonymous = Column(Boolean, default=True, server_default="true", nullable=False)
+    is_hidden = Column(Boolean, default=False, server_default="false", nullable=False)  # 운영진 소프트 가림
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "praise_content IS NOT NULL OR improve_content IS NOT NULL",
+            name="ck_live_feedback_post_has_content",
+        ),
+    )
+
+    board = relationship("LiveFeedbackBoard", back_populates="posts")
+    author = relationship("Member", foreign_keys=[author_member_id])
+    presenter = relationship("Member", foreign_keys=[presenter_member_id])
+    reactions = relationship("LiveFeedbackReaction", back_populates="post", cascade="all, delete-orphan")
+
+
+class LiveFeedbackReaction(Base):
+    """피드백 글에 대한 이모지 반응 (멤버 1인당 글당 이모지당 1개)."""
+    __tablename__ = "live_feedback_reactions"
+
+    id = Column(Integer, primary_key=True)
+    post_id = Column(Integer, ForeignKey("live_feedback_posts.id", ondelete="CASCADE"), nullable=False)
+    member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
+    emoji = Column(String(16), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("post_id", "member_id", "emoji", name="uq_live_feedback_reaction"),
+    )
+
+    post = relationship("LiveFeedbackPost", back_populates="reactions")
+
+
+class LiveFeedbackAnonAlias(Base):
+    """보드 내 멤버별 익명 닉네임 매핑 (같은 보드에서 같은 작성자는 같은 닉네임, 역추적 불가)."""
+    __tablename__ = "live_feedback_anon_aliases"
+
+    id = Column(Integer, primary_key=True)
+    board_id = Column(Integer, ForeignKey("live_feedback_boards.id", ondelete="CASCADE"), nullable=False)
+    member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
+    alias = Column(String(40), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("board_id", "member_id", name="uq_live_feedback_alias_member"),
+        UniqueConstraint("board_id", "alias", name="uq_live_feedback_alias_unique"),
+    )
+
+    board = relationship("LiveFeedbackBoard", back_populates="aliases")
