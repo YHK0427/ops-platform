@@ -5,6 +5,18 @@ import memberApi from "@/lib/memberApi";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface FeedbackCategory {
+    key: string;
+    label: string;
+    color: string;
+}
+
+export interface EarlyLeaveCandidate {
+    member_id: number;
+    name: string;
+    group_num: number | null;
+}
+
 export interface FeedbackBoardListItem {
     id: number;
     session_id: number;
@@ -12,7 +24,8 @@ export interface FeedbackBoardListItem {
     session_week_num: number | null;
     title: string;
     is_open: boolean;
-    include_early_leave: boolean;
+    early_leave_member_ids: number[];
+    categories: FeedbackCategory[];
     post_count: number;
     created_at: string | null;
     closed_at: string | null;
@@ -35,6 +48,9 @@ export interface FeedbackBoardDetail {
     created_at?: string | null;
     closed_at?: string | null;
     my_group?: number | null;
+    categories: FeedbackCategory[];
+    early_leave_member_ids?: number[]; // 운영진 응답에만
+    early_leave_candidates?: EarlyLeaveCandidate[]; // 운영진 응답에만
     presenters: PresenterColumn[];
 }
 
@@ -43,8 +59,7 @@ export interface FeedbackPost {
     board_id: number;
     presenter_member_id: number;
     presenter_name: string | null;
-    praise_content: string | null;
-    improve_content: string | null;
+    contents: Record<string, string>; // {categoryKey: text}
     is_anonymous: boolean;
     is_hidden?: boolean; // 운영진 전용
     author_member_id?: number; // 운영진은 항상, 멤버는 실명 글일 때만
@@ -107,10 +122,26 @@ export function useAdminPosts(boardId: number | null) {
     });
 }
 
+export function useEarlyLeaveCandidates(sessionId: number | null) {
+    return useQuery({
+        queryKey: [...lfKeys.all, "early-leave", sessionId ?? 0] as const,
+        queryFn: async () => {
+            const { data } = await api.get<EarlyLeaveCandidate[]>(`/live-feedback/sessions/${sessionId}/early-leave`);
+            return data;
+        },
+        enabled: !!sessionId,
+    });
+}
+
 export function useCreateBoard() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (body: { session_id: number; title: string; include_early_leave: boolean }) => {
+        mutationFn: async (body: {
+            session_id: number;
+            title: string;
+            early_leave_member_ids: number[];
+            categories: FeedbackCategory[];
+        }) => {
             const { data } = await api.post("/live-feedback/boards", body);
             return data;
         },
@@ -127,7 +158,7 @@ export function useCreateBoard() {
 export function useUpdateBoard() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, ...body }: { id: number; is_open?: boolean; title?: string; include_early_leave?: boolean }) => {
+        mutationFn: async ({ id, ...body }: { id: number; is_open?: boolean; title?: string; early_leave_member_ids?: number[]; categories?: FeedbackCategory[] }) => {
             const { data } = await api.patch(`/live-feedback/boards/${id}`, body);
             return data;
         },
@@ -230,8 +261,7 @@ export function useCreatePost(boardId: number) {
     return useMutation({
         mutationFn: async (body: {
             presenter_member_id: number;
-            praise_content: string | null;
-            improve_content: string | null;
+            contents: Record<string, string>;
             is_anonymous: boolean;
             client_nonce: string;
         }) => {

@@ -376,8 +376,17 @@ class LiveFeedbackBoard(Base):
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
     title = Column(String(100), nullable=False)
     is_open = Column(Boolean, default=False, server_default="false", nullable=False)  # 공개/비공개
-    # 조퇴자(EARLY_LEAVE)를 발표자 목록에 포함할지 (결석/공결은 항상 제외)
-    include_early_leave = Column(Boolean, default=False, server_default="false", nullable=False)
+    # 발표자에 포함할 조퇴자(EARLY_LEAVE) member_id 목록 (개별 선택). 결석/공결은 항상 제외.
+    early_leave_member_ids = Column(ARRAY(Integer), server_default=text("'{}'"), nullable=False)
+    # 보드별 피드백 카테고리 [{key,label,color}] — 기본 칭찬/발전
+    categories = Column(
+        JSONB,
+        nullable=False,
+        server_default=text(
+            '\'[{"key":"praise","label":"칭찬","color":"emerald"},'
+            '{"key":"improve","label":"발전","color":"amber"}]\''
+        ),
+    )
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     closed_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
@@ -394,18 +403,14 @@ class LiveFeedbackPost(Base):
     board_id = Column(Integer, ForeignKey("live_feedback_boards.id", ondelete="CASCADE"), nullable=False)
     author_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
     presenter_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
-    # 칭찬·발전을 한 피드백에 함께 담을 수 있음(각각 선택, 최소 1개 필수)
-    praise_content = Column(Text, nullable=True)
-    improve_content = Column(Text, nullable=True)
+    # 카테고리별 내용 {categoryKey: text} — 최소 1개 필수 (보드 categories 키 기준)
+    contents = Column(JSONB, nullable=False)
     is_anonymous = Column(Boolean, default=True, server_default="true", nullable=False)
     is_hidden = Column(Boolean, default=False, server_default="false", nullable=False)  # 운영진 소프트 가림
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        CheckConstraint(
-            "praise_content IS NOT NULL OR improve_content IS NOT NULL",
-            name="ck_live_feedback_post_has_content",
-        ),
+        CheckConstraint("contents <> '{}'::jsonb", name="ck_live_feedback_post_has_content"),
     )
 
     board = relationship("LiveFeedbackBoard", back_populates="posts")

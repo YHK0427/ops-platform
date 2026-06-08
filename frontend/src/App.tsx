@@ -30,6 +30,7 @@ import Treasury from "@/pages/Treasury";
 const EvalManagement = lazy(() => import("@/pages/EvalManagement"));
 const EvalAudienceForm = lazy(() => import("@/pages/EvalAudienceForm"));
 const LiveFeedbackManagement = lazy(() => import("@/pages/LiveFeedbackManagement"));
+const LiveFeedbackPresent = lazy(() => import("@/pages/LiveFeedbackPresent"));
 
 // ── Lazy-loaded member portal pages ────────────────────────────────────
 const MemberLayout = lazy(() => import("@/pages/member/MemberLayout"));
@@ -172,6 +173,8 @@ export default function App() {
                 </Route>
                 {/* Audience eval form — full-screen (no sidebar) */}
                 <Route path="/eval/:roundId/audience" element={<EvalAudienceForm />} />
+                {/* 실시간 피드백 발표용 전체화면 (no sidebar) */}
+                <Route path="/live-feedback/:boardId/present" element={<LiveFeedbackPresent />} />
               </Route>
 
               {/* Fallback */}

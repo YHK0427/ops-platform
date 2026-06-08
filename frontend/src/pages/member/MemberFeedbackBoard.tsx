@@ -6,11 +6,11 @@ import { ArrowLeft, Send, Wifi, WifiOff, Lock, Loader2, MessageSquareHeart } fro
 import { cn } from "@/lib/utils";
 import {
     useMemberBoard, useMemberPosts, useCreatePost, useToggleReaction,
-    type FeedbackPost,
+    type FeedbackPost, type FeedbackCategory,
 } from "@/hooks/useLiveFeedback";
 import { useLiveFeedbackSocket } from "@/hooks/useLiveFeedbackSocket";
-
-const EMOJIS = ["👍", "❤️", "👏", "🔥", "😮"];
+import { colorClasses, formatFeedbackTime } from "@/lib/feedbackColors";
+import { ReactionBar } from "@/components/feedback/ReactionBar";
 
 function genNonce(): string {
     try {
@@ -33,11 +33,11 @@ export default function MemberFeedbackBoard() {
     const toggleReaction = useToggleReaction(boardId);
 
     const [presenterId, setPresenterId] = useState<number | null>(null);
-    const [praiseText, setPraiseText] = useState("");
-    const [improveText, setImproveText] = useState("");
+    const [draft, setDraft] = useState<Record<string, string>>({}); // 카테고리별 입력
     const [isAnonymous, setIsAnonymous] = useState(true);
 
     const presenters = board?.presenters ?? [];
+    const categories: FeedbackCategory[] = board?.categories ?? [];
     const isOpen = board?.is_open ?? false;
     const myId = member?.member_id;
 
@@ -64,19 +64,26 @@ export default function MemberFeedbackBoard() {
         [posts, presenterId],
     );
 
-    const canSubmit = !!presenterId && isOpen && !isOwnSection && (praiseText.trim() !== "" || improveText.trim() !== "");
+    const filledContents = useMemo(() => {
+        const out: Record<string, string> = {};
+        for (const c of categories) {
+            const t = (draft[c.key] ?? "").trim();
+            if (t) out[c.key] = t;
+        }
+        return out;
+    }, [draft, categories]);
+
+    const canSubmit = !!presenterId && isOpen && !isOwnSection && Object.keys(filledContents).length > 0;
 
     const submit = async () => {
         if (!canSubmit) return;
         await createPost.mutateAsync({
             presenter_member_id: presenterId!,
-            praise_content: praiseText.trim() || null,
-            improve_content: improveText.trim() || null,
+            contents: filledContents,
             is_anonymous: isAnonymous,
             client_nonce: genNonce(),
         });
-        setPraiseText("");
-        setImproveText("");
+        setDraft({});
     };
 
     if (isLoading) {
@@ -177,40 +184,34 @@ export default function MemberFeedbackBoard() {
                                         {isOwnSection ? "내가 받은 피드백" : `${selected.name} 님에게`}
                                     </h2>
                                     <p className="text-xs text-gray-400 mt-0.5">
-                                        {isOwnSection ? "다른 발표자를 선택하면 피드백을 남길 수 있어요" : "칭찬과 발전 피드백을 익명으로 남겨보세요"}
+                                        {isOwnSection ? "다른 발표자를 선택하면 피드백을 남길 수 있어요" : "원하는 항목에 익명으로 피드백을 남겨보세요"}
                                     </p>
                                 </div>
 
-                                {/* 작성기 (본인 섹션·마감 시 숨김) */}
+                                {/* 작성기 (본인 섹션·마감 시 숨김) — 보드 카테고리별 입력 */}
                                 {isOpen && !isOwnSection && (
                                     <motion.div
                                         initial={{ opacity: 0, y: 8 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 lg:p-5 shadow-sm space-y-3"
                                     >
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div className="space-y-1.5">
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600">칭찬</span>
-                                                <textarea
-                                                    value={praiseText}
-                                                    onChange={(e) => setPraiseText(e.target.value)}
-                                                    placeholder="좋았던 점을 남겨주세요"
-                                                    rows={6}
-                                                    maxLength={1000}
-                                                    className="w-full resize-y min-h-[140px] rounded-xl border border-gray-200 p-3.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-200 [word-break:keep-all]"
-                                                />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-600">발전 피드백</span>
-                                                <textarea
-                                                    value={improveText}
-                                                    onChange={(e) => setImproveText(e.target.value)}
-                                                    placeholder="더 나아질 점을 남겨주세요"
-                                                    rows={6}
-                                                    maxLength={1000}
-                                                    className="w-full resize-y min-h-[140px] rounded-xl border border-gray-200 p-3.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-amber-200 [word-break:keep-all]"
-                                                />
-                                            </div>
+                                        <div className={cn("grid grid-cols-1 gap-3", categories.length > 1 && "md:grid-cols-2")}>
+                                            {categories.map((c) => {
+                                                const cc = colorClasses(c.color);
+                                                return (
+                                                    <div key={c.key} className="space-y-1.5">
+                                                        <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold", cc.chip)}>{c.label}</span>
+                                                        <textarea
+                                                            value={draft[c.key] ?? ""}
+                                                            onChange={(e) => setDraft((d) => ({ ...d, [c.key]: e.target.value }))}
+                                                            placeholder={`${c.label}을(를) 남겨주세요`}
+                                                            rows={5}
+                                                            maxLength={1000}
+                                                            className={cn("w-full resize-y min-h-[120px] rounded-xl border border-gray-200 p-3.5 text-sm leading-relaxed focus:outline-none focus:ring-2 [word-break:keep-all]", cc.ring)}
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                         <div className="flex items-center justify-between">
                                             <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
@@ -243,6 +244,7 @@ export default function MemberFeedbackBoard() {
                                             <PostCard
                                                 key={post.id}
                                                 post={post}
+                                                categories={categories}
                                                 canReact={isOpen}
                                                 onReact={(emoji, active) => toggleReaction.mutate({ postId: post.id, emoji, active })}
                                             />
@@ -278,55 +280,49 @@ function PresenterChip({ name, isOwn, active, count, onClick }: {
     );
 }
 
-function PostCard({ post, canReact, onReact }: {
+function PostCard({ post, categories, canReact, onReact }: {
     post: FeedbackPost;
+    categories: FeedbackCategory[];
     canReact: boolean;
     onReact: (emoji: string, active: boolean) => void;
 }) {
-    const mine = new Set(post.my_reactions ?? []);
+    // 보드 카테고리 순서대로 + 보드에 없는 키(편집으로 제거된 것)는 뒤에 폴백
+    const known = categories.filter((c) => post.contents?.[c.key]);
+    const orphanKeys = Object.keys(post.contents ?? {}).filter((k) => !categories.some((c) => c.key === k));
     return (
         <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm flex flex-col"
         >
-            <div className="flex items-center gap-1.5 mb-2">
+            <div className="flex items-center justify-between gap-1.5 mb-2">
                 <span className="text-xs font-semibold text-gray-500 truncate">{post.author_name ?? "익명"}</span>
+                <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{formatFeedbackTime(post.created_at)}</span>
             </div>
             <div className="space-y-2 flex-1">
-                {post.praise_content && (
-                    <div className="rounded-lg bg-emerald-50/60 p-2.5">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 mb-1">칭찬</span>
-                        <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.praise_content}</p>
-                    </div>
-                )}
-                {post.improve_content && (
-                    <div className="rounded-lg bg-amber-50/60 p-2.5">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 mb-1">발전</span>
-                        <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.improve_content}</p>
-                    </div>
-                )}
-            </div>
-            <div className="flex flex-wrap gap-1.5 mt-3">
-                {EMOJIS.map((emoji) => {
-                    const count = post.reactions?.[emoji] ?? 0;
-                    const active = mine.has(emoji);
-                    if (count === 0 && !canReact) return null;
+                {known.map((c) => {
+                    const cc = colorClasses(c.color);
                     return (
-                        <button
-                            key={emoji}
-                            disabled={!canReact}
-                            onClick={() => onReact(emoji, active)}
-                            className={cn(
-                                "inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs border transition-colors disabled:opacity-60",
-                                active ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white border-gray-200 text-gray-500 hover:border-gray-300",
-                            )}
-                        >
-                            <span>{emoji}</span>
-                            {count > 0 && <span className="tabular-nums">{count}</span>}
-                        </button>
+                        <div key={c.key} className={cn("rounded-lg p-2.5", cc.section)}>
+                            <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1", cc.chipStrong)}>{c.label}</span>
+                            <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.contents[c.key]}</p>
+                        </div>
                     );
                 })}
+                {orphanKeys.map((k) => (
+                    <div key={k} className="rounded-lg p-2.5 bg-slate-50">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1 bg-slate-200 text-slate-700">{k}</span>
+                        <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.contents[k]}</p>
+                    </div>
+                ))}
+            </div>
+            <div className="mt-3">
+                <ReactionBar
+                    reactions={post.reactions}
+                    myReactions={post.my_reactions}
+                    canReact={canReact}
+                    onToggle={onReact}
+                />
             </div>
         </motion.div>
     );

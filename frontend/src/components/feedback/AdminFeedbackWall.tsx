@@ -7,9 +7,12 @@ import {
     useDeletePost,
     useHidePost,
     type FeedbackPost,
+    type FeedbackCategory,
     type PresenterColumn,
 } from "@/hooks/useLiveFeedback";
 import { useLiveFeedbackSocket } from "@/hooks/useLiveFeedbackSocket";
+import { colorClasses, formatFeedbackTime } from "@/lib/feedbackColors";
+import { ReactionBar } from "@/components/feedback/ReactionBar";
 
 function groupBadgeClass(g: number | null): string {
     if (g === 1) return "bg-sky-50 text-sky-600";
@@ -17,7 +20,7 @@ function groupBadgeClass(g: number | null): string {
     return "bg-gray-100 text-gray-500";
 }
 
-function PostCard({ post }: { post: FeedbackPost }) {
+function PostCard({ post, categories }: { post: FeedbackPost; categories: FeedbackCategory[] }) {
     const del = useDeletePost();
     const hide = useHidePost();
     return (
@@ -35,6 +38,7 @@ function PostCard({ post }: { post: FeedbackPost }) {
                             익명
                         </span>
                     )}
+                    <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{formatFeedbackTime(post.created_at)}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -54,28 +58,25 @@ function PostCard({ post }: { post: FeedbackPost }) {
                 </div>
             </div>
             <div className="space-y-1.5">
-                {post.praise_content && (
-                    <div className="rounded-lg bg-emerald-50/60 p-2">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 mb-1">칭찬</span>
-                        <p className="text-gray-700 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.praise_content}</p>
+                {categories.filter((c) => post.contents?.[c.key]).map((c) => {
+                    const cc = colorClasses(c.color);
+                    return (
+                        <div key={c.key} className={cn("rounded-lg p-2", cc.section)}>
+                            <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1", cc.chipStrong)}>{c.label}</span>
+                            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.contents[c.key]}</p>
+                        </div>
+                    );
+                })}
+                {Object.keys(post.contents ?? {}).filter((k) => !categories.some((c) => c.key === k)).map((k) => (
+                    <div key={k} className="rounded-lg p-2 bg-slate-50">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1 bg-slate-200 text-slate-700">{k}</span>
+                        <p className="text-gray-700 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.contents[k]}</p>
                     </div>
-                )}
-                {post.improve_content && (
-                    <div className="rounded-lg bg-amber-50/60 p-2">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 mb-1">발전</span>
-                        <p className="text-gray-700 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.improve_content}</p>
-                    </div>
-                )}
+                ))}
             </div>
-            {Object.keys(post.reactions ?? {}).length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                    {Object.entries(post.reactions).map(([emoji, count]) => (
-                        <span key={emoji} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-gray-100 text-xs">
-                            {emoji} {count}
-                        </span>
-                    ))}
-                </div>
-            )}
+            <div className="mt-2">
+                <ReactionBar reactions={post.reactions} myReactions={post.my_reactions} canReact={false} />
+            </div>
         </div>
     );
 }
@@ -86,6 +87,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     const { connected } = useLiveFeedbackSocket(boardId, "admin");
 
     const presenters: PresenterColumn[] = board?.presenters ?? [];
+    const categories: FeedbackCategory[] = board?.categories ?? [];
     const postsByPresenter = useMemo(() => {
         const map = new Map<number, FeedbackPost[]>();
         for (const p of posts ?? []) {
@@ -141,7 +143,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                     {list.length === 0 ? (
                                         <p className="text-xs text-gray-400 px-1 py-3 text-center">아직 피드백이 없습니다</p>
                                     ) : (
-                                        list.map((post) => <PostCard key={post.id} post={post} />)
+                                        list.map((post) => <PostCard key={post.id} post={post} categories={categories} />)
                                     )}
                                 </div>
                             </div>

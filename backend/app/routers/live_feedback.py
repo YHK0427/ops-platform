@@ -7,6 +7,7 @@
 
 import logging
 import random
+import re
 from datetime import datetime, timezone
 
 from fastapi import (
@@ -39,14 +40,47 @@ router = APIRouter(prefix="/live-feedback", tags=["live-feedback"])
 ALLOWED_EMOJIS = ("👍", "❤️", "👏", "🔥", "😮")
 MAX_CONTENT_LEN = 1000
 
+# 카테고리 색 팔레트 (프론트 정적 Tailwind 매핑과 일치해야 함)
+ALLOWED_COLORS = {"emerald", "amber", "sky", "violet", "rose", "indigo", "teal", "slate"}
+DEFAULT_CATEGORIES = [
+    {"key": "praise", "label": "칭찬", "color": "emerald"},
+    {"key": "improve", "label": "발전", "color": "amber"},
+]
+_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
+
+
+def _validate_categories(cats: list["CategoryIn"] | None) -> list[dict]:
+    """카테고리 검증·정규화. None/빈 값이면 기본(칭찬/발전)."""
+    if not cats:
+        return [dict(c) for c in DEFAULT_CATEGORIES]
+    if len(cats) > 8:
+        raise HTTPException(status_code=400, detail="카테고리는 최대 8개까지입니다")
+    out: list[dict] = []
+    seen: set[str] = set()
+    for c in cats:
+        key = (c.key or "").strip().lower()
+        label = (c.label or "").strip()
+        color = (c.color or "").strip()
+        if not _KEY_RE.match(key):
+            raise HTTPException(status_code=400, detail="카테고리 키 형식이 올바르지 않습니다")
+        if key in seen:
+            raise HTTPException(status_code=400, detail="카테고리 키가 중복됩니다")
+        if not (1 <= len(label) <= 20):
+            raise HTTPException(status_code=400, detail="카테고리 이름은 1~20자입니다")
+        if color not in ALLOWED_COLORS:
+            raise HTTPException(status_code=400, detail="허용되지 않은 색입니다")
+        seen.add(key)
+        out.append({"key": key, "label": label, "color": color})
+    return out
+
 # 발표(피드백 대상)로 인정하는 출석 상태. 결석(ABSENT)·공결(EXCUSED)은 항상 제외.
-# 조퇴(EARLY_LEAVE)는 보드 설정(include_early_leave)에 따라 포함.
+# 조퇴(EARLY_LEAVE)는 보드의 early_leave_member_ids에 개별 포함된 사람만.
 PRESENT_STATUSES = {"PRESENT", "LATE_UNDER10", "LATE_OVER10", "PENDING"}
 
 
-def _attended(status: str | None, include_early_leave: bool) -> bool:
+def _attended(status: str | None, member_id: int, early_leave_ids: set[int]) -> bool:
     if status == "EARLY_LEAVE":
-        return include_early_leave
+        return member_id in early_leave_ids
     return status in PRESENT_STATUSES
 
 # 익명 닉네임 풀 (요상한 형용사 × 동물/사물)
@@ -64,23 +98,30 @@ _NOUN = [
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
+class CategoryIn(BaseModel):
+    key: str
+    label: str
+    color: str
+
+
 class BoardCreateRequest(BaseModel):
     session_id: int
     title: str = Field(min_length=1, max_length=100)
-    include_early_leave: bool = False
+    early_leave_member_ids: list[int] | None = None
+    categories: list[CategoryIn] | None = None
 
 
 class BoardUpdateRequest(BaseModel):
     is_open: bool | None = None
     title: str | None = Field(default=None, max_length=100)
-    include_early_leave: bool | None = None
+    early_leave_member_ids: list[int] | None = None
+    categories: list[CategoryIn] | None = None
 
 
 class PostCreateRequest(BaseModel):
     presenter_member_id: int
-    # 칭찬·발전 각각 선택, 최소 1개 필수
-    praise_content: str | None = Field(default=None, max_length=MAX_CONTENT_LEN)
-    improve_content: str | None = Field(default=None, max_length=MAX_CONTENT_LEN)
+    # 카테고리별 내용 {categoryKey: text} — 최소 1개 필수
+    contents: dict[str, str] = Field(default_factory=dict)
     is_anonymous: bool = True
     client_nonce: str | None = None
 
@@ -112,15 +153,35 @@ async def _member_group(db: AsyncSession, session_id: int, member_id: int) -> in
     return r.scalar_one_or_none()
 
 
+async def _early_leave_candidates(db: AsyncSession, session_id: int) -> list[dict]:
+    """세션의 조퇴(EARLY_LEAVE) 출석자 — 운영진이 개별 포함 여부 선택할 후보."""
+    rows = await db.execute(
+        select(Attendance.member_id, Attendance.group_num, Member.name)
+        .join(Member, Member.id == Attendance.member_id)
+        .where(Attendance.session_id == session_id, Attendance.status == "EARLY_LEAVE")
+        .order_by(Member.name)
+    )
+    return [{"member_id": mid, "group_num": gn, "name": name} for mid, gn, name in rows.all()]
+
+
+async def _valid_early_leave_ids(db: AsyncSession, session_id: int, requested: list[int] | None) -> list[int]:
+    """요청된 조퇴 포함 id 중 실제 EARLY_LEAVE인 것만 통과."""
+    if not requested:
+        return []
+    cand = {c["member_id"] for c in await _early_leave_candidates(db, session_id)}
+    return [m for m in dict.fromkeys(requested) if m in cand]
+
+
 async def _presenter_columns(
     db: AsyncSession, session_id: int, reveal_order: bool,
-    restrict_group: int | None = None, include_early_leave: bool = False,
+    restrict_group: int | None = None, early_leave_ids: set[int] | None = None,
 ) -> list[dict]:
     """세션의 발표자 목록을 Attendance에서 실시간 조회.
-    결석/공결 제외, 조퇴는 include_early_leave에 따라 포함.
+    결석/공결 제외, 조퇴는 early_leave_ids에 개별 포함된 사람만.
     분반(group_num)이 있으면 분반별, 없으면(분반 미사용 개인 세션) 전체 출석자를 단일 그룹으로.
     restrict_group이 주어지면 해당 분반만(멤버는 자기 분반끼리만 피드백).
     reveal_order=False(멤버용)이면 presenter_order 제외 + 이름 가나다순(발표 순서 비노출)."""
+    early = early_leave_ids or set()
     rows = await db.execute(
         select(Attendance.member_id, Attendance.group_num, Attendance.presenter_order, Attendance.status, Member.name)
         .join(Member, Member.id == Attendance.member_id)
@@ -130,7 +191,7 @@ async def _presenter_columns(
     all_rows = [
         (mid, gn, po, name)
         for mid, gn, po, status, name in rows.all()
-        if _attended(status, include_early_leave)
+        if _attended(status, mid, early)
     ]
     has_groups = any(gn is not None for _, gn, _, _ in all_rows)
 
@@ -208,8 +269,7 @@ def _post_admin_dict(post: LiveFeedbackPost) -> dict:
         "board_id": post.board_id,
         "presenter_member_id": post.presenter_member_id,
         "presenter_name": post.presenter.name if post.presenter else None,
-        "praise_content": post.praise_content,
-        "improve_content": post.improve_content,
+        "contents": post.contents or {},
         "is_anonymous": post.is_anonymous,
         "is_hidden": post.is_hidden,
         "author_member_id": post.author_member_id,
@@ -237,8 +297,7 @@ def _post_member_dict(
         "board_id": post.board_id,
         "presenter_member_id": post.presenter_member_id,
         "presenter_name": post.presenter.name if post.presenter else None,
-        "praise_content": post.praise_content,
-        "improve_content": post.improve_content,
+        "contents": post.contents or {},
         "is_anonymous": post.is_anonymous,
         "author_name": display_name,
         "reactions": counts,
@@ -285,7 +344,9 @@ async def create_board(
         raise HTTPException(status_code=409, detail="이 세션에는 이미 피드백 보드가 있습니다")
 
     board = LiveFeedbackBoard(
-        session_id=body.session_id, title=body.title, include_early_leave=body.include_early_leave,
+        session_id=body.session_id, title=body.title,
+        early_leave_member_ids=await _valid_early_leave_ids(db, body.session_id, body.early_leave_member_ids),
+        categories=_validate_categories(body.categories),
     )
     db.add(board)
     await db.commit()
@@ -296,11 +357,22 @@ async def create_board(
         "session_id": board.session_id,
         "title": board.title,
         "is_open": board.is_open,
-        "include_early_leave": board.include_early_leave,
+        "early_leave_member_ids": board.early_leave_member_ids,
+        "categories": board.categories,
         "post_count": 0,
         "created_at": _iso(board.created_at),
         "closed_at": _iso(board.closed_at),
     }
+
+
+@router.get("/sessions/{session_id}/early-leave")
+async def session_early_leave(
+    session_id: int,
+    _: dict = Depends(require_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    """세션의 조퇴자 후보 목록 (보드 생성/수정 시 개별 포함 선택용)."""
+    return await _early_leave_candidates(db, session_id)
 
 
 @router.get("/boards")
@@ -337,7 +409,8 @@ async def list_boards(
             "session_week_num": wk,
             "title": b.title,
             "is_open": b.is_open,
-            "include_early_leave": b.include_early_leave,
+            "early_leave_member_ids": b.early_leave_member_ids,
+            "categories": b.categories,
             "post_count": count_map.get(b.id, 0),
             "created_at": _iso(b.created_at),
             "closed_at": _iso(b.closed_at),
@@ -354,7 +427,7 @@ async def get_board_admin(
     board = await _get_board_or_404(db, board_id)
     session = await db.get(Session, board.session_id)
     presenters = await _presenter_columns(
-        db, board.session_id, reveal_order=True, include_early_leave=board.include_early_leave,
+        db, board.session_id, reveal_order=True, early_leave_ids=set(board.early_leave_member_ids or []),
     )
     return {
         "id": board.id,
@@ -363,7 +436,9 @@ async def get_board_admin(
         "session_week_num": session.week_num if session else None,
         "title": board.title,
         "is_open": board.is_open,
-        "include_early_leave": board.include_early_leave,
+        "early_leave_member_ids": board.early_leave_member_ids,
+        "early_leave_candidates": await _early_leave_candidates(db, board.session_id),
+        "categories": board.categories,
         "created_at": _iso(board.created_at),
         "closed_at": _iso(board.closed_at),
         "presenters": presenters,
@@ -380,8 +455,12 @@ async def update_board(
     board = await _get_board_or_404(db, board_id)
     if body.title is not None:
         board.title = body.title
-    if body.include_early_leave is not None:
-        board.include_early_leave = body.include_early_leave
+    if body.early_leave_member_ids is not None:
+        board.early_leave_member_ids = await _valid_early_leave_ids(
+            db, board.session_id, body.early_leave_member_ids,
+        )
+    if body.categories is not None:
+        board.categories = _validate_categories(body.categories)
     opened_changed = False
     if body.is_open is not None and body.is_open != board.is_open:
         if board.is_open and not body.is_open:
@@ -398,7 +477,8 @@ async def update_board(
     logger.info(f"live_feedback_board_update id={board_id} is_open={board.is_open}")
     return {
         "id": board.id, "title": board.title, "is_open": board.is_open,
-        "include_early_leave": board.include_early_leave, "closed_at": _iso(board.closed_at),
+        "early_leave_member_ids": board.early_leave_member_ids, "categories": board.categories,
+        "closed_at": _iso(board.closed_at),
     }
 
 
@@ -546,7 +626,7 @@ async def member_get_board(
     # 분반이 나뉘면 같은 분반끼리만 (발표 순서 비노출), 결석 제외·조퇴는 설정 따름
     presenters = await _presenter_columns(
         db, board.session_id, reveal_order=False,
-        restrict_group=my_group, include_early_leave=board.include_early_leave,
+        restrict_group=my_group, early_leave_ids=set(board.early_leave_member_ids or []),
     )
     return {
         "id": board.id,
@@ -555,6 +635,7 @@ async def member_get_board(
         "session_week_num": session.week_num if session else None,
         "is_open": board.is_open,
         "my_group": my_group,
+        "categories": board.categories,
         "presenters": presenters,
     }
 
@@ -571,7 +652,7 @@ async def member_list_posts(
     my_group = await _member_group(db, board.session_id, member["member_id"])
     scoped = await _presenter_columns(
         db, board.session_id, reveal_order=False,
-        restrict_group=my_group, include_early_leave=board.include_early_leave,
+        restrict_group=my_group, early_leave_ids=set(board.early_leave_member_ids or []),
     )
     allowed_ids = {c["presenter_member_id"] for c in scoped}
 
@@ -608,15 +689,25 @@ async def member_create_post(
     board = await _get_board_or_404(db, board_id)
     if not board.is_open:
         raise HTTPException(status_code=400, detail="피드백이 마감되었습니다")
-    praise = (body.praise_content or "").strip()
-    improve = (body.improve_content or "").strip()
-    if not praise and not improve:
-        raise HTTPException(status_code=400, detail="칭찬 또는 발전 피드백을 입력하세요")
+    # 카테고리별 내용 정규화 (보드 카테고리 키만, 빈 값 제거)
+    valid_keys = {c["key"] for c in (board.categories or [])}
+    contents: dict[str, str] = {}
+    for k, v in (body.contents or {}).items():
+        if k not in valid_keys:
+            continue
+        text = (v or "").strip()
+        if not text:
+            continue
+        if len(text) > MAX_CONTENT_LEN:
+            raise HTTPException(status_code=400, detail="내용이 너무 깁니다")
+        contents[k] = text
+    if not contents:
+        raise HTTPException(status_code=400, detail="내용을 입력하세요")
     # 같은 분반 스코프 + 출석 검증
     my_group = await _member_group(db, board.session_id, member["member_id"])
     scoped = await _presenter_columns(
         db, board.session_id, reveal_order=False,
-        restrict_group=my_group, include_early_leave=board.include_early_leave,
+        restrict_group=my_group, early_leave_ids=set(board.early_leave_member_ids or []),
     )
     if body.presenter_member_id not in {c["presenter_member_id"] for c in scoped}:
         raise HTTPException(status_code=400, detail="피드백할 수 없는 대상입니다")
@@ -626,8 +717,7 @@ async def member_create_post(
         board_id=board_id,
         author_member_id=author_id,
         presenter_member_id=body.presenter_member_id,
-        praise_content=praise or None,
-        improve_content=improve or None,
+        contents=contents,
         is_anonymous=body.is_anonymous,
     )
     db.add(post)
