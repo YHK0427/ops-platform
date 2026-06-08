@@ -200,6 +200,7 @@ function HelpPanel() {
         { icon: Radio, title: "5. 라이브 보기", body: "[라이브] 버튼으로 실시간으로 올라오는 피드백을 분반·발표자별로 모니터링합니다. 부적절한 글은 눈(가리기)·휴지통(삭제)으로 정리할 수 있어요." },
         { icon: Maximize2, title: "6. 전체화면(발표용)", body: "[전체화면] 버튼은 강의실 화면 투사용입니다. 발표자를 ◀▶로 넘기면서 그 사람의 피드백을 크게 띄울 수 있습니다." },
         { icon: EyeOff, title: "7. 익명 / 분반", body: "기수 작성은 기본 익명(귀여운 닉네임)이며, 운영진은 항상 실명과 '익명' 배지를 함께 봅니다. 분반이 나뉘면 기수는 같은 분반 발표자에게만 피드백할 수 있습니다." },
+        { icon: Users, title: "8. 기수 입장 경로", body: "보드를 '열기'하면 기수 화면에 보입니다. 기수는 홈 상단의 '실시간 피드백 진행 중' 배너를 누르거나, 하단 '피드백' 탭(진행중·지난 보드 목록)에서 들어가 작성합니다." },
     ];
     return (
         <div className="mb-5 rounded-2xl border border-rose-100 bg-rose-50/40 overflow-hidden">
@@ -218,6 +219,7 @@ function HelpPanel() {
                                 {[
                                     { src: "/help/boards.png", cap: "운영진 · 보드 관리 — 각 버튼 역할 (①새 보드 ③열기/마감 ④라이브 ⑤전체화면 ⑥수정 ⑦삭제)" },
                                     { src: "/help/create.png", cap: "운영진 · 새 보드 만들기 — 세션·카테고리·색·프리셋 설정" },
+                                    { src: "/help/member-entry.png", cap: "기수 진입 경로 — 홈 '진행 중' 배너 또는 하단 '피드백' 탭으로 입장" },
                                     { src: "/help/member.png", cap: "기수(작성자) 화면 — 발표자 선택·항목별 작성·익명·등록·반응" },
                                     { src: "/help/live.png", cap: "운영진 · 라이브 모니터 — 분반/발표자별 실시간 + 가리기·삭제" },
                                     { src: "/help/present.png", cap: "운영진 · 발표용 전체화면 — 발표자 넘기며 크게 투사" },

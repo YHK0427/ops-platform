@@ -17,6 +17,7 @@ from app.constants.eval_questions import (
     QUESTIONS_BY_DOMAIN,
     VALID_QUESTION_KEYS,
 )
+from app.audit import record_audit
 from app.deps import get_current_member, get_current_user, get_db, require_admin_or_chairman, require_staff
 from app.models import (
     Attendance,
@@ -346,7 +347,7 @@ async def _build_member_result(
 @router.post("/rounds", response_model=RoundResponse, status_code=201)
 async def create_round(
     body: RoundCreateRequest,
-    _: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 생성 + 활성 멤버 전원에 SELF 배정 자동 생성."""
@@ -425,11 +426,8 @@ async def create_round(
 
     await db.commit()
     await db.refresh(round_)
-    logger.audit(  # type: ignore[attr-defined]
-        f"eval_round_create id={round_.id} session={body.session_id} "
-        f"type={body.round_type} self_assignments={len(members)} "
-        f"audience_copied={audience_copied}"
-    )
+    record_audit(user, "평가 라운드 생성",
+                 f"id={round_.id} 세션={body.session_id} 유형={body.round_type} 자기={len(members)} 청중복사={audience_copied}")
     return round_
 
 
@@ -437,7 +435,7 @@ async def create_round(
 async def update_round(
     round_id: int,
     body: RoundUpdateRequest,
-    _: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 설정 변경 (열기/닫기, 결과 공개, 제목)."""
@@ -460,23 +458,22 @@ async def update_round(
 
     await db.commit()
     await db.refresh(round_)
-    logger.audit(  # type: ignore[attr-defined]
-        f"eval_round_update id={round_id} is_open={round_.is_open} results_open={round_.results_open}"
-    )
+    record_audit(user, "평가 라운드 변경",
+                 f"id={round_id} 접수={round_.is_open} 결과공개={round_.results_open}")
     return round_
 
 
 @router.delete("/rounds/{round_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_round(
     round_id: int,
-    _: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 삭제 (cascade: 배정, 응답 모두 삭제)."""
     round_ = await _get_round_or_404(db, round_id)
     await db.delete(round_)
     await db.commit()
-    logger.audit(f"eval_round_delete id={round_id}")  # type: ignore[attr-defined]
+    record_audit(user, "평가 라운드 삭제", f"id={round_id}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

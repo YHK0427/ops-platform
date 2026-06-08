@@ -32,12 +32,13 @@ from app.models import (
     Session,
 )
 from app.services.live_feedback_ws import manager
+from app.audit import record_audit
 
 logger = logging.getLogger("live_feedback")
 
 router = APIRouter(prefix="/live-feedback", tags=["live-feedback"])
 
-ALLOWED_EMOJIS = ("👍", "❤️", "👏", "🔥", "😮")
+ALLOWED_EMOJIS = ("👍", "❤️", "👏", "🔥", "😮", "😂", "🥹", "💯", "🙌", "✨", "🤔", "👀")
 MAX_CONTENT_LEN = 1000
 
 # 카테고리 색 팔레트 (프론트 정적 Tailwind 매핑과 일치해야 함)
@@ -328,7 +329,7 @@ async def _load_post_full(db: AsyncSession, post_id: int) -> LiveFeedbackPost | 
 @router.post("/boards", status_code=201)
 async def create_board(
     body: BoardCreateRequest,
-    _: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     session = await db.get(Session, body.session_id)
@@ -351,7 +352,7 @@ async def create_board(
     db.add(board)
     await db.commit()
     await db.refresh(board)
-    logger.info(f"live_feedback_board_create id={board.id} session={body.session_id}")
+    record_audit(user, "실시간 피드백 보드 생성", f"id={board.id} 세션={body.session_id} 제목='{body.title}'")
     return {
         "id": board.id,
         "session_id": board.session_id,
@@ -449,7 +450,7 @@ async def get_board_admin(
 async def update_board(
     board_id: int,
     body: BoardUpdateRequest,
-    _: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     board = await _get_board_or_404(db, board_id)
@@ -474,7 +475,7 @@ async def update_board(
         evt = {"type": "board.opened" if board.is_open else "board.closed",
                "data": {"board_id": board.id, "is_open": board.is_open}}
         await manager.broadcast(board.id, evt, evt)
-    logger.info(f"live_feedback_board_update id={board_id} is_open={board.is_open}")
+    record_audit(user, "피드백 보드 설정 변경", f"id={board_id} 공개={board.is_open}")
     return {
         "id": board.id, "title": board.title, "is_open": board.is_open,
         "early_leave_member_ids": board.early_leave_member_ids, "categories": board.categories,
@@ -485,13 +486,14 @@ async def update_board(
 @router.delete("/boards/{board_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_board(
     board_id: int,
-    _: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     board = await _get_board_or_404(db, board_id)
+    title = board.title
     await db.delete(board)
     await db.commit()
-    logger.info(f"live_feedback_board_delete id={board_id}")
+    record_audit(user, "피드백 보드 삭제", f"id={board_id} 제목='{title}'")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -518,7 +520,7 @@ async def list_posts_admin(
 @router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_post(
     post_id: int,
-    _: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     post = await db.get(LiveFeedbackPost, post_id)
@@ -529,6 +531,7 @@ async def delete_post(
     await db.commit()
     evt = {"type": "post.deleted", "data": {"post_id": post_id}}
     await manager.broadcast(board_id, evt, evt)
+    record_audit(user, "피드백 글 삭제(모더레이션)", f"post={post_id} board={board_id}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -536,7 +539,7 @@ async def delete_post(
 async def hide_post(
     post_id: int,
     body: PostHideRequest,
-    _: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_admin_or_chairman),
     db: AsyncSession = Depends(get_db),
 ):
     post = await db.get(LiveFeedbackPost, post_id)
@@ -544,6 +547,7 @@ async def hide_post(
         raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
     post.is_hidden = body.is_hidden
     await db.commit()
+    record_audit(user, "피드백 글 가리기" if body.is_hidden else "피드백 글 다시 표시", f"post={post_id} board={post.board_id}")
     # 멤버에게는 가려진 글이 사라지고(post.deleted처럼), 운영진엔 상태 갱신
     admin_evt = {"type": "post.hidden", "data": {"post_id": post_id, "is_hidden": body.is_hidden}}
     member_evt = (

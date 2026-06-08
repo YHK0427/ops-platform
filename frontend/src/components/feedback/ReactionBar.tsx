@@ -4,9 +4,10 @@ import { SmilePlus } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-export const FEEDBACK_EMOJIS = ["👍", "❤️", "👏", "🔥", "😮"];
+export const FEEDBACK_EMOJIS = ["👍", "❤️", "👏", "🔥", "😮", "😂", "🥹", "💯", "🙌", "✨", "🤔", "👀"];
 const EMOJI_LABEL: Record<string, string> = {
     "👍": "좋아요", "❤️": "최고예요", "👏": "박수", "🔥": "열정", "😮": "놀라움",
+    "😂": "웃겨요", "🥹": "감동", "💯": "완벽", "🙌": "멋져요", "✨": "인상적", "🤔": "흥미로움", "👀": "주목",
 };
 
 interface ReactionBarProps {
@@ -71,7 +72,7 @@ export function ReactionBar({ reactions, myReactions = [], canReact = false, onT
                         </motion.button>
                     </PopoverTrigger>
                     <PopoverContent align="start" className="w-auto p-1.5">
-                        <div className="flex gap-1">
+                        <div className="flex flex-wrap gap-1 max-w-[264px]">
                             {FEEDBACK_EMOJIS.map((emoji) => {
                                 const isMine = mine.has(emoji);
                                 return (

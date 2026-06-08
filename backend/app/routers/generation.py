@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, require_admin
 from app.models import GenerationAccount, Member
+from app.audit import record_audit
 
 logger = logging.getLogger("generation")
 
@@ -51,7 +52,7 @@ async def list_accounts(
 @router.post("/accounts/bulk-create")
 async def bulk_create_accounts(
     body: BulkCreateRequest = BulkCreateRequest(),
-    _: dict = Depends(require_admin),
+    user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """활성 멤버 전원에 대해 계정 일괄 생성"""
@@ -72,13 +73,13 @@ async def bulk_create_accounts(
         created += 1
 
     await db.commit()
-    logger.audit(f"gen_bulk_create created={created}")
+    record_audit(user, "기수 계정 일괄 생성", f"생성={created} 건너뜀={len(members) - created}")
     return {"created": created, "skipped": len(members) - created}
 
 
 @router.delete("/accounts/bulk-delete")
 async def bulk_delete_accounts(
-    _: dict = Depends(require_admin),
+    user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """기수 계정 전체 삭제"""
@@ -86,14 +87,14 @@ async def bulk_delete_accounts(
     result = await db.execute(delete(GenerationAccount))
     await db.commit()
     deleted = result.rowcount
-    logger.audit(f"gen_bulk_delete deleted={deleted}")
+    record_audit(user, "기수 계정 전체 삭제", f"삭제={deleted}")
     return {"deleted": deleted}
 
 
 @router.post("/accounts/bulk-reset-password")
 async def bulk_reset_password(
     body: BulkCreateRequest = BulkCreateRequest(),
-    _: dict = Depends(require_admin),
+    user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """기수 계정 전체 비밀번호 일괄 변경"""
@@ -101,7 +102,7 @@ async def bulk_reset_password(
     for account in accounts:
         account.password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     await db.commit()
-    logger.audit(f"gen_bulk_reset_password count={len(accounts)}")
+    record_audit(user, "기수 계정 비밀번호 일괄 초기화", f"대상={len(accounts)}")
     return {"updated": len(accounts)}
 
 
@@ -109,7 +110,7 @@ async def bulk_reset_password(
 async def update_account(
     account_id: int,
     body: GenAccountUpdate,
-    _: dict = Depends(require_admin),
+    user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     account = await db.get(GenerationAccount, account_id)
@@ -130,13 +131,15 @@ async def update_account(
 
     await db.commit()
     await db.refresh(account)
+    changed = [k for k, v in {"아이디": body.username, "비번": body.password, "활성": body.is_active}.items() if v is not None]
+    record_audit(user, "기수 계정 수정", f"id={account_id} username={account.username} 변경={','.join(changed)}")
     return account
 
 
 @router.post("/accounts/{account_id}/reset-password")
 async def reset_password(
     account_id: int,
-    _: dict = Depends(require_admin),
+    user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     account = await db.get(GenerationAccount, account_id)
@@ -144,18 +147,21 @@ async def reset_password(
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
     account.password_hash = bcrypt.hashpw(DEFAULT_PASSWORD.encode(), bcrypt.gensalt()).decode()
     await db.commit()
+    record_audit(user, "기수 계정 비밀번호 초기화", f"id={account_id} username={account.username}")
     return {"status": "ok"}
 
 
 @router.delete("/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
     account_id: int,
-    _: dict = Depends(require_admin),
+    user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     account = await db.get(GenerationAccount, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    uname = account.username
     await db.delete(account)
     await db.commit()
+    record_audit(user, "기수 계정 삭제", f"id={account_id} username={uname}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
