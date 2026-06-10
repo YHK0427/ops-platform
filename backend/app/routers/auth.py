@@ -43,6 +43,7 @@ class LoginRequest(BaseModel):
     username: str = Field(max_length=50)
     password: str = Field(max_length=128)
     totp_code: str | None = None
+    remember: bool = False
 
 
 class TokenResponse(BaseModel):
@@ -55,6 +56,7 @@ class TokenResponse(BaseModel):
 class VerifyTotpRequest(BaseModel):
     token: str
     totp_code: str = Field(min_length=6, max_length=6)
+    remember: bool = False
 
 
 class TotpEnableRequest(BaseModel):
@@ -128,8 +130,9 @@ class UserResponse(BaseModel):
 _DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
 
 
-def _create_access_token(username: str, role: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+def _create_access_token(username: str, role: str, remember: bool = False) -> str:
+    minutes = settings.JWT_REMEMBER_EXPIRE_MINUTES if remember else settings.JWT_EXPIRE_MINUTES
+    expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     payload = {"sub": username, "role": role, "exp": expire}
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
@@ -208,7 +211,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             return TokenResponse(requires_totp=True, totp_pending_token=pending_token)
 
     logger.audit(f"🔑 로그인 성공 — {user.username} ({user.role}) from {ip}")
-    token = _create_access_token(user.username, user.role)
+    token = _create_access_token(user.username, user.role, remember=body.remember)
     return TokenResponse(access_token=token)
 
 
@@ -237,7 +240,7 @@ async def verify_totp(body: VerifyTotpRequest, request: Request, db: AsyncSessio
 
     await _delete_totp_pending(body.token)
     logger.audit(f"🔑 로그인 성공 (2FA) — {user.username} ({user.role}) from {ip}")
-    token = _create_access_token(user.username, user.role)
+    token = _create_access_token(user.username, user.role, remember=body.remember)
     return TokenResponse(access_token=token)
 
 

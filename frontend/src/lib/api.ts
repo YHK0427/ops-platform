@@ -6,17 +6,20 @@ const LAST_ACTIVE_KEY = "ops_last_active";
 const INACTIVITY_LIMIT_MS = 3 * 24 * 60 * 60 * 1000; // 3일
 
 function _loadToken(): string | null {
-    // 3일 미접속 체크
-    const lastActive = localStorage.getItem(LAST_ACTIVE_KEY);
-    if (lastActive && Date.now() - Number(lastActive) > INACTIVITY_LIMIT_MS) {
-        localStorage.removeItem(TOKEN_KEY);
-        sessionStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(LAST_ACTIVE_KEY);
-        localStorage.removeItem(REMEMBER_KEY);
-        return null;
+    const remember = localStorage.getItem(REMEMBER_KEY) === "1";
+
+    // 로그인 유지를 켜지 않은 경우에만 미접속 만료(3일) 적용 — 켰으면 무제한 유지
+    if (!remember) {
+        const lastActive = localStorage.getItem(LAST_ACTIVE_KEY);
+        if (lastActive && Date.now() - Number(lastActive) > INACTIVITY_LIMIT_MS) {
+            localStorage.removeItem(TOKEN_KEY);
+            sessionStorage.removeItem(TOKEN_KEY);
+            localStorage.removeItem(LAST_ACTIVE_KEY);
+            localStorage.removeItem(REMEMBER_KEY);
+            return null;
+        }
     }
 
-    const remember = localStorage.getItem(REMEMBER_KEY) === "1";
     return remember
         ? localStorage.getItem(TOKEN_KEY)
         : sessionStorage.getItem(TOKEN_KEY);

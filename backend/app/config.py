@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
+    JWT_REMEMBER_EXPIRE_MINUTES: int = 60 * 24 * 365 * 10  # 로그인 유지 시 사실상 무제한(10년)
 
     # Naver
     NAVER_IMAP_EMAIL: str = ""

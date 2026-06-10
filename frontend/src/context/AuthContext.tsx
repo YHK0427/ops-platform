@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             access_token: string | null;
             requires_totp: boolean;
             totp_pending_token: string | null;
-        }>("/auth/login", { username, password });
+        }>("/auth/login", { username, password, remember: !!remember });
 
         if (data.requires_totp && data.totp_pending_token) {
             // remember 값을 미리 저장해두어 TOTP 완료 후 사용
@@ -76,13 +76,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const verifyTotp = useCallback(async (code: string) => {
         if (!totpPending) throw new Error("No TOTP pending");
 
+        const remember = localStorage.getItem("ops_remember") === "1";
         const { data } = await api.post<{
             access_token: string | null;
-        }>("/auth/verify-totp", { token: totpPending.token, totp_code: code });
+        }>("/auth/verify-totp", { token: totpPending.token, totp_code: code, remember });
 
         if (data.access_token) {
             setTotpPending(null);
-            setToken(data.access_token);
+            setToken(data.access_token, remember);
             const { data: me } = await api.get<AuthUser>("/members/me");
             setUser(me);
         }

@@ -179,7 +179,7 @@ export default function LoginPage() {
                                             로그인 유지
                                         </span>
                                         <span className="text-[10px] text-[var(--color-text-muted)]">
-                                            {remember ? "3일간 유지" : "브라우저 종료 시 로그아웃"}
+                                            {remember ? "로그아웃 전까지 계속 유지" : "브라우저 종료 시 로그아웃"}
                                         </span>
                                     </div>
                                     <div className="relative">
