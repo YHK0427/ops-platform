@@ -28,6 +28,8 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
 
     const [mode, setMode] = useState<"none" | "login" | "manual">("none");
     const [jsonInput, setJsonInput] = useState("");
+    const [nidAut, setNidAut] = useState("");
+    const [nidSes, setNidSes] = useState("");
     const [credentials, setCredentials] = useState({ username: "", password: "" });
     const [loginTaskId, setLoginTaskId] = useState<string | null>(null);
     const { data: loginTaskData } = useCrawlerTask(loginTaskId);
@@ -36,8 +38,14 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
         if (!loginTaskData) return;
         if (loginTaskData.status === "complete") {
             setLoginTaskId(null);
-            queryClient.invalidateQueries({ queryKey: crawlerKeys.naverSession() });
-            toast.success("네이버 로그인 성공!");
+            // 태스크가 끝났어도 로그인 자체는 실패(캡차 등)했을 수 있으므로 결과를 확인
+            const r = loginTaskData.result;
+            if (r?.status === "complete") {
+                queryClient.invalidateQueries({ queryKey: crawlerKeys.naverSession() });
+                toast.success("네이버 로그인 성공!");
+            } else {
+                toast.error(`네이버 로그인 실패: ${r?.reason ?? "캡차 또는 아이디/비밀번호 오류"} — 수동 가져오기를 이용하세요`);
+            }
         } else if (loginTaskData.status === "failed") {
             setLoginTaskId(null);
             toast.error(`네이버 로그인 실패: ${loginTaskData.result?.reason ?? "알 수 없는 오류"}`);
@@ -53,6 +61,21 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
             }
         });
     };
+
+    // 쿠키 값(NID_AUT/NID_SES)으로 storageState를 구성해 등록
+    const handleCookieImport = () => {
+        if (!nidAut.trim() || !nidSes.trim()) return;
+        const exp = Math.floor(Date.now() / 1000) + 14 * 24 * 3600;
+        const ck = (name: string, value: string) => ({
+            name, value: value.trim(), domain: ".naver.com", path: "/",
+            expires: exp, httpOnly: true, secure: true, sameSite: "None",
+        });
+        const storage = { cookies: [ck("NID_AUT", nidAut), ck("NID_SES", nidSes)], origins: [] };
+        importSession(JSON.stringify(storage), {
+            onSuccess: () => { setNidAut(""); setNidSes(""); setMode("none"); },
+        });
+    };
+
 
     const handleLogin = async () => {
         try {
@@ -73,15 +96,22 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                     </div>
                     <div className="min-w-0">
                         <h3 className="font-bold text-[var(--color-text-primary)]">네이버 세션 상태</h3>
-                        <p className="text-xs md:text-sm text-[var(--color-text-secondary)] truncate">
-                            {naverStatus?.is_valid
-                                ? (() => {
-                                    const d = naverStatus.expires_hint ? new Date(naverStatus.expires_hint) : null;
-                                    const valid = d && d.getFullYear() > 2000;
-                                    return `유효 (만료: ${valid ? d!.toLocaleDateString() : '알 수 없음'})`;
-                                })()
-                                : "만료됨 / 유효하지 않음"}
-                        </p>
+                        {(() => {
+                            const d = naverStatus?.expires_hint ? new Date(naverStatus.expires_hint) : null;
+                            const hasDate = d && d.getFullYear() > 2000;
+                            const expired = !naverStatus?.is_valid || (hasDate && d!.getTime() < Date.now());
+                            const days = hasDate ? Math.ceil((d!.getTime() - Date.now()) / 86400000) : null;
+                            return (
+                                <p className={`text-xs md:text-sm font-medium flex items-center gap-1.5 ${expired ? "text-red-500" : "text-green-600"}`}>
+                                    <span className={`inline-block w-2 h-2 rounded-full ${expired ? "bg-red-500" : "bg-green-500"}`} />
+                                    {expired
+                                        ? "만료됨 — 재로그인이 필요합니다"
+                                        : hasDate
+                                            ? `유효 · ${d!.toLocaleDateString()}까지 (약 ${days}일 남음)`
+                                            : "유효 (만료일 정보 없음)"}
+                                </p>
+                            );
+                        })()}
                     </div>
                 </div>
                 <div className="flex flex-col sm:items-end gap-1 flex-shrink-0">
@@ -155,22 +185,62 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
             )}
 
             {mode === "manual" && (
-                <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                    <textarea
-                        className="w-full h-32 px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-md text-xs font-mono text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)]"
-                        placeholder='storageState.json 내용을 붙여넣으세요...'
-                        value={jsonInput}
-                        onChange={(e) => setJsonInput(e.target.value)}
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 bg-gray-50 p-4 rounded-lg border border-[var(--color-border)]">
+                    <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                        자동 로그인이 캡차로 막힐 때 사용합니다. <b>본인 PC 크롬에서 네이버에 한 번 로그인</b>한 뒤, 로그인 쿠키 2개만 복사해 붙여넣으면 됩니다. (개발 지식 필요 없음)
+                    </p>
+
+                    <ol className="text-xs text-[var(--color-text-secondary)] leading-relaxed list-decimal pl-4 space-y-1">
+                        <li>크롬/엣지에서 <b>naver.com 로그인</b> 후 <b>F12</b>(개발자 도구)를 누르세요.</li>
+                        <li>아래 그림처럼 <b>Application</b> 탭 → <b>Cookies → https://www.naver.com</b> 를 엽니다.</li>
+                        <li><code className="px-1 bg-[var(--color-elevated)] rounded text-[var(--color-primary)] font-bold">NID_AUT</code>, <code className="px-1 bg-[var(--color-elevated)] rounded text-[var(--color-primary)] font-bold">NID_SES</code> 의 <b>Value</b>를 각각 복사해 칸에 붙여넣고 <b>쿠키로 등록</b>.</li>
+                    </ol>
+
+                    <img
+                        src="/help/naver-cookie-guide.png"
+                        alt="개발자 도구에서 NID_AUT, NID_SES 쿠키 찾는 위치"
+                        className="w-full rounded-md border border-[var(--color-border)] shadow-sm"
                     />
-                    <div className="flex justify-end">
+
+                    <div className="grid gap-2">
+                        <input
+                            type="text" placeholder="NID_AUT 값 붙여넣기"
+                            value={nidAut} onChange={e => setNidAut(e.target.value)}
+                            className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-xs font-mono text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+                        />
+                        <input
+                            type="text" placeholder="NID_SES 값 붙여넣기"
+                            value={nidSes} onChange={e => setNidSes(e.target.value)}
+                            className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-xs font-mono text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+                        />
                         <button
-                            onClick={handleImport}
-                            disabled={isImporting || !jsonInput}
-                            className="px-4 py-2 bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] text-[var(--color-text-primary)] text-sm font-medium rounded-md disabled:opacity-50 transition-colors"
+                            onClick={handleCookieImport}
+                            disabled={isImporting || !nidAut.trim() || !nidSes.trim()}
+                            className="px-4 py-2 bg-[var(--color-success)] hover:bg-green-600 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-colors self-end"
                         >
-                            {isImporting ? "가져오는 중..." : "JSON 가져오기"}
+                            {isImporting ? "등록 중..." : "쿠키로 등록"}
                         </button>
                     </div>
+
+                    {/* 고급: storageState JSON 직접 붙여넣기 */}
+                    <details className="text-xs text-[var(--color-text-muted)]">
+                        <summary className="cursor-pointer hover:text-[var(--color-text-secondary)]">고급 · storageState JSON 직접 붙여넣기</summary>
+                        <div className="space-y-2 pt-2">
+                            <textarea
+                                className="w-full h-20 px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md text-xs font-mono text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)]"
+                                placeholder='{"cookies":[...]} 형식의 storageState'
+                                value={jsonInput}
+                                onChange={(e) => setJsonInput(e.target.value)}
+                            />
+                            <button
+                                onClick={handleImport}
+                                disabled={isImporting || !jsonInput}
+                                className="px-3 py-1.5 bg-[var(--color-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-hover)] text-[var(--color-text-primary)] text-xs font-medium rounded-md disabled:opacity-50 transition-colors"
+                            >
+                                {isImporting ? "가져오는 중..." : "JSON 가져오기"}
+                            </button>
+                        </div>
+                    </details>
                 </div>
             )}
         </div>

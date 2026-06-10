@@ -377,7 +377,7 @@ async def task_naver_health_check(ctx):
                 fetch_board_articles, req_session, settings.NAVER_CAFE_MENU_REVIEW, page=1, per_page=1
             )
             # 최신 게시글 정보 추출
-            articles = data.get("message", {}).get("result", {}).get("articleList", [])
+            articles = data.get("result", {}).get("articleList", [])
             if articles:
                 a = articles[0]
                 article_info = f"\n최신글: [{a.get('subject', '?')}] by {a.get('nickname', '?')}"
