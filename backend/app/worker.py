@@ -379,8 +379,9 @@ async def task_naver_health_check(ctx):
             # 최신 게시글 정보 추출
             articles = data.get("result", {}).get("articleList", [])
             if articles:
-                a = articles[0]
-                article_info = f"\n최신글: [{a.get('subject', '?')}] by {a.get('nickname', '?')}"
+                a = articles[0].get("item", articles[0])
+                nick = (a.get("writerInfo") or {}).get("nickName", "?")
+                article_info = f"\n최신글: [{a.get('subject', '?')}] by {nick}"
             else:
                 article_info = "\n게시글 없음"
         logger.log(25, f"네이버 세션 체크: 정상 (menu={settings.NAVER_CAFE_MENU_REVIEW}){article_info}")

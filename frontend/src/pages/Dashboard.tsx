@@ -186,13 +186,16 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
 
             {mode === "manual" && (
                 <div className="space-y-4 animate-in fade-in slide-in-from-top-2 bg-gray-50 p-4 rounded-lg border border-[var(--color-border)]">
-                    <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
-                        자동 로그인이 캡차로 막힐 때 사용합니다. <b>본인 PC 크롬에서 네이버에 한 번 로그인</b>한 뒤, 로그인 쿠키 2개만 복사해 붙여넣으면 됩니다. (개발 지식 필요 없음)
-                    </p>
+                    <div className="text-xs leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-md p-2.5 text-amber-700">
+                        ⚠️ <b>네이버 정책상 자동 로그인은 캡차로 자주 실패합니다.</b> 그럴 땐 아래 방법으로 직접 등록하세요 — 본인 PC에서 한 번 로그인해 쿠키 2개만 복사하면 됩니다. (개발 지식 필요 없음)
+                    </div>
 
-                    <ol className="text-xs text-[var(--color-text-secondary)] leading-relaxed list-decimal pl-4 space-y-1">
-                        <li>크롬/엣지에서 <b>naver.com 로그인</b> 후 <b>F12</b>(개발자 도구)를 누르세요.</li>
-                        <li>아래 그림처럼 <b>Application</b> 탭 → <b>Cookies → https://www.naver.com</b> 를 엽니다.</li>
+                    <ol className="text-xs text-[var(--color-text-secondary)] leading-relaxed list-decimal pl-4 space-y-1.5">
+                        <li>
+                            <b>시크릿(인코그니토) 창</b>에서 <b>naver.com</b>에 접속해, <b>“로그인 상태 유지”를 체크</b>하고 로그인하세요.
+                            <span className="block text-[10px] text-[var(--color-text-muted)]">평소 쓰는 브라우저에서 로그아웃해도 영향이 없고, 세션도 더 오래 유지됩니다. (이 창은 토큰 복사 후 닫아도 됨)</span>
+                        </li>
+                        <li>로그인된 상태에서 <b>F12</b>(개발자 도구) → 아래 그림처럼 <b>Application</b> 탭 → <b>Cookies → https://www.naver.com</b> 를 엽니다.</li>
                         <li><code className="px-1 bg-[var(--color-elevated)] rounded text-[var(--color-primary)] font-bold">NID_AUT</code>, <code className="px-1 bg-[var(--color-elevated)] rounded text-[var(--color-primary)] font-bold">NID_SES</code> 의 <b>Value</b>를 각각 복사해 칸에 붙여넣고 <b>쿠키로 등록</b>.</li>
                     </ol>
 
