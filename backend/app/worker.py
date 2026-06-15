@@ -66,8 +66,10 @@ async def task_scan_homework(ctx, session_id: int):
             if not session:
                 return {"status": "failed", "reason": "Session not found"}
 
-            # 활성 멤버 조회
-            result = await db.execute(select(Member).where(Member.is_active == True))
+            # 활성 멤버 조회 — 세션이 속한 기수만
+            result = await db.execute(
+                select(Member).where(Member.is_active == True, Member.cohort_id == session.cohort_id)
+            )
             members = result.scalars().all()
 
             cfg = session.config or {}
@@ -102,7 +104,9 @@ async def task_scan_excuses(ctx, session_id: int, mode: str):
             if not session:
                 return {"status": "failed", "reason": "Session not found"}
 
-            result = await db.execute(select(Member).where(Member.is_active == True))
+            result = await db.execute(
+                select(Member).where(Member.is_active == True, Member.cohort_id == session.cohort_id)
+            )
             members = result.scalars().all()
 
             count = await scan_excuses(session.id, session.week_num, members, mode, db, session_date=session.date)

@@ -7,7 +7,7 @@ import pyotp
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -15,6 +15,7 @@ from app.deps import (
     _get_redis_client,
     blacklist_token,
     check_login_rate,
+    get_current_cohort_id,
     get_current_member,
     get_current_user,
     get_db,
@@ -27,7 +28,7 @@ from app.deps import (
 )
 from app.models import (
     User, Member, GenerationAccount, Session, Team, TeamMember, TeamHistory,
-    Assignment, Attendance, Ledger, CafePost, TreasuryExpense,
+    Assignment, Attendance, Ledger, CafePost, TreasuryExpense, Cohort,
 )
 
 logger = logging.getLogger("auth")
@@ -83,6 +84,9 @@ class MemberTokenResponse(BaseModel):
 class MemberMeResponse(BaseModel):
     member_id: int
     name: str
+    cohort_id: int | None = None
+    cohort_number: int | None = None
+    cohort_name: str | None = None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -130,10 +134,13 @@ class UserResponse(BaseModel):
 _DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
 
 
-def _create_access_token(username: str, role: str, remember: bool = False) -> str:
+def _create_access_token(
+    username: str, role: str, cohort_id: int | None, remember: bool = False
+) -> str:
     minutes = settings.JWT_REMEMBER_EXPIRE_MINUTES if remember else settings.JWT_EXPIRE_MINUTES
     expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
-    payload = {"sub": username, "role": role, "exp": expire}
+    # cohort_id 는 항상 claim에 포함(None=슈퍼관리자)해 구 토큰과 구분되게 한다.
+    payload = {"sub": username, "role": role, "cohort_id": cohort_id, "exp": expire}
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -196,6 +203,13 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
         logger.warning("login_failed user=%s ip=%s reason=wrong_password", body.username, ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
 
+    # 보관(비활성)된 기수 운영진이면 로그인 차단 (슈퍼관리자 cohort_id=NULL은 항상 허용)
+    if user.cohort_id is not None:
+        cohort = await db.get(Cohort, user.cohort_id)
+        if cohort and not cohort.is_active:
+            logger.warning("login_failed user=%s ip=%s reason=cohort_inactive", body.username, ip)
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="보관된 기수입니다.")
+
     # TOTP 확인
     if user.totp_secret:
         if body.totp_code:
@@ -211,7 +225,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             return TokenResponse(requires_totp=True, totp_pending_token=pending_token)
 
     logger.audit(f"🔑 로그인 성공 — {user.username} ({user.role}) from {ip}")
-    token = _create_access_token(user.username, user.role, remember=body.remember)
+    token = _create_access_token(user.username, user.role, user.cohort_id, remember=body.remember)
     return TokenResponse(access_token=token)
 
 
@@ -240,14 +254,23 @@ async def verify_totp(body: VerifyTotpRequest, request: Request, db: AsyncSessio
 
     await _delete_totp_pending(body.token)
     logger.audit(f"🔑 로그인 성공 (2FA) — {user.username} ({user.role}) from {ip}")
-    token = _create_access_token(user.username, user.role, remember=body.remember)
+    token = _create_access_token(user.username, user.role, user.cohort_id, remember=body.remember)
     return TokenResponse(access_token=token)
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(current_user: dict = Depends(get_current_user)):
-    """토큰 갱신"""
-    token = _create_access_token(current_user["username"], current_user["role"])
+async def refresh(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """토큰 갱신 — cohort_id는 DB에서 재조회(권위)."""
+    result = await db.execute(
+        select(User).where(User.username == current_user["username"], User.is_active == True)
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
+    token = _create_access_token(user.username, user.role, user.cohort_id)
     return TokenResponse(access_token=token)
 
 
@@ -300,15 +323,22 @@ async def member_login(
             detail="아이디 또는 비밀번호가 올바르지 않습니다",
         )
 
+    member = await db.get(Member, account.member_id)
+    # 보관(비활성)된 기수면 로그인 차단
+    cohort = await db.get(Cohort, member.cohort_id) if member else None
+    if cohort and not cohort.is_active:
+        logger.warning("member_login_failed user=%s ip=%s reason=cohort_inactive", body.username, ip)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="보관된 기수입니다. 운영진에게 문의하세요.")
+
     expire = datetime.now(timezone.utc) + timedelta(minutes=120)
     payload = {
         "sub": account.username,
         "member_id": account.member_id,
         "account_type": "generation",
+        "cohort_id": member.cohort_id if member else None,
         "exp": expire,
     }
     token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-    member = await db.get(Member, account.member_id)
     mname = member.name if member else account.username
     logger.audit(f"🔓 기수 로그인 — {mname} (@{account.username}) from {ip}")  # type: ignore[attr-defined]
     return MemberTokenResponse(access_token=token)
@@ -326,7 +356,14 @@ async def member_me(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="멤버 정보를 찾을 수 없습니다",
         )
-    return MemberMeResponse(member_id=member.id, name=member.name)
+    cohort = await db.get(Cohort, member.cohort_id) if member.cohort_id else None
+    return MemberMeResponse(
+        member_id=member.id,
+        name=member.name,
+        cohort_id=member.cohort_id,
+        cohort_number=cohort.number if cohort else None,
+        cohort_name=cohort.name if cohort else None,
+    )
 
 
 @router.post("/member-change-password", status_code=status.HTTP_204_NO_CONTENT)
@@ -477,10 +514,13 @@ async def totp_status(
 @router.get("/staff-list")
 async def list_staff(
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """운영진 목록 (staff 이상 접근 가능) — 분반 배치 등에 사용"""
-    result = await db.execute(select(User).where(User.is_active == True).order_by(User.id))
+    """운영진 목록 (staff 이상 접근 가능) — 분반 배치 등에 사용. 현재 기수만."""
+    result = await db.execute(
+        select(User).where(User.is_active == True, User.cohort_id == cohort_id).order_by(User.id)
+    )
     return [
         {"id": u.id, "display_name": u.display_name, "department": u.department}
         for u in result.scalars().all()
@@ -491,11 +531,16 @@ async def list_staff(
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
-    _: dict = Depends(require_admin_or_chairman),
+    current_user: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """사용자 목록 (admin 또는 회장단 — 평가 배정 등에 사용). CRUD는 admin 전용."""
-    result = await db.execute(select(User).order_by(User.id))
+    """사용자 목록 (admin 또는 회장단). 현재 기수 운영진 + 본인 계정(슈퍼관리자 자기 관리용)."""
+    result = await db.execute(
+        select(User)
+        .where(or_(User.cohort_id == cohort_id, User.username == current_user["username"]))
+        .order_by(User.id)
+    )
     return [UserResponse.from_user(u) for u in result.scalars().all()]
 
 
@@ -503,15 +548,22 @@ async def list_users(
 async def create_user(
     body: UserCreate,
     _: dict = Depends(require_admin),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """사용자 생성 (admin 전용)"""
+    """사용자 생성 (admin 전용) — 현재 기수 운영진으로 생성. admin 역할은 불가(전체 관리자 1명뿐)."""
+    if body.role == "admin":
+        raise HTTPException(
+            status_code=400,
+            detail="기수 운영진은 admin 역할을 가질 수 없습니다 (admin은 전체 관리자 전용)",
+        )
     exists = await db.execute(select(User).where(User.username == body.username))
     if exists.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="이미 존재하는 사용자명입니다")
 
     hashed = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     user = User(
+        cohort_id=cohort_id,
         username=body.username,
         password_hash=hashed,
         display_name=body.display_name,
@@ -529,13 +581,27 @@ async def create_user(
 async def update_user(
     user_id: int,
     body: UserUpdate,
-    _: dict = Depends(require_admin),
+    current_user: dict = Depends(require_admin),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """사용자 수정 (admin 전용)"""
+    """사용자 수정 (admin 전용) — 현재 기수 운영진 또는 본인 계정(슈퍼관리자 자기 관리)."""
     user = await db.get(User, user_id)
-    if not user:
+    is_self = bool(user and user.username == current_user["username"])
+    if not user or (user.cohort_id != cohort_id and not is_self):
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    # admin 역할은 슈퍼관리자 본인에게만 허용 (기수 운영진엔 부여 불가)
+    if body.role == "admin" and not is_self:
+        raise HTTPException(
+            status_code=400,
+            detail="기수 운영진은 admin 역할을 가질 수 없습니다 (admin은 전체 관리자 전용)",
+        )
+    # 본인 계정 잠금 방지: 스스로 비활성화 금지
+    if is_self and body.is_active is False:
+        raise HTTPException(status_code=400, detail="본인 계정은 비활성화할 수 없습니다")
+    # 슈퍼관리자 자기 강등 방지: 본인 admin 역할을 다른 역할로 못 바꿈 (기수 관리 잠금 방지)
+    if is_self and user.role == "admin" and body.role is not None and body.role != "admin":
+        raise HTTPException(status_code=400, detail="슈퍼관리자는 본인 역할을 변경할 수 없습니다")
 
     if body.username is not None:
         # Check uniqueness
@@ -563,12 +629,15 @@ async def update_user(
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: int,
-    _: dict = Depends(require_admin),
+    current_user: dict = Depends(require_admin),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """사용자 삭제 (admin 전용)"""
+    """사용자 삭제 (admin 전용) — 현재 기수 운영진만. 본인 계정은 삭제 불가."""
     user = await db.get(User, user_id)
-    if not user:
+    if user and user.username == current_user["username"]:
+        raise HTTPException(status_code=400, detail="본인 계정은 삭제할 수 없습니다")
+    if not user or user.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
     await db.delete(user)
     await db.commit()
@@ -579,28 +648,35 @@ async def delete_user(
 @router.post("/reset-semester", status_code=status.HTTP_200_OK)
 async def reset_semester(
     _: dict = Depends(require_admin),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    기수 초기화 (admin 전용)
-    - 모든 세션, 장부, 출석, 과제, 팀, 게시판 캐시 삭제
-    - 멤버 유지, 디포짓 20000원 초기화, 점수 초기화
+    기수 초기화 (admin 전용) — **현재 기수에 한정**.
+    - 현재 기수의 세션, 장부, 출석, 과제, 팀, 게시판 캐시 삭제
+    - 현재 기수 멤버 유지, 디포짓 20000원 초기화, 점수 초기화
+    - 타 기수 데이터는 절대 건드리지 않음.
     """
     from sqlalchemy import delete
 
-    # 순서 중요: FK 의존성 역순으로 삭제
-    await db.execute(delete(Ledger))
-    await db.execute(delete(Assignment))
-    await db.execute(delete(Attendance))
-    await db.execute(delete(TeamHistory))
-    await db.execute(delete(TeamMember))
-    await db.execute(delete(Team))
-    await db.execute(delete(Session))
-    await db.execute(delete(CafePost))
-    await db.execute(delete(TreasuryExpense))
+    # 현재 기수 스코프 서브쿼리
+    cohort_session_ids = select(Session.id).where(Session.cohort_id == cohort_id).scalar_subquery()
+    cohort_member_ids = select(Member.id).where(Member.cohort_id == cohort_id).scalar_subquery()
+    cohort_team_ids = select(Team.id).where(Team.session_id.in_(cohort_session_ids)).scalar_subquery()
 
-    # 멤버 디포짓/점수 초기화
-    members_result = await db.execute(select(Member))
+    # 순서 중요: FK 의존성 역순으로 삭제 (전부 현재 기수만)
+    await db.execute(delete(Ledger).where(Ledger.member_id.in_(cohort_member_ids)))
+    await db.execute(delete(Assignment).where(Assignment.session_id.in_(cohort_session_ids)))
+    await db.execute(delete(Attendance).where(Attendance.session_id.in_(cohort_session_ids)))
+    await db.execute(delete(TeamHistory).where(TeamHistory.session_id.in_(cohort_session_ids)))
+    await db.execute(delete(TeamMember).where(TeamMember.team_id.in_(cohort_team_ids)))
+    await db.execute(delete(Team).where(Team.session_id.in_(cohort_session_ids)))
+    await db.execute(delete(Session).where(Session.cohort_id == cohort_id))
+    await db.execute(delete(CafePost).where(CafePost.cohort_id == cohort_id))
+    await db.execute(delete(TreasuryExpense).where(TreasuryExpense.cohort_id == cohort_id))
+
+    # 현재 기수 멤버 디포짓/점수 초기화
+    members_result = await db.execute(select(Member).where(Member.cohort_id == cohort_id))
     count = 0
     for member in members_result.scalars().all():
         member.current_deposit = 20000

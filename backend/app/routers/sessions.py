@@ -14,7 +14,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.deps import get_current_user, get_db, require_staff
+from app.deps import get_current_cohort_id, get_current_user, get_db, require_staff
 from app.models import (
     Assignment,
     Attendance,
@@ -57,9 +57,14 @@ _ALLOWED_TRANSITIONS: dict[str, str] = {
 }
 
 
-async def _get_session_or_404(session_id: int, db: AsyncSession) -> SessionModel:
+async def _get_session_or_404(
+    session_id: int, db: AsyncSession, cohort_id: int | None = None
+) -> SessionModel:
     result = await db.get(SessionModel, session_id)
     if not result:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
+    # 기수 격리: cohort_id 가 주어지면 다른 기수의 세션은 없는 것으로 취급
+    if cohort_id is not None and result.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
     return result
 
@@ -68,9 +73,14 @@ async def _get_session_or_404(session_id: int, db: AsyncSession) -> SessionModel
 async def list_sessions(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
-    """세션 목록"""
-    result = await db.execute(select(SessionModel).order_by(SessionModel.week_num))
+    """세션 목록 (현재 기수만)"""
+    result = await db.execute(
+        select(SessionModel)
+        .where(SessionModel.cohort_id == cohort_id)
+        .order_by(SessionModel.week_num)
+    )
     return result.scalars().all()
 
 
@@ -79,11 +89,16 @@ async def create_session(
     body: SessionCreate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
-    """세션 생성 + 전체 활성 멤버 attendance 자동 생성"""
+    """세션 생성 + 현재 기수 활성 멤버 attendance 자동 생성"""
     try:
+        # week_num 중복 체크는 현재 기수 내로 한정
         existing = await db.execute(
-            select(SessionModel).where(SessionModel.week_num == body.week_num)
+            select(SessionModel).where(
+                SessionModel.week_num == body.week_num,
+                SessionModel.cohort_id == cohort_id,
+            )
         )
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=400, detail=f"week_num {body.week_num}은 이미 존재합니다")
@@ -99,12 +114,17 @@ async def create_session(
             type=body.type,
             config=config_data,
             status="PREP",
+            cohort_id=cohort_id,
         )
         db.add(session)
         await db.flush()
 
+        # 🔴 전역 멤버 스캔 — 현재 기수의 활성 멤버만 (타 기수 멤버 누출 방지)
         members_result = await db.execute(
-            select(Member).where(Member.is_active == True)
+            select(Member).where(
+                Member.is_active == True,
+                Member.cohort_id == cohort_id,
+            )
         )
         members = members_result.scalars().all()
         cfg = config_data or {}
@@ -192,11 +212,12 @@ async def get_session(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션 상세 조회 (Teams/Attendance Eager Loading)"""
     stmt = (
         select(SessionModel)
-        .where(SessionModel.id == session_id)
+        .where(SessionModel.id == session_id, SessionModel.cohort_id == cohort_id)
         .options(
             selectinload(SessionModel.teams).selectinload(Team.members).selectinload(TeamMember.member),
             selectinload(SessionModel.teams).selectinload(Team.assignments),
@@ -217,9 +238,10 @@ async def delete_session(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션 삭제 — 연결된 장부 항목도 효과 역전 후 함께 삭제"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
 
     # 장부 항목 효과 역전 후 삭제
     ledger_result = await db.execute(
@@ -257,9 +279,10 @@ async def update_session_config(
     body: SessionConfigUpdate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션 config 업데이트 (기한 등)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     if session.status == "FINALIZED":
         raise HTTPException(status_code=400, detail="Cannot modify finalized session")
 
@@ -292,9 +315,10 @@ async def update_session_status(
     body: SessionStatusUpdate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """상태 머신 전환"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     current = session.status
     target = body.status
 
@@ -319,9 +343,12 @@ async def update_session_status(
     # INDIVIDUAL 세션: SETUP→PREP 전환 시 멤버별 Assignment 자동 생성
     if current == "SETUP" and target == "PREP" and session.type == "INDIVIDUAL":
         cfg = session.config or {}
-        # 활성 멤버 전체 조회
+        # 🔴 전역 멤버 스캔 — 현재 기수의 활성 멤버만 (타 기수 멤버 누출 방지)
         members_result = await db.execute(
-            select(Member).where(Member.is_active == True)
+            select(Member).where(
+                Member.is_active == True,
+                Member.cohort_id == cohort_id,
+            )
         )
         active_members = members_result.scalars().all()
         for member in active_members:
@@ -472,9 +499,10 @@ async def get_session_stats(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션 통계 (출석률, 과제 제출 현황)"""
-    await _get_session_or_404(session_id, db)
+    await _get_session_or_404(session_id, db, cohort_id)
 
     # 1. Attendance Stats
     att_result = await db.execute(
@@ -544,9 +572,10 @@ async def get_session_attendance(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션 출결 목록"""
-    await _get_session_or_404(session_id, db)
+    await _get_session_or_404(session_id, db, cohort_id)
     result = await db.execute(
         select(Attendance)
         .where(Attendance.session_id == session_id)
@@ -575,9 +604,10 @@ async def update_attendance(
     body: AttendanceUpdate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """출결 정보 수정 (열람자 이상 가능)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
 
     # 마감 검증 (KST 21:59:59 = UTC 12:59:59)
     # PRE 마감: 세션 전날 21:59:59 KST
@@ -634,9 +664,10 @@ async def force_update_attendance(
     body: AttendanceForceUpdate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """출결 강제 수정 (FINALIZED 상태에서도 가능, Ledger 자동 생성)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     
     result = await db.execute(
         select(Attendance).where(
@@ -695,9 +726,10 @@ async def clear_excuses(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션의 모든 사유서 데이터(excuse_type, excuse_text) 초기화"""
-    await _get_session_or_404(session_id, db)
+    await _get_session_or_404(session_id, db, cohort_id)
 
     result = await db.execute(
         select(Attendance).where(
@@ -724,15 +756,19 @@ async def generate_teams(
     body: TeamGenerateRequest,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """팀빌딩 시뮬레이션 (Snake Draft)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     if session.type == "INDIVIDUAL":
         raise HTTPException(status_code=400, detail="INDIVIDUAL 세션에는 팀빌딩 불가")
 
-    # 활성 멤버 조회
+    # 🔴 전역 멤버 스캔 — 현재 기수의 활성 멤버만 (타 기수 멤버 누출 방지)
     members_result = await db.execute(
-        select(Member).where(Member.is_active == True)
+        select(Member).where(
+            Member.is_active == True,
+            Member.cohort_id == cohort_id,
+        )
     )
     members = members_result.scalars().all()
 
@@ -761,9 +797,10 @@ async def confirm_teams(
     body: TeamCreateRequest,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """팀 확정 (DB 저장) + Assignments 자동 생성 + PREP 전환"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     if session.status not in ("SETUP", "PREP"):
         raise HTTPException(status_code=400, detail="SETUP 또는 PREP 상태에서만 팀 수정 가능")
 
@@ -876,12 +913,19 @@ async def generate_groups(
     body: GroupGenerateRequest,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """분반 자동 생성 (저장 안 함, 미리보기)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     await _guard_group_session(session)
 
-    result = await db.execute(select(Member).where(Member.is_active == True))
+    # 🔴 전역 멤버 스캔 — 현재 기수의 활성 멤버만 (타 기수 멤버 누출 방지)
+    result = await db.execute(
+        select(Member).where(
+            Member.is_active == True,
+            Member.cohort_id == cohort_id,
+        )
+    )
     members = result.scalars().all()
 
     groups = build_groups(members, method=body.method)
@@ -900,9 +944,10 @@ async def get_groups(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """현재 분반 현황 조회"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
 
     att_result = await db.execute(
         select(Attendance, Member.name)
@@ -925,9 +970,11 @@ async def get_groups(
     cfg = session.config or {}
     staff_groups_raw = cfg.get("staff_groups", {})
 
-    # users 목록 조회 (운영진 배정용)
+    # users 목록 조회 (운영진 배정용) — 현재 기수 소속 운영진만 (타 기수 운영진 누출 방지)
     users_result = await db.execute(
-        select(User).where(User.is_active == True).order_by(User.id)
+        select(User)
+        .where(User.is_active == True, User.cohort_id == cohort_id)
+        .order_by(User.id)
     )
     all_users = [
         {"id": u.id, "display_name": u.display_name, "department": u.department, "role": u.role}
@@ -955,9 +1002,10 @@ async def save_groups(
     body: GroupAssignment,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """분반 저장 (벌크 업데이트)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     await _guard_group_session(session)
 
     # 검증: 중복 없는지
@@ -1006,9 +1054,10 @@ async def clear_groups(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """분반 초기화 (전체 NULL)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     await _guard_group_session(session)
 
     await db.execute(
@@ -1028,18 +1077,20 @@ async def set_feedback_targets(
     body: FeedbackTargetUpdate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """피드백 대상 멤버 지정 (보통 1명, 결석 시 2명)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     if session.status == "FINALIZED":
         raise HTTPException(status_code=400, detail="FINALIZED 세션은 수정 불가합니다")
 
-    # Validate target_member_ids exist as active members
+    # Validate target_member_ids exist as active members (현재 기수로 제한)
     if body.target_member_ids:
         valid_ids_result = await db.execute(
             select(Member.id).where(
                 Member.id.in_(body.target_member_ids),
                 Member.is_active == True,
+                Member.cohort_id == cohort_id,
             )
         )
         valid_ids = {row[0] for row in valid_ids_result.fetchall()}
@@ -1070,9 +1121,10 @@ async def feedback_random_assign(
     body: FeedbackRandomAssignRequest,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """피드백 대상 랜덤 일괄 배정 (본인은 크롤러가 자동 포함)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     if session.status == "FINALIZED":
         raise HTTPException(status_code=400, detail="FINALIZED 세션은 수정 불가합니다")
 
@@ -1151,9 +1203,11 @@ async def get_settlement_preview(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """정산 프리뷰 (페널티 엔진 결과만 조회, DB 저장 X)"""
-    session = await _get_session_or_404(session_id, db)
+    # 세션이 cohort 검증됨 → 이하 staged_merits member_id 조회는 cohort-verified config 기반
+    session = await _get_session_or_404(session_id, db, cohort_id)
     
     from app.services.penalty_engine import PenaltyEngine
     from app.services.streak_checker import check_attendance_streaks
@@ -1215,9 +1269,10 @@ async def add_staged_merits(
     body: StagedMeritCreate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """수동 상점을 session config에 staging"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     if session.status == "FINALIZED":
         raise HTTPException(status_code=400, detail="FINALIZED 세션에는 상점을 추가할 수 없습니다")
 
@@ -1247,9 +1302,10 @@ async def remove_staged_merit(
     index: int,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """수동 staged 상점 삭제 (인덱스)"""
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
     if session.status == "FINALIZED":
         raise HTTPException(status_code=400, detail="FINALIZED 세션은 수정할 수 없습니다")
 
@@ -1275,10 +1331,14 @@ async def finalize_session_api(
     body: SessionFinalizeRequest,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션 마감 (Finalize) - 페널티 확정 및 정산 처리"""
     from app.services.finalize import finalize_session, SessionAlreadyFinalizedError
-    
+
+    # 기수 격리: 다른 기수의 세션을 마감하지 못하도록 사전 검증
+    await _get_session_or_404(session_id, db, cohort_id)
+
     # Pydantic 모델 -> Dict 변환
     overrides_dict = [o.model_dump() for o in body.overrides]
     
@@ -1313,13 +1373,14 @@ async def download_member_ppt(
     member_id: int,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """멤버의 PPT 파일을 구글 드라이브에서 다운로드하여 반환"""
     import asyncio
     from fastapi.responses import Response
     from app.services.crawler_video import download_drive_file_bytes
 
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
 
     # Assignment 조회 (INDIVIDUAL or TEAM)
     assignment = None
@@ -1375,6 +1436,7 @@ async def download_all_ppt(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """모든 PPT를 ZIP으로 묶어서 다운로드"""
     import asyncio
@@ -1383,7 +1445,7 @@ async def download_all_ppt(
     from fastapi.responses import Response
     from app.services.crawler_video import download_drive_file_bytes
 
-    session = await _get_session_or_404(session_id, db)
+    session = await _get_session_or_404(session_id, db, cohort_id)
 
     # 해당 세션의 모든 PPT_EMAIL Assignment (drive_file_id 있는 것)
     result = await db.execute(
@@ -1440,8 +1502,11 @@ async def update_presenter_order(
     body: list[dict],
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """발표 순서 일괄 저장 — [{member_id, presenter_order}]"""
+    # 세션이 현재 기수 소속인지 검증 (자식 Attendance를 session_id로 수정하므로)
+    await _get_session_or_404(session_id, db, cohort_id)
     for item in body:
         await db.execute(
             update(Attendance)
@@ -1458,8 +1523,11 @@ async def update_team_order(
     body: list[dict],
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """팀 발표 순서 일괄 저장 — [{team_id, presenter_order}]"""
+    # 세션이 현재 기수 소속인지 검증 (자식 Team을 session_id로 수정하므로)
+    await _get_session_or_404(session_id, db, cohort_id)
     for item in body:
         await db.execute(
             update(Team)
@@ -1524,14 +1592,18 @@ async def r2_presign_upload(
     body: dict = Body(...),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """R2 업로드용 presigned URL 발급 (15분 유효)"""
     from app.services import r2 as r2_svc
     if not r2_svc.is_configured():
         raise HTTPException(status_code=501, detail="R2가 설정되지 않았습니다 (서버 env 확인)")
 
+    # 세션이 현재 기수 소속인지 검증
+    await _get_session_or_404(session_id, db, cohort_id)
+
     member = await db.get(Member, member_id)
-    if not member:
+    if not member or member.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     filename = body.get("filename") or "video.mp4"
@@ -1562,14 +1634,18 @@ async def r2_finalize_upload(
     body: dict = Body(...),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """R2 업로드 완료 알림 → ARQ worker에 pull/삭제 태스크 큐잉"""
     from app.services import r2 as r2_svc
     if not r2_svc.is_configured():
         raise HTTPException(status_code=501, detail="R2가 설정되지 않았습니다")
 
+    # 세션이 현재 기수 소속인지 검증
+    await _get_session_or_404(session_id, db, cohort_id)
+
     member = await db.get(Member, member_id)
-    if not member:
+    if not member or member.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     key = body.get("key")
@@ -1619,14 +1695,18 @@ async def r2_multipart_init(
     body: dict = Body(...),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """멀티파트 업로드 시작 + 모든 part presigned URL 일괄 발급"""
     from app.services import r2 as r2_svc
     if not r2_svc.is_configured():
         raise HTTPException(status_code=501, detail="R2가 설정되지 않았습니다 (서버 env 확인)")
 
+    # 세션이 현재 기수 소속인지 검증
+    await _get_session_or_404(session_id, db, cohort_id)
+
     member = await db.get(Member, member_id)
-    if not member:
+    if not member or member.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     filename = body.get("filename") or "video.mp4"
@@ -1674,14 +1754,18 @@ async def r2_multipart_complete(
     body: dict = Body(...),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """멀티파트 업로드 완료 → R2 오브젝트 결합 → ARQ pull 태스크 큐잉"""
     from app.services import r2 as r2_svc
     if not r2_svc.is_configured():
         raise HTTPException(status_code=501, detail="R2가 설정되지 않았습니다")
 
+    # 세션이 현재 기수 소속인지 검증
+    await _get_session_or_404(session_id, db, cohort_id)
+
     member = await db.get(Member, member_id)
-    if not member:
+    if not member or member.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     key = body.get("key")
@@ -1748,6 +1832,7 @@ async def r2_multipart_abort(
     member_id: int,
     body: dict = Body(...),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """멀티파트 업로드 중단 — R2 측 미완료 파트 정리"""
     from app.services import r2 as r2_svc
@@ -1777,6 +1862,7 @@ async def upload_video(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """발표자별 영상 업로드 (교체 가능)
 
@@ -1784,8 +1870,11 @@ async def upload_video(
     - 파일 쓰기는 스레드 풀에 위임 (이벤트 루프 블록 방지)
     - .tmp 파일에 쓰고 성공 시 rename → 중단 시 불완전 파일 안 남음
     """
+    # 세션이 현재 기수 소속인지 검증
+    await _get_session_or_404(session_id, db, cohort_id)
+
     member = await db.get(Member, member_id)
-    if not member:
+    if not member or member.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
@@ -1860,10 +1949,14 @@ async def init_chunk_upload(
     body: dict = Body(...),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """청크 업로드 세션 초기화 → upload_id 반환. 최종 파일을 sparse로 미리 할당."""
+    # 세션이 현재 기수 소속인지 검증
+    await _get_session_or_404(session_id, db, cohort_id)
+
     member = await db.get(Member, member_id)
-    if not member:
+    if not member or member.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     filename = body.get("filename") or "video.mp4"
@@ -1926,6 +2019,7 @@ async def upload_chunk(
     chunk_idx: int,
     request: Request,
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """raw binary body를 .partial 파일의 해당 offset에 직접 기록.
     청크 파일 별도 저장 X → 재조립 불필요, disk I/O 절반."""
@@ -1981,10 +2075,14 @@ async def complete_chunk_upload(
     upload_id: str,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """모든 청크 수신 완료 후 .partial → 최종 파일 rename. 재조립 없음."""
+    # 세션이 현재 기수 소속인지 검증
+    await _get_session_or_404(session_id, db, cohort_id)
+
     member = await db.get(Member, member_id)
-    if not member:
+    if not member or member.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
@@ -2053,6 +2151,7 @@ async def abort_chunk_upload(
     member_id: int,
     upload_id: str,
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """업로드 중단 — 청크 디렉토리 + .partial 파일 정리"""
     session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
@@ -2081,14 +2180,20 @@ async def list_videos(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션에 업로드된 영상 목록"""
+    # 세션이 현재 기수 소속인지 검증
+    await _get_session_or_404(session_id, db, cohort_id)
+
     session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
     if not os.path.isdir(session_dir):
         return []
 
-    # member_id → name 매핑
-    members_result = await db.execute(select(Member))
+    # member_id → name 매핑 (현재 기수 멤버만)
+    members_result = await db.execute(
+        select(Member).where(Member.cohort_id == cohort_id)
+    )
     name_map = {m.id: m.name for m in members_result.scalars().all()}
 
     videos = []
@@ -2124,9 +2229,14 @@ async def list_videos(
 async def delete_video(
     session_id: int,
     member_id: int,
+    db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """발표자별 영상 삭제"""
+    # 세션이 현재 기수 소속인지 검증 (파일 삭제 전 권한 격리)
+    await _get_session_or_404(session_id, db, cohort_id)
+
     session_dir = os.path.join(VIDEO_DIR, f"session_{session_id}")
     if not os.path.isdir(session_dir):
         return

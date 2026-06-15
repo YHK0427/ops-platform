@@ -173,7 +173,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                         <button
                             onClick={handleLogin}
                             disabled={!credentials.username || !credentials.password}
-                            className="px-4 py-2 bg-[var(--color-success)] hover:bg-green-600 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-colors flex items-center gap-2"
+                            className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-colors flex items-center gap-2"
                         >
                             자동 로그인
                         </button>
@@ -219,7 +219,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
                         <button
                             onClick={handleCookieImport}
                             disabled={isImporting || !nidAut.trim() || !nidSes.trim()}
-                            className="px-4 py-2 bg-[var(--color-success)] hover:bg-green-600 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-colors self-end"
+                            className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-colors self-end"
                         >
                             {isImporting ? "등록 중..." : "쿠키로 등록"}
                         </button>

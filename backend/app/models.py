@@ -9,10 +9,25 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+class Cohort(Base):
+    """기수 공간 (33기, 34기 …). 멀티테넌시 루트 — 운영진/기수/세션/평가/장부가 기수별로 격리된다."""
+    __tablename__ = "cohorts"
+
+    id = Column(Integer, primary_key=True)
+    number = Column(Integer, unique=True, nullable=False)  # 33, 34
+    name = Column(String(50), nullable=False)              # "33기"
+    is_current = Column(Boolean, server_default="false", nullable=False)  # 신규 계정 시딩·기본값 기준
+    is_active = Column(Boolean, server_default="true", nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    archived_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
+    # NULL = 슈퍼관리자(전 기수 총괄). 그 외 운영진은 소속 기수로 스코프.
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=True)
     username = Column(String(50), unique=True, nullable=False)
     password_hash = Column(String(200), nullable=False)
     display_name = Column(String(50), nullable=False)
@@ -48,6 +63,7 @@ class Member(Base):
     __tablename__ = "members"
 
     id = Column(Integer, primary_key=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=False)
     name = Column(String(50), nullable=False)
     name_initial = Column(String(10))
     email = Column(String(200))
@@ -82,7 +98,8 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id = Column(Integer, primary_key=True)
-    week_num = Column(Integer, nullable=False, unique=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=False)
+    week_num = Column(Integer, nullable=False)  # 기수 내 유일 (uq_sessions_cohort_week)
     title = Column(String(100), nullable=False)
     date = Column(Date, nullable=False)
     type = Column(String(20), nullable=False)
@@ -102,6 +119,7 @@ class Session(Base):
             "status IN ('SETUP','PREP','OPS','POST','SETTLEMENT','FINALIZED')",
             name="ck_sessions_status",
         ),
+        UniqueConstraint("cohort_id", "week_num", name="uq_sessions_cohort_week"),
     )
 
     # Relationships
@@ -262,6 +280,7 @@ class TreasuryExpense(Base):
     __tablename__ = "treasury_expenses"
 
     id = Column(Integer, primary_key=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=False)
     amount_krw = Column(Integer, nullable=False)
     description = Column(String(500), nullable=False)
     created_by = Column(String(50))
@@ -273,7 +292,8 @@ class CafePost(Base):
     __tablename__ = "cafe_posts"
 
     id = Column(Integer, primary_key=True)
-    article_id = Column(Integer, unique=True, nullable=False)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=False)
+    article_id = Column(Integer, nullable=False)  # 기수 내 유일 (uq_cafe_posts_cohort_article)
     board_type = Column(String(20), nullable=False)
     title = Column(String(500))
     author_nick = Column(String(100))
@@ -289,6 +309,7 @@ class CafePost(Base):
             "board_type IN ('REVIEW','PPT','VIDEO')",
             name="ck_cafe_posts_board_type",
         ),
+        UniqueConstraint("cohort_id", "article_id", name="uq_cafe_posts_cohort_article"),
     )
 
 
@@ -299,6 +320,7 @@ class EvalRound(Base):
     __tablename__ = "eval_rounds"
 
     id = Column(Integer, primary_key=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=False)
     session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True)
     round_type = Column(String(20), nullable=False)
     title = Column(String(100), nullable=False)

@@ -106,7 +106,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    return {"username": username, "role": role or "viewer"}
+    # cohort_id: 신규 토큰엔 claim 존재(None=슈퍼관리자). 구 토큰엔 없음 → cohort_claim=False로
+    # 표시해 get_current_cohort_id 가 DB 폴백하도록 한다.
+    return {
+        "username": username,
+        "role": role or "viewer",
+        "cohort_id": payload.get("cohort_id"),
+        "cohort_claim": "cohort_id" in payload,
+    }
 
 
 async def get_current_member(
@@ -137,16 +144,18 @@ async def get_current_member(
     except JWTError:
         raise credentials_exception
 
-    # DB에서 계정 활성 상태 확인
-    from app.models import GenerationAccount
+    # DB에서 계정 활성 상태 + 소속 기수 확인 (cohort_id는 DB 권위 — 구 토큰도 안전)
+    from app.models import GenerationAccount, Member
     result = await db.execute(
-        select(GenerationAccount.is_active).where(GenerationAccount.member_id == member_id)
+        select(GenerationAccount.is_active, Member.cohort_id)
+        .join(Member, Member.id == GenerationAccount.member_id)
+        .where(GenerationAccount.member_id == member_id)
     )
-    is_active = result.scalar_one_or_none()
-    if not is_active:
+    row = result.first()
+    if not row or not row[0]:
         raise credentials_exception
 
-    return {"member_id": member_id, "username": username}
+    return {"member_id": member_id, "username": username, "cohort_id": row[1]}
 
 
 async def decode_ws_token(token: str, db: AsyncSession) -> dict | None:
@@ -176,17 +185,27 @@ async def decode_ws_token(token: str, db: AsyncSession) -> dict | None:
         member_id: int | None = payload.get("member_id")
         if member_id is None:
             return None
-        from app.models import GenerationAccount
+        from app.models import GenerationAccount, Member
         result = await db.execute(
-            select(GenerationAccount.is_active).where(GenerationAccount.member_id == member_id)
+            select(GenerationAccount.is_active, Member.cohort_id)
+            .join(Member, Member.id == GenerationAccount.member_id)
+            .where(GenerationAccount.member_id == member_id)
         )
-        if not result.scalar_one_or_none():
+        row = result.first()
+        if not row or not row[0]:
             return None
-        return {"role": "member", "member_id": member_id, "username": username}
+        return {"role": "member", "member_id": member_id, "username": username, "cohort_id": row[1]}
 
     # ops/staff 토큰 — viewer 이상이면 구독 허용(운영진 라이브 뷰)
     role = payload.get("role") or "viewer"
-    return {"role": "admin", "username": username, "user_role": role}
+    # cohort_id: 신규 토큰은 claim(None=슈퍼관리자). 구 토큰(claim 없음)은 DB에서 소속 기수 조회
+    # → 구 운영진 토큰이 슈퍼관리자처럼 전 기수 보드를 구독하는 누출 방지.
+    cohort_id = payload.get("cohort_id")
+    if "cohort_id" not in payload:
+        from app.models import User
+        result = await db.execute(select(User.cohort_id).where(User.username == username))
+        cohort_id = result.scalar_one_or_none()
+    return {"role": "admin", "username": username, "user_role": role, "cohort_id": cohort_id}
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
@@ -225,6 +244,78 @@ async def require_admin_or_chairman(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="관리자 또는 회장단 권한이 필요합니다",
     )
+
+
+async def get_current_cohort_id(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> int:
+    """현재 요청의 활성 기수 id (운영진용).
+
+    - 일반 운영진: 본인 소속 기수로 강제 스코프.
+    - 슈퍼관리자(cohort_id=NULL): 헤더 X-Cohort-Id 로 활성 기수 선택.
+    토큰에 cohort_id claim이 없으면(구 토큰) DB에서 소속 기수를 조회한다.
+    """
+    cohort_id = user.get("cohort_id")
+    if not user.get("cohort_claim"):
+        # 구 토큰 — DB에서 소속 기수 조회 (권위)
+        from app.models import User
+        result = await db.execute(
+            select(User.cohort_id).where(User.username == user["username"])
+        )
+        cohort_id = result.scalar_one_or_none()
+
+    if cohort_id is not None:
+        return cohort_id
+
+    # 여기까지 왔으면 cohort_id가 없음 = 슈퍼관리자여야 함.
+    # 방어: admin 역할이 아닌데 cohort가 없으면(비정상 계정) 헤더로 임의 기수 접근 차단.
+    if user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="소속 기수를 확인할 수 없습니다",
+        )
+
+    # 슈퍼관리자 — 헤더로 활성 기수 지정
+    hdr = request.headers.get("X-Cohort-Id")
+    if not hdr:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="활성 기수를 선택해야 합니다 (X-Cohort-Id 헤더 누락)",
+        )
+    try:
+        return int(hdr)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Cohort-Id 헤더 값이 올바르지 않습니다",
+        )
+
+
+async def get_member_cohort_id(member: dict = Depends(get_current_member)) -> int:
+    """현재 멤버의 소속 기수 id (기수 포털용 — 항상 본인 기수로 고정)."""
+    cohort_id = member.get("cohort_id")
+    if cohort_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="기수 정보를 확인할 수 없습니다",
+        )
+    return cohort_id
+
+
+def require_superadmin(user: dict = Depends(get_current_user)) -> dict:
+    """슈퍼관리자(전 기수 총괄) 전용 — cohort_id 없는 admin 계정.
+
+    주의: get_current_user는 claim만 보므로, 구 admin 토큰(claim 없음)도 통과한다.
+    슈퍼관리자 전용 작업은 기수 생성/전환 등 admin 한정이라 실질 위험 없음.
+    """
+    if user["role"] != "admin" or user.get("cohort_id") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="슈퍼관리자 권한이 필요합니다",
+        )
+    return user
 
 
 def verify_password(plain: str, hashed: str) -> bool:

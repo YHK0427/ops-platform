@@ -155,6 +155,7 @@ async def sync_board_to_db(
     req_session,
     members: list,
     db,
+    cohort_id: int,
 ) -> dict:
     """
     네이버 카페 게시판 내용을 CafePost 테이블에 동기화.
@@ -167,7 +168,7 @@ async def sync_board_to_db(
     from app.models import CafePost
 
     fetched_ids: set[int] = set()
-    cutoff_ms = (datetime.now(timezone.utc) - timedelta(days=90)).timestamp() * 1000  # 3개월 이전 기준
+    cutoff_ms = (datetime.now(timezone.utc) - timedelta(days=14)).timestamp() * 1000  # 2주 이전 기준
 
     for page in range(1, 11):  # 최대 10페이지 (200개)
         try:
@@ -187,7 +188,7 @@ async def sync_board_to_db(
             if not article_id:
                 continue
 
-            # 3개월 이전 글이면 페이징 중단
+            # 2주 이전 글이면 페이징 중단
             write_ts = item.get("writeDateTimestamp", 0)
             if write_ts and write_ts < cutoff_ms:
                 stop_paging = True
@@ -206,8 +207,11 @@ async def sync_board_to_db(
             extracted = extract_name_from_title(title)
             member = match_member_by_name(extracted, members) if extracted else None
 
-            # Upsert
-            stmt = select(CafePost).where(CafePost.article_id == int(article_id))
+            # Upsert (기수 내에서 article_id 유일)
+            stmt = select(CafePost).where(
+                CafePost.article_id == int(article_id),
+                CafePost.cohort_id == cohort_id,
+            )
             result = await db.execute(stmt)
             post = result.scalar_one_or_none()
 
@@ -220,6 +224,7 @@ async def sync_board_to_db(
                 post.is_deleted = False
             else:
                 db.add(CafePost(
+                    cohort_id=cohort_id,
                     article_id=int(article_id),
                     board_type=board_type,
                     title=title,
@@ -232,10 +237,11 @@ async def sync_board_to_db(
         if stop_paging:
             break
 
-    # Soft-delete: DB에 있는데 이번 스캔에 없으면 삭제된 것으로 마킹
+    # Soft-delete: DB에 있는데 이번 스캔에 없으면 삭제된 것으로 마킹 (기수 내)
     stmt = select(CafePost).where(
         CafePost.board_type == board_type,
         CafePost.is_deleted == False,
+        CafePost.cohort_id == cohort_id,
     )
     result = await db.execute(stmt)
     existing = result.scalars().all()

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from app.deps import get_current_user, get_db, require_staff
+from app.deps import get_current_cohort_id, get_current_user, get_db, require_staff
 from app.models import NaverSession
 from app.models import Session as SessionModel
 from app.schemas.crawler import (
@@ -26,6 +26,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
+
+
+async def _assert_session_cohort(session_id: int, cohort_id: int, db: AsyncSession) -> None:
+    """세션이 현재 기수 소속인지 검증 (타 기수 세션에 크롤러 태스크 트리거 방지)."""
+    session = await db.get(SessionModel, session_id)
+    if not session or session.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
 
 
 @router.post("/naver/import", response_model=NaverSessionStatus)
@@ -68,8 +75,11 @@ async def start_scan_ppt(
     request: Request,
     body: CrawlerTaskStartRequest,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """PPT 이메일 스캔 태스크 시작 (IMAP)"""
+    await _assert_session_cohort(body.session_id, cohort_id, db)
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
@@ -84,8 +94,11 @@ async def start_scan_homework(
     request: Request,
     body: CrawlerTaskStartRequest,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """과제/리뷰/피드백 게시판 스캔 태스크 시작"""
+    await _assert_session_cohort(body.session_id, cohort_id, db)
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
@@ -100,8 +113,11 @@ async def start_scan_excuses(
     request: Request,
     body: ScanExcusesRequest,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """사유서 게시판 스캔 태스크 시작 (PRE/POST 모드)"""
+    await _assert_session_cohort(body.session_id, cohort_id, db)
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
@@ -120,8 +136,11 @@ async def start_upload_videos(
     request: Request,
     body: VideoUploadRequest,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """영상 업로드 태스크 시작"""
+    await _assert_session_cohort(body.session_id, cohort_id, db)
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
@@ -206,8 +225,11 @@ async def cancel_upload(
     request: Request,
     session_id: int,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """진행 중인 영상 업로드 중단"""
+    await _assert_session_cohort(session_id, cohort_id, db)
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
@@ -223,8 +245,11 @@ async def get_upload_result(
     request: Request,
     session_id: int,
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """세션의 마지막 업로드 결과 조회 (이어하기용)"""
+    await _assert_session_cohort(session_id, cohort_id, db)
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
@@ -246,8 +271,11 @@ async def get_active_upload_task(
     request: Request,
     session_id: int,
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """세션의 활성 업로드 태스크 ID 조회 (다중 사용자 공유)"""
+    await _assert_session_cohort(session_id, cohort_id, db)
     pool = getattr(request.app.state, "arq_pool", None)
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")

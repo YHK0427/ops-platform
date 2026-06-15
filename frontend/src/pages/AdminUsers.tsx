@@ -241,6 +241,7 @@ function TotpSetupDialog() {
             const { data } = await api.post<{ secret: string; otpauth_uri: string }>("/auth/totp/setup");
             setSecret(data.secret);
             setUri(data.otpauth_uri);
+            setCode("");
             setStep("qr");
         } catch { toast.error("TOTP 설정 실패"); }
         finally { setLoading(false); }
@@ -292,7 +293,14 @@ function TotpSetupDialog() {
                             <ShieldCheck className="w-5 h-5 text-green-600" />
                             <span className="text-sm text-green-600">2FA 활성화됨</span>
                         </div>
-                        <DialogFooter>
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                            새 기기에서 다시 등록하려면 QR을 다시 띄워 스캔하세요. (이 계정의 기존 2FA는 새 등록으로 교체됩니다)
+                        </p>
+                        <DialogFooter className="gap-2">
+                            <Button variant="outline" onClick={handleSetup} disabled={loading}>
+                                {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                <Shield className="w-4 h-4 mr-2" />QR 다시 보기 (재등록)
+                            </Button>
                             <Button variant="outline" onClick={handleDisable} disabled={loading} className="text-rose-500 hover:text-rose-600">
                                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                                 <ShieldOff className="w-4 h-4 mr-2" />2FA 해제

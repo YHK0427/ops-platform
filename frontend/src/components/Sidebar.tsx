@@ -15,6 +15,7 @@ import {
     X,
     KeyRound,
     MessageSquareHeart,
+    Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -48,6 +49,18 @@ export function Sidebar() {
 
     const sidebarContent = (
         <>
+            {/* 현재 기수 표시 */}
+            <div className="px-3 pt-3">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-accent-dim)] text-[var(--color-accent)]">
+                    <Layers className="w-4 h-4 shrink-0" />
+                    <span className="text-sm font-semibold truncate">
+                        {user?.is_superadmin
+                            ? "전체 관리자"
+                            : (user?.cohort_name ?? "기수 미지정")}
+                    </span>
+                </div>
+            </div>
+
             {/* Navigation */}
             <nav className="flex-1 px-3 py-4 space-y-1">
                 {NAV_ITEMS.map((item) => (
@@ -187,6 +200,22 @@ export function Sidebar() {
                         <Shield className="w-4 h-4" />
                         사용자 관리
                     </NavLink>
+                    {user?.is_superadmin && (
+                        <NavLink
+                            to="/admin/cohorts"
+                            className={({ isActive }) =>
+                                cn(
+                                    "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                                    isActive
+                                        ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                        : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
+                                )
+                            }
+                        >
+                            <Layers className="w-4 h-4" />
+                            기수 공간 관리
+                        </NavLink>
+                    )}
                 </div>
             )}
 

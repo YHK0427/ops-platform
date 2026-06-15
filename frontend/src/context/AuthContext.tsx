@@ -12,6 +12,10 @@ interface AuthUser {
     role: "admin" | "manager" | "viewer";
     display_name: string;
     department: string | null;
+    cohort_id: number | null;
+    cohort_number: number | null;
+    cohort_name: string | null;
+    is_superadmin: boolean;
 }
 
 interface TotpPending {

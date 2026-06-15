@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.database import AsyncSessionLocal
-from app.deps import get_db, get_current_user, require_staff
-from app.models import Attendance, Ledger, Member, Session, TreasuryExpense
+from app.deps import get_db, get_current_user, require_staff, get_current_cohort_id
+from app.models import Attendance, Cohort, Ledger, Member, Session, TreasuryExpense
 from app.schemas.ledger import LedgerResponse, LedgerType, MeritRequest, TransactionRequest, LedgerUpdate, MilestonePaidUpdate, TreasuryExpenseCreate, PenaltyRequest
 
 import logging
@@ -24,6 +24,7 @@ async def get_ledger_entries(
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """
     원장(Ledger) 조회
@@ -33,6 +34,11 @@ async def get_ledger_entries(
         .outerjoin(Session, Ledger.session_id == Session.id)
         .outerjoin(Member, Ledger.member_id == Member.id)
         .order_by(desc(Ledger.created_at), desc(Ledger.id))
+    )
+
+    # 기수 스코프: Ledger는 cohort_id 컬럼이 없으므로 부모 Member 기수로 제한
+    stmt = stmt.where(
+        Ledger.member_id.in_(select(Member.id).where(Member.cohort_id == cohort_id))
     )
 
     if member_id:
@@ -65,6 +71,7 @@ async def give_merit(
     req: MeritRequest,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """
     상점(Merit) 부여 (다수 멤버 가능)
@@ -72,13 +79,14 @@ async def give_merit(
     - deposit 변동 없음
     """
     created_entries = []
-    
+
     members_to_update = []
-    
+
     for mid in req.member_ids:
         member = await db.get(Member, mid)
-        if not member:
-            raise HTTPException(status_code=404, detail=f"Member ID {mid} not found")
+        # 크로스기수 부여 차단: 현재 기수 멤버가 아니면 404
+        if not member or member.cohort_id != cohort_id:
+            raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
         members_to_update.append(member)
         
     from app.services.ledger_utils import recalculate_deposit_after
@@ -127,6 +135,7 @@ async def give_penalty(
     req: PenaltyRequest,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """
     수동 벌점 부여 (무임승차 등)
@@ -135,8 +144,9 @@ async def give_penalty(
     - deposit 변동은 deposit_delta로 별도 지정
     """
     member = await db.get(Member, req.member_id)
-    if not member:
-        raise HTTPException(status_code=404, detail="Member not found")
+    # 크로스기수 부여 차단
+    if not member or member.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     # 1. Score update
     before_minus = member.total_minus_score
@@ -191,6 +201,7 @@ async def create_transaction(
     req: TransactionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """
     수동 입출금/벌금 처리
@@ -199,10 +210,11 @@ async def create_transaction(
     """
     if req.type == LedgerType.MERIT:
         raise HTTPException(status_code=400, detail="Use /merit endpoint for merits")
-        
+
     member = await db.get(Member, req.member_id)
-    if not member:
-        raise HTTPException(status_code=404, detail="Member not found")
+    # 크로스기수 거래 차단
+    if not member or member.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
         
     no_deposit_types = (LedgerType.FINE, LedgerType.MILESTONE_FINE, LedgerType.DEPOSIT_FORFEIT)
     if member.current_deposit + req.amount_krw < 0 and req.type not in no_deposit_types:
@@ -272,6 +284,7 @@ async def update_ledger_entry(
     req: LedgerUpdate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """
     원장 항목 수정 (type, amount_krw, score_delta, description 모두 수정 가능)
@@ -283,8 +296,9 @@ async def update_ledger_entry(
         raise HTTPException(status_code=404, detail="Ledger entry not found")
 
     member = await db.get(Member, entry.member_id)
-    if not member:
-        raise HTTPException(status_code=404, detail="Member not found")
+    # 부모 멤버 기수로 격리 — 타 기수 항목 차단
+    if not member or member.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="Ledger entry not found")
 
     from app.services.ledger_utils import recalculate_deposit_after
 
@@ -337,6 +351,7 @@ async def delete_ledger_entry(
     ledger_id: int,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """
     원장 항목 삭제 — amount_krw·score_delta 효과 역전 후 행 삭제
@@ -346,8 +361,9 @@ async def delete_ledger_entry(
         raise HTTPException(status_code=404, detail="Ledger entry not found")
 
     member = await db.get(Member, entry.member_id)
-    if not member:
-        raise HTTPException(status_code=404, detail="Member not found")
+    # 부모 멤버 기수로 격리 — 타 기수 항목 차단
+    if not member or member.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="Ledger entry not found")
 
     from app.services.ledger_utils import recalculate_deposit_after
 
@@ -384,11 +400,15 @@ async def delete_ledger_entry(
 async def get_treasury(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """금고 현황 — 벌금 수입 요약 + 세션별/멤버별 집계 + 미납 마일스톤 + 몰수 디포짓"""
 
     fine_types = ("FINE", "MILESTONE_FINE")
     treasury_types = ("FINE", "MILESTONE_FINE", "DEPOSIT_FORFEIT")
+
+    # 기수 스코프: Ledger엔 cohort_id가 없으므로 부모 Member 기수로 전역 집계를 제한한다.
+    cohort_member_ids = select(Member.id).where(Member.cohort_id == cohort_id)
 
     # 1. 전체 요약
     summary_stmt = select(
@@ -419,7 +439,7 @@ async def get_treasury(
         func.coalesce(func.sum(
             case((Ledger.type == "DEPOSIT_FORFEIT", func.abs(Ledger.amount_krw)), else_=0)
         ), 0).label("total_forfeit"),
-    ).where(Ledger.type.in_(treasury_types))
+    ).where(Ledger.type.in_(treasury_types), Ledger.member_id.in_(cohort_member_ids))
 
     summary_row = (await db.execute(summary_stmt)).one()
 
@@ -446,7 +466,11 @@ async def get_treasury(
             ), 0).label("milestone_unpaid"),
         )
         .join(Session, Ledger.session_id == Session.id, isouter=True)
-        .where(Ledger.type.in_(fine_types), Ledger.session_id != None)
+        .where(
+            Ledger.type.in_(fine_types),
+            Ledger.session_id != None,
+            Ledger.member_id.in_(cohort_member_ids),
+        )
         .group_by(Ledger.session_id, Session.title, Session.date)
         .order_by(desc(Session.date))
     )
@@ -483,7 +507,7 @@ async def get_treasury(
             ), 0).label("milestone_unpaid"),
         )
         .join(Member, Ledger.member_id == Member.id)
-        .where(Ledger.type.in_(fine_types))
+        .where(Ledger.type.in_(fine_types), Member.cohort_id == cohort_id)
         .group_by(Ledger.member_id, Member.name)
         .order_by(Member.name)
     )
@@ -497,6 +521,7 @@ async def get_treasury(
         .where(
             Ledger.type == "MILESTONE_FINE",
             (Ledger.is_paid == False) | (Ledger.is_paid == None),
+            Member.cohort_id == cohort_id,
         )
         .order_by(desc(Ledger.created_at))
     )
@@ -506,12 +531,13 @@ async def get_treasury(
     deposit_stmt = select(
         func.coalesce(func.sum(Member.current_deposit), 0).label("total_deposits"),
         func.count(Member.id).label("active_count"),
-    ).where(Member.is_active == True)
+    ).where(Member.is_active == True, Member.cohort_id == cohort_id)
     deposit_row = (await db.execute(deposit_stmt)).one()
 
-    # 6. 금고 지출 내역
+    # 6. 금고 지출 내역 — TreasuryExpense는 cohort_id 컬럼 보유
     expense_stmt = (
         select(TreasuryExpense)
+        .where(TreasuryExpense.cohort_id == cohort_id)
         .order_by(desc(TreasuryExpense.created_at))
     )
     expense_rows = (await db.execute(expense_stmt)).scalars().all()
@@ -522,7 +548,7 @@ async def get_treasury(
         select(Ledger, Member.name.label("member_name"), Session.title.label("session_title"))
         .join(Member, Ledger.member_id == Member.id)
         .join(Session, Ledger.session_id == Session.id, isouter=True)
-        .where(Ledger.type.in_(treasury_types))
+        .where(Ledger.type.in_(treasury_types), Member.cohort_id == cohort_id)
         .order_by(desc(Ledger.created_at))
     )
     all_rows = (await db.execute(all_stmt)).all()
@@ -606,19 +632,22 @@ async def get_treasury(
 async def get_report_data(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """현황 리포트용 — 세션×멤버 매트릭스 + 세션 외 항목"""
     from collections import defaultdict
 
-    # 1. 세션 목록 (날짜순)
+    # 1. 세션 목록 (날짜순) — 현재 기수만
     sessions_result = await db.execute(
-        select(Session).order_by(Session.date.asc())
+        select(Session).where(Session.cohort_id == cohort_id).order_by(Session.date.asc())
     )
     sessions = sessions_result.scalars().all()
 
-    # 2. 활성 멤버
+    # 2. 활성 멤버 — 현재 기수만
     members_result = await db.execute(
-        select(Member).where(Member.is_active == True).order_by(Member.name)
+        select(Member)
+        .where(Member.is_active == True, Member.cohort_id == cohort_id)
+        .order_by(Member.name)
     )
     members = members_result.scalars().all()
     member_ids = [m.id for m in members]
@@ -698,11 +727,12 @@ async def get_report_data(
 async def check_excel_merits(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """엑셀 내보내기 전 미매칭 상점 사전 체크"""
     from app.services.excel_export import gather_export_data, check_unmatched_merits
 
-    data = await gather_export_data(db)
+    data = await gather_export_data(db, cohort_id=cohort_id)
     unmatched = check_unmatched_merits(data)
     return {"unmatched_merits": unmatched}
 
@@ -712,6 +742,7 @@ async def export_report_excel(
     week_num: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """벌점/디파짓 리포트 Excel 다운로드"""
     from io import BytesIO
@@ -721,10 +752,13 @@ async def export_report_excel(
     from app.config import settings
     from app.services.excel_export import generate_excel_bytes
 
-    result = await generate_excel_bytes(db, generation=settings.GENERATION)
+    result = await generate_excel_bytes(db, cohort_id=cohort_id)
 
+    # 파일명도 현재 기수 번호 기준
+    cohort = await db.get(Cohort, cohort_id)
+    gen_num = cohort.number if cohort else 0
     suffix = f"_{week_num}주차" if week_num else ""
-    filename = f"UnivPT_{settings.GENERATION}기_벌점_디파짓{suffix}.xlsx"
+    filename = f"UnivPT_{gen_num}기_벌점_디파짓{suffix}.xlsx"
     from urllib.parse import quote
     encoded = quote(filename)
 
@@ -747,10 +781,15 @@ async def toggle_milestone_paid(
     req: MilestonePaidUpdate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """마일스톤 벌금 납부 상태 토글"""
     entry = await db.get(Ledger, ledger_id)
     if not entry:
+        raise HTTPException(status_code=404, detail="Ledger entry not found")
+    # 부모 멤버 기수로 격리 — 타 기수 항목 차단
+    member = await db.get(Member, entry.member_id)
+    if not member or member.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="Ledger entry not found")
     if entry.type != "MILESTONE_FINE":
         raise HTTPException(status_code=400, detail="납부 상태는 누적벌점 벌금만 변경 가능합니다")
@@ -765,12 +804,14 @@ async def create_treasury_expense(
     req: TreasuryExpenseCreate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """금고 지출 기록"""
     expense = TreasuryExpense(
         amount_krw=req.amount_krw,
         description=req.description,
         created_by=current_user["username"],
+        cohort_id=cohort_id,
     )
     db.add(expense)
     await db.commit()
@@ -789,10 +830,12 @@ async def delete_treasury_expense(
     expense_id: int,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """금고 지출 삭제"""
     expense = await db.get(TreasuryExpense, expense_id)
-    if not expense:
+    # 타 기수 지출 차단
+    if not expense or expense.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="지출 내역을 찾을 수 없습니다")
     await db.delete(expense)
     await db.commit()

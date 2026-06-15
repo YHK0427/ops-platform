@@ -72,9 +72,9 @@ async def scan_ppt(session_id: int, mode: str, db: AsyncSession) -> dict[str, An
     # 드라이브 ppt 폴더
     ppt_folder_id = cfg.get("drive_ppt_folder_id")
 
-    # 2. 활성 멤버 조회 (이름 → Member 매핑)
+    # 2. 활성 멤버 조회 (이름 → Member 매핑) — 세션이 속한 기수만
     members_result = await db.execute(
-        select(Member).where(Member.is_active == True)
+        select(Member).where(Member.is_active == True, Member.cohort_id == session.cohort_id)
     )
     all_members = members_result.scalars().all()
     # 이름 → Member 매핑 (완전 일치 우선)

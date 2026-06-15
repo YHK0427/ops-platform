@@ -3,7 +3,19 @@ import axios from "axios";
 const TOKEN_KEY = "ops_access_token";
 const REMEMBER_KEY = "ops_remember";
 const LAST_ACTIVE_KEY = "ops_last_active";
+const ACTIVE_COHORT_KEY = "ops_active_cohort"; // 슈퍼관리자가 선택한 활성 기수 id
 const INACTIVITY_LIMIT_MS = 3 * 24 * 60 * 60 * 1000; // 3일
+
+// 슈퍼관리자(전 기수 총괄)가 현재 보고 있는 기수. 일반 운영진은 토큰 기수로 강제되므로 무시됨.
+export const getActiveCohort = (): number | null => {
+    const v = localStorage.getItem(ACTIVE_COHORT_KEY);
+    return v ? Number(v) : null;
+};
+
+export const setActiveCohort = (cohortId: number | null) => {
+    if (cohortId == null) localStorage.removeItem(ACTIVE_COHORT_KEY);
+    else localStorage.setItem(ACTIVE_COHORT_KEY, String(cohortId));
+};
 
 function _loadToken(): string | null {
     const remember = localStorage.getItem(REMEMBER_KEY) === "1";
@@ -58,10 +70,15 @@ const api = axios.create({
     timeout: 15000,
 });
 
-// Attach bearer token on every request
+// Attach bearer token + active cohort on every request
 api.interceptors.request.use((config) => {
     if (_accessToken) {
         config.headers.Authorization = `Bearer ${_accessToken}`;
+    }
+    // 슈퍼관리자가 선택한 활성 기수 (일반 운영진 토큰엔 무시됨)
+    const activeCohort = localStorage.getItem(ACTIVE_COHORT_KEY);
+    if (activeCohort) {
+        config.headers["X-Cohort-Id"] = activeCohort;
     }
     return config;
 });

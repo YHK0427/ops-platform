@@ -10,6 +10,9 @@ import memberApi, { setMemberToken, getMemberToken } from "@/lib/memberApi";
 export interface MemberUser {
     member_id: number;
     name: string;
+    cohort_id?: number | null;
+    cohort_number?: number | null;
+    cohort_name?: string | null;
 }
 
 interface MemberAuthContextValue {

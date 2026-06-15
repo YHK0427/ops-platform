@@ -18,7 +18,15 @@ from app.constants.eval_questions import (
     VALID_QUESTION_KEYS,
 )
 from app.audit import record_audit
-from app.deps import get_current_member, get_current_user, get_db, require_admin_or_chairman, require_staff
+from app.deps import (
+    get_current_cohort_id,
+    get_current_member,
+    get_current_user,
+    get_db,
+    get_member_cohort_id,
+    require_admin_or_chairman,
+    require_staff,
+)
 from app.models import (
     Attendance,
     EvalAssignment,
@@ -212,11 +220,27 @@ def _validate_scores(scores: dict[str, int]) -> None:
             )
 
 
-async def _get_round_or_404(db: AsyncSession, round_id: int) -> EvalRound:
+async def _get_round_or_404(
+    db: AsyncSession, round_id: int, cohort_id: int | None = None
+) -> EvalRound:
     r = await db.get(EvalRound, round_id)
     if not r:
         raise HTTPException(status_code=404, detail="평가 라운드를 찾을 수 없습니다")
+    # 기수 격리: cohort_id가 주어지면 라운드가 해당 기수 소속인지 검증
+    if cohort_id is not None and r.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="평가 라운드를 찾을 수 없습니다")
     return r
+
+
+async def _assert_compare_round_cohort(
+    db: AsyncSession, compare_id: int | None, cohort_id: int
+) -> None:
+    """비교 대상 라운드가 현재 기수 소속인지 검증 (크로스기수 성장 비교 방지)."""
+    if compare_id is None:
+        return
+    cmp = await db.get(EvalRound, compare_id)
+    if not cmp or cmp.cohort_id != cohort_id:
+        raise HTTPException(status_code=400, detail="비교 대상 라운드를 찾을 수 없습니다 (다른 기수)")
 
 
 async def _get_user_by_username(db: AsyncSession, username: str) -> User:
@@ -348,6 +372,7 @@ async def _build_member_result(
 async def create_round(
     body: RoundCreateRequest,
     user: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 생성 + 활성 멤버 전원에 SELF 배정 자동 생성."""
@@ -355,6 +380,9 @@ async def create_round(
     if body.session_id is not None:
         session = await db.get(Session, body.session_id)
         if not session:
+            raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
+        # 기수 격리: 세션이 현재 기수 소속인지 검증
+        if session.cohort_id != cohort_id:
             raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
 
         # 중복 방지 (session_id + round_type unique)
@@ -370,8 +398,10 @@ async def create_round(
                 detail=f"이 세션에 이미 {body.round_type} 라운드가 존재합니다",
             )
 
+    await _assert_compare_round_cohort(db, body.compare_to_round_id, cohort_id)
     round_ = EvalRound(
         session_id=body.session_id,
+        cohort_id=cohort_id,
         round_type=body.round_type,
         title=body.title,
         compare_to_round_id=body.compare_to_round_id,
@@ -379,8 +409,10 @@ async def create_round(
     db.add(round_)
     await db.flush()  # round_.id 확보
 
-    # 활성 멤버 전원에 SELF 배정 생성
-    members_q = await db.execute(select(Member).where(Member.is_active == True))
+    # 활성 멤버 전원에 SELF 배정 생성 (현재 기수만)
+    members_q = await db.execute(
+        select(Member).where(Member.is_active == True, Member.cohort_id == cohort_id)
+    )
     members = members_q.scalars().all()
 
     for member in members:
@@ -397,7 +429,7 @@ async def create_round(
     audience_copied = 0
     prev_round_q = await db.execute(
         select(EvalRound)
-        .where(EvalRound.id != round_.id)
+        .where(EvalRound.id != round_.id, EvalRound.cohort_id == cohort_id)
         .order_by(EvalRound.id.desc())
         .limit(1)
     )
@@ -436,14 +468,16 @@ async def update_round(
     round_id: int,
     body: RoundUpdateRequest,
     user: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 설정 변경 (열기/닫기, 결과 공개, 제목)."""
-    round_ = await _get_round_or_404(db, round_id)
+    round_ = await _get_round_or_404(db, round_id, cohort_id)
 
     if body.title is not None:
         round_.title = body.title
     if body.compare_to_round_id is not None:
+        await _assert_compare_round_cohort(db, body.compare_to_round_id, cohort_id)
         round_.compare_to_round_id = body.compare_to_round_id
     if body.hidden_member_ids is not None:
         # 빈 배열이면 전원 공개로 초기화
@@ -467,10 +501,11 @@ async def update_round(
 async def delete_round(
     round_id: int,
     user: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 삭제 (cascade: 배정, 응답 모두 삭제)."""
-    round_ = await _get_round_or_404(db, round_id)
+    round_ = await _get_round_or_404(db, round_id, cohort_id)
     await db.delete(round_)
     await db.commit()
     record_audit(user, "평가 라운드 삭제", f"id={round_id}")
@@ -481,23 +516,28 @@ async def delete_round(
 async def auto_assign_audience(
     round_id: int,
     _: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """활성 운영진 유저를 활성 멤버에 라운드로빈 배분하여 AUDIENCE 배정 생성.
     세션 연결 + 분반이 있으면 같은 분반끼리 배정."""
-    round_ = await _get_round_or_404(db, round_id)
+    round_ = await _get_round_or_404(db, round_id, cohort_id)
 
-    # 활성 ops 유저
+    # 활성 ops 유저 (현재 기수 소속만 — 슈퍼관리자(cohort_id NULL)는 평가자에서 제외)
     users_q = await db.execute(
-        select(User).where(User.is_active == True).order_by(User.id)
+        select(User)
+        .where(User.is_active == True, User.cohort_id == cohort_id)
+        .order_by(User.id)
     )
     users = users_q.scalars().all()
     if not users:
         raise HTTPException(status_code=400, detail="활성 운영진 유저가 없습니다")
 
-    # 활성 멤버
+    # 활성 멤버 (현재 기수만)
     members_q = await db.execute(
-        select(Member).where(Member.is_active == True).order_by(Member.id)
+        select(Member)
+        .where(Member.is_active == True, Member.cohort_id == cohort_id)
+        .order_by(Member.id)
     )
     members = members_q.scalars().all()
     if not members:
@@ -585,11 +625,12 @@ async def copy_audience_assignments(
     round_id: int,
     source_round_id: int,
     _: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """다른 라운드의 AUDIENCE 배정을 현재 라운드로 복사 (기존 배정 유지, 중복 스킵)."""
-    await _get_round_or_404(db, round_id)
-    await _get_round_or_404(db, source_round_id)
+    await _get_round_or_404(db, round_id, cohort_id)
+    await _get_round_or_404(db, source_round_id, cohort_id)
 
     # 소스 라운드의 AUDIENCE 배정 조회
     source_q = await db.execute(
@@ -611,9 +652,9 @@ async def copy_audience_assignments(
     )
     existing_pairs = {(r[0], r[1]) for r in existing_q.all()}
 
-    # 활성 멤버만 복사
+    # 활성 멤버만 복사 (현재 기수만)
     active_members_q = await db.execute(
-        select(Member.id).where(Member.is_active == True)
+        select(Member.id).where(Member.is_active == True, Member.cohort_id == cohort_id)
     )
     active_member_ids = {r[0] for r in active_members_q.all()}
 
@@ -650,10 +691,35 @@ async def bulk_add_assignments(
     round_id: int,
     body: BulkAssignmentRequest,
     _: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """AUDIENCE 배정 수동 추가 (중복 스킵)."""
-    await _get_round_or_404(db, round_id)
+    await _get_round_or_404(db, round_id, cohort_id)
+
+    # 기수 격리: 추가될 평가자(User)/발표자(Member)가 현재 기수 소속인지 검증
+    req_user_ids = {item.evaluator_user_id for item in body.assignments}
+    req_member_ids = {item.presenter_member_id for item in body.assignments}
+    valid_user_ids = {
+        r[0]
+        for r in (
+            await db.execute(
+                select(User.id).where(
+                    User.id.in_(req_user_ids), User.cohort_id == cohort_id
+                )
+            )
+        ).all()
+    }
+    valid_member_ids = {
+        r[0]
+        for r in (
+            await db.execute(
+                select(Member.id).where(
+                    Member.id.in_(req_member_ids), Member.cohort_id == cohort_id
+                )
+            )
+        ).all()
+    }
 
     # 기존 배정 조회
     existing_q = await db.execute(
@@ -667,6 +733,15 @@ async def bulk_add_assignments(
     created = 0
     skipped = 0
     for item in body.assignments:
+        # 타 기수 평가자/발표자는 거부
+        if (
+            item.evaluator_user_id not in valid_user_ids
+            or item.presenter_member_id not in valid_member_ids
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="다른 기수의 평가자 또는 발표자는 배정할 수 없습니다",
+            )
         pair = (item.evaluator_user_id, item.presenter_member_id)
         if pair in existing_pairs:
             skipped += 1
@@ -697,9 +772,11 @@ async def delete_assignment(
     round_id: int,
     assignment_id: int,
     _: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """단일 배정 삭제."""
+    await _get_round_or_404(db, round_id, cohort_id)
     assignment = await db.get(EvalAssignment, assignment_id)
     if not assignment or assignment.round_id != round_id:
         raise HTTPException(status_code=404, detail="배정을 찾을 수 없습니다")
@@ -722,10 +799,44 @@ async def replace_audience_assignments(
     round_id: int,
     body: ReplaceAudienceRequest,
     _: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """AUDIENCE 배정 diff 교체 — 제출 완료된 배정은 보호."""
-    await _get_round_or_404(db, round_id)
+    await _get_round_or_404(db, round_id, cohort_id)
+
+    # 기수 격리: 요청에 포함된 평가자(User)/발표자(Member)가 현재 기수 소속인지 검증
+    req_user_ids = {item.evaluator_user_id for item in body.assignments}
+    req_member_ids = {item.presenter_member_id for item in body.assignments}
+    valid_user_ids = {
+        r[0]
+        for r in (
+            await db.execute(
+                select(User.id).where(
+                    User.id.in_(req_user_ids), User.cohort_id == cohort_id
+                )
+            )
+        ).all()
+    }
+    valid_member_ids = {
+        r[0]
+        for r in (
+            await db.execute(
+                select(Member.id).where(
+                    Member.id.in_(req_member_ids), Member.cohort_id == cohort_id
+                )
+            )
+        ).all()
+    }
+    for item in body.assignments:
+        if (
+            item.evaluator_user_id not in valid_user_ids
+            or item.presenter_member_id not in valid_member_ids
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="다른 기수의 평가자 또는 발표자는 배정할 수 없습니다",
+            )
 
     # 1) 기존 AUDIENCE 배정 조회
     existing_q = await db.execute(
@@ -802,11 +913,14 @@ async def replace_audience_assignments(
 @router.get("/rounds", response_model=list[RoundListResponse])
 async def list_rounds(
     _: dict = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 목록 (기본 통계 포함)."""
     rounds_q = await db.execute(
-        select(EvalRound).order_by(EvalRound.created_at.desc())
+        select(EvalRound)
+        .where(EvalRound.cohort_id == cohort_id)
+        .order_by(EvalRound.created_at.desc())
     )
     rounds = rounds_q.scalars().all()
 
@@ -843,10 +957,11 @@ async def list_rounds(
 async def get_round_detail(
     round_id: int,
     _: dict = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """평가 라운드 상세 (타입별 제출 통계)."""
-    round_ = await _get_round_or_404(db, round_id)
+    round_ = await _get_round_or_404(db, round_id, cohort_id)
 
     # SELF 통계
     self_stats_q = await db.execute(
@@ -894,10 +1009,11 @@ async def get_round_detail(
 async def list_assignments(
     round_id: int,
     _: dict = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """라운드의 모든 배정 조회 (멤버명, 평가자명 포함)."""
-    await _get_round_or_404(db, round_id)
+    await _get_round_or_404(db, round_id, cohort_id)
 
     q = await db.execute(
         select(EvalAssignment)
@@ -929,10 +1045,11 @@ async def list_assignments(
 async def my_assignments(
     round_id: int,
     user: dict = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """내가 배정된 AUDIENCE 평가 목록."""
-    await _get_round_or_404(db, round_id)
+    await _get_round_or_404(db, round_id, cohort_id)
 
     # username → User.id
     db_user = await _get_user_by_username(db, user["username"])
@@ -970,10 +1087,11 @@ async def audience_submit(
     round_id: int,
     body: AudienceSubmitRequest,
     user: dict = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """청중 평가 제출 (upsert)."""
-    round_ = await _get_round_or_404(db, round_id)
+    round_ = await _get_round_or_404(db, round_id, cohort_id)
 
     if not round_.is_open:
         raise HTTPException(status_code=400, detail="평가가 마감되었습니다")
@@ -1023,10 +1141,11 @@ async def audience_submit(
 async def get_round_results(
     round_id: int,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """라운드 전체 결과 (멤버별 도메인 점수)."""
-    round_ = await _get_round_or_404(db, round_id)
+    round_ = await _get_round_or_404(db, round_id, cohort_id)
 
     # 배정된 모든 멤버
     members_q = await db.execute(
@@ -1090,10 +1209,11 @@ async def get_round_results(
 async def get_round_reflections(
     round_id: int,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """라운드의 자기평가 성장 회고 서술형 응답 모음 (제출 + 비어있지 않음만)."""
-    await _get_round_or_404(db, round_id)
+    await _get_round_or_404(db, round_id, cohort_id)
     q = await db.execute(
         select(EvalAssignment, Member)
         .join(Member, Member.id == EvalAssignment.presenter_member_id)
@@ -1122,13 +1242,14 @@ async def get_member_result(
     round_id: int,
     member_id: int,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """단일 멤버 상세 결과 (운영진 조회용)."""
-    await _get_round_or_404(db, round_id)
+    await _get_round_or_404(db, round_id, cohort_id)
 
     member = await db.get(Member, member_id)
-    if not member:
+    if not member or member.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
 
     return await _build_member_result(db, round_id, member.id, member.name)
@@ -1142,6 +1263,7 @@ async def get_member_result(
 @router.get("/member/pending", response_model=list[PendingSelfEval])
 async def member_pending_evals(
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """내 자기평가 목록 (열린 라운드 + 결과 공개 라운드)."""
@@ -1152,6 +1274,7 @@ async def member_pending_evals(
         .where(
             EvalAssignment.presenter_member_id == member["member_id"],
             EvalAssignment.eval_type == "SELF",
+            EvalRound.cohort_id == member_cohort_id,
             or_(EvalRound.is_open == True, EvalRound.results_open == True),
         )
         .order_by(EvalRound.created_at.desc())
@@ -1176,10 +1299,11 @@ async def member_pending_evals(
 async def member_self_eval_form(
     round_id: int,
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """자기평가 폼 (질문 + 기존 응답)."""
-    round_ = await _get_round_or_404(db, round_id)
+    round_ = await _get_round_or_404(db, round_id, member_cohort_id)
 
     # SELF 배정 확인
     assign_q = await db.execute(
@@ -1222,10 +1346,11 @@ async def member_self_eval_submit(
     round_id: int,
     body: ScoreSubmitRequest,
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """자기평가 제출."""
-    round_ = await _get_round_or_404(db, round_id)
+    round_ = await _get_round_or_404(db, round_id, member_cohort_id)
 
     if not round_.is_open:
         raise HTTPException(status_code=400, detail="평가가 마감되었습니다")
@@ -1281,10 +1406,11 @@ async def member_self_eval_submit(
 async def member_self_result(
     round_id: int,
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """본인 결과 조회 (results_open == True 일 때만)."""
-    round_ = await _get_round_or_404(db, round_id)
+    round_ = await _get_round_or_404(db, round_id, member_cohort_id)
 
     if not round_.results_open:
         raise HTTPException(status_code=403, detail="아직 결과가 공개되지 않았습니다")

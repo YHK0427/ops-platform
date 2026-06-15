@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
 
     # App
-    GENERATION: int = 33
+    # (GENERATION 제거됨 — 기수는 DB cohorts 테이블로 관리, 멀티테넌시)
     CORS_ORIGINS: str = "http://localhost:3000"
     ENV: str = "dev"
 

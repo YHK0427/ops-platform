@@ -86,8 +86,11 @@ class PenaltyEngine:
         """세션의 모든 멤버에 대해 페널티 계산"""
         penalties = []
         
-        # 활성 멤버 조회
-        stmt = select(Member).where(Member.is_active == True)
+        # 활성 멤버 조회 — 세션이 속한 기수의 멤버만 (타 기수 멤버 정산 방지)
+        stmt = select(Member).where(
+            Member.is_active == True,
+            Member.cohort_id == self.session.cohort_id,
+        )
         result = await self.db.execute(stmt)
         members = result.scalars().all()
 

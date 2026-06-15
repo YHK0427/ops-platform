@@ -6,6 +6,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { MemberAuthProvider, useMemberAuth } from "@/context/MemberAuthContext";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Sidebar } from "@/components/Sidebar";
+import { CohortGate } from "@/components/CohortGate";
 import { getToken } from "@/lib/api";
 import { getMemberToken } from "@/lib/memberApi";
 
@@ -24,6 +25,7 @@ import SettlementTab from "@/pages/session/SettlementTab";
 import TeamEditPage from "@/pages/session/TeamEditPage";
 import GroupEditPage from "@/pages/session/GroupEditPage";
 import AdminUsers from "@/pages/AdminUsers";
+import AdminCohorts from "@/pages/AdminCohorts";
 import Treasury from "@/pages/Treasury";
 
 // ── Lazy-loaded evaluation pages (ops) ─────────────────────────────────
@@ -93,7 +95,9 @@ function DashboardLayout() {
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-auto pt-[45px] md:pt-0">
-        <Outlet />
+        <CohortGate>
+          <Outlet />
+        </CohortGate>
       </div>
     </div>
   );
@@ -168,6 +172,7 @@ export default function App() {
                   <Route path="/ledger" element={<Ledger />} />
                   <Route path="/treasury" element={<Treasury />} />
                   <Route path="/admin/users" element={<AdminUsers />} />
+                  <Route path="/admin/cohorts" element={<AdminCohorts />} />
                   <Route path="/eval" element={<EvalManagement />} />
                   <Route path="/live-feedback" element={<LiveFeedbackManagement />} />
                 </Route>

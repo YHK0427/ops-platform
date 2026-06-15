@@ -21,14 +21,21 @@ async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
 
     반환: {"merit_items": [{member_id, member_name, score_delta, description}]}
     """
-    # 1. 현재 세션 포함 + FINALIZED 세션을 날짜 역순으로 조회 (id + week_num)
+    # 0. 현재 세션의 기수 — 스트릭 계산은 같은 기수 내에서만 (타 기수 출석/멤버 격리)
+    cur_session = await db.get(Session, current_session_id)
+    if not cur_session:
+        return {"merit_items": [], "session_id": current_session_id}
+    cohort_id = cur_session.cohort_id
+
+    # 1. 현재 세션 포함 + FINALIZED 세션을 날짜 역순으로 조회 (id + week_num) — 같은 기수만
     stmt_sessions = (
         select(Session.id, Session.week_num)
         .where(
+            Session.cohort_id == cohort_id,
             or_(
                 Session.status == "FINALIZED",
                 Session.id == current_session_id,
-            )
+            ),
         )
         .order_by(desc(Session.date), desc(Session.week_num))
     )
@@ -42,8 +49,8 @@ async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
     if len(session_ids) < STREAK_COUNT:
         return {"merit_items": [], "session_id": current_session_id}
 
-    # 2. 활성 멤버 조회
-    stmt_members = select(Member).where(Member.is_active == True)  # noqa: E712
+    # 2. 활성 멤버 조회 — 같은 기수만
+    stmt_members = select(Member).where(Member.is_active == True, Member.cohort_id == cohort_id)  # noqa: E712
     result = await db.execute(stmt_members)
     members = result.scalars().all()
 

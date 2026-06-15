@@ -20,7 +20,8 @@ from sqlalchemy.orm import selectinload
 
 from app.database import AsyncSessionLocal
 from app.deps import (
-    decode_ws_token, get_current_member, get_db, require_admin_or_chairman, require_staff,
+    decode_ws_token, get_current_cohort_id, get_current_member, get_db,
+    get_member_cohort_id, require_admin_or_chairman, require_staff,
 )
 from app.models import (
     Attendance,
@@ -137,10 +138,17 @@ class PostHideRequest(BaseModel):
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-async def _get_board_or_404(db: AsyncSession, board_id: int) -> LiveFeedbackBoard:
+async def _get_board_or_404(
+    db: AsyncSession, board_id: int, cohort_id: int | None = None
+) -> LiveFeedbackBoard:
     board = await db.get(LiveFeedbackBoard, board_id)
     if not board:
         raise HTTPException(status_code=404, detail="피드백 보드를 찾을 수 없습니다")
+    # 기수 격리: 보드는 세션 경유 — 세션의 cohort가 현재 기수와 다르면 404
+    if cohort_id is not None:
+        session = await db.get(Session, board.session_id)
+        if session is None or session.cohort_id != cohort_id:
+            raise HTTPException(status_code=404, detail="피드백 보드를 찾을 수 없습니다")
     return board
 
 
@@ -330,10 +338,14 @@ async def _load_post_full(db: AsyncSession, post_id: int) -> LiveFeedbackPost | 
 async def create_board(
     body: BoardCreateRequest,
     user: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     session = await db.get(Session, body.session_id)
     if not session:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
+    # 기수 격리: 세션이 현재 기수 소속인지 검증
+    if session.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
     if session.type != "INDIVIDUAL":
         raise HTTPException(status_code=400, detail="개인(분반) 세션에서만 사용할 수 있습니다")
@@ -370,19 +382,29 @@ async def create_board(
 async def session_early_leave(
     session_id: int,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """세션의 조퇴자 후보 목록 (보드 생성/수정 시 개별 포함 선택용)."""
+    # 기수 격리: 세션이 현재 기수 소속인지 검증
+    session = await db.get(Session, session_id)
+    if session is None or session.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
     return await _early_leave_candidates(db, session_id)
 
 
 @router.get("/boards")
 async def list_boards(
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
+    # 기수 격리: 보드는 세션 경유 — 현재 기수 세션의 보드만
     boards_q = await db.execute(
-        select(LiveFeedbackBoard).order_by(LiveFeedbackBoard.id.desc())
+        select(LiveFeedbackBoard)
+        .join(Session, Session.id == LiveFeedbackBoard.session_id)
+        .where(Session.cohort_id == cohort_id)
+        .order_by(LiveFeedbackBoard.id.desc())
     )
     boards = boards_q.scalars().all()
     if not boards:
@@ -423,9 +445,10 @@ async def list_boards(
 async def get_board_admin(
     board_id: int,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    board = await _get_board_or_404(db, board_id)
+    board = await _get_board_or_404(db, board_id, cohort_id)
     session = await db.get(Session, board.session_id)
     presenters = await _presenter_columns(
         db, board.session_id, reveal_order=True, early_leave_ids=set(board.early_leave_member_ids or []),
@@ -451,9 +474,10 @@ async def update_board(
     board_id: int,
     body: BoardUpdateRequest,
     user: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    board = await _get_board_or_404(db, board_id)
+    board = await _get_board_or_404(db, board_id, cohort_id)
     if body.title is not None:
         board.title = body.title
     if body.early_leave_member_ids is not None:
@@ -487,9 +511,10 @@ async def update_board(
 async def delete_board(
     board_id: int,
     user: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    board = await _get_board_or_404(db, board_id)
+    board = await _get_board_or_404(db, board_id, cohort_id)
     title = board.title
     await db.delete(board)
     await db.commit()
@@ -501,9 +526,10 @@ async def delete_board(
 async def list_posts_admin(
     board_id: int,
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    await _get_board_or_404(db, board_id)
+    await _get_board_or_404(db, board_id, cohort_id)
     q = await db.execute(
         select(LiveFeedbackPost)
         .options(
@@ -521,11 +547,14 @@ async def list_posts_admin(
 async def delete_post(
     post_id: int,
     user: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     post = await db.get(LiveFeedbackPost, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
+    # 기수 격리: 글이 속한 보드의 세션 cohort 검증
+    await _get_board_or_404(db, post.board_id, cohort_id)
     board_id = post.board_id
     await db.delete(post)
     await db.commit()
@@ -540,11 +569,14 @@ async def hide_post(
     post_id: int,
     body: PostHideRequest,
     user: dict = Depends(require_admin_or_chairman),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     post = await db.get(LiveFeedbackPost, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
+    # 기수 격리: 글이 속한 보드의 세션 cohort 검증
+    await _get_board_or_404(db, post.board_id, cohort_id)
     post.is_hidden = body.is_hidden
     await db.commit()
     record_audit(user, "피드백 글 가리기" if body.is_hidden else "피드백 글 다시 표시", f"post={post_id} board={post.board_id}")
@@ -564,12 +596,15 @@ async def hide_post(
 @router.get("/member/open-board")
 async def member_open_board(
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """현재 열려있는 피드백 보드(가장 최근). 없으면 null."""
+    # 기수 격리: 본인 기수 세션의 보드만
     q = await db.execute(
         select(LiveFeedbackBoard)
-        .where(LiveFeedbackBoard.is_open == True)  # noqa: E712
+        .join(Session, Session.id == LiveFeedbackBoard.session_id)
+        .where(LiveFeedbackBoard.is_open == True, Session.cohort_id == member_cohort_id)  # noqa: E712
         .order_by(LiveFeedbackBoard.created_at.desc())
         .limit(1)
     )
@@ -589,11 +624,16 @@ async def member_open_board(
 @router.get("/member/boards")
 async def member_list_boards(
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """멤버용 피드백 보드 전체 목록(이전 기록 포함). 최신순."""
+    # 기수 격리: 본인 기수 세션의 보드만
     boards_q = await db.execute(
-        select(LiveFeedbackBoard).order_by(LiveFeedbackBoard.created_at.desc())
+        select(LiveFeedbackBoard)
+        .join(Session, Session.id == LiveFeedbackBoard.session_id)
+        .where(Session.cohort_id == member_cohort_id)
+        .order_by(LiveFeedbackBoard.created_at.desc())
     )
     boards = boards_q.scalars().all()
     if not boards:
@@ -622,9 +662,10 @@ async def member_list_boards(
 async def member_get_board(
     board_id: int,
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    board = await _get_board_or_404(db, board_id)
+    board = await _get_board_or_404(db, board_id, member_cohort_id)
     session = await db.get(Session, board.session_id)
     my_group = await _member_group(db, board.session_id, member["member_id"])
     # 분반이 나뉘면 같은 분반끼리만 (발표 순서 비노출), 결석 제외·조퇴는 설정 따름
@@ -648,10 +689,11 @@ async def member_get_board(
 async def member_list_posts(
     board_id: int,
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     """멤버용 글 목록(익명 변형, 가려진 글 제외). 같은 분반만. 마감되어도 읽기는 허용."""
-    board = await _get_board_or_404(db, board_id)
+    board = await _get_board_or_404(db, board_id, member_cohort_id)
     # 같은 분반 스코프: 내 분반 발표자에 대한 글만
     my_group = await _member_group(db, board.session_id, member["member_id"])
     scoped = await _presenter_columns(
@@ -688,9 +730,10 @@ async def member_create_post(
     board_id: int,
     body: PostCreateRequest,
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    board = await _get_board_or_404(db, board_id)
+    board = await _get_board_or_404(db, board_id, member_cohort_id)
     if not board.is_open:
         raise HTTPException(status_code=400, detail="피드백이 마감되었습니다")
     # 카테고리별 내용 정규화 (보드 카테고리 키만, 빈 값 제거)
@@ -746,6 +789,7 @@ async def member_add_reaction(
     post_id: int,
     body: ReactionRequest,
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     if body.emoji not in ALLOWED_EMOJIS:
@@ -753,8 +797,9 @@ async def member_add_reaction(
     post = await db.get(LiveFeedbackPost, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
-    board = await db.get(LiveFeedbackBoard, post.board_id)
-    if not board or not board.is_open:
+    # 기수 격리: 글이 속한 보드의 세션 cohort 검증
+    board = await _get_board_or_404(db, post.board_id, member_cohort_id)
+    if not board.is_open:
         raise HTTPException(status_code=400, detail="피드백이 마감되었습니다")
 
     member_id = member["member_id"]
@@ -778,11 +823,14 @@ async def member_remove_reaction(
     post_id: int,
     emoji: str,
     member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     post = await db.get(LiveFeedbackPost, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
+    # 기수 격리: 글이 속한 보드의 세션 cohort 검증
+    await _get_board_or_404(db, post.board_id, member_cohort_id)
     member_id = member["member_id"]
     existing = await db.execute(
         select(LiveFeedbackReaction).where(
@@ -823,6 +871,14 @@ async def feedback_ws(websocket: WebSocket, board_id: int, token: str = Query(..
         board = await db.get(LiveFeedbackBoard, board_id)
         if board is None:
             await websocket.close(code=4404)
+            return
+        # 기수 격리: 구독하려는 보드의 세션 cohort와 토큰 cohort 비교.
+        # 멤버=DB 권위 cohort, 운영진=claim cohort(None=슈퍼관리자 → 전 기수 허용).
+        token_cohort = identity.get("cohort_id")
+        board_session = await db.get(Session, board.session_id)
+        board_cohort = board_session.cohort_id if board_session else None
+        if token_cohort is not None and token_cohort != board_cohort:
+            await websocket.close(code=4403)
             return
         if identity["role"] == "member" and not board.is_open:
             await websocket.close(code=4403)

@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_current_member, get_current_user, get_db, require_staff
-from app.models import Attendance, Ledger, Member, Session as SessionModel, User
+from app.deps import get_current_cohort_id, get_current_member, get_current_user, get_db, require_staff
+from app.models import Attendance, Cohort, Ledger, Member, Session as SessionModel, User
 from app.schemas.member import MemberCreate, MemberResponse, MemberUpdate
 
 import logging
@@ -17,9 +17,9 @@ router = APIRouter(prefix="/members", tags=["members"])
 
 # ── 헬퍼 ──────────────────────────────────────────────────────────────────────
 
-async def _get_member_or_404(member_id: int, db: AsyncSession) -> Member:
+async def _get_member_or_404(member_id: int, db: AsyncSession, cohort_id: int | None = None) -> Member:
     result = await db.get(Member, member_id)
-    if not result:
+    if not result or (cohort_id is not None and result.cohort_id != cohort_id):
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
     return result
 
@@ -31,14 +31,29 @@ async def get_me(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """현재 로그인 사용자 정보"""
+    """현재 로그인 사용자 정보 (+ 소속 기수 / 슈퍼관리자 여부)"""
     result = await db.execute(
         select(User).where(User.username == current_user["username"])
     )
     user = result.scalar_one_or_none()
     if not user:
-        return {"username": current_user["username"], "role": current_user["role"], "display_name": current_user["username"], "department": None}
-    return {"username": user.username, "role": user.role, "display_name": user.display_name, "department": user.department}
+        return {
+            "username": current_user["username"], "role": current_user["role"],
+            "display_name": current_user["username"], "department": None,
+            "cohort_id": None, "cohort_number": None, "cohort_name": None, "is_superadmin": False,
+        }
+    cohort = await db.get(Cohort, user.cohort_id) if user.cohort_id else None
+    return {
+        "username": user.username,
+        "role": user.role,
+        "display_name": user.display_name,
+        "department": user.department,
+        "cohort_id": user.cohort_id,
+        "cohort_number": cohort.number if cohort else None,
+        "cohort_name": cohort.name if cohort else None,
+        # 슈퍼관리자 = cohort_id 없는 admin (전 기수 총괄)
+        "is_superadmin": user.cohort_id is None and user.role == "admin",
+    }
 
 
 # ── 기수(멤버) 본인 전용 ─────────────────────────────────────────────────────
@@ -104,9 +119,10 @@ async def list_members(
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
-    """활성 멤버 목록 (기본). ?include_inactive=true 시 전체."""
-    stmt = select(Member)
+    """현재 기수 활성 멤버 목록 (기본). ?include_inactive=true 시 전체."""
+    stmt = select(Member).where(Member.cohort_id == cohort_id)
     if not include_inactive:
         stmt = stmt.where(Member.is_active == True)
     stmt = stmt.order_by(Member.id).offset((page - 1) * limit).limit(limit)
@@ -119,9 +135,11 @@ async def create_member(
     body: MemberCreate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
-    """멤버 생성"""
+    """멤버 생성 (현재 기수에 귀속)"""
     member = Member(
+        cohort_id=cohort_id,
         name=body.name,
         name_initial=body.name_initial,
         email=body.email,
@@ -139,9 +157,10 @@ async def get_member(
     member_id: int,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """멤버 상세 조회"""
-    return await _get_member_or_404(member_id, db)
+    return await _get_member_or_404(member_id, db, cohort_id)
 
 
 @router.patch("/{member_id}", response_model=MemberResponse)
@@ -150,9 +169,10 @@ async def update_member(
     body: MemberUpdate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """멤버 정보 수정"""
-    member = await _get_member_or_404(member_id, db)
+    member = await _get_member_or_404(member_id, db, cohort_id)
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(member, field, value)
@@ -170,9 +190,10 @@ async def delete_member(
     member_id: int,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """Soft delete + 잔여 디포짓 금고 몰수 (DEPOSIT_FORFEIT)"""
-    member = await _get_member_or_404(member_id, db)
+    member = await _get_member_or_404(member_id, db, cohort_id)
     if not member.is_active:
         raise HTTPException(status_code=400, detail="이미 비활성화된 멤버입니다")
 
@@ -205,9 +226,10 @@ async def graduate_member(
     member_id: int,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """수료 처리 — 디포짓 환급 후 비활성화"""
-    member = await _get_member_or_404(member_id, db)
+    member = await _get_member_or_404(member_id, db, cohort_id)
     if not member.is_active:
         raise HTTPException(status_code=400, detail="이미 비활성화된 멤버입니다")
 
@@ -243,9 +265,10 @@ async def get_member_ledger(
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
 ):
     """멤버 원장 조회 (페이지네이션)"""
-    await _get_member_or_404(member_id, db)
+    await _get_member_or_404(member_id, db, cohort_id)
     offset = (page - 1) * limit
     result = await db.execute(
         select(Ledger)

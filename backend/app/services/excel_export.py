@@ -16,7 +16,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Assignment, Attendance, Ledger, Member, Session, TeamMember
+from app.models import Assignment, Attendance, Cohort, Ledger, Member, Session, TeamMember
 
 # ── 상수 ──────────────────────────────────────────────────────────────
 
@@ -115,15 +115,15 @@ class ExportData:
 
 # ── 데이터 수집 ──────────────────────────────────────────────────────
 
-async def gather_export_data(db: AsyncSession) -> ExportData:
-    # 1. 세션 (날짜순)
+async def gather_export_data(db: AsyncSession, cohort_id: int) -> ExportData:
+    # 1. 세션 (날짜순) — 해당 기수만
     sessions = (await db.execute(
-        select(Session).order_by(Session.date.asc())
+        select(Session).where(Session.cohort_id == cohort_id).order_by(Session.date.asc())
     )).scalars().all()
 
-    # 2. 활성 멤버 (이름순)
+    # 2. 활성 멤버 (이름순) — 해당 기수만
     members = (await db.execute(
-        select(Member).where(Member.is_active == True).order_by(Member.name)  # noqa: E712
+        select(Member).where(Member.is_active == True, Member.cohort_id == cohort_id).order_by(Member.name)  # noqa: E712
     )).scalars().all()
     member_ids = [m.id for m in members]
 
@@ -782,9 +782,11 @@ def check_unmatched_merits(data: ExportData) -> list[dict]:
     return unmatched
 
 
-async def generate_excel_bytes(db: AsyncSession, generation: int = 33) -> ExcelExportResult:
-    """DB에서 데이터 수집 → Excel 워크북 생성 → BytesIO + 미매칭 상점 목록 반환"""
-    data = await gather_export_data(db)
+async def generate_excel_bytes(db: AsyncSession, cohort_id: int) -> ExcelExportResult:
+    """해당 기수 데이터 수집 → Excel 워크북 생성 → BytesIO + 미매칭 상점 목록 반환"""
+    cohort = await db.get(Cohort, cohort_id)
+    generation = cohort.number if cohort else 0
+    data = await gather_export_data(db, cohort_id)
     result = build_workbook(data, generation=generation)
     stream = io.BytesIO()
     result.wb.save(stream)
