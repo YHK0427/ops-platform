@@ -330,7 +330,9 @@ async def member_login(
         logger.warning("member_login_failed user=%s ip=%s reason=cohort_inactive", body.username, ip)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="보관된 기수입니다. 운영진에게 문의하세요.")
 
-    expire = datetime.now(timezone.utc) + timedelta(minutes=120)
+    # 멤버는 개인폰 PWA로 푸시를 받고 알림 탭으로 며칠 뒤 들어오기도 해서
+    # 로그인을 계속 유지한다(운영진 '로그인 유지'와 동일한 사실상 무제한 만료).
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_REMEMBER_EXPIRE_MINUTES)
     payload = {
         "sub": account.username,
         "member_id": account.member_id,
