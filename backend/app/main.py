@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.logging_config import setup_logging
-from app.routers import assignments, auth, cohorts, crawler, evaluation, generation, live_feedback, members, sessions, ledger, team_building
+from app.routers import assignments, auth, cohorts, crawler, evaluation, generation, live_feedback, members, sessions, ledger, team_building, notifications
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ app.include_router(cohorts.router, prefix="/api/v1")
 app.include_router(team_building.router, prefix="/api/v1")
 app.include_router(evaluation.router, prefix="/api/v1")
 app.include_router(live_feedback.router, prefix="/api/v1")
+app.include_router(notifications.router, prefix="/api/v1")
 
 
 @app.get("/health")

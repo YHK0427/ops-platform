@@ -35,6 +35,7 @@ const EvalManagement = lazy(() => import("@/pages/EvalManagement"));
 const EvalAudienceForm = lazy(() => import("@/pages/EvalAudienceForm"));
 const LiveFeedbackManagement = lazy(() => import("@/pages/LiveFeedbackManagement"));
 const LiveFeedbackPresent = lazy(() => import("@/pages/LiveFeedbackPresent"));
+const Announcements = lazy(() => import("@/pages/Announcements"));
 
 // ── Lazy-loaded member portal pages ────────────────────────────────────
 const MemberLayout = lazy(() => import("@/pages/member/MemberLayout"));
@@ -46,6 +47,8 @@ const EvalComplete = lazy(() => import("@/pages/member/EvalComplete"));
 const MemberResult = lazy(() => import("@/pages/member/MemberResult"));
 const MemberFeedbackBoard = lazy(() => import("@/pages/member/MemberFeedbackBoard"));
 const MemberFeedbackList = lazy(() => import("@/pages/member/MemberFeedbackList"));
+const MemberAnnouncements = lazy(() => import("@/pages/member/MemberAnnouncements"));
+const MemberAnnouncementDetail = lazy(() => import("@/pages/member/MemberAnnouncementDetail"));
 
 // ── Loading fallback ───────────────────────────────────────────────────
 function LoadingFallback() {
@@ -142,6 +145,8 @@ export default function App() {
                   {/* 하단 탭 포털 (홈/성장리포트/내 점수) */}
                   <Route element={<MemberLayout />}>
                     <Route index element={<MemberHome />} />
+                    <Route path="announcements" element={<MemberAnnouncements />} />
+                    <Route path="announcements/:id" element={<MemberAnnouncementDetail />} />
                     <Route path="reports" element={<MemberReports />} />
                     <Route path="feedback" element={<MemberFeedbackList />} />
                     <Route path="ledger" element={<MemberLedger />} />
@@ -179,6 +184,7 @@ export default function App() {
                   <Route path="/team-building/:boardId" element={<TeamBuildingBoard />} />
                   <Route path="/eval" element={<EvalManagement />} />
                   <Route path="/live-feedback" element={<LiveFeedbackManagement />} />
+                  <Route path="/announcements" element={<Announcements />} />
                 </Route>
                 {/* Audience eval form — full-screen (no sidebar) */}
                 <Route path="/eval/:roundId/audience" element={<EvalAudienceForm />} />

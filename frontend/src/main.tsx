@@ -23,12 +23,14 @@ window.addEventListener("unhandledrejection", (e) => {
     }
 });
 
-// 이전에 Background Fetch 용으로 등록된 Service Worker 가 있으면 해지.
-// (신규 등록 안 함 — sw.js 자체도 자가-해지 버전으로 배포됨)
+// 푸시 전용 서비스워커 등록 (캐싱 없음 — public/sw.js 참고).
+// 웹 푸시 알림 수신/표시를 위해 필요. 등록만 하고 실제 구독은 사용자가 "알림 받기"로 명시 동의.
 if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.getRegistrations().then((regs) => {
-        for (const reg of regs) reg.unregister().catch(() => {});
-    }).catch(() => {});
+    window.addEventListener("load", () => {
+        navigator.serviceWorker
+            .register("/sw.js", { scope: "/" })
+            .catch((err) => console.warn("[SW] register failed", err));
+    });
 }
 
 createRoot(document.getElementById("root")!).render(

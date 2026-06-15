@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     TELEGRAM_ALERT_CHAT_ID: str = ""
     TELEGRAM_AUDIT_CHAT_ID: str = ""
 
+    # Web Push (VAPID) — 표준 웹푸시. PUBLIC=프론트 applicationServerKey, PRIVATE=raw b64url(서버서명)
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_SUBJECT: str = "mailto:admin@univpt.com"  # iOS는 mailto: 또는 https URL 필수
+
     # Cloudflare R2 (영상 업로드 직통 — Cloudflare Tunnel 100MB 제한 우회)
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""

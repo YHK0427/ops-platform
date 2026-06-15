@@ -6,6 +6,7 @@ import {
     useState,
 } from "react";
 import api, { setToken, getToken } from "@/lib/api";
+import { unsubscribePush } from "@/lib/push";
 
 interface AuthUser {
     username: string;
@@ -98,6 +99,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const logout = useCallback(async () => {
+        // 같은 기기 공용 사용 대비 — 토큰 비우기 전에 푸시 구독 정리(인증 필요).
+        await unsubscribePush(api, { subscribePath: "/notifications/ops/subscribe" });
         try { await api.delete("/auth/logout"); } catch { /* ignore */ }
         setToken(null);
         setUser(null);

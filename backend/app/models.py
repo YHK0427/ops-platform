@@ -487,3 +487,44 @@ class LiveFeedbackAnonAlias(Base):
     )
 
     board = relationship("LiveFeedbackBoard", back_populates="aliases")
+
+
+# ── 웹 푸시 알림 + 공지 ────────────────────────────────────────────────────────
+
+class PushSubscription(Base):
+    """웹 푸시 구독 — 운영진(User) 또는 기수원(Member) 한 명의 기기에 묶임. 로그아웃 시 삭제."""
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="CASCADE"), nullable=True)  # 슈퍼관리자=NULL
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=True)
+    endpoint = Column(Text, nullable=False, unique=True)
+    p256dh = Column(String(200), nullable=False)
+    auth = Column(String(100), nullable=False)
+    ua = Column(String(300), nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("user_id IS NOT NULL OR member_id IS NOT NULL", name="ck_push_sub_user_or_member"),
+    )
+
+
+class Announcement(Base):
+    """기수 공지 — 운영진 작성, 게시판형 리치 HTML 본문. 작성 시 대상에 푸시 발송."""
+    __tablename__ = "announcements"
+
+    id = Column(Integer, primary_key=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False)  # DOMPurify로 정제된 HTML
+    target = Column(String(20), nullable=False, server_default="members")  # members|staff|all|select
+    target_member_ids = Column(ARRAY(Integer), nullable=True)  # target=select 시 대상 멤버
+    created_by = Column(String(50), nullable=True)
+    pushed = Column(Boolean, default=False, server_default="false", nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        CheckConstraint("target IN ('members','staff','all','select')", name="ck_announcement_target"),
+    )

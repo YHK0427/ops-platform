@@ -17,6 +17,7 @@ import {
     MessageSquareHeart,
     Layers,
     Users2,
+    Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -31,6 +32,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
     { label: "대시보드", to: "/dashboard", icon: LayoutDashboard },
+    { label: "공지/알림", to: "/announcements", icon: Megaphone },
     { label: "멤버", to: "/members", icon: Users },
     { label: "장부(기수시점)", to: "/ledger", icon: BookOpen },
     { label: "금고(총무부시점)", to: "/treasury", icon: PiggyBank },

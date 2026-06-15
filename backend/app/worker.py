@@ -3,12 +3,13 @@ import logging
 
 from arq.connections import RedisSettings
 from arq import cron, func
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from app.config import settings
 from app.logging_config import setup_logging
 from app.database import AsyncSessionLocal
-from app.models import Member, Session
+from app.models import Member, Session, PushSubscription
+from app.services.push import send_webpush
 from app.services.crawler_ppt import scan_ppt
 from app.services.crawler_video import upload_all_videos
 from app.services.crawler_excuse import scan_excuses
@@ -398,8 +399,32 @@ async def task_naver_health_check(ctx):
         raise
 
 
+async def task_send_push(ctx, payload: dict, subscription_ids: list):
+    """웹 푸시 발송 — 구독 id 목록에 payload 전송. 만료(404/410) 구독은 자동 삭제."""
+    if not subscription_ids:
+        return {"sent": 0, "expired": 0}
+    sent = 0
+    expired_ids = []
+    async with AsyncSessionLocal() as db:
+        subs = (await db.execute(
+            select(PushSubscription).where(PushSubscription.id.in_(subscription_ids))
+        )).scalars().all()
+        for sub in subs:
+            # pywebpush는 동기 → 스레드로
+            result = await asyncio.to_thread(send_webpush, sub.endpoint, sub.p256dh, sub.auth, payload)
+            if result == "ok":
+                sent += 1
+            elif result == "expired":
+                expired_ids.append(sub.id)
+        if expired_ids:
+            await db.execute(delete(PushSubscription).where(PushSubscription.id.in_(expired_ids)))
+            await db.commit()
+    logger.log(25, f"🔔 푸시 발송 — 성공 {sent} · 만료정리 {len(expired_ids)}")
+    return {"sent": sent, "expired": len(expired_ids)}
+
+
 class WorkerSettings:
-    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check]
+    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check, task_send_push]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     on_startup = startup
     cron_jobs = [

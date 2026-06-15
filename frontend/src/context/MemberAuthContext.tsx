@@ -6,6 +6,7 @@ import {
     useState,
 } from "react";
 import memberApi, { setMemberToken, getMemberToken } from "@/lib/memberApi";
+import { unsubscribePush } from "@/lib/push";
 
 export interface MemberUser {
     member_id: number;
@@ -54,7 +55,10 @@ export function MemberAuthProvider({ children }: { children: React.ReactNode }) 
         setMember(me);
     }, []);
 
-    const logout = useCallback(() => {
+    const logout = useCallback(async () => {
+        // 같은 기기에 다른 계정 로그인 시 이전 사용자 알림이 가지 않도록 구독 정리.
+        // DELETE 는 인증이 필요하므로 토큰을 비우기 전에 호출한다.
+        await unsubscribePush(memberApi, { subscribePath: "/notifications/subscribe" });
         memberApi.post("/auth/member-logout").catch(() => {});
         setMemberToken(null);
         setMember(null);

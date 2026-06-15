@@ -2,14 +2,15 @@ import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useMemberAuth } from "@/context/MemberAuthContext";
 import { motion } from "framer-motion";
-import { LogOut, Home, BarChart3, Wallet, KeyRound, MessageSquareHeart } from "lucide-react";
+import { LogOut, Home, BarChart3, Wallet, KeyRound, MessageSquareHeart, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import memberApi from "@/lib/memberApi";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 const TABS = [
     { to: "/member", label: "홈", icon: Home, end: true },
-    { to: "/member/reports", label: "성장 리포트", icon: BarChart3, end: false },
+    { to: "/member/announcements", label: "공지", icon: Megaphone, end: false },
+    { to: "/member/reports", label: "리포트", icon: BarChart3, end: false },
     { to: "/member/feedback", label: "피드백", icon: MessageSquareHeart, end: false },
     { to: "/member/ledger", label: "내 점수", icon: Wallet, end: false },
 ];
@@ -62,7 +63,7 @@ export default function MemberLayout() {
 
             {/* 하단 탭 네비게이션 */}
             <nav className="fixed bottom-0 inset-x-0 z-20 bg-white/90 backdrop-blur-md border-t border-gray-200">
-                <div className="mx-auto max-w-lg grid grid-cols-4">
+                <div className="mx-auto max-w-lg grid grid-cols-5">
                     {TABS.map(({ to, label, icon: Icon, end }) => (
                         <NavLink
                             key={to}
