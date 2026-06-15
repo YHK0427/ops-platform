@@ -129,10 +129,9 @@ export default function TeamBuildingBoard() {
     const teamOf = useCallback((key: string): Slot => assignment[key] ?? "pool", [assignment]);
     const byKey = useMemo(() => Object.fromEntries(roster.map((p) => [p.key, p])), [roster]);
 
-    const { conflicts, badges, conflictKeys } = useMemo(() => {
+    const { conflicts, badges } = useMemo(() => {
         const conflicts: { a: Participant; b: Participant; team: number; kind: Kind; labels: string[] }[] = [];
         const badges: Record<string, { n: number; major: boolean }> = {};
-        const conflictKeys = new Set<string>();
         for (let t = 1; t <= numTeams; t++) {
             const ps = roster.filter((p) => teamOf(p.key) === t);
             for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
@@ -142,11 +141,10 @@ export default function TeamBuildingBoard() {
                 for (const k of [ps[i].key, ps[j].key]) {
                     const cur = badges[k] || { n: 0, major: false };
                     badges[k] = { n: cur.n + 1, major: cur.major || ov.kind === "trainee" };
-                    conflictKeys.add(k);
                 }
             }
         }
-        return { conflicts, badges, conflictKeys };
+        return { conflicts, badges };
     }, [roster, numTeams, overlapMap, teamOf, considered]);
 
     const randomize = () => {
