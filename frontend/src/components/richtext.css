@@ -1,5 +1,6 @@
 /* 공지 리치텍스트 — 에디터/렌더 공용 스타일 (Tailwind typography 미사용, 자체 정의) */
 .rich-content {
+    font-size: 15px;
     line-height: 1.7;
     color: #1f2937;
     word-break: break-word;
@@ -11,19 +12,19 @@
     margin-top: 0;
 }
 .rich-content h1 {
-    font-size: 1.5rem;
+    font-size: 1.6em;
     font-weight: 800;
     margin: 1.1em 0 0.5em;
     line-height: 1.3;
 }
 .rich-content h2 {
-    font-size: 1.25rem;
+    font-size: 1.3em;
     font-weight: 700;
     margin: 1em 0 0.4em;
     line-height: 1.3;
 }
 .rich-content h3 {
-    font-size: 1.1rem;
+    font-size: 1.12em;
     font-weight: 700;
     margin: 0.9em 0 0.3em;
 }
@@ -118,18 +119,19 @@
     height: 0;
 }
 
-/* 목록 정렬 — 가운데/오른쪽 정렬 시 글머리(마커)도 텍스트를 따라오게 */
-.rich-content li[style*="text-align: center"],
-.rich-content li[style*="text-align:center"],
-.rich-content li:has(> p[style*="text-align: center"]),
-.rich-content li:has(> p[style*="text-align:center"]) {
+/* 목록 정렬 — 가운데/오른쪽 정렬 시 글머리(마커)가 텍스트와 같은 줄에서 따라오게.
+   li 안의 p가 블록이라 inside 마커가 윗줄로 떨어지는 문제를 막기 위해 p를 inline 처리. */
+.rich-content li:has(> p[style*="text-align: center"]) {
     list-style-position: inside;
+    text-align: center;
 }
-.rich-content li[style*="text-align: right"],
-.rich-content li[style*="text-align:right"],
-.rich-content li:has(> p[style*="text-align: right"]),
-.rich-content li:has(> p[style*="text-align:right"]) {
+.rich-content li:has(> p[style*="text-align: right"]) {
     list-style-position: inside;
+    text-align: right;
+}
+.rich-content li:has(> p[style*="text-align: center"]) > p,
+.rich-content li:has(> p[style*="text-align: right"]) > p {
+    display: inline;
 }
 
 /* 이미지 — 정렬/크기는 인라인 style(margin/width)로 적용됨. 선택 시 강조 */
@@ -143,6 +145,11 @@
 /* 멤버 뷰 이미지 — 클릭 확대 커서 */
 .rich-content:not(.ProseMirror) img {
     cursor: zoom-in;
+}
+/* 렌더 뷰에서 빈 문단(의도적 빈 줄)이 접혀 사라지지 않게 — 한 줄 높이 유지.
+   (에디터는 ProseMirror가 빈 줄 높이를 주므로 렌더 뷰에만 적용) */
+.rich-content:not(.ProseMirror) p:empty::after {
+    content: "\00A0";
 }
 
 /* 표(table) */
@@ -201,7 +208,8 @@
     text-decoration: none;
     background: #fff;
     transition: background 0.15s;
-    max-width: 520px;
+    width: 100%;
+    max-width: 400px;
 }
 .rich-content .link-card:hover {
     background: #f9fafb;
@@ -244,12 +252,147 @@
     overflow: hidden;
 }
 .link-card-site {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     color: #9ca3af;
     font-size: 0.75em;
     margin-top: 0.35em;
 }
-/* 에디터 내 링크카드 래퍼(삭제버튼 위치용) */
+.link-card-favicon {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+.link-card-thumb--icon {
+    background: #f9fafb;
+}
+.link-card-favicon-lg {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+}
+/* 에디터 내 링크카드 래퍼 — 카드 크기에 딱 맞게(삭제 ×가 카드 코너에 오도록) */
 .link-card-edit {
     position: relative;
+    display: inline-block;
+    max-width: 100%;
     border-radius: 12px;
 }
+
+/* 파일 첨부 칩 */
+.rich-content .file-attach,
+.rich-file-wrap .file-attach {
+    display: flex;
+    width: fit-content;
+    align-items: center;
+    gap: 0.6em;
+    margin: 0.5em 0;
+    padding: 0.6em 0.9em;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    text-decoration: none;
+    max-width: 360px;
+    transition: background 0.15s;
+}
+.rich-content .file-attach:hover {
+    background: #f9fafb;
+}
+.file-attach-icon {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: #fee2e2;
+    color: #e11d48;
+    font-size: 1.1em;
+}
+.file-attach-body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.file-attach-name {
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 0.92em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.file-attach-meta {
+    color: #9ca3af;
+    font-size: 0.78em;
+}
+.file-attach-edit {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
+
+/* 인용구 종류(variant) */
+.rich-content blockquote {
+    margin: 0.8em 0;
+}
+.rich-content blockquote[data-variant="box"] {
+    border: none;
+    background: #f3f4f6;
+    border-radius: 10px;
+    padding: 0.8em 1em;
+    color: #374151;
+    font-style: normal;
+}
+.rich-content blockquote[data-variant="quote"] {
+    border: none;
+    padding: 0.7em 1.8em;
+    position: relative;
+    color: #4b5563;
+    font-style: normal;
+    text-align: center;
+}
+.rich-content blockquote[data-variant="quote"]::before {
+    content: "\201C";
+    position: absolute;
+    left: 0.15em;
+    top: 0.05em;
+    font-size: 1.9em;
+    line-height: 1;
+    color: #f43f5e;
+    font-family: Georgia, serif;
+}
+.rich-content blockquote[data-variant="quote"]::after {
+    content: "\201D";
+    position: absolute;
+    right: 0.15em;
+    bottom: -0.25em;
+    font-size: 1.9em;
+    line-height: 1;
+    color: #f43f5e;
+    font-family: Georgia, serif;
+}
+.rich-content blockquote[data-variant="corner"] {
+    border: none;
+    border-top: 2px solid #374151;
+    border-bottom: 2px solid #374151;
+    padding: 0.7em 0.2em;
+    color: #374151;
+    font-style: normal;
+    text-align: center;
+}
+/* 인용 종류 미리보기 스와치(드롭다운) */
+.qv-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    background: #fff;
+}
+.qv-line { border-left: 3px solid #f43f5e; background: #fafafa; }
+.qv-box { background: #e5e7eb; }
+.qv-quote { background: #fff; border: 1px solid #f43f5e; }
+.qv-corner { border-top: 2px solid #374151; border-bottom: 2px solid #374151; }

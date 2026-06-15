@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
 import {
     Bold, Italic, Underline as UnderlineIcon, Strikethrough, Type, Highlighter,
     List, ListOrdered, ListChecks, Quote, Code2, Minus, Link2, Link2Off,
-    AlignLeft, AlignCenter, AlignRight, Undo2, Redo2, ChevronDown, Plus,
-    Image as ImageIcon, Table as TableIcon, Youtube as YoutubeIcon, Link as LinkIcon, ExternalLink, Trash2,
-    Rows3, Columns3,
+    AlignLeft, AlignCenter, AlignRight, Undo2, Redo2, ChevronDown,
+    Image as ImageIcon, Table as TableIcon, Youtube as YoutubeIcon, Bookmark, Link as LinkIcon, ExternalLink, Trash2,
+    Rows3, Columns3, ALargeSmall, CaseSensitive, AlignVerticalSpaceAround, Paperclip, Pilcrow,
 } from "lucide-react";
-import { FONT_SIZES, FONT_FAMILIES, LINE_HEIGHTS } from "./extensions";
+import { FONT_SIZES, FONT_SIZE_DEFAULT, FONT_FAMILIES, LINE_HEIGHTS, BLOCKQUOTE_VARIANTS } from "./extensions";
 
 const TEXT_COLORS = ["#1f2937", "#e11d48", "#ea580c", "#ca8a04", "#16a34a", "#0891b2", "#2563eb", "#7c3aed"];
 const HIGHLIGHTS = ["transparent", "#fef08a", "#fecaca", "#bbf7d0", "#bfdbfe", "#e9d5ff", "#fed7aa"];
@@ -24,33 +25,51 @@ export function Btn({ onClick, active, disabled, title, children }: {
 }
 export const Divider = () => <span className="w-px h-5 bg-gray-200 mx-0.5 shrink-0" />;
 
+// 드롭다운/팝오버 — 툴바의 overflow 박스에 갇혀 잘리지 않도록 body 포털 + fixed 위치.
 function Popover({ trigger, children, width }: { trigger: React.ReactNode; children: (close: () => void) => React.ReactNode; width?: string }) {
     const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+    const toggle = () => {
+        if (!open && ref.current) {
+            const r = ref.current.getBoundingClientRect();
+            setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 240)) });
+        }
+        setOpen((v) => !v);
+    };
+
     return (
-        <div className="relative shrink-0">
-            <div onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen((v) => !v)}>{trigger}</div>
-            {open && (
+        <div className="shrink-0" ref={ref}>
+            <div onMouseDown={(e) => e.preventDefault()} onClick={toggle}>{trigger}</div>
+            {open && createPortal(
                 <>
-                    <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-                    <div className={`absolute z-30 top-9 left-0 bg-white rounded-lg shadow-lg border border-gray-200 p-1.5 ${width ?? ""}`}>
+                    <div className="fixed inset-0 z-[60]" onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen(false)} />
+                    <div
+                        className={`fixed z-[61] bg-white rounded-lg shadow-xl border border-gray-200 p-1.5 max-h-[60vh] overflow-y-auto ${width ?? ""}`}
+                        style={{ top: pos.top, left: pos.left }}
+                        onMouseDown={(e) => e.preventDefault()}
+                    >
                         {children(() => setOpen(false))}
                     </div>
-                </>
+                </>,
+                document.body,
             )}
         </div>
     );
 }
 
 // 텍스트 드롭다운 (문단스타일/글자크기/줄간격/글꼴 공용)
-function SelectMenu({ label, items, current, onPick, minW }: {
-    label: string; items: { label: string; value: string }[]; current: string; onPick: (v: string) => void; minW?: string;
+function SelectMenu({ label, items, current, onPick, minW, icon }: {
+    label: string; items: { label: string; value: string }[]; current: string; onPick: (v: string) => void; minW?: string; icon?: React.ReactNode;
 }) {
     return (
-        <Popover width="min-w-[120px]" trigger={
+        <Popover width="min-w-[130px]" trigger={
             <button type="button" title={label}
                 className={`flex items-center gap-1 h-8 px-2 shrink-0 rounded-md text-xs font-medium text-gray-700 hover:bg-gray-100 ${minW ?? ""}`}>
+                {icon && <span className="text-gray-500 shrink-0">{icon}</span>}
                 <span className="truncate">{current}</span>
-                <ChevronDown className="w-3 h-3 text-gray-400" />
+                <ChevronDown className="w-3 h-3 text-gray-400 shrink-0" />
             </button>
         }>
             {(close) => (
@@ -77,7 +96,7 @@ function ParagraphStyle({ editor }: { editor: Editor }) {
         if (v === "p") c.setParagraph().run();
         else c.toggleHeading({ level: Number(v) as 1 | 2 | 3 }).run();
     };
-    return <SelectMenu label="문단 스타일" current={current} minW="min-w-[64px]"
+    return <SelectMenu label="문단 스타일" current={current} minW="min-w-[64px]" icon={<Pilcrow className="w-4 h-4" />}
         items={[{ label: "본문", value: "p" }, { label: "제목 1", value: "1" }, { label: "제목 2", value: "2" }, { label: "제목 3", value: "3" }]}
         onPick={pick} />;
 }
@@ -116,6 +135,39 @@ function HighlightMenu({ editor }: { editor: Editor }) {
     );
 }
 
+function QuoteMenu({ editor }: { editor: Editor }) {
+    const active = editor.isActive("blockquote");
+    const cur = (editor.getAttributes("blockquote").variant as string) || "line";
+    const setQuote = (variant: string) => {
+        const c = editor.chain().focus();
+        if (!editor.isActive("blockquote")) c.toggleBlockquote();
+        c.updateAttributes("blockquote", { variant }).run();
+    };
+    return (
+        <Popover width="w-40" trigger={<Btn title="인용구" active={active} onClick={() => {}}><Quote className="w-4 h-4" /></Btn>}>
+            {(close) => (
+                <div className="flex flex-col">
+                    {BLOCKQUOTE_VARIANTS.map((v) => (
+                        <button key={v.value} type="button" onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => { setQuote(v.value); close(); }}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left hover:bg-rose-50 ${active && cur === v.value ? "text-rose-600 font-semibold" : "text-gray-700"}`}>
+                            <span className={`qv-swatch qv-${v.value}`} />
+                            {v.label}
+                        </button>
+                    ))}
+                    {active && (
+                        <button type="button" onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => { editor.chain().focus().toggleBlockquote().run(); close(); }}
+                            className="px-3 py-2 mt-0.5 border-t border-gray-100 rounded-md text-sm text-left text-gray-500 hover:bg-gray-50">
+                            인용 해제
+                        </button>
+                    )}
+                </div>
+            )}
+        </Popover>
+    );
+}
+
 function LinkPopover({ editor, onConvertCard }: { editor: Editor; onConvertCard: (url: string) => void }) {
     const active = editor.isActive("link");
     const href = (editor.getAttributes("link").href as string) || "";
@@ -146,66 +198,44 @@ function LinkPopover({ editor, onConvertCard }: { editor: Editor; onConvertCard:
     );
 }
 
-function InsertMenu({ editor, onPickImage, onInsertLinkCard }: {
-    editor: Editor; onPickImage: () => void; onInsertLinkCard: (url: string) => void;
+// URL 입력 팝오버 (유튜브/링크카드 삽입용)
+function UrlPopover({ title, icon, placeholder, onSubmit }: {
+    title: string; icon: React.ReactNode; placeholder: string; onSubmit: (url: string) => void;
 }) {
-    const [mode, setMode] = useState<"menu" | "youtube" | "card">("menu");
     const [url, setUrl] = useState("");
     return (
-        <Popover width="w-60" trigger={
-            <button type="button" title="삽입" className="flex items-center gap-1 h-8 px-2 shrink-0 rounded-md text-xs font-semibold text-rose-600 hover:bg-rose-50">
-                <Plus className="w-4 h-4" /> 삽입
-            </button>
-        }>
-            {(close) => mode === "menu" ? (
-                <div className="flex flex-col">
-                    <MenuItem icon={<ImageIcon className="w-4 h-4" />} label="이미지" onClick={() => { onPickImage(); close(); }} />
-                    <MenuItem icon={<TableIcon className="w-4 h-4" />} label="표" onClick={() => { editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); close(); }} />
-                    <MenuItem icon={<YoutubeIcon className="w-4 h-4" />} label="유튜브 동영상" onClick={() => { setUrl(""); setMode("youtube"); }} />
-                    <MenuItem icon={<LinkIcon className="w-4 h-4" />} label="링크 카드" onClick={() => { setUrl(""); setMode("card"); }} />
-                    <MenuItem icon={<Minus className="w-4 h-4" />} label="구분선" onClick={() => { editor.chain().focus().setHorizontalRule().run(); close(); }} />
-                </div>
-            ) : (
+        <Popover width="w-60" trigger={<Btn title={title} onClick={() => setUrl("")}>{icon}</Btn>}>
+            {(close) => (
                 <div className="flex flex-col gap-2">
-                    <p className="text-xs font-semibold text-gray-600 px-1">{mode === "youtube" ? "유튜브 URL" : "링크 URL"}</p>
-                    <input autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…"
+                    <p className="text-xs font-semibold text-gray-600 px-1">{title}</p>
+                    <input autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder={placeholder}
                         className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-rose-400" />
-                    <div className="flex gap-1.5">
-                        <button type="button" onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                                if (!url) return;
-                                if (mode === "youtube") editor.commands.setYoutubeVideo({ src: url });
-                                else onInsertLinkCard(url);
-                                close(); setMode("menu");
-                            }}
-                            className="flex-1 px-2 py-1.5 rounded-md text-xs font-semibold bg-rose-500 text-white hover:bg-rose-600">삽입</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setMode("menu")}
-                            className="px-2 py-1.5 rounded-md text-xs text-gray-500 hover:bg-gray-100">뒤로</button>
-                    </div>
+                    <button type="button" onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { if (url.trim()) onSubmit(url.trim()); close(); }}
+                        className="px-2 py-1.5 rounded-md text-xs font-semibold bg-rose-500 text-white hover:bg-rose-600">삽입</button>
                 </div>
             )}
         </Popover>
     );
 }
 
-function MenuItem({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
-    return (
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onClick}
-            className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-rose-50 whitespace-nowrap">
-            <span className="text-gray-500">{icon}</span>{label}
-        </button>
-    );
-}
-
-export function MainToolbar({ editor, onPickImage, onInsertLinkCard }: {
-    editor: Editor; onPickImage: () => void; onInsertLinkCard: (url: string) => void;
+export function MainToolbar({ editor, onPickImage, onPickFile, onInsertLinkCard }: {
+    editor: Editor; onPickImage: () => void; onPickFile: () => void; onInsertLinkCard: (url: string) => void;
 }) {
     const fontSize = (editor.getAttributes("textStyle").fontSize as string) || "";
     const fontFamily = (editor.getAttributes("textStyle").fontFamily as string) || "";
     const lineHeight = (editor.getAttributes("paragraph").lineHeight as string) || (editor.getAttributes("heading").lineHeight as string) || "1.7";
-    const fsLabel = FONT_SIZES.find((f) => f.value === fontSize)?.label || "기본";
+    const fsLabel = FONT_SIZES.find((f) => f.value === fontSize)?.label || FONT_SIZE_DEFAULT;
     const ffLabel = FONT_FAMILIES.find((f) => f.value === fontFamily)?.label || "기본";
     const lhLabel = LINE_HEIGHTS.find((f) => f.value === lineHeight)?.label || "기본";
+
+    // 정렬 — 이미지/링크카드/파일 첨부가 선택돼 있으면 그 블록의 align 속성을, 아니면 텍스트 정렬.
+    const alignNode = ["image", "linkCard", "fileAttachment"].find((n) => editor.isActive(n));
+    const applyAlign = (a: string) =>
+        alignNode ? editor.chain().focus().updateAttributes(alignNode, { align: a }).run()
+            : editor.chain().focus().setTextAlign(a).run();
+    const alignActive = (a: string) =>
+        alignNode ? editor.getAttributes(alignNode).align === a : editor.isActive({ textAlign: a });
 
     return (
         <div className="flex flex-nowrap md:flex-wrap items-center gap-0.5 p-2 border-b border-gray-200 bg-gray-50 overflow-x-auto">
@@ -213,11 +243,11 @@ export function MainToolbar({ editor, onPickImage, onInsertLinkCard }: {
             <Btn title="다시 실행" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo2 className="w-4 h-4" /></Btn>
             <Divider />
             <ParagraphStyle editor={editor} />
-            <SelectMenu label="글자 크기" current={fsLabel} items={FONT_SIZES}
+            <SelectMenu label="글자 크기" current={fsLabel} items={FONT_SIZES} icon={<ALargeSmall className="w-4 h-4" />}
                 onPick={(v) => v ? editor.chain().focus().setFontSize(v).run() : editor.chain().focus().unsetFontSize().run()} />
-            <SelectMenu label="글꼴" current={ffLabel} items={FONT_FAMILIES}
+            <SelectMenu label="글꼴" current={ffLabel} items={FONT_FAMILIES} icon={<CaseSensitive className="w-4 h-4" />}
                 onPick={(v) => v ? editor.chain().focus().setFontFamily(v).run() : editor.chain().focus().unsetFontFamily().run()} />
-            <SelectMenu label="줄 간격" current={lhLabel} items={LINE_HEIGHTS}
+            <SelectMenu label="줄 간격" current={lhLabel} items={LINE_HEIGHTS} icon={<AlignVerticalSpaceAround className="w-4 h-4" />}
                 onPick={(v) => editor.chain().focus().setLineHeight(v).run()} />
             <Divider />
             <Btn title="굵게" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}><Bold className="w-4 h-4" /></Btn>
@@ -231,15 +261,23 @@ export function MainToolbar({ editor, onPickImage, onInsertLinkCard }: {
             <Btn title="번호 목록" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered className="w-4 h-4" /></Btn>
             <Btn title="체크리스트" active={editor.isActive("taskList")} onClick={() => editor.chain().focus().toggleTaskList().run()}><ListChecks className="w-4 h-4" /></Btn>
             <Divider />
-            <Btn title="왼쪽 정렬" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()}><AlignLeft className="w-4 h-4" /></Btn>
-            <Btn title="가운데 정렬" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()}><AlignCenter className="w-4 h-4" /></Btn>
-            <Btn title="오른쪽 정렬" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()}><AlignRight className="w-4 h-4" /></Btn>
+            <Btn title="왼쪽 정렬" active={alignActive("left")} onClick={() => applyAlign("left")}><AlignLeft className="w-4 h-4" /></Btn>
+            <Btn title="가운데 정렬" active={alignActive("center")} onClick={() => applyAlign("center")}><AlignCenter className="w-4 h-4" /></Btn>
+            <Btn title="오른쪽 정렬" active={alignActive("right")} onClick={() => applyAlign("right")}><AlignRight className="w-4 h-4" /></Btn>
             <Divider />
-            <Btn title="인용" active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote className="w-4 h-4" /></Btn>
+            <QuoteMenu editor={editor} />
             <Btn title="코드 블록" active={editor.isActive("codeBlock")} onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code2 className="w-4 h-4" /></Btn>
+            <Btn title="구분선" onClick={() => editor.chain().focus().setHorizontalRule().run()}><Minus className="w-4 h-4" /></Btn>
             <LinkPopover editor={editor} onConvertCard={onInsertLinkCard} />
             <Divider />
-            <InsertMenu editor={editor} onPickImage={onPickImage} onInsertLinkCard={onInsertLinkCard} />
+            {/* 삽입 — 드롭다운 없이 직접 버튼 */}
+            <Btn title="이미지" onClick={onPickImage}><ImageIcon className="w-4 h-4" /></Btn>
+            <Btn title="파일 첨부" onClick={onPickFile}><Paperclip className="w-4 h-4" /></Btn>
+            <Btn title="표" onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}><TableIcon className="w-4 h-4" /></Btn>
+            <UrlPopover title="유튜브 동영상" icon={<YoutubeIcon className="w-4 h-4" />} placeholder="유튜브 URL"
+                onSubmit={(url) => editor.commands.setYoutubeVideo({ src: url })} />
+            <UrlPopover title="링크 카드" icon={<Bookmark className="w-4 h-4" />} placeholder="링크 URL"
+                onSubmit={(url) => onInsertLinkCard(url)} />
         </div>
     );
 }

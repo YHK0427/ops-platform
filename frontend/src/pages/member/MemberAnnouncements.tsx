@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import memberApi from "@/lib/memberApi";
 import PushToggle from "@/components/PushToggle";
+import AnnouncementReactions from "@/components/AnnouncementReactions";
 import { Megaphone, ChevronRight } from "lucide-react";
 
 interface Announcement {
@@ -10,6 +11,8 @@ interface Announcement {
     content: string;
     created_by: string | null;
     created_at: string;
+    tags?: string[] | null;
+    reactions?: Record<string, number>;
 }
 
 function formatDate(iso: string) {
@@ -17,16 +20,19 @@ function formatDate(iso: string) {
     return `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-// HTML 미리보기용 텍스트 추출
-function excerpt(html: string, n = 120) {
-    const txt = (html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    return txt.length > n ? txt.slice(0, n) + "…" : txt;
-}
-
-// 본문 첫 이미지 추출 (썸네일)
-function firstImage(html: string): string | null {
-    const m = (html || "").match(/<img[^>]+src=["']([^"']+)["']/i);
-    return m ? m[1] : null;
+// 미리보기(발췌 + 썸네일) 추출.
+// 발췌: 링크카드/파일/표/미디어의 텍스트는 빼고 순수 본문(문단·제목)만.
+// 썸네일: 콘텐츠 이미지 우선, 없으면 링크카드 대표 이미지.
+function parsePreview(html: string, n = 110): { excerpt: string; thumb: string | null } {
+    if (!html) return { excerpt: "", thumb: null };
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const thumb =
+        doc.querySelector("img:not(.link-card-thumb):not(.link-card-favicon):not(.link-card-favicon-lg)")?.getAttribute("src") ||
+        doc.querySelector(".link-card-thumb")?.getAttribute("src") ||
+        null;
+    doc.querySelectorAll(".link-card, .file-attach, table, [data-youtube-video], img").forEach((el) => el.remove());
+    const txt = (doc.body.textContent || "").replace(/\s+/g, " ").trim();
+    return { excerpt: txt.length > n ? txt.slice(0, n) + "…" : txt, thumb };
 }
 
 export default function MemberAnnouncements() {
@@ -63,7 +69,7 @@ export default function MemberAnnouncements() {
             ) : (
                 <div className="space-y-2.5">
                     {items.map((a) => {
-                        const thumb = firstImage(a.content);
+                        const { excerpt, thumb } = parsePreview(a.content);
                         return (
                             <button
                                 key={a.id}
@@ -72,14 +78,24 @@ export default function MemberAnnouncements() {
                             >
                                 <div className="min-w-0 flex-1">
                                     <p className="font-semibold text-gray-900 break-words line-clamp-1">{a.title}</p>
-                                    <p className="text-[13px] text-gray-500 mt-1 leading-relaxed line-clamp-3">{excerpt(a.content)}</p>
+                                    {excerpt && (
+                                        <p className="text-[13px] text-gray-500 mt-1 leading-relaxed line-clamp-2">{excerpt}</p>
+                                    )}
                                     <p className="text-[11px] text-gray-400 mt-1.5">
                                         {formatDate(a.created_at)}
                                         {a.created_by ? ` · ${a.created_by}` : ""}
                                     </p>
+                                    {((a.tags && a.tags.length > 0) || a.reactions) && (
+                                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                            {a.tags?.map((t) => (
+                                                <span key={t} className="px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-500 text-[11px]">#{t}</span>
+                                            ))}
+                                            <AnnouncementReactions announcementId={a.id} reactions={a.reactions || {}} readOnly />
+                                        </div>
+                                    )}
                                 </div>
                                 {thumb ? (
-                                    <img src={thumb} alt="" className="w-20 h-20 rounded-xl object-cover shrink-0 self-center" />
+                                    <img src={thumb} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0 self-center" />
                                 ) : (
                                     <ChevronRight className="w-5 h-5 text-gray-300 shrink-0 self-center" />
                                 )}

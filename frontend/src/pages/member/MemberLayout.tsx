@@ -25,7 +25,7 @@ export default function MemberLayout() {
             <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-gray-200">
                 <div className="mx-auto max-w-lg flex items-center justify-between px-4 py-3">
                     <div>
-                        <p className="text-[11px] text-gray-400 font-medium">UnivPT 33기</p>
+                        <p className="text-[11px] text-gray-400 font-medium">UnivPT {member?.cohort_name ?? ""}</p>
                         <h1 className="text-base font-bold text-gray-900">
                             안녕하세요, {member?.name}님
                         </h1>

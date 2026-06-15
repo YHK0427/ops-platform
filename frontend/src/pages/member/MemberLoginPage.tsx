@@ -37,7 +37,7 @@ export default function MemberLoginPage() {
                 <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
                     <div className="mb-8 text-center">
                         <p className="text-[11px] font-bold tracking-widest text-gray-400 uppercase mb-1">
-                            UnivPT 33기
+                            UnivPT
                         </p>
                         <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-900 to-gray-400">
                             발표 성장 리포트

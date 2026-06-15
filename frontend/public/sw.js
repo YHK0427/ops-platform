@@ -1,12 +1,17 @@
-// UnivPT 푸시 전용 서비스워커.
-// ⚠️ fetch/캐싱 핸들러 없음 — 과거 캐싱 SW가 앱을 깨뜨린 적이 있어 절대 추가하지 않는다.
-// 역할: (1) 즉시 활성화, (2) push 수신 → 알림 표시, (3) 알림 클릭 → 해당 화면 포커스/열기.
+// UnivPT 푸시 + PWA 설치용 서비스워커.
+// ⚠️ 캐싱은 절대 안 함 — 과거 캐싱 SW가 앱을 깨뜨린 적이 있음.
+// 역할: (1) 즉시 활성화, (2) push 알림, (3) 알림 클릭 이동, (4) Chrome 설치조건용 빈 fetch 핸들러.
 
 self.addEventListener("install", () => self.skipWaiting());
 
 self.addEventListener("activate", (event) => {
     event.waitUntil(self.clients.claim());
 });
+
+// Chrome 등은 '설치 가능한 PWA' 판정에 fetch 핸들러 존재를 요구한다.
+// respondWith 를 호출하지 않으면 브라우저 기본 동작(네트워크) 그대로라 가로채기/캐싱 없음.
+// → 이 빈 핸들러만으로 "앱 설치"가 뜨고, Chrome WebAPK(구글 서명)라 Play 프로텍트 경고도 없음.
+self.addEventListener("fetch", () => { /* pass-through, no caching */ });
 
 self.addEventListener("push", (event) => {
     let data = {};

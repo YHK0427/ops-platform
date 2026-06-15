@@ -3,13 +3,15 @@ import api from "@/lib/api";
 import { useMembers } from "@/hooks";
 import RichEditor from "@/components/RichEditor";
 import RichContent from "@/components/RichContent";
+import AnnouncementReactions from "@/components/AnnouncementReactions";
 import type { LinkCardData } from "@/components/editor/LinkCardView";
+import type { FileData } from "@/components/editor/FileAttachmentView";
 import PushToggle from "@/components/PushToggle";
 import { PageHeader } from "@/components/PageHeader";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
-    Plus, Pencil, Trash2, Send, X, BellRing, Check,
+    Plus, Pencil, Trash2, Send, X, BellRing, Check, Megaphone, Hash,
 } from "lucide-react";
 
 type Target = "all" | "members" | "staff" | "select";
@@ -20,9 +22,12 @@ interface Announcement {
     content: string;
     target: Target;
     target_member_ids: number[] | null;
+    tags: string[] | null;
     created_by: string | null;
     pushed: boolean;
     created_at: string;
+    reactions: Record<string, number>;
+    my_reactions: string[];
 }
 
 const TARGET_LABEL: Record<Target, string> = {
@@ -48,9 +53,18 @@ const unfurlLink = async (url: string): Promise<LinkCardData> => {
     return data;
 };
 
+const uploadFile = async (file: File): Promise<FileData> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const { data } = await api.post<FileData>("/notifications/manage/upload-file", fd, {
+        headers: { "Content-Type": undefined },
+    });
+    return data;
+};
+
 // ── 임시저장(자동 초안) — localStorage ─────────────────────────────────────────
 const DRAFT_KEY = "univpt_announcement_draft_v1";
-interface Draft { title: string; content: string; target: Target; memberIds: number[]; savedAt: number; }
+interface Draft { title: string; content: string; target: Target; memberIds: number[]; tags?: string[]; savedAt: number; }
 const loadDraft = (): Draft | null => {
     try { const r = localStorage.getItem(DRAFT_KEY); return r ? (JSON.parse(r) as Draft) : null; } catch { return null; }
 };
@@ -75,6 +89,7 @@ export default function Announcements() {
     const [items, setItems] = useState<Announcement[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<Announcement | "new" | null>(null);
+    const [viewing, setViewing] = useState<Announcement | null>(null);
     const [quickPush, setQuickPush] = useState(false);
 
     const reload = () => {
@@ -129,11 +144,11 @@ export default function Announcements() {
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
                         {items.map((a) => (
-                            <div key={a.id} className="flex flex-col rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                            <div key={a.id} className="flex flex-col rounded-2xl border border-gray-200 bg-white p-4 shadow-sm hover:border-gray-300 transition-colors">
                                 <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
+                                    <div className="min-w-0 cursor-pointer" onClick={() => setViewing(a)}>
                                         <div className="flex items-center gap-2 flex-wrap">
-                                            <h3 className="font-bold text-gray-900 break-words">{a.title}</h3>
+                                            <h3 className="font-bold text-gray-900 break-words hover:text-[var(--color-accent)]">{a.title}</h3>
                                             {a.pushed && (
                                                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
                                                     <Send className="w-3 h-3" /> 푸시발송
@@ -154,9 +169,23 @@ export default function Announcements() {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="mt-2 max-h-40 overflow-hidden relative flex-1">
+                                <div className="mt-2 max-h-40 overflow-hidden relative flex-1 cursor-pointer" onClick={() => setViewing(a)}>
                                     <RichContent html={a.content} className="text-sm" />
-                                    <div className="absolute bottom-0 inset-x-0 h-8 bg-gradient-to-t from-white to-transparent" />
+                                    <div className="absolute bottom-0 inset-x-0 h-10 bg-gradient-to-t from-white to-transparent" />
+                                </div>
+                                {a.tags && a.tags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {a.tags.map((t) => (
+                                            <span key={t} className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 text-[11px]">#{t}</span>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="flex items-center justify-between mt-2">
+                                    <button onClick={() => setViewing(a)}
+                                        className="text-xs font-medium text-[var(--color-accent)] hover:underline">
+                                        전체 보기 →
+                                    </button>
+                                    <AnnouncementReactions announcementId={a.id} reactions={a.reactions || {}} readOnly />
                                 </div>
                             </div>
                         ))}
@@ -171,7 +200,115 @@ export default function Announcements() {
                     onSaved={() => { setEditing(null); reload(); }}
                 />
             )}
+            {viewing && (
+                <AnnouncementViewModal
+                    ann={viewing}
+                    onClose={() => setViewing(null)}
+                    onEdit={() => { setEditing(viewing); setViewing(null); }}
+                    onDelete={async () => { await remove(viewing.id); setViewing(null); }}
+                />
+            )}
             {quickPush && <QuickPushModal onClose={() => setQuickPush(false)} />}
+        </div>
+    );
+}
+
+// ── 공지 전체 보기 (읽기 전용) ──────────────────────────────────────────────────
+function AnnouncementViewModal({
+    ann, onClose, onEdit, onDelete,
+}: { ann: Announcement; onClose: () => void; onEdit: () => void; onDelete: () => void }) {
+    return (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={onClose}>
+            <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl my-4 flex flex-col max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 shrink-0">
+                    <div className="flex items-center gap-2 text-[var(--color-accent)] text-sm font-semibold">
+                        <Megaphone className="w-4 h-4" /> 공지 전체 보기
+                    </div>
+                    <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="px-6 py-5 overflow-y-auto">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <h1 className="text-xl font-bold text-gray-900 break-words">{ann.title}</h1>
+                        {ann.pushed && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+                                <Send className="w-3 h-3" /> 푸시발송
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-[12px] text-gray-400">
+                        {formatDate(ann.created_at)} · 대상 {TARGET_LABEL[ann.target]}
+                        {ann.created_by ? ` · ${ann.created_by}` : ""}
+                    </p>
+                    {ann.tags && ann.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                            {ann.tags.map((t) => (
+                                <span key={t} className="px-2 py-0.5 rounded-full bg-[var(--color-accent-dim)] text-[var(--color-accent)] text-xs font-medium">#{t}</span>
+                            ))}
+                        </div>
+                    )}
+                    <div className="pb-4 border-b border-gray-100" />
+                    <RichContent html={ann.content} className="mt-4" />
+                    <div className="mt-4">
+                        <AnnouncementReactions announcementId={ann.id} reactions={ann.reactions || {}} readOnly />
+                    </div>
+                    <div className="mt-5 pt-4 border-t border-gray-100">
+                        <StaffComments announcementId={ann.id} />
+                    </div>
+                </div>
+                <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-gray-200 shrink-0">
+                    <button onClick={onDelete} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-rose-600 hover:bg-rose-50">
+                        <Trash2 className="w-4 h-4" /> 삭제
+                    </button>
+                    <button onClick={onEdit} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-[var(--color-accent)] text-white hover:opacity-90">
+                        <Pencil className="w-4 h-4" /> 수정
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── 운영진 댓글 모더레이션 ─────────────────────────────────────────────────────
+interface StaffComment { id: number; member_id: number; name: string; content: string; created_at: string; }
+function StaffComments({ announcementId }: { announcementId: number }) {
+    const [comments, setComments] = useState<StaffComment[]>([]);
+    useEffect(() => {
+        api.get<StaffComment[]>(`/notifications/manage/announcements/${announcementId}/comments`)
+            .then(({ data }) => setComments(data)).catch(() => {});
+    }, [announcementId]);
+    const del = async (id: number) => {
+        if (!confirm("이 댓글을 삭제할까요?")) return;
+        try {
+            await api.delete(`/notifications/manage/announcements/${announcementId}/comments/${id}`);
+            setComments((c) => c.filter((x) => x.id !== id));
+        } catch { /* noop */ }
+    };
+    return (
+        <div>
+            <p className="text-xs font-semibold text-gray-400 mb-2.5">댓글 {comments.length}</p>
+            {comments.length === 0 ? (
+                <p className="text-sm text-gray-400">아직 댓글이 없어요</p>
+            ) : (
+                <div className="space-y-3">
+                    {comments.map((c) => (
+                        <div key={c.id} className="flex items-start gap-2">
+                            <div className="shrink-0 w-7 h-7 rounded-full bg-[var(--color-accent-dim)] text-[var(--color-accent)] grid place-items-center text-[11px] font-bold">
+                                {c.name.slice(0, 1)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[13px] font-semibold text-gray-800">{c.name}</span>
+                                    <span className="text-[11px] text-gray-400">{formatDate(c.created_at)}</span>
+                                </div>
+                                <p className="text-[14px] text-gray-700 mt-0.5 break-words whitespace-pre-wrap">{c.content}</p>
+                            </div>
+                            <button onClick={() => del(c.id)} className="text-gray-300 hover:text-rose-500 shrink-0 p-1" title="댓글 삭제">
+                                <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
@@ -242,6 +379,39 @@ function TargetPicker({
     );
 }
 
+// ── 해시태그 입력 ──────────────────────────────────────────────────────────────
+function TagInput({ tags, setTags }: { tags: string[]; setTags: (t: string[]) => void }) {
+    const [input, setInput] = useState("");
+    const add = () => {
+        const t = input.trim().replace(/^#+/, "").trim().slice(0, 30);
+        if (t && !tags.includes(t) && tags.length < 10) setTags([...tags, t]);
+        setInput("");
+    };
+    return (
+        <div className="shrink-0">
+            <label className="flex items-center gap-1 text-sm font-semibold text-gray-700 mb-1.5">
+                <Hash className="w-3.5 h-3.5 text-gray-400" /> 해시태그
+            </label>
+            <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-[var(--color-accent)]">
+                {tags.map((t) => (
+                    <span key={t} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--color-accent-dim)] text-[var(--color-accent)] text-xs font-medium">
+                        #{t}
+                        <button type="button" onClick={() => setTags(tags.filter((x) => x !== t))} className="hover:text-rose-700"><X className="w-3 h-3" /></button>
+                    </span>
+                ))}
+                <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } }}
+                    onBlur={add}
+                    placeholder={tags.length === 0 ? "태그 입력 후 Enter (예: BP데이)" : "태그 추가"}
+                    className="flex-1 min-w-[120px] text-sm outline-none bg-transparent py-0.5"
+                />
+            </div>
+        </div>
+    );
+}
+
 // ── 공지 작성/수정 모달 ────────────────────────────────────────────────────────
 function AnnouncementModal({
     initial, onClose, onSaved,
@@ -250,6 +420,7 @@ function AnnouncementModal({
     const [content, setContent] = useState(initial?.content || "");
     const [target, setTarget] = useState<Target>(initial?.target || "members");
     const [memberIds, setMemberIds] = useState<number[]>(initial?.target_member_ids || []);
+    const [tags, setTags] = useState<string[]>(initial?.tags || []);
     const [push, setPush] = useState(true);
     const [saving, setSaving] = useState(false);
     const isEdit = !!initial;
@@ -268,16 +439,16 @@ function AnnouncementModal({
         debounceRef.current = setTimeout(() => {
             if (!title.trim() && stripHtml(content).length === 0) return;
             const now = Date.now();
-            saveDraft({ title, content, target, memberIds, savedAt: now });
+            saveDraft({ title, content, target, memberIds, tags, savedAt: now });
             setSavedAt(now);
         }, 800);
         return () => clearTimeout(debounceRef.current);
-    }, [title, content, target, memberIds, isEdit, bannerOpen]);
+    }, [title, content, target, memberIds, tags, isEdit, bannerOpen]);
 
     const restoreDraft = () => {
         const d = offeredDraft.current;
         if (!d) return;
-        setTitle(d.title); setContent(d.content); setTarget(d.target); setMemberIds(d.memberIds);
+        setTitle(d.title); setContent(d.content); setTarget(d.target); setMemberIds(d.memberIds); setTags(d.tags || []);
         setEditorKey((k) => k + 1); setSavedAt(d.savedAt); setBannerOpen(false);
     };
     const discardDraft = () => { clearDraft(); setBannerOpen(false); };
@@ -292,6 +463,7 @@ function AnnouncementModal({
                 content,
                 target,
                 target_member_ids: target === "select" ? memberIds : null,
+                tags,
                 push: isEdit ? false : push,
             };
             if (isEdit) {
@@ -344,8 +516,9 @@ function AnnouncementModal({
                         className="w-full px-4 py-2.5 text-lg font-semibold border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] shrink-0"
                     />
                     <div className="flex-1 min-h-[45vh] flex flex-col">
-                        <RichEditor key={editorKey} value={content} onChange={setContent} uploadImage={uploadImage} unfurlLink={unfurlLink} />
+                        <RichEditor key={editorKey} value={content} onChange={setContent} uploadImage={uploadImage} uploadFile={uploadFile} unfurlLink={unfurlLink} />
                     </div>
+                    <TagInput tags={tags} setTags={setTags} />
                     <TargetPicker target={target} setTarget={setTarget} memberIds={memberIds} setMemberIds={setMemberIds} />
                     {!isEdit ? (
                         <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer shrink-0">

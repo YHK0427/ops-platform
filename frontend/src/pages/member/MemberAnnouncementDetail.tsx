@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import memberApi from "@/lib/memberApi";
 import RichContent from "@/components/RichContent";
+import AnnouncementReactions from "@/components/AnnouncementReactions";
+import AnnouncementComments from "@/components/AnnouncementComments";
 import { ArrowLeft, Megaphone } from "lucide-react";
 
 interface Announcement {
@@ -10,6 +12,9 @@ interface Announcement {
     content: string;
     created_by: string | null;
     created_at: string;
+    tags?: string[] | null;
+    reactions?: Record<string, number>;
+    my_reactions?: string[];
 }
 
 function formatDate(iso: string) {
@@ -52,11 +57,30 @@ export default function MemberAnnouncementDetail() {
                         <Megaphone className="w-4 h-4" /> 공지
                     </div>
                     <h1 className="text-xl font-bold text-gray-900 break-words">{ann.title}</h1>
-                    <p className="text-[12px] text-gray-400 mt-1.5 pb-4 border-b border-gray-100">
+                    <p className="text-[12px] text-gray-400 mt-1.5">
                         {formatDate(ann.created_at)}
                         {ann.created_by ? ` · ${ann.created_by}` : ""}
                     </p>
+                    {ann.tags && ann.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                            {ann.tags.map((t) => (
+                                <span key={t} className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-500 text-xs font-medium">#{t}</span>
+                            ))}
+                        </div>
+                    )}
+                    <div className="pb-4 border-b border-gray-100" />
                     <RichContent html={ann.content} className="mt-4 text-[15px]" />
+                    <div className="mt-5 pt-4 border-t border-gray-100">
+                        <p className="text-xs text-gray-400 mb-2">이 공지에 반응 남기기</p>
+                        <AnnouncementReactions
+                            announcementId={ann.id}
+                            reactions={ann.reactions || {}}
+                            myReactions={ann.my_reactions || []}
+                        />
+                    </div>
+                    <div className="mt-5 pt-4 border-t border-gray-100">
+                        <AnnouncementComments announcementId={ann.id} />
+                    </div>
                 </article>
             )}
         </main>

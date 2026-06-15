@@ -520,11 +520,43 @@ class Announcement(Base):
     content = Column(Text, nullable=False)  # DOMPurify로 정제된 HTML
     target = Column(String(20), nullable=False, server_default="members")  # members|staff|all|select
     target_member_ids = Column(ARRAY(Integer), nullable=True)  # target=select 시 대상 멤버
-    created_by = Column(String(50), nullable=True)
+    tags = Column(ARRAY(String), nullable=True)  # 해시태그
+    created_by = Column(String(50), nullable=True)  # 표기용 "이름 · 부서"
+    author_username = Column(String(50), nullable=True)  # 알림 대상(작성 운영진)
     pushed = Column(Boolean, default=False, server_default="false", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    reaction_rows = relationship("AnnouncementReaction", back_populates="announcement", cascade="all, delete-orphan")
+
     __table_args__ = (
         CheckConstraint("target IN ('members','staff','all','select')", name="ck_announcement_target"),
     )
+
+
+class AnnouncementReaction(Base):
+    """공지에 대한 기수원의 이모지 반응 (멤버 1인당 공지당 이모지당 1개)."""
+    __tablename__ = "announcement_reactions"
+
+    id = Column(Integer, primary_key=True)
+    announcement_id = Column(Integer, ForeignKey("announcements.id", ondelete="CASCADE"), nullable=False)
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    emoji = Column(String(16), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    announcement = relationship("Announcement", back_populates="reaction_rows")
+
+    __table_args__ = (
+        UniqueConstraint("announcement_id", "member_id", "emoji", name="uq_announcement_reaction"),
+    )
+
+
+class AnnouncementComment(Base):
+    """공지에 대한 기수원 댓글."""
+    __tablename__ = "announcement_comments"
+
+    id = Column(Integer, primary_key=True)
+    announcement_id = Column(Integer, ForeignKey("announcements.id", ondelete="CASCADE"), nullable=False)
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    content = Column(String(1000), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

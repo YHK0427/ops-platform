@@ -14,6 +14,21 @@ DOMPurify.addHook("uponSanitizeElement", (node, data) => {
     }
 });
 
+// 파일 첨부 다운로드 보장 — DOMPurify가 download 속성을 떼므로 새니타이즈 후 다시 부여하고,
+// href에 ?name(원본 파일명)이 없으면 붙여(예전 파일·DOMPurify 영향 모두 대비) 한글명/확장자로 받아지게.
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    const el = node as Element;
+    if (el.nodeName === "A" && el.getAttribute("data-file-attach")) {
+        const name = el.getAttribute("data-name") || "file";
+        el.setAttribute("download", name);
+        let href = el.getAttribute("href") || el.getAttribute("data-url") || "";
+        if (href && !/[?&]name=/.test(href)) {
+            href += (href.includes("?") ? "&" : "?") + "name=" + encodeURIComponent(name);
+            el.setAttribute("href", href);
+        }
+    }
+});
+
 const SANITIZE_OPTS: Config = {
     ALLOWED_TAGS: [
         "p", "br", "strong", "b", "em", "i", "u", "s", "mark", "span",
@@ -22,12 +37,13 @@ const SANITIZE_OPTS: Config = {
         "table", "thead", "tbody", "tr", "th", "td", "colgroup", "col", "iframe",
     ],
     ALLOWED_ATTR: [
-        "href", "target", "rel", "src", "alt", "style", "class",
+        "href", "target", "rel", "src", "alt", "style", "class", "download",
         "data-type", "data-checked", "type", "checked", "disabled",
         "colspan", "rowspan", "width", "height",
         "allow", "allowfullscreen", "frameborder", "scrolling",
-        "data-link-card", "data-url", "data-title", "data-description", "data-image", "data-site",
-        "data-align", "data-width", "data-youtube-video",
+        "data-link-card", "data-url", "data-title", "data-description", "data-image", "data-favicon", "data-site",
+        "data-file-attach", "data-name", "data-size",
+        "data-align", "data-width", "data-youtube-video", "data-variant",
     ],
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|\/|data:image\/)/i,
 };
