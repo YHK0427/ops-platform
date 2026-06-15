@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useOutletContext, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
@@ -116,6 +116,15 @@ function RootRedirect() {
   return <Navigate to="/login" replace />;
 }
 
+// 푸시 알림 클릭 랜딩 — 세션에 맞는 화면으로 라우팅.
+// 멤버 토큰 있으면 멤버 공지 상세, 운영진 토큰 있으면 운영진 공지 페이지, 없으면 로그인.
+function AnnouncementLanding() {
+  const { id } = useParams();
+  if (getMemberToken()) return <Navigate to={`/member/announcements/${id}`} replace />;
+  if (getToken()) return <Navigate to="/announcements" replace />;
+  return <Navigate to="/login" replace />;
+}
+
 export default function App() {
   useEffect(() => {
     document.title = "UnivPT Ops";
@@ -130,6 +139,8 @@ export default function App() {
               {/* 통합 로그인 + 루트 redirect (단일 도메인) */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<RootRedirect />} />
+              {/* 푸시 알림 클릭 랜딩 (세션별 라우팅) */}
+              <Route path="/go/announcement/:id" element={<AnnouncementLanding />} />
 
               {/* ── 기수 포털 ──────────────────────────── */}
               <Route

@@ -261,7 +261,7 @@ async def create_announcement(
 
     if body.push:
         sub_ids = await resolve_subscription_ids(db, cohort_id, body.target, body.target_member_ids)
-        payload = {"title": body.title, "body": _excerpt(body.content), "url": f"/member/announcements/{ann.id}", "tag": f"ann-{ann.id}"}
+        payload = {"title": body.title, "body": _excerpt(body.content), "url": f"/go/announcement/{ann.id}", "tag": f"ann-{ann.id}"}
         await _enqueue_push(request, payload, sub_ids)
         ann.pushed = True
         await db.commit()
