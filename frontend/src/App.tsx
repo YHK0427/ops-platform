@@ -29,6 +29,8 @@ import AdminCohorts from "@/pages/AdminCohorts";
 import Treasury from "@/pages/Treasury";
 
 // ── Lazy-loaded evaluation pages (ops) ─────────────────────────────────
+const TeamBuilding = lazy(() => import("@/pages/TeamBuilding"));
+const TeamBuildingBoard = lazy(() => import("@/pages/TeamBuildingBoard"));
 const EvalManagement = lazy(() => import("@/pages/EvalManagement"));
 const EvalAudienceForm = lazy(() => import("@/pages/EvalAudienceForm"));
 const LiveFeedbackManagement = lazy(() => import("@/pages/LiveFeedbackManagement"));
@@ -173,6 +175,8 @@ export default function App() {
                   <Route path="/treasury" element={<Treasury />} />
                   <Route path="/admin/users" element={<AdminUsers />} />
                   <Route path="/admin/cohorts" element={<AdminCohorts />} />
+                  <Route path="/team-building" element={<TeamBuilding />} />
+                  <Route path="/team-building/:boardId" element={<TeamBuildingBoard />} />
                   <Route path="/eval" element={<EvalManagement />} />
                   <Route path="/live-feedback" element={<LiveFeedbackManagement />} />
                 </Route>

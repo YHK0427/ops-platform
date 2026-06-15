@@ -294,11 +294,11 @@ export default function MemberDetail() {
                                         value={rechargeAmount}
                                         onChange={e => setRechargeAmount(e.target.value)}
                                         placeholder={String(20000 - (member.current_deposit || 0))}
-                                        className="flex-1 px-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-sm"
+                                        className="flex-1 min-w-0 px-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-sm"
                                     />
                                     <Button
                                         size="sm"
-                                        className="h-8 bg-blue-600 hover:bg-blue-700 text-white"
+                                        className="h-8 shrink-0 whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white"
                                         disabled={isCreatingTx}
                                         onClick={() => {
                                             const amt = parseInt(rechargeAmount) || (20000 - (member.current_deposit || 0));

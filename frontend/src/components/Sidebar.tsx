@@ -16,6 +16,7 @@ import {
     KeyRound,
     MessageSquareHeart,
     Layers,
+    Users2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -118,6 +119,20 @@ export function Sidebar() {
                 >
                     <CalendarDays className="w-4 h-4" />
                     전체 세션
+                </NavLink>
+                <NavLink
+                    to="/team-building"
+                    className={({ isActive }) =>
+                        cn(
+                            "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                            isActive
+                                ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
+                        )
+                    }
+                >
+                    <Users2 className="w-4 h-4" />
+                    팀 빌딩
                 </NavLink>
 
                 {/* 평가 divider */}

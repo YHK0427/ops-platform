@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Check, Eye, UserPlus, Archive, Loader2, Layers } from "lucide-react";
+import { Plus, Check, Eye, UserPlus, Archive, ArchiveRestore, Loader2, Layers } from "lucide-react";
 import api, { getActiveCohort, setActiveCohort } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/PageHeader";
@@ -58,10 +58,11 @@ export default function AdminCohorts() {
     });
 
     const archiveMut = useMutation({
-        mutationFn: async (id: number) => (await api.patch(`/cohorts/${id}`, { archived: true })).data,
-        onSuccess: () => {
+        mutationFn: async ({ id, archived }: { id: number; archived: boolean }) =>
+            (await api.patch(`/cohorts/${id}`, { archived })).data,
+        onSuccess: (_d, v) => {
             qc.invalidateQueries({ queryKey: ["cohorts"] });
-            toast.success("기수를 보관 처리했습니다");
+            toast.success(v.archived ? "기수를 보관했습니다 (로그인 차단)" : "보관을 해제했습니다 (로그인 재허용)");
         },
     });
 
@@ -133,8 +134,12 @@ export default function AdminCohorts() {
                                         </Button>
                                     )}
                                     <SeedStaffDialog cohort={c} />
-                                    {!c.archived_at && (
-                                        <Button size="sm" variant="ghost" title="보관(비활성·로그인 차단)" onClick={() => archiveMut.mutate(c.id)}>
+                                    {c.archived_at ? (
+                                        <Button size="sm" variant="outline" title="보관 해제(로그인 재허용)" onClick={() => archiveMut.mutate({ id: c.id, archived: false })}>
+                                            <ArchiveRestore className="w-4 h-4 mr-1" /> 보관 해제
+                                        </Button>
+                                    ) : (
+                                        <Button size="sm" variant="ghost" title="보관(비활성·로그인 차단)" onClick={() => archiveMut.mutate({ id: c.id, archived: true })}>
                                             <Archive className="w-4 h-4" />
                                         </Button>
                                     )}

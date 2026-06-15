@@ -44,8 +44,8 @@ export function PageHeader({ title, subtitle, actions, className, showBackButton
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
                 )}
-                <div>
-                    <h1 className="text-lg font-bold text-[var(--color-text-primary)]">
+                <div className="min-w-0">
+                    <h1 className="text-lg font-bold text-[var(--color-text-primary)] break-keep">
                         {renderSafeHangul(title)}
                     </h1>
                     {subtitle && (

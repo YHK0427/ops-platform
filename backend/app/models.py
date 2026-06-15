@@ -178,6 +178,19 @@ class TeamHistory(Base):
     session = relationship("Session", back_populates="team_histories")
 
 
+class TeamBuildingBoard(Base):
+    """팀 빌딩 도우미 보드 — 기수당 여러 개(예: 리슨업 팀빌딩, BP 팀빌딩). 진행 상태 저장."""
+    __tablename__ = "team_building_boards"
+
+    id = Column(Integer, primary_key=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(100), nullable=False)
+    # {selected_session_ids:[...], num_teams:int, assignment:{memberId: teamIndex|"pool"}, consider:{...}}
+    data = Column(JSONB, nullable=False, server_default=text("'{}'"))
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class Assignment(Base):
     __tablename__ = "assignments"
 
