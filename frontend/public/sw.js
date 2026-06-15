@@ -18,8 +18,8 @@ self.addEventListener("push", (event) => {
     const title = data.title || "UnivPT";
     const options = {
         body: data.body || "",
-        icon: data.icon || "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
+        icon: data.icon || "/icons/notif-icon.png",
+        badge: "/icons/notif-badge.png",
         tag: data.tag || undefined,
         data: { url: data.url || "/" },
         renotify: !!data.tag,
