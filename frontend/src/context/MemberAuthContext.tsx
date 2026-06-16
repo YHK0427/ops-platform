@@ -6,7 +6,7 @@ import {
     useState,
 } from "react";
 import memberApi, { setMemberToken, getMemberToken } from "@/lib/memberApi";
-import { unsubscribePush } from "@/lib/push";
+import { unsubscribePush, resyncPushSubscription } from "@/lib/push";
 
 export interface MemberUser {
     member_id: number;
@@ -19,7 +19,7 @@ export interface MemberUser {
 interface MemberAuthContextValue {
     member: MemberUser | null;
     isLoading: boolean;
-    login: (username: string, password: string) => Promise<void>;
+    login: (username: string, password: string, remember?: boolean) => Promise<void>;
     logout: () => void;
 }
 
@@ -37,20 +37,24 @@ export function MemberAuthProvider({ children }: { children: React.ReactNode }) 
         }
         memberApi
             .get<MemberUser>("/auth/member-me")
-            .then(({ data }) => setMember(data))
+            .then(({ data }) => {
+                setMember(data);
+                // 앱 열 때 자동 재구독 — 권한 허용 상태면 끊긴/갱신된 구독 자가복구
+                void resyncPushSubscription(memberApi, { subscribePath: "/notifications/subscribe" });
+            })
             .catch((err) => {
                 if (err?.response?.status === 401) setMemberToken(null);
             })
             .finally(() => setIsLoading(false));
     }, []);
 
-    const login = useCallback(async (username: string, password: string) => {
+    const login = useCallback(async (username: string, password: string, remember = true) => {
         const { data } = await memberApi.post<{ access_token: string }>(
             "/auth/member-login",
             { username, password },
         );
 
-        setMemberToken(data.access_token);
+        setMemberToken(data.access_token, remember);
         const { data: me } = await memberApi.get<MemberUser>("/auth/member-me");
         setMember(me);
     }, []);

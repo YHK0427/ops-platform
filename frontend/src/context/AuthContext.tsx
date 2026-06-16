@@ -6,7 +6,7 @@ import {
     useState,
 } from "react";
 import api, { setToken, getToken } from "@/lib/api";
-import { unsubscribePush } from "@/lib/push";
+import { unsubscribePush, resyncPushSubscription } from "@/lib/push";
 
 interface AuthUser {
     username: string;
@@ -47,7 +47,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
         }
         api.get<AuthUser>("/members/me")
-            .then(({ data }) => setUser(data))
+            .then(({ data }) => {
+                setUser(data);
+                // 앱 열 때 자동 재구독 — 권한 허용 상태면 끊긴/갱신된 구독 자가복구
+                void resyncPushSubscription(api, { subscribePath: "/notifications/ops/subscribe" });
+            })
             .catch((err) => {
                 if (err?.response?.status === 401) setToken(null);
             })

@@ -96,6 +96,25 @@ export async function subscribePush(http: AxiosInstance, ep: PushEndpoints): Pro
 }
 
 /**
+ * 앱을 열 때마다 호출 — 알림 권한이 "이미 허용"된 경우에만 조용히 현재 구독을
+ * 서버에 다시 등록한다. 브라우저가 구독을 갱신(rotate)하거나 만료시켜도 자가복구된다.
+ * - 권한이 default/denied면 아무것도 안 함(프롬프트 X).
+ * - iOS는 홈화면 설치(standalone) 상태에서만 가능.
+ * - 모든 에러는 조용히 무시(앱 동작을 막지 않음).
+ */
+export async function resyncPushSubscription(http: AxiosInstance, ep: PushEndpoints): Promise<void> {
+    try {
+        if (!isPushSupported()) return;
+        if (Notification.permission !== "granted") return;
+        if (isIOS() && !isStandalone()) return;
+        // 권한이 이미 granted라 requestPermission()은 프롬프트 없이 즉시 통과 → 구독 + 서버 재등록
+        await subscribePush(http, ep);
+    } catch {
+        /* 조용히 무시 */
+    }
+}
+
+/**
  * 푸시 구독 해제 + 서버에서 삭제. 로그아웃/토글 OFF 시 호출.
  * subscribePath 와 같은 경로로 DELETE(endpoint) 한다.
  */

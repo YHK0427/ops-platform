@@ -77,23 +77,23 @@ export default function PushToggle({ http, endpoints, tone = "rose", className }
     const denied = getPermission() === "denied";
 
     return (
-        <>
+        <div className={`shrink-0 flex flex-col items-end ${className ?? ""}`}>
             <button
                 onClick={handleToggle}
                 disabled={busy || denied}
-                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 ${subscribed ? "bg-gray-400 hover:bg-gray-500" : accent} ${className ?? ""}`}
+                className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap px-3.5 py-2 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 ${subscribed ? "bg-gray-400 hover:bg-gray-500" : accent}`}
             >
                 {subscribed ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
                 {busy ? "처리 중…" : subscribed ? "알림 끄기" : "알림 받기"}
             </button>
             {denied && (
-                <p className="mt-1.5 text-[11px] text-amber-600">
+                <p className="mt-1.5 text-[11px] text-amber-600 text-right max-w-[180px]">
                     브라우저에서 알림이 차단돼 있어요. 사이트 설정에서 알림을 허용해 주세요.
                 </p>
             )}
 
             {showIOSGuide && <IOSInstallGuide onClose={() => setShowIOSGuide(false)} />}
-        </>
+        </div>
     );
 }
 

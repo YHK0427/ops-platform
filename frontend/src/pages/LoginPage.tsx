@@ -12,7 +12,7 @@ export default function LoginPage() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [totpCode, setTotpCode] = useState("");
-    const [remember, setRemember] = useState(false);
+    const [remember, setRemember] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
@@ -27,7 +27,7 @@ export default function LoginPage() {
                     "/api/v1/auth/member-login",
                     { username, password },
                 );
-                setMemberToken(data.access_token);
+                setMemberToken(data.access_token, remember);
                 // 전체 네비게이션 → MemberAuthProvider가 토큰을 읽어 마운트
                 window.location.href = "/member";
                 return;
@@ -176,7 +176,7 @@ export default function LoginPage() {
                                 <label className="flex items-center justify-between cursor-pointer select-none group">
                                     <div className="flex items-center gap-2">
                                         <span className="text-xs text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">
-                                            로그인 유지
+                                            자동 로그인
                                         </span>
                                         <span className="text-[10px] text-[var(--color-text-muted)]">
                                             {remember ? "로그아웃 전까지 계속 유지" : "브라우저 종료 시 로그아웃"}

@@ -2,14 +2,16 @@ import axios from "axios";
 
 const MEMBER_TOKEN_KEY = "member_access_token";
 
-let _accessToken: string | null = localStorage.getItem(MEMBER_TOKEN_KEY);
+// 자동 로그인 ON → localStorage(앱 재실행해도 유지), OFF → sessionStorage(앱 종료 시 만료)
+let _accessToken: string | null =
+    localStorage.getItem(MEMBER_TOKEN_KEY) || sessionStorage.getItem(MEMBER_TOKEN_KEY);
 
-export const setMemberToken = (token: string | null) => {
+export const setMemberToken = (token: string | null, remember = true) => {
     _accessToken = token;
+    localStorage.removeItem(MEMBER_TOKEN_KEY);
+    sessionStorage.removeItem(MEMBER_TOKEN_KEY);
     if (token) {
-        localStorage.setItem(MEMBER_TOKEN_KEY, token);
-    } else {
-        localStorage.removeItem(MEMBER_TOKEN_KEY);
+        (remember ? localStorage : sessionStorage).setItem(MEMBER_TOKEN_KEY, token);
     }
 };
 
