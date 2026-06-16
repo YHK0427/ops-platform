@@ -169,14 +169,14 @@ export function BulkPenaltyDialog({ trigger }: BulkPenaltyDialogProps) {
                     </Button>
                 )}
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[520px]">
+            <DialogContent className="sm:max-w-[520px] flex flex-col max-h-[90vh]">
                 <DialogHeader>
                     <DialogTitle>벌점 및 벌금 부여</DialogTitle>
                     <DialogDescription>
                         프리셋으로 벌점+벌금을 동시에 부여하거나, 수동으로 거래를 생성합니다.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
+                <div className="grid gap-4 py-4 overflow-y-auto min-h-0 flex-1">
                     {/* 모드 전환 */}
                     <div className="flex gap-1 p-0.5 bg-[var(--color-hover)] rounded-lg">
                         <button

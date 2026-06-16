@@ -109,14 +109,14 @@ export function GivePenaltyDialog({ memberId, memberName, trigger }: GivePenalty
                     </Button>
                 )}
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[425px] flex flex-col max-h-[90vh]">
                 <DialogHeader>
                     <DialogTitle>벌점 부여 — {memberName}</DialogTitle>
                     <DialogDescription>
                         수동 벌점을 부여합니다. 누적벌점 10점 단위 도달 시 벌금이 자동 부과됩니다.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
+                <div className="grid gap-4 py-4 overflow-y-auto min-h-0 flex-1">
                     {/* Presets */}
                     <div className="space-y-2">
                         <Label>유형 선택</Label>

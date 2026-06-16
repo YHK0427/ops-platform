@@ -11,8 +11,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trophy, Loader2 } from "lucide-react";
-import { useGiveMerit, useMembers, useAddStagedMerit } from "@/hooks";
+import { useGiveMerit, useMembers, useAddStagedMerit, useSessions } from "@/hooks";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface TeamInfo {
@@ -70,8 +71,10 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
     const [score, setScore] = useState(1);
     const [activePreset, setActivePreset] = useState<number | null>(null);
     const [memberSearch, setMemberSearch] = useState("");
+    const [linkedSessionId, setLinkedSessionId] = useState<number | undefined>(undefined);
 
     const { data: members } = useMembers(true);
+    const { data: sessions } = useSessions();
     const filteredMembers = members?.filter((m: any) => m.name.includes(memberSearch));
     const { mutate: addStagedMerit, isPending: isStagedPending } = useAddStagedMerit();
     const { mutate: giveMerit, isPending: isDirectPending } = useGiveMerit();
@@ -97,6 +100,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
             setReason("");
             setScore(1);
             setActivePreset(null);
+            setLinkedSessionId(undefined);
         };
 
         if (isSession) {
@@ -111,6 +115,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                 member_ids: effectiveMembers,
                 score_delta: score,
                 reason,
+                session_id: linkedSessionId,
             }, { onSuccess });
         }
     };
@@ -140,7 +145,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                     </Button>
                 )}
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[460px]">
+            <DialogContent className="sm:max-w-[460px] flex flex-col max-h-[90vh]">
                 <DialogHeader>
                     <DialogTitle>{isSession ? "상점 추가 (대기)" : "상점 부여"}</DialogTitle>
                     <DialogDescription>
@@ -149,7 +154,7 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                             : "우수 활동 멤버에게 상점을 부여합니다."}
                     </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
+                <div className="grid gap-4 py-4 overflow-y-auto min-h-0 flex-1">
                     {/* Presets */}
                     <div className="space-y-2">
                         <Label>프리셋 선택</Label>
@@ -199,6 +204,22 @@ export function GrantMeritDialog({ trigger, preselectedMemberId, sessionId, team
                             className="col-span-3"
                         />
                     </div>
+                    {!isSession && (
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right">연결 세션</Label>
+                            <Select value={linkedSessionId != null ? String(linkedSessionId) : "none"} onValueChange={(v) => setLinkedSessionId(v === "none" ? undefined : Number(v))}>
+                                <SelectTrigger className="col-span-3 h-9">
+                                    <SelectValue placeholder="세션 없음" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">세션 없음</SelectItem>
+                                    {(sessions ?? []).map((s: any) => (
+                                        <SelectItem key={s.id} value={String(s.id)}>{s.week_num}주차 — {s.title}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
                     {!preselectedMemberId && (
                         <div className="space-y-2">
                             <Label>멤버 선택 ({selectedMembers.length}명)</Label>
