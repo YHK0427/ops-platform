@@ -2,19 +2,22 @@ import { useState } from "react";
 import { SmilePlus } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import memberApi from "@/lib/memberApi";
+import api from "@/lib/api";
 
 export const REACTION_EMOJIS = ["👍", "❤️", "🔥", "👏", "🎉", "🥹", "👀"];
 
 /** 공지 이모지 반응 — 활성 반응만 칩으로 노출 + ＋😊 팝업으로 추가(실시간 피드백 톤).
  * - 멤버(interactive): 탭 토글, 서버 반영.
- * - readOnly(운영진/목록): 칩만 표시. */
+ * - admin(운영진): 운영진 엔드포인트로 토글.
+ * - readOnly(목록): 칩만 표시. */
 export default function AnnouncementReactions({
-    announcementId, reactions, myReactions = [], readOnly = false, className,
+    announcementId, reactions, myReactions = [], readOnly = false, admin = false, className,
 }: {
     announcementId: number;
     reactions: Record<string, number>;
     myReactions?: string[];
     readOnly?: boolean;
+    admin?: boolean;
     className?: string;
 }) {
     const [counts, setCounts] = useState<Record<string, number>>(reactions || {});
@@ -26,8 +29,12 @@ export default function AnnouncementReactions({
         if (busy) return;
         setBusy(true);
         try {
-            const { data } = await memberApi.post<{ reactions: Record<string, number>; my_reactions: string[] }>(
-                `/notifications/announcements/${announcementId}/reactions`, { emoji },
+            const client = admin ? api : memberApi;
+            const path = admin
+                ? `/notifications/manage/announcements/${announcementId}/reactions`
+                : `/notifications/announcements/${announcementId}/reactions`;
+            const { data } = await client.post<{ reactions: Record<string, number>; my_reactions: string[] }>(
+                path, { emoji },
             );
             setCounts(data.reactions || {});
             setMine(new Set(data.my_reactions || []));

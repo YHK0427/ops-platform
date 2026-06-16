@@ -96,11 +96,12 @@ class CommentIn(BaseModel):
 
 class CommentOut(BaseModel):
     id: int
-    member_id: int
+    member_id: int | None = None
     name: str
     content: str
     created_at: datetime
     is_mine: bool = False
+    is_staff: bool = False  # 운영진이 단 댓글
 
 
 # 공지에 쓸 수 있는 이모지 (실시간 피드백과 비슷한 톤)
@@ -112,20 +113,27 @@ ALLOWED_REACTIONS = ("👍", "❤️", "🔥", "👏", "🎉", "🥹", "👀")
 _TAG = re.compile(r"<[^>]+>")
 
 
-async def _attach_reactions(db: AsyncSession, anns: list, viewer_member_id: int | None = None) -> None:
-    """공지 리스트에 reactions(이모지별 카운트)·my_reactions 를 transient 속성으로 부착."""
+async def _attach_reactions(
+    db: AsyncSession, anns: list,
+    viewer_member_id: int | None = None, viewer_user_id: int | None = None,
+) -> None:
+    """공지 리스트에 reactions(이모지별 카운트)·my_reactions 를 transient 속성으로 부착.
+    기수원(member_id)·운영진(user_id) 반응을 함께 집계한다."""
     ids = [a.id for a in anns]
     if not ids:
         return
     rows = (await db.execute(
-        select(AnnouncementReaction.announcement_id, AnnouncementReaction.emoji, AnnouncementReaction.member_id)
+        select(AnnouncementReaction.announcement_id, AnnouncementReaction.emoji,
+               AnnouncementReaction.member_id, AnnouncementReaction.user_id)
         .where(AnnouncementReaction.announcement_id.in_(ids))
     )).all()
     counts: dict[int, dict[str, int]] = {}
     mine: dict[int, list[str]] = {}
-    for ann_id, emoji, member_id in rows:
+    for ann_id, emoji, member_id, user_id in rows:
         counts.setdefault(ann_id, {})[emoji] = counts.setdefault(ann_id, {}).get(emoji, 0) + 1
-        if viewer_member_id is not None and member_id == viewer_member_id:
+        is_mine = (viewer_member_id is not None and member_id == viewer_member_id) or \
+                  (viewer_user_id is not None and user_id == viewer_user_id)
+        if is_mine:
             mine.setdefault(ann_id, []).append(emoji)
     crows = (await db.execute(
         select(AnnouncementComment.announcement_id, func.count(AnnouncementComment.id))
@@ -301,6 +309,29 @@ async def member_announcement_detail(
     return ann
 
 
+async def _toggle_reaction(
+    db: AsyncSession, ann_id: int, emoji: str,
+    member_id: int | None = None, user_id: int | None = None,
+) -> bool:
+    """이모지 반응 토글. 이미 있으면 제거(False), 없으면 추가(True) 반환."""
+    col = AnnouncementReaction.member_id if member_id is not None else AnnouncementReaction.user_id
+    val = member_id if member_id is not None else user_id
+    existing = (await db.execute(
+        select(AnnouncementReaction).where(
+            AnnouncementReaction.announcement_id == ann_id,
+            col == val,
+            AnnouncementReaction.emoji == emoji,
+        )
+    )).scalar_one_or_none()
+    if existing:
+        await db.delete(existing)
+        await db.commit()
+        return False
+    db.add(AnnouncementReaction(announcement_id=ann_id, member_id=member_id, user_id=user_id, emoji=emoji))
+    await db.commit()
+    return True
+
+
 @router.post("/announcements/{ann_id}/reactions", response_model=AnnouncementOut)
 async def member_toggle_reaction(
     ann_id: int,
@@ -314,30 +345,42 @@ async def member_toggle_reaction(
     if body.emoji not in ALLOWED_REACTIONS:
         raise HTTPException(status_code=400, detail="허용되지 않은 이모지입니다")
     mid = member["member_id"]
-    ann = await db.get(Announcement, ann_id)
-    if not ann or ann.cohort_id != cohort_id:
-        raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
-    allowed = ann.target in ("members", "all") or (ann.target == "select" and mid in (ann.target_member_ids or []))
-    if not allowed:
-        raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
-    existing = (await db.execute(
-        select(AnnouncementReaction).where(
-            AnnouncementReaction.announcement_id == ann_id,
-            AnnouncementReaction.member_id == mid,
-            AnnouncementReaction.emoji == body.emoji,
-        )
-    )).scalar_one_or_none()
-    added = existing is None
-    if existing:
-        await db.delete(existing)
-    else:
-        db.add(AnnouncementReaction(announcement_id=ann_id, member_id=mid, emoji=body.emoji))
-    await db.commit()
+    ann = await _member_ann_or_404(db, ann_id, cohort_id, mid)
+    added = await _toggle_reaction(db, ann_id, body.emoji, member_id=mid)
     await db.refresh(ann)
     if added:
         name = (await db.execute(select(Member.name).where(Member.id == mid))).scalar_one_or_none() or "기수원"
         await _notify_author(request, db, ann, "내 공지에 반응이 달렸어요", f"{name}님이 {body.emoji} · {ann.title}")
-    await _attach_reactions(db, [ann], mid)
+    await _attach_reactions(db, [ann], viewer_member_id=mid)
+    return ann
+
+
+@router.post("/manage/announcements/{ann_id}/reactions", response_model=AnnouncementOut)
+async def staff_toggle_reaction(
+    ann_id: int,
+    body: ReactionIn,
+    request: Request,
+    user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """운영진 — 본인 기수 공지에 이모지 반응 토글."""
+    if body.emoji not in ALLOWED_REACTIONS:
+        raise HTTPException(status_code=400, detail="허용되지 않은 이모지입니다")
+    ann = await db.get(Announcement, ann_id)
+    if not ann or ann.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
+    uid = (await db.execute(
+        select(User.id).where(User.username == user["username"])
+    )).scalar_one_or_none()
+    if uid is None:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    added = await _toggle_reaction(db, ann_id, body.emoji, user_id=uid)
+    await db.refresh(ann)
+    if added and user["username"] != ann.author_username:
+        name = (await db.execute(select(User.display_name).where(User.id == uid))).scalar_one_or_none() or "운영진"
+        await _notify_author(request, db, ann, "내 공지에 반응이 달렸어요", f"{name}님이 {body.emoji} · {ann.title}")
+    await _attach_reactions(db, [ann], viewer_user_id=uid)
     return ann
 
 
@@ -353,6 +396,30 @@ async def _member_ann_or_404(db: AsyncSession, ann_id: int, cohort_id: int, mid:
     return ann
 
 
+async def _load_comments(
+    db: AsyncSession, ann_id: int,
+    viewer_member_id: int | None = None, viewer_user_id: int | None = None,
+) -> list[CommentOut]:
+    """기수원·운영진 댓글을 시간순으로 로드. 운영진 댓글은 is_staff=True."""
+    rows = (await db.execute(
+        select(AnnouncementComment, Member.name, User.display_name)
+        .outerjoin(Member, Member.id == AnnouncementComment.member_id)
+        .outerjoin(User, User.id == AnnouncementComment.user_id)
+        .where(AnnouncementComment.announcement_id == ann_id)
+        .order_by(AnnouncementComment.created_at.asc())
+    )).all()
+    out: list[CommentOut] = []
+    for c, mname, uname in rows:
+        is_staff = c.user_id is not None
+        is_mine = (viewer_member_id is not None and c.member_id == viewer_member_id) or \
+                  (viewer_user_id is not None and c.user_id == viewer_user_id)
+        out.append(CommentOut(
+            id=c.id, member_id=c.member_id, name=(uname if is_staff else mname) or "익명",
+            content=c.content, created_at=c.created_at, is_mine=is_mine, is_staff=is_staff,
+        ))
+    return out
+
+
 @router.get("/announcements/{ann_id}/comments", response_model=list[CommentOut])
 async def member_list_comments(
     ann_id: int,
@@ -362,17 +429,7 @@ async def member_list_comments(
 ):
     mid = member["member_id"]
     await _member_ann_or_404(db, ann_id, cohort_id, mid)
-    rows = (await db.execute(
-        select(AnnouncementComment, Member.name)
-        .join(Member, Member.id == AnnouncementComment.member_id)
-        .where(AnnouncementComment.announcement_id == ann_id)
-        .order_by(AnnouncementComment.created_at.asc())
-    )).all()
-    return [
-        CommentOut(id=c.id, member_id=c.member_id, name=name, content=c.content,
-                   created_at=c.created_at, is_mine=(c.member_id == mid))
-        for c, name in rows
-    ]
+    return await _load_comments(db, ann_id, viewer_member_id=mid)
 
 
 @router.post("/announcements/{ann_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
@@ -426,17 +483,40 @@ async def staff_list_comments(
     ann = await db.get(Announcement, ann_id)
     if not ann or ann.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
-    rows = (await db.execute(
-        select(AnnouncementComment, Member.name)
-        .join(Member, Member.id == AnnouncementComment.member_id)
-        .where(AnnouncementComment.announcement_id == ann_id)
-        .order_by(AnnouncementComment.created_at.asc())
-    )).all()
-    return [
-        CommentOut(id=c.id, member_id=c.member_id, name=name, content=c.content,
-                   created_at=c.created_at, is_mine=False)
-        for c, name in rows
-    ]
+    uid = (await db.execute(select(User.id).where(User.username == _["username"]))).scalar_one_or_none()
+    return await _load_comments(db, ann_id, viewer_user_id=uid)
+
+
+@router.post("/manage/announcements/{ann_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
+async def staff_add_comment(
+    ann_id: int,
+    body: CommentIn,
+    request: Request,
+    user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """운영진 — 본인 기수 공지에 댓글 작성."""
+    ann = await db.get(Announcement, ann_id)
+    if not ann or ann.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
+    urow = (await db.execute(
+        select(User.id, User.display_name).where(User.username == user["username"])
+    )).first()
+    if not urow:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    uid, uname = urow
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="댓글을 입력하세요")
+    c = AnnouncementComment(announcement_id=ann_id, user_id=uid, content=content[:1000])
+    db.add(c)
+    await db.commit()
+    await db.refresh(c)
+    if user["username"] != ann.author_username:
+        await _notify_author(request, db, ann, "내 공지에 댓글이 달렸어요", f"{uname}: {content[:50]}")
+    return CommentOut(id=c.id, member_id=None, name=uname or "운영진", content=c.content,
+                      created_at=c.created_at, is_mine=True, is_staff=True)
 
 
 @router.delete("/manage/announcements/{ann_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -463,7 +543,7 @@ async def staff_delete_comment(
 
 @router.get("/manage/announcements", response_model=list[AnnouncementOut])
 async def list_announcements(
-    _: dict = Depends(require_staff),
+    user: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -471,7 +551,8 @@ async def list_announcements(
         select(Announcement).where(Announcement.cohort_id == cohort_id).order_by(Announcement.created_at.desc())
     )
     anns = list(rows.scalars().all())
-    await _attach_reactions(db, anns)
+    uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
+    await _attach_reactions(db, anns, viewer_user_id=uid)
     return anns
 
 

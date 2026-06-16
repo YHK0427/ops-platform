@@ -249,7 +249,8 @@ function AnnouncementViewModal({
                     <div className="pb-4 border-b border-gray-100" />
                     <RichContent html={ann.content} className="mt-4" />
                     <div className="mt-4">
-                        <AnnouncementReactions announcementId={ann.id} reactions={ann.reactions || {}} readOnly />
+                        <p className="text-xs text-gray-400 mb-2">이 공지에 반응 남기기</p>
+                        <AnnouncementReactions announcementId={ann.id} reactions={ann.reactions || {}} myReactions={ann.my_reactions || []} admin />
                     </div>
                     <div className="mt-5 pt-4 border-t border-gray-100">
                         <StaffComments announcementId={ann.id} />
@@ -269,13 +270,25 @@ function AnnouncementViewModal({
 }
 
 // ── 운영진 댓글 모더레이션 ─────────────────────────────────────────────────────
-interface StaffComment { id: number; member_id: number; name: string; content: string; created_at: string; }
+interface StaffComment { id: number; member_id: number | null; name: string; content: string; created_at: string; is_staff: boolean; is_mine: boolean; }
 function StaffComments({ announcementId }: { announcementId: number }) {
     const [comments, setComments] = useState<StaffComment[]>([]);
+    const [input, setInput] = useState("");
+    const [busy, setBusy] = useState(false);
     useEffect(() => {
         api.get<StaffComment[]>(`/notifications/manage/announcements/${announcementId}/comments`)
             .then(({ data }) => setComments(data)).catch(() => {});
     }, [announcementId]);
+    const submit = async () => {
+        const text = input.trim();
+        if (!text || busy) return;
+        setBusy(true);
+        try {
+            const { data } = await api.post<StaffComment>(`/notifications/manage/announcements/${announcementId}/comments`, { content: text });
+            setComments((c) => [...c, data]);
+            setInput("");
+        } catch { /* noop */ } finally { setBusy(false); }
+    };
     const del = async (id: number) => {
         if (!confirm("이 댓글을 삭제할까요?")) return;
         try {
@@ -286,29 +299,41 @@ function StaffComments({ announcementId }: { announcementId: number }) {
     return (
         <div>
             <p className="text-xs font-semibold text-gray-400 mb-2.5">댓글 {comments.length}</p>
-            {comments.length === 0 ? (
-                <p className="text-sm text-gray-400">아직 댓글이 없어요</p>
-            ) : (
-                <div className="space-y-3">
-                    {comments.map((c) => (
-                        <div key={c.id} className="flex items-start gap-2">
-                            <div className="shrink-0 w-7 h-7 rounded-full bg-[var(--color-accent-dim)] text-[var(--color-accent)] grid place-items-center text-[11px] font-bold">
-                                {c.name.slice(0, 1)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                    <span className="text-[13px] font-semibold text-gray-800">{c.name}</span>
-                                    <span className="text-[11px] text-gray-400">{formatDate(c.created_at)}</span>
-                                </div>
-                                <p className="text-[14px] text-gray-700 mt-0.5 break-words whitespace-pre-wrap">{c.content}</p>
-                            </div>
-                            <button onClick={() => del(c.id)} className="text-gray-300 hover:text-rose-500 shrink-0 p-1" title="댓글 삭제">
-                                <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+            <div className="space-y-3">
+                {comments.map((c) => (
+                    <div key={c.id} className="flex items-start gap-2">
+                        <div className={`shrink-0 w-7 h-7 rounded-full grid place-items-center text-[11px] font-bold ${c.is_staff ? "bg-[var(--color-accent)] text-white" : "bg-[var(--color-accent-dim)] text-[var(--color-accent)]"}`}>
+                            {c.name.slice(0, 1)}
                         </div>
-                    ))}
-                </div>
-            )}
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[13px] font-semibold text-gray-800">{c.name}</span>
+                                {c.is_staff && <span className="text-[10px] font-semibold text-[var(--color-accent)] bg-[var(--color-accent-dim)] px-1.5 py-0.5 rounded-full">운영진</span>}
+                                <span className="text-[11px] text-gray-400">{formatDate(c.created_at)}</span>
+                            </div>
+                            <p className="text-[14px] text-gray-700 mt-0.5 break-words whitespace-pre-wrap">{c.content}</p>
+                        </div>
+                        <button onClick={() => del(c.id)} className="text-gray-300 hover:text-rose-500 shrink-0 p-1" title="댓글 삭제">
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                ))}
+                {comments.length === 0 && <p className="text-sm text-gray-400">아직 댓글이 없어요</p>}
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+                <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+                    placeholder="운영진으로 댓글 달기…"
+                    maxLength={1000}
+                    className="flex-1 px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                />
+                <button onClick={submit} disabled={busy || !input.trim()}
+                    className="p-2.5 rounded-xl bg-[var(--color-accent)] text-white disabled:opacity-40 active:scale-95">
+                    <Send className="w-4 h-4" />
+                </button>
+            </div>
         </div>
     );
 }

@@ -4,11 +4,12 @@ import { Trash2, Send } from "lucide-react";
 
 interface Comment {
     id: number;
-    member_id: number;
+    member_id: number | null;
     name: string;
     content: string;
     created_at: string;
     is_mine: boolean;
+    is_staff?: boolean;
 }
 
 function relTime(iso: string) {
@@ -65,12 +66,13 @@ export default function AnnouncementComments({ announcementId }: { announcementI
             <div className="space-y-3">
                 {comments.map((c) => (
                     <div key={c.id} className="flex items-start gap-2">
-                        <div className="shrink-0 w-7 h-7 rounded-full bg-rose-100 text-rose-500 grid place-items-center text-[11px] font-bold">
+                        <div className={`shrink-0 w-7 h-7 rounded-full grid place-items-center text-[11px] font-bold ${c.is_staff ? "bg-rose-500 text-white" : "bg-rose-100 text-rose-500"}`}>
                             {c.name.slice(0, 1)}
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5">
                                 <span className="text-[13px] font-semibold text-gray-800">{c.name}</span>
+                                {c.is_staff && <span className="text-[10px] font-semibold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded-full">운영진</span>}
                                 <span className="text-[11px] text-gray-400">{relTime(c.created_at)}</span>
                             </div>
                             <p className="text-[14px] text-gray-700 mt-0.5 break-words whitespace-pre-wrap">{c.content}</p>
