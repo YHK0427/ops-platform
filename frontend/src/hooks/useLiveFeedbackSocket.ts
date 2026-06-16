@@ -41,6 +41,15 @@ export function useLiveFeedbackSocket(boardId: number | null, role: Role) {
                     if (list.some((p) => p.id === data.id)) return list; // id dedupe (옵티미스틱/에코)
                     return [...list, data as FeedbackPost];
                 });
+            } else if (type === "post.updated") {
+                // 수정 — 내용·익명여부·시각만 갱신(본인 표시/내 반응은 보존) 후 시간순 재정렬
+                qc.setQueryData<FeedbackPost[]>(key, (prev) =>
+                    (prev ?? [])
+                        .map((p) => p.id === data.id
+                            ? { ...p, contents: data.contents, is_anonymous: data.is_anonymous, author_name: data.author_name, created_at: data.created_at }
+                            : p)
+                        .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? "")),
+                );
             } else if (type === "reaction.changed") {
                 qc.setQueryData<FeedbackPost[]>(key, (prev) =>
                     (prev ?? []).map((p) =>

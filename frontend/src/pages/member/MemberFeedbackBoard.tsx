@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useMemberAuth } from "@/context/MemberAuthContext";
-import { ArrowLeft, Send, Wifi, WifiOff, Lock, Loader2, MessageSquareHeart } from "lucide-react";
+import { ArrowLeft, Send, Wifi, WifiOff, Lock, Loader2, MessageSquareHeart, Pencil, X, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-    useMemberBoard, useMemberPosts, useCreatePost, useToggleReaction,
+    useMemberBoard, useMemberPosts, useCreatePost, useToggleReaction, useUpdatePost,
     type FeedbackPost, type FeedbackCategory,
 } from "@/hooks/useLiveFeedback";
 import { useLiveFeedbackSocket } from "@/hooks/useLiveFeedbackSocket";
@@ -30,6 +30,7 @@ export default function MemberFeedbackBoard() {
     const { data: posts } = useMemberPosts(boardId);
     const { connected } = useLiveFeedbackSocket(boardId, "member");
     const createPost = useCreatePost(boardId);
+    const updatePost = useUpdatePost(boardId);
     const toggleReaction = useToggleReaction(boardId);
 
     const [presenterId, setPresenterId] = useState<number | null>(null);
@@ -246,7 +247,10 @@ export default function MemberFeedbackBoard() {
                                                 post={post}
                                                 categories={categories}
                                                 canReact={isOpen}
+                                                canEdit={isOpen && !!post.is_mine}
+                                                saving={updatePost.isPending}
                                                 onReact={(emoji, active) => toggleReaction.mutate({ postId: post.id, emoji, active })}
+                                                onSave={(contents) => updatePost.mutateAsync({ postId: post.id, contents, is_anonymous: post.is_anonymous })}
                                             />
                                         ))}
                                     </div>
@@ -280,15 +284,35 @@ function PresenterChip({ name, isOwn, active, count, onClick }: {
     );
 }
 
-function PostCard({ post, categories, canReact, onReact }: {
+function PostCard({ post, categories, canReact, canEdit, saving, onReact, onSave }: {
     post: FeedbackPost;
     categories: FeedbackCategory[];
     canReact: boolean;
+    canEdit?: boolean;
+    saving?: boolean;
     onReact: (emoji: string, active: boolean) => void;
+    onSave?: (contents: Record<string, string>) => Promise<unknown>;
 }) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState<Record<string, string>>({});
+
     // 보드 카테고리 순서대로 + 보드에 없는 키(편집으로 제거된 것)는 뒤에 폴백
     const known = categories.filter((c) => post.contents?.[c.key]);
     const orphanKeys = Object.keys(post.contents ?? {}).filter((k) => !categories.some((c) => c.key === k));
+
+    const startEdit = () => { setDraft({ ...(post.contents ?? {}) }); setEditing(true); };
+    const filled = () => {
+        const out: Record<string, string> = {};
+        for (const c of categories) { const t = (draft[c.key] ?? "").trim(); if (t) out[c.key] = t; }
+        return out;
+    };
+    const save = async () => {
+        const c = filled();
+        if (Object.keys(c).length === 0 || !onSave) return;
+        await onSave(c);
+        setEditing(false);
+    };
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -297,25 +321,64 @@ function PostCard({ post, categories, canReact, onReact }: {
         >
             <div className="flex items-center justify-between gap-1.5 mb-2">
                 <span className="text-xs font-semibold text-gray-500 truncate">{post.author_name ?? "익명"}</span>
-                <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{formatFeedbackTime(post.created_at)}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] text-gray-400 tabular-nums">{formatFeedbackTime(post.created_at)}</span>
+                    {canEdit && !editing && (
+                        <button onClick={startEdit} title="수정" className="text-gray-300 hover:text-rose-500 p-0.5">
+                            <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                </div>
             </div>
-            <div className="space-y-2 flex-1">
-                {known.map((c) => {
-                    const cc = colorClasses(c.color);
-                    return (
-                        <div key={c.key} className={cn("rounded-lg p-2.5", cc.section)}>
-                            <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1", cc.chipStrong)}>{c.label}</span>
-                            <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.contents[c.key]}</p>
-                        </div>
-                    );
-                })}
-                {orphanKeys.map((k) => (
-                    <div key={k} className="rounded-lg p-2.5 bg-slate-50">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1 bg-slate-200 text-slate-700">{k}</span>
-                        <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.contents[k]}</p>
+
+            {editing ? (
+                <div className="space-y-2 flex-1">
+                    {categories.map((c) => {
+                        const cc = colorClasses(c.color);
+                        return (
+                            <div key={c.key} className={cn("rounded-lg p-2.5", cc.section)}>
+                                <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1", cc.chipStrong)}>{c.label}</span>
+                                <textarea
+                                    value={draft[c.key] ?? ""}
+                                    onChange={(e) => setDraft((d) => ({ ...d, [c.key]: e.target.value }))}
+                                    rows={2}
+                                    maxLength={1000}
+                                    placeholder={`${c.label} 내용`}
+                                    className="w-full bg-white/70 rounded-md border border-gray-200 px-2 py-1.5 text-sm text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-rose-400"
+                                />
+                            </div>
+                        );
+                    })}
+                    <div className="flex items-center justify-end gap-1.5 pt-1">
+                        <button onClick={() => setEditing(false)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100">
+                            <X className="w-3.5 h-3.5" /> 취소
+                        </button>
+                        <button onClick={save} disabled={saving || Object.keys(filled()).length === 0}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-500 text-white disabled:opacity-40">
+                            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} 저장
+                        </button>
                     </div>
-                ))}
-            </div>
+                </div>
+            ) : (
+                <div className="space-y-2 flex-1">
+                    {known.map((c) => {
+                        const cc = colorClasses(c.color);
+                        return (
+                            <div key={c.key} className={cn("rounded-lg p-2.5", cc.section)}>
+                                <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1", cc.chipStrong)}>{c.label}</span>
+                                <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.contents[c.key]}</p>
+                            </div>
+                        );
+                    })}
+                    {orphanKeys.map((k) => (
+                        <div key={k} className="rounded-lg p-2.5 bg-slate-50">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1 bg-slate-200 text-slate-700">{k}</span>
+                            <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{post.contents[k]}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             <div className="mt-3">
                 <ReactionBar
                     reactions={post.reactions}

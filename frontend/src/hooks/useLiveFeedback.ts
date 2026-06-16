@@ -66,6 +66,7 @@ export interface FeedbackPost {
     author_name: string | null; // 멤버: 익명이면 닉네임(alias)
     reactions: Record<string, number>;
     my_reactions?: string[]; // 멤버 전용
+    is_mine?: boolean; // 멤버 전용 — 본인 글(익명이어도 작성자 노출 없이 수정 버튼용)
     created_at: string | null;
     client_nonce?: string | null;
 }
@@ -281,6 +282,34 @@ export function useCreatePost(boardId: number) {
         },
         onError: (e: any) => {
             toast.error(e?.response?.data?.detail ?? "등록 실패");
+        },
+    });
+}
+
+export function useUpdatePost(boardId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ postId, contents, is_anonymous }: {
+            postId: number;
+            contents: Record<string, string>;
+            is_anonymous?: boolean;
+        }) => {
+            const { data } = await memberApi.patch<FeedbackPost>(
+                `/live-feedback/member/posts/${postId}`,
+                { contents, is_anonymous },
+            );
+            return data;
+        },
+        onSuccess: (post) => {
+            // 수정 시각으로 created_at 갱신됨 → 교체 후 시간순 재정렬
+            qc.setQueryData<FeedbackPost[]>(lfKeys.posts(boardId), (prev) =>
+                (prev ?? [])
+                    .map((p) => (p.id === post.id ? { ...p, ...post } : p))
+                    .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? "")),
+            );
+        },
+        onError: (e: any) => {
+            toast.error(e?.response?.data?.detail ?? "수정 실패");
         },
     });
 }

@@ -128,6 +128,11 @@ class PostCreateRequest(BaseModel):
     client_nonce: str | None = None
 
 
+class PostUpdateRequest(BaseModel):
+    contents: dict[str, str] = Field(default_factory=dict)
+    is_anonymous: bool | None = None
+
+
 class ReactionRequest(BaseModel):
     emoji: str
 
@@ -316,6 +321,8 @@ def _post_member_dict(
         d["author_member_id"] = author_id
     if viewer_member_id is not None:
         d["my_reactions"] = mine
+        # 본인 글 여부만 알려줌(익명 작성자 노출 X) — 수정 버튼 표시용
+        d["is_mine"] = post.author_member_id == viewer_member_id
     return d
 
 
@@ -782,6 +789,54 @@ async def member_create_post(
     await manager.broadcast(board_id, admin_payload, member_payload)
 
     return member_payload["data"]
+
+
+@router.patch("/member/posts/{post_id}")
+async def member_update_post(
+    post_id: int,
+    body: PostUpdateRequest,
+    member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """본인이 쓴 피드백 글 수정. 수정 시각으로 created_at 갱신(목록 상단으로 다시 올라감)."""
+    post = await _load_post_full(db, post_id)
+    if not post or post.author_member_id != member["member_id"]:
+        raise HTTPException(status_code=404, detail="글을 찾을 수 없습니다")
+    board = await _get_board_or_404(db, post.board_id, member_cohort_id)
+    if not board.is_open:
+        raise HTTPException(status_code=400, detail="피드백이 마감되어 수정할 수 없습니다")
+
+    valid_keys = {c["key"] for c in (board.categories or [])}
+    contents: dict[str, str] = {}
+    for k, v in (body.contents or {}).items():
+        if k not in valid_keys:
+            continue
+        text = (v or "").strip()
+        if not text:
+            continue
+        if len(text) > MAX_CONTENT_LEN:
+            raise HTTPException(status_code=400, detail="내용이 너무 깁니다")
+        contents[k] = text
+    if not contents:
+        raise HTTPException(status_code=400, detail="내용을 입력하세요")
+
+    post.contents = contents
+    if body.is_anonymous is not None:
+        post.is_anonymous = body.is_anonymous
+    post.created_at = func.now()  # 수정 시점으로 시간 재기록
+    await db.commit()
+
+    full = await _load_post_full(db, post_id)
+    author_id = full.author_member_id
+    alias_map = {}
+    if full.is_anonymous:
+        alias_map = {author_id: await _get_or_create_alias(db, full.board_id, author_id)}
+    admin_payload = {"type": "post.updated", "data": _post_admin_dict(full)}
+    member_payload = {"type": "post.updated", "data": _post_member_dict(full, alias_map)}
+    await manager.broadcast(full.board_id, admin_payload, member_payload)
+
+    return _post_member_dict(full, alias_map, member["member_id"])
 
 
 @router.post("/member/posts/{post_id}/reactions", status_code=201)
