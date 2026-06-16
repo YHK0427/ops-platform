@@ -166,17 +166,42 @@ export function useResetGenPassword() {
     });
 }
 
-export function useUpdateGenAccount() {
+export function useCreateGenAccount() {
+    const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, password }: { id: number; password: string }) => {
-            const { data } = await api.patch(`/generation/accounts/${id}`, { password });
+        mutationFn: async ({ member_id, username, password }: { member_id: number; username?: string; password?: string }) => {
+            const body: Record<string, unknown> = { member_id };
+            if (username) body.username = username;
+            if (password) body.password = password;
+            const { data } = await api.post<GenAccount>("/generation/accounts", body);
             return data;
         },
-        onSuccess: () => {
-            toast.success("비밀번호가 변경되었습니다");
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: genAccountKeys.all });
+            toast.success(`계정 생성 완료 (${data.username})`);
         },
         onError: (err: any) => {
-            toast.error(err?.response?.data?.detail ?? "비밀번호 변경 실패");
+            toast.error(err?.response?.data?.detail ?? "계정 생성 실패");
+        },
+    });
+}
+
+export function useUpdateGenAccount() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, username, password }: { id: number; username?: string; password?: string }) => {
+            const body: Record<string, unknown> = {};
+            if (username !== undefined) body.username = username;
+            if (password !== undefined) body.password = password;
+            const { data } = await api.patch(`/generation/accounts/${id}`, body);
+            return data;
+        },
+        onSuccess: (_d, vars) => {
+            queryClient.invalidateQueries({ queryKey: genAccountKeys.all });
+            toast.success(vars.username !== undefined ? "아이디가 변경되었습니다" : "비밀번호가 변경되었습니다");
+        },
+        onError: (err: any) => {
+            toast.error(err?.response?.data?.detail ?? "변경 실패");
         },
     });
 }

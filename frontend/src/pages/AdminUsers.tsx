@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Shield, Plus, Pencil, ShieldCheck, ShieldOff, Loader2, RotateCcw, Trash2, Users, UserCog, Check, X, KeyRound } from "lucide-react";
-import { useAdminUsers, useCreateAdminUser, useUpdateAdminUser, useDeleteAdminUser, useBulkCreateGeneration, useBulkDeleteGeneration, useBulkResetGenPassword, useUpdateGenAccount, useDeleteGenAccount, useGenAccounts, adminUserKeys, useMembers } from "@/hooks";
+import { useAdminUsers, useCreateAdminUser, useUpdateAdminUser, useDeleteAdminUser, useBulkCreateGeneration, useBulkDeleteGeneration, useBulkResetGenPassword, useCreateGenAccount, useUpdateGenAccount, useDeleteGenAccount, useGenAccounts, adminUserKeys, useMembers } from "@/hooks";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -424,11 +424,18 @@ function GenerationTab() {
     const { mutate: deleteAccount } = useDeleteGenAccount();
     const { mutate: bulkResetPw, isPending: isResettingPw } = useBulkResetGenPassword();
     const updateAccount = useUpdateGenAccount();
+    const createAccount = useCreateGenAccount();
     const [bulkPassword, setBulkPassword] = useState("univpt33");
     const [resetPwOpen, setResetPwOpen] = useState(false);
     const [newBulkPw, setNewBulkPw] = useState("");
     const [editPwAccountId, setEditPwAccountId] = useState<number | null>(null);
     const [editPwValue, setEditPwValue] = useState("");
+    // 개별 생성 / 아이디 수정
+    const [createMember, setCreateMember] = useState<{ id: number; name: string } | null>(null);
+    const [newUsername, setNewUsername] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [editIdAccount, setEditIdAccount] = useState<{ id: number; username: string } | null>(null);
+    const [editIdValue, setEditIdValue] = useState("");
 
     const memberAccountStatus = useMemo(() => {
         if (!members || !accounts) return [];
@@ -572,8 +579,17 @@ function GenerationTab() {
                                         )}
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        {m.account && (
+                                        {!m.account ? (
+                                            <Button variant="outline" size="sm" className="h-7"
+                                                onClick={() => { setCreateMember({ id: m.id, name: m.name }); setNewUsername(""); setNewPassword(""); }}>
+                                                <Plus className="w-3.5 h-3.5 mr-1" /> 계정 생성
+                                            </Button>
+                                        ) : (
                                             <div className="flex items-center justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                <Button variant="ghost" size="icon" className="h-7 w-7" title="아이디 수정"
+                                                    onClick={() => { setEditIdAccount({ id: m.account!.id, username: m.account!.username }); setEditIdValue(m.account!.username); }}>
+                                                    <Pencil className="w-3.5 h-3.5" />
+                                                </Button>
                                                 <Button variant="ghost" size="icon" className="h-7 w-7" title="비밀번호 변경"
                                                     onClick={() => { setEditPwAccountId(m.account!.id); setEditPwValue(""); }}>
                                                     <KeyRound className="w-3.5 h-3.5" />
@@ -636,6 +652,71 @@ function GenerationTab() {
                             }}
                         >
                             {updateAccount.isPending ? "변경 중..." : "변경"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* 개별 계정 생성 */}
+            <Dialog open={createMember !== null} onOpenChange={(o) => { if (!o) setCreateMember(null); }}>
+                <DialogContent className="sm:max-w-[400px]">
+                    <DialogHeader>
+                        <DialogTitle>계정 생성</DialogTitle>
+                        <DialogDescription>{createMember?.name}님의 기수 계정을 만듭니다.</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-2">
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right">아이디</Label>
+                            <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} className="col-span-3" placeholder="비우면 이름+기수번호 자동" />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right">비밀번호</Label>
+                            <Input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="col-span-3" placeholder="비우면 기본 비번(univpt+기수)" />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCreateMember(null)}>취소</Button>
+                        <Button
+                            disabled={createAccount.isPending || (newPassword.length > 0 && newPassword.length < 4)}
+                            onClick={() => {
+                                if (!createMember) return;
+                                createAccount.mutate(
+                                    { member_id: createMember.id, username: newUsername.trim() || undefined, password: newPassword.trim() || undefined },
+                                    { onSuccess: () => setCreateMember(null) },
+                                );
+                            }}
+                        >
+                            {createAccount.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                            생성
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* 아이디 수정 */}
+            <Dialog open={editIdAccount !== null} onOpenChange={(o) => { if (!o) setEditIdAccount(null); }}>
+                <DialogContent className="sm:max-w-[400px]">
+                    <DialogHeader>
+                        <DialogTitle>아이디 수정</DialogTitle>
+                        <DialogDescription>로그인 아이디를 변경합니다.</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-4 items-center gap-4 py-2">
+                        <Label className="text-right">아이디</Label>
+                        <Input value={editIdValue} onChange={(e) => setEditIdValue(e.target.value)} className="col-span-3" placeholder="새 아이디" />
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditIdAccount(null)}>취소</Button>
+                        <Button
+                            disabled={updateAccount.isPending || !editIdValue.trim() || editIdValue.trim() === editIdAccount?.username}
+                            onClick={() => {
+                                if (!editIdAccount) return;
+                                updateAccount.mutate({ id: editIdAccount.id, username: editIdValue.trim() }, {
+                                    onSuccess: () => setEditIdAccount(null),
+                                });
+                            }}
+                        >
+                            {updateAccount.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                            저장
                         </Button>
                     </DialogFooter>
                 </DialogContent>

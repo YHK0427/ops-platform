@@ -57,6 +57,13 @@ class BulkCreateRequest(BaseModel):
     password: str | None = Field(default=None, min_length=4, max_length=128)
 
 
+class CreateAccountRequest(BaseModel):
+    member_id: int
+    # None이면 이름+기수번호 자동, 비번도 None이면 기수 기본 비번
+    username: str | None = Field(default=None, max_length=50)
+    password: str | None = Field(default=None, min_length=4, max_length=128)
+
+
 class GenAccountUpdate(BaseModel):
     username: str | None = Field(None, max_length=50)
     password: str | None = Field(None, min_length=4, max_length=128)
@@ -78,6 +85,47 @@ async def list_accounts(
         .order_by(GenerationAccount.username)
     )
     return result.scalars().all()
+
+
+@router.post("/accounts", response_model=GenAccountResponse, status_code=status.HTTP_201_CREATED)
+async def create_account(
+    body: CreateAccountRequest,
+    user: dict = Depends(require_admin),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """현재 기수의 특정 멤버에게 계정을 개별 생성."""
+    cohort = await db.get(Cohort, cohort_id)
+    if not cohort:
+        raise HTTPException(status_code=404, detail="기수를 찾을 수 없습니다")
+    member = await db.get(Member, body.member_id)
+    if not member or member.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
+    dup = (await db.execute(
+        select(GenerationAccount).where(GenerationAccount.member_id == member.id)
+    )).scalar_one_or_none()
+    if dup:
+        raise HTTPException(status_code=409, detail="이미 계정이 있는 멤버입니다")
+
+    username = (body.username or "").strip() or _seed_username(member.name, cohort.number)
+    taken = (await db.execute(
+        select(GenerationAccount).where(GenerationAccount.username == username)
+    )).scalar_one_or_none()
+    if taken:
+        raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
+
+    password = body.password or f"univpt{cohort.number}"
+    account = GenerationAccount(
+        member_id=member.id,
+        username=username,
+        password_hash=bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
+        is_active=True,
+    )
+    db.add(account)
+    await db.commit()
+    await db.refresh(account)
+    record_audit(user, "기수 계정 개별 생성", f"기수={cohort.number} member={member.name} username={username}")
+    return account
 
 
 @router.post("/accounts/bulk-create")
