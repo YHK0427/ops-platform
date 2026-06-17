@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 from app.database import AsyncSessionLocal
 from app.deps import (
     decode_ws_token, get_current_cohort_id, get_current_member, get_db,
-    get_member_cohort_id, require_admin_or_chairman, require_staff,
+    get_member_cohort_id, require_staff,
 )
 from app.models import (
     Attendance,
@@ -344,7 +344,7 @@ async def _load_post_full(db: AsyncSession, post_id: int) -> LiveFeedbackPost | 
 @router.post("/boards", status_code=201)
 async def create_board(
     body: BoardCreateRequest,
-    user: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -480,7 +480,7 @@ async def get_board_admin(
 async def update_board(
     board_id: int,
     body: BoardUpdateRequest,
-    user: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -517,7 +517,7 @@ async def update_board(
 @router.delete("/boards/{board_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_board(
     board_id: int,
-    user: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -553,7 +553,7 @@ async def list_posts_admin(
 @router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_post(
     post_id: int,
-    user: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -575,7 +575,7 @@ async def delete_post(
 async def hide_post(
     post_id: int,
     body: PostHideRequest,
-    user: dict = Depends(require_admin_or_chairman),
+    user: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
