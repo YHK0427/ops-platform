@@ -31,6 +31,7 @@ from app.models import (
     LiveFeedbackReaction,
     Member,
     Session,
+    User,
 )
 from app.services.live_feedback_ws import manager
 from app.audit import record_audit
@@ -234,12 +235,16 @@ async def _presenter_columns(
     return items
 
 
-async def _get_or_create_alias(db: AsyncSession, board_id: int, member_id: int) -> str:
-    """보드 내 멤버의 익명 닉네임 조회/생성 (같은 작성자 = 같은 닉네임)."""
+async def _get_or_create_alias(
+    db: AsyncSession, board_id: int, member_id: int | None = None, user_id: int | None = None
+) -> str:
+    """보드 내 작성자(기수원·운영진)의 익명 닉네임 조회/생성 (같은 작성자 = 같은 닉네임).
+    운영진이 익명일 때 기수원에게는 멤버와 똑같은 형식의 닉네임으로 보인다."""
+    col = LiveFeedbackAnonAlias.member_id if member_id is not None else LiveFeedbackAnonAlias.user_id
+    val = member_id if member_id is not None else user_id
     existing = await db.execute(
         select(LiveFeedbackAnonAlias.alias).where(
-            LiveFeedbackAnonAlias.board_id == board_id,
-            LiveFeedbackAnonAlias.member_id == member_id,
+            LiveFeedbackAnonAlias.board_id == board_id, col == val,
         )
     )
     found = existing.scalar_one_or_none()
@@ -256,7 +261,7 @@ async def _get_or_create_alias(db: AsyncSession, board_id: int, member_id: int) 
     if alias is None:
         alias = f"익명 {random.randint(1000, 9999)}"
 
-    db.add(LiveFeedbackAnonAlias(board_id=board_id, member_id=member_id, alias=alias))
+    db.add(LiveFeedbackAnonAlias(board_id=board_id, member_id=member_id, user_id=user_id, alias=alias))
     await db.flush()
     return alias
 
@@ -276,8 +281,11 @@ def _iso(dt) -> str | None:
 
 
 def _post_admin_dict(post: LiveFeedbackPost) -> dict:
-    """운영진용 — 항상 실명 + 익명 여부 배지."""
+    """운영진용 — 항상 실명(운영진끼리는 익명이어도 누군지 보임) + 익명 여부 배지."""
     counts, _ = _reaction_summary(post)
+    is_staff = post.author_user_id is not None
+    author_name = (post.author_user.display_name if post.author_user else None) if is_staff \
+        else (post.author.name if post.author else None)
     return {
         "id": post.id,
         "board_id": post.board_id,
@@ -287,7 +295,8 @@ def _post_admin_dict(post: LiveFeedbackPost) -> dict:
         "is_anonymous": post.is_anonymous,
         "is_hidden": post.is_hidden,
         "author_member_id": post.author_member_id,
-        "author_name": post.author.name if post.author else None,
+        "author_name": author_name,
+        "author_is_staff": is_staff,
         "reactions": counts,
         "created_at": _iso(post.created_at),
     }
@@ -295,17 +304,24 @@ def _post_admin_dict(post: LiveFeedbackPost) -> dict:
 
 def _post_member_dict(
     post: LiveFeedbackPost,
-    alias_map: dict[int, str],
+    alias_map: dict[str, str],
     viewer_member_id: int | None = None,
 ) -> dict:
-    """멤버용 — 익명이면 alias만, 실명/author_member_id 절대 미포함."""
+    """멤버용 — 익명이면 alias만(운영진 익명도 동일한 닉네임 형식, 운영진인지 노출 X),
+    실명/author_member_id 절대 미포함. alias_map 키는 'm{member_id}' / 'u{user_id}'."""
     counts, mine = _reaction_summary(post, viewer_member_id)
+    is_staff = post.author_user_id is not None
+    author_key = f"u{post.author_user_id}" if is_staff else f"m{post.author_member_id}"
     if post.is_anonymous:
-        display_name = alias_map.get(post.author_member_id) or "익명"
+        # 익명이면 기수원에겐 그냥 닉네임 — 운영진인지 드러내지 않음
+        display_name = alias_map.get(author_key) or "익명"
         author_id = None
+        show_staff = False
     else:
-        display_name = post.author.name if post.author else None
-        author_id = post.author_member_id
+        display_name = (post.author_user.display_name if is_staff and post.author_user else None) if is_staff \
+            else (post.author.name if post.author else None)
+        author_id = None if is_staff else post.author_member_id
+        show_staff = is_staff  # 비익명 운영진 글은 '운영진' 배지 노출
     d = {
         "id": post.id,
         "board_id": post.board_id,
@@ -314,6 +330,7 @@ def _post_member_dict(
         "contents": post.contents or {},
         "is_anonymous": post.is_anonymous,
         "author_name": display_name,
+        "is_staff": show_staff,
         "reactions": counts,
         "created_at": _iso(post.created_at),
     }
@@ -332,6 +349,7 @@ async def _load_post_full(db: AsyncSession, post_id: int) -> LiveFeedbackPost | 
         .options(
             selectinload(LiveFeedbackPost.reactions),
             selectinload(LiveFeedbackPost.author),
+            selectinload(LiveFeedbackPost.author_user),
             selectinload(LiveFeedbackPost.presenter),
         )
         .where(LiveFeedbackPost.id == post_id)
@@ -542,6 +560,7 @@ async def list_posts_admin(
         .options(
             selectinload(LiveFeedbackPost.reactions),
             selectinload(LiveFeedbackPost.author),
+            selectinload(LiveFeedbackPost.author_user),
             selectinload(LiveFeedbackPost.presenter),
         )
         .where(LiveFeedbackPost.board_id == board_id)
@@ -710,15 +729,16 @@ async def member_list_posts(
     allowed_ids = {c["presenter_member_id"] for c in scoped}
 
     alias_q = await db.execute(
-        select(LiveFeedbackAnonAlias.member_id, LiveFeedbackAnonAlias.alias)
+        select(LiveFeedbackAnonAlias.member_id, LiveFeedbackAnonAlias.user_id, LiveFeedbackAnonAlias.alias)
         .where(LiveFeedbackAnonAlias.board_id == board_id)
     )
-    alias_map = {mid: alias for mid, alias in alias_q.all()}
+    alias_map = {(f"m{mid}" if mid is not None else f"u{uid}"): alias for mid, uid, alias in alias_q.all()}
     q = await db.execute(
         select(LiveFeedbackPost)
         .options(
             selectinload(LiveFeedbackPost.reactions),
             selectinload(LiveFeedbackPost.author),
+            selectinload(LiveFeedbackPost.author_user),
             selectinload(LiveFeedbackPost.presenter),
         )
         .where(LiveFeedbackPost.board_id == board_id, LiveFeedbackPost.is_hidden == False)  # noqa: E712
@@ -778,17 +798,76 @@ async def member_create_post(
 
     alias = None
     if body.is_anonymous:
-        alias = await _get_or_create_alias(db, board_id, author_id)
+        alias = await _get_or_create_alias(db, board_id, member_id=author_id)
 
     await db.commit()
 
     full = await _load_post_full(db, post.id)
-    alias_map = {author_id: alias} if alias else {}
+    alias_map = {f"m{author_id}": alias} if alias else {}
     admin_payload = {"type": "post.created", "data": {**_post_admin_dict(full), "client_nonce": body.client_nonce}}
     member_payload = {"type": "post.created", "data": {**_post_member_dict(full, alias_map), "client_nonce": body.client_nonce}}
     await manager.broadcast(board_id, admin_payload, member_payload)
 
     return member_payload["data"]
+
+
+@router.post("/boards/{board_id}/posts/staff", status_code=201)
+async def staff_create_post(
+    board_id: int,
+    body: PostCreateRequest,
+    user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """운영진이 피드백 작성 — 모든 발표자 대상(분반 제한 없음).
+    익명이면 기수원에겐 닉네임으로 보이고, 운영진끼리는 항상 실명으로 보인다."""
+    board = await _get_board_or_404(db, board_id, cohort_id)
+    if not board.is_open:
+        raise HTTPException(status_code=400, detail="피드백이 마감되었습니다")
+    valid_keys = {c["key"] for c in (board.categories or [])}
+    contents: dict[str, str] = {}
+    for k, v in (body.contents or {}).items():
+        if k not in valid_keys:
+            continue
+        text = (v or "").strip()
+        if not text:
+            continue
+        if len(text) > MAX_CONTENT_LEN:
+            raise HTTPException(status_code=400, detail="내용이 너무 깁니다")
+        contents[k] = text
+    if not contents:
+        raise HTTPException(status_code=400, detail="내용을 입력하세요")
+    # 발표자 검증 — 분반 제한 없이 보드 세션의 모든 발표자 허용
+    presenters = await _presenter_columns(
+        db, board.session_id, reveal_order=False,
+        early_leave_ids=set(board.early_leave_member_ids or []),
+    )
+    if body.presenter_member_id not in {c["presenter_member_id"] for c in presenters}:
+        raise HTTPException(status_code=400, detail="피드백할 수 없는 대상입니다")
+
+    uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
+    if uid is None:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    post = LiveFeedbackPost(
+        board_id=board_id,
+        author_user_id=uid,
+        presenter_member_id=body.presenter_member_id,
+        contents=contents,
+        is_anonymous=body.is_anonymous,
+    )
+    db.add(post)
+    alias = None
+    if body.is_anonymous:
+        alias = await _get_or_create_alias(db, board_id, user_id=uid)
+    await db.commit()
+
+    full = await _load_post_full(db, post.id)
+    alias_map = {f"u{uid}": alias} if alias else {}
+    admin_payload = {"type": "post.created", "data": {**_post_admin_dict(full), "client_nonce": body.client_nonce}}
+    member_payload = {"type": "post.created", "data": {**_post_member_dict(full, alias_map), "client_nonce": body.client_nonce}}
+    await manager.broadcast(board_id, admin_payload, member_payload)
+
+    return _post_admin_dict(full)
 
 
 @router.patch("/member/posts/{post_id}")
@@ -831,7 +910,7 @@ async def member_update_post(
     author_id = full.author_member_id
     alias_map = {}
     if full.is_anonymous:
-        alias_map = {author_id: await _get_or_create_alias(db, full.board_id, author_id)}
+        alias_map = {f"m{author_id}": await _get_or_create_alias(db, full.board_id, member_id=author_id)}
     admin_payload = {"type": "post.updated", "data": _post_admin_dict(full)}
     member_payload = {"type": "post.updated", "data": _post_member_dict(full, alias_map)}
     await manager.broadcast(full.board_id, admin_payload, member_payload)

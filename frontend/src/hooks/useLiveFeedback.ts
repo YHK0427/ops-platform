@@ -67,6 +67,8 @@ export interface FeedbackPost {
     reactions: Record<string, number>;
     my_reactions?: string[]; // 멤버 전용
     is_mine?: boolean; // 멤버 전용 — 본인 글(익명이어도 작성자 노출 없이 수정 버튼용)
+    is_staff?: boolean; // 멤버뷰: 비익명 운영진 글이면 true(운영진 배지)
+    author_is_staff?: boolean; // 운영진뷰: 운영진이 쓴 글
     created_at: string | null;
     client_nonce?: string | null;
 }
@@ -310,6 +312,34 @@ export function useUpdatePost(boardId: number) {
         },
         onError: (e: any) => {
             toast.error(e?.response?.data?.detail ?? "수정 실패");
+        },
+    });
+}
+
+export function useStaffCreatePost(boardId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (body: {
+            presenter_member_id: number;
+            contents: Record<string, string>;
+            is_anonymous: boolean;
+            client_nonce: string;
+        }) => {
+            const { data } = await api.post<FeedbackPost>(
+                `/live-feedback/boards/${boardId}/posts/staff`,
+                body,
+            );
+            return data;
+        },
+        onSuccess: (post) => {
+            qc.setQueryData<FeedbackPost[]>(lfKeys.posts(boardId), (prev) => {
+                const list = prev ?? [];
+                if (list.some((p) => p.id === post.id)) return list;
+                return [...list, post];
+            });
+        },
+        onError: (e: any) => {
+            toast.error(e?.response?.data?.detail ?? "등록 실패");
         },
     });
 }

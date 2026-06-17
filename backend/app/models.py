@@ -436,7 +436,9 @@ class LiveFeedbackPost(Base):
 
     id = Column(Integer, primary_key=True)
     board_id = Column(Integer, ForeignKey("live_feedback_boards.id", ondelete="CASCADE"), nullable=False)
-    author_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
+    # 작성자: 기수원(author_member_id) 또는 운영진(author_user_id) 중 하나
+    author_member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
+    author_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     presenter_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
     # 카테고리별 내용 {categoryKey: text} — 최소 1개 필수 (보드 categories 키 기준)
     contents = Column(JSONB, nullable=False)
@@ -450,6 +452,7 @@ class LiveFeedbackPost(Base):
 
     board = relationship("LiveFeedbackBoard", back_populates="posts")
     author = relationship("Member", foreign_keys=[author_member_id])
+    author_user = relationship("User", foreign_keys=[author_user_id])
     presenter = relationship("Member", foreign_keys=[presenter_member_id])
     reactions = relationship("LiveFeedbackReaction", back_populates="post", cascade="all, delete-orphan")
 
@@ -477,12 +480,17 @@ class LiveFeedbackAnonAlias(Base):
 
     id = Column(Integer, primary_key=True)
     board_id = Column(Integer, ForeignKey("live_feedback_boards.id", ondelete="CASCADE"), nullable=False)
-    member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
+    # 익명 작성자: 기수원(member_id) 또는 운영진(user_id) 중 하나
+    member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     alias = Column(String(40), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        UniqueConstraint("board_id", "member_id", name="uq_live_feedback_alias_member"),
+        Index("uq_lf_alias_member", "board_id", "member_id", unique=True,
+              postgresql_where=text("member_id IS NOT NULL")),
+        Index("uq_lf_alias_user", "board_id", "user_id", unique=True,
+              postgresql_where=text("user_id IS NOT NULL")),
         UniqueConstraint("board_id", "alias", name="uq_live_feedback_alias_unique"),
     )
 

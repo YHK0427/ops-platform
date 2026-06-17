@@ -1,15 +1,20 @@
-import { useMemo } from "react";
-import { Trash2, EyeOff, Eye, Wifi, WifiOff } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     useAdminBoard,
     useAdminPosts,
     useDeletePost,
     useHidePost,
+    useStaffCreatePost,
     type FeedbackPost,
     type FeedbackCategory,
     type PresenterColumn,
 } from "@/hooks/useLiveFeedback";
+
+function genNonce(): string {
+    try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.floor(Math.random() * 1e6)}`; }
+}
 import { useLiveFeedbackSocket } from "@/hooks/useLiveFeedbackSocket";
 import { colorClasses, formatFeedbackTime } from "@/lib/feedbackColors";
 import { ReactionBar } from "@/components/feedback/ReactionBar";
@@ -33,6 +38,11 @@ function PostCard({ post, categories }: { post: FeedbackPost; categories: Feedba
             <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-1.5 min-w-0">
                     <span className="text-xs font-semibold text-gray-900 truncate">{post.author_name}</span>
+                    {post.author_is_staff && (
+                        <span className="px-1.5 py-0.5 rounded bg-[var(--color-accent-dim)] text-[var(--color-accent)] text-[10px] font-bold shrink-0">
+                            운영진
+                        </span>
+                    )}
                     {post.is_anonymous && (
                         <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] font-medium shrink-0">
                             익명
@@ -81,6 +91,65 @@ function PostCard({ post, categories }: { post: FeedbackPost; categories: Feedba
     );
 }
 
+function StaffComposer({ boardId, presenterId, presenterName, categories }: {
+    boardId: number; presenterId: number; presenterName: string; categories: FeedbackCategory[];
+}) {
+    const [open, setOpen] = useState(false);
+    const [draft, setDraft] = useState<Record<string, string>>({});
+    const [anon, setAnon] = useState(false);
+    const create = useStaffCreatePost(boardId);
+
+    const filled = () => {
+        const out: Record<string, string> = {};
+        for (const c of categories) { const t = (draft[c.key] ?? "").trim(); if (t) out[c.key] = t; }
+        return out;
+    };
+    const submit = async () => {
+        const contents = filled();
+        if (Object.keys(contents).length === 0) return;
+        await create.mutateAsync({ presenter_member_id: presenterId, contents, is_anonymous: anon, client_nonce: genNonce() });
+        setDraft({}); setOpen(false);
+    };
+
+    if (!open) {
+        return (
+            <button onClick={() => setOpen(true)}
+                className="w-full mt-2 inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-gray-300 text-xs font-semibold text-gray-500 hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors">
+                <Plus className="w-3.5 h-3.5" /> 운영진 피드백
+            </button>
+        );
+    }
+    return (
+        <div className="mt-2 rounded-xl border border-[var(--color-accent)]/40 bg-white p-2.5 space-y-2">
+            <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-gray-500 truncate">{presenterName} 님에게</span>
+                <button onClick={() => setOpen(false)} className="text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
+            </div>
+            {categories.map((c) => {
+                const cc = colorClasses(c.color);
+                return (
+                    <div key={c.key} className={cn("rounded-lg p-2", cc.section)}>
+                        <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-1", cc.chipStrong)}>{c.label}</span>
+                        <textarea value={draft[c.key] ?? ""} onChange={(e) => setDraft((d) => ({ ...d, [c.key]: e.target.value }))}
+                            rows={2} maxLength={1000} placeholder={`${c.label} 내용`}
+                            className="w-full bg-white/70 rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]" />
+                    </div>
+                );
+            })}
+            <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer select-none">
+                    <input type="checkbox" checked={anon} onChange={(e) => setAnon(e.target.checked)} className="w-3.5 h-3.5 accent-[var(--color-accent)]" />
+                    익명 (기수원에겐 닉네임 — 운영진끼린 실명)
+                </label>
+                <button onClick={submit} disabled={create.isPending || Object.keys(filled()).length === 0}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[var(--color-accent)] text-white disabled:opacity-40">
+                    {create.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} 작성
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     const { data: board } = useAdminBoard(boardId);
     const { data: posts } = useAdminPosts(boardId);
@@ -88,6 +157,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
 
     const presenters: PresenterColumn[] = board?.presenters ?? [];
     const categories: FeedbackCategory[] = board?.categories ?? [];
+    const isOpen = board?.is_open ?? false;
     const postsByPresenter = useMemo(() => {
         const map = new Map<number, FeedbackPost[]>();
         for (const p of posts ?? []) {
@@ -146,6 +216,10 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                         list.map((post) => <PostCard key={post.id} post={post} categories={categories} />)
                                     )}
                                 </div>
+                                {isOpen && (
+                                    <StaffComposer boardId={boardId} presenterId={pr.presenter_member_id}
+                                        presenterName={pr.name} categories={categories} />
+                                )}
                             </div>
                         );
                     })}
