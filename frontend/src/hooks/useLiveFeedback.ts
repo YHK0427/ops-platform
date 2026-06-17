@@ -69,6 +69,7 @@ export interface FeedbackPost {
     is_mine?: boolean; // 멤버 전용 — 본인 글(익명이어도 작성자 노출 없이 수정 버튼용)
     is_staff?: boolean; // 멤버뷰: 비익명 운영진 글이면 true(운영진 배지)
     author_is_staff?: boolean; // 운영진뷰: 운영진이 쓴 글
+    anon_alias?: string | null; // 운영진뷰: 익명 글의 닉네임(발표화면 '익명 적용' 시 실명 대신 표시)
     created_at: string | null;
     client_nonce?: string | null;
 }

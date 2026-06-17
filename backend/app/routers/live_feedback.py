@@ -280,12 +280,15 @@ def _iso(dt) -> str | None:
     return dt.isoformat() if dt else None
 
 
-def _post_admin_dict(post: LiveFeedbackPost) -> dict:
-    """운영진용 — 항상 실명(운영진끼리는 익명이어도 누군지 보임) + 익명 여부 배지."""
+def _post_admin_dict(post: LiveFeedbackPost, alias_map: dict[str, str] | None = None) -> dict:
+    """운영진용 — 항상 실명(운영진끼리는 익명이어도 누군지 보임) + 익명 여부 배지.
+    anon_alias: 익명 글의 닉네임(발표용 화면에서 '익명 적용'을 켜면 실명 대신 표시)."""
     counts, _ = _reaction_summary(post)
     is_staff = post.author_user_id is not None
     author_name = (post.author_user.display_name if post.author_user else None) if is_staff \
         else (post.author.name if post.author else None)
+    author_key = f"u{post.author_user_id}" if is_staff else f"m{post.author_member_id}"
+    anon_alias = (alias_map or {}).get(author_key) if post.is_anonymous else None
     return {
         "id": post.id,
         "board_id": post.board_id,
@@ -297,6 +300,7 @@ def _post_admin_dict(post: LiveFeedbackPost) -> dict:
         "author_member_id": post.author_member_id,
         "author_name": author_name,
         "author_is_staff": is_staff,
+        "anon_alias": anon_alias,
         "reactions": counts,
         "created_at": _iso(post.created_at),
     }
@@ -555,6 +559,11 @@ async def list_posts_admin(
     db: AsyncSession = Depends(get_db),
 ):
     await _get_board_or_404(db, board_id, cohort_id)
+    alias_q = await db.execute(
+        select(LiveFeedbackAnonAlias.member_id, LiveFeedbackAnonAlias.user_id, LiveFeedbackAnonAlias.alias)
+        .where(LiveFeedbackAnonAlias.board_id == board_id)
+    )
+    alias_map = {(f"m{mid}" if mid is not None else f"u{uid}"): alias for mid, uid, alias in alias_q.all()}
     q = await db.execute(
         select(LiveFeedbackPost)
         .options(
@@ -566,7 +575,7 @@ async def list_posts_admin(
         .where(LiveFeedbackPost.board_id == board_id)
         .order_by(LiveFeedbackPost.created_at)
     )
-    return [_post_admin_dict(p) for p in q.scalars().all()]
+    return [_post_admin_dict(p, alias_map) for p in q.scalars().all()]
 
 
 @router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -804,7 +813,7 @@ async def member_create_post(
 
     full = await _load_post_full(db, post.id)
     alias_map = {f"m{author_id}": alias} if alias else {}
-    admin_payload = {"type": "post.created", "data": {**_post_admin_dict(full), "client_nonce": body.client_nonce}}
+    admin_payload = {"type": "post.created", "data": {**_post_admin_dict(full, alias_map), "client_nonce": body.client_nonce}}
     member_payload = {"type": "post.created", "data": {**_post_member_dict(full, alias_map), "client_nonce": body.client_nonce}}
     await manager.broadcast(board_id, admin_payload, member_payload)
 
@@ -863,11 +872,11 @@ async def staff_create_post(
 
     full = await _load_post_full(db, post.id)
     alias_map = {f"u{uid}": alias} if alias else {}
-    admin_payload = {"type": "post.created", "data": {**_post_admin_dict(full), "client_nonce": body.client_nonce}}
+    admin_payload = {"type": "post.created", "data": {**_post_admin_dict(full, alias_map), "client_nonce": body.client_nonce}}
     member_payload = {"type": "post.created", "data": {**_post_member_dict(full, alias_map), "client_nonce": body.client_nonce}}
     await manager.broadcast(board_id, admin_payload, member_payload)
 
-    return _post_admin_dict(full)
+    return _post_admin_dict(full, alias_map)
 
 
 @router.patch("/member/posts/{post_id}")
@@ -911,7 +920,7 @@ async def member_update_post(
     alias_map = {}
     if full.is_anonymous:
         alias_map = {f"m{author_id}": await _get_or_create_alias(db, full.board_id, member_id=author_id)}
-    admin_payload = {"type": "post.updated", "data": _post_admin_dict(full)}
+    admin_payload = {"type": "post.updated", "data": _post_admin_dict(full, alias_map)}
     member_payload = {"type": "post.updated", "data": _post_member_dict(full, alias_map)}
     await manager.broadcast(full.board_id, admin_payload, member_payload)
 

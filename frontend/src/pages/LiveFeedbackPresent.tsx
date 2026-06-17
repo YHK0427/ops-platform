@@ -27,6 +27,8 @@ export default function LiveFeedbackPresent() {
     const presenters = board?.presenters ?? [];
     const categories: FeedbackCategory[] = board?.categories ?? [];
     const [idx, setIdx] = useState(0);
+    // 익명 적용: 켜면 익명 글을 실명 대신 닉네임으로 투사(청중에게 작성자 숨김). 기본 ON.
+    const [applyAnon, setApplyAnon] = useState(true);
 
     useEffect(() => {
         if (idx > presenters.length - 1) setIdx(0);
@@ -74,7 +76,11 @@ export default function LiveFeedbackPresent() {
                             <button onClick={next} className="p-2 rounded-lg hover:bg-white/10" aria-label="다음 발표자"><ChevronRight className="w-5 h-5" /></button>
                         </>
                     )}
-                    <button onClick={() => navigate("/live-feedback")} className="p-2 rounded-lg hover:bg-white/10 ml-2" aria-label="나가기"><X className="w-5 h-5" /></button>
+                    <label className="flex items-center gap-1.5 ml-2 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 cursor-pointer select-none text-sm">
+                        <input type="checkbox" checked={applyAnon} onChange={(e) => setApplyAnon(e.target.checked)} className="w-4 h-4 accent-rose-500" />
+                        익명 적용
+                    </label>
+                    <button onClick={() => navigate("/live-feedback")} className="p-2 rounded-lg hover:bg-white/10 ml-1" aria-label="나가기"><X className="w-5 h-5" /></button>
                 </div>
             </header>
 
@@ -95,7 +101,7 @@ export default function LiveFeedbackPresent() {
                             <div className="h-full flex items-center justify-center text-gray-600 text-lg">아직 피드백이 없습니다</div>
                         ) : (
                             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                {list.map((post) => <PresentCard key={post.id} post={post} categories={categories} />)}
+                                {list.map((post) => <PresentCard key={post.id} post={post} categories={categories} applyAnon={applyAnon} />)}
                             </div>
                         )}
                     </div>
@@ -107,7 +113,10 @@ export default function LiveFeedbackPresent() {
     );
 }
 
-function PresentCard({ post, categories }: { post: FeedbackPost; categories: FeedbackCategory[] }) {
+function PresentCard({ post, categories, applyAnon }: { post: FeedbackPost; categories: FeedbackCategory[]; applyAnon: boolean }) {
+    // 익명 적용 ON + 익명 글 → 실명 대신 닉네임(작성자 숨김). 그 외엔 실명 + 배지.
+    const hideIdentity = applyAnon && post.is_anonymous;
+    const displayName = hideIdentity ? (post.anon_alias || "익명") : post.author_name;
     return (
         <motion.div
             layout
@@ -116,7 +125,8 @@ function PresentCard({ post, categories }: { post: FeedbackPost; categories: Fee
             className="rounded-2xl bg-white text-gray-900 p-5 shadow-lg"
         >
             <div className="flex items-center gap-2 mb-3">
-                <span className="text-sm font-semibold text-gray-500">{post.author_name}</span>
+                <span className="text-sm font-semibold text-gray-500">{displayName}</span>
+                {!hideIdentity && post.author_is_staff && <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-500 text-[10px] font-bold">운영진</span>}
                 {post.is_anonymous && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] font-medium">익명</span>}
                 <span className="ml-auto text-xs text-gray-400 tabular-nums">{formatFeedbackTime(post.created_at)}</span>
             </div>
