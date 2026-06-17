@@ -26,7 +26,10 @@ def send_webpush(endpoint: str, p256dh: str, auth: str, payload: dict) -> str:
             data=json.dumps(payload, ensure_ascii=False),
             vapid_private_key=settings.VAPID_PRIVATE_KEY,
             vapid_claims={"sub": settings.VAPID_SUBJECT},
-            ttl=86400,
+            # 폰이 며칠 꺼져있거나 딥슬립이어도 켜지면 받도록 최대치(28일=2,419,200s)까지 보관.
+            # Urgency:high — 절전 중인 기기도 깨워서 전달(FCM 고우선순위).
+            ttl=2_419_200,
+            headers={"Urgency": "high"},
         )
         return "ok"
     except WebPushException as e:
