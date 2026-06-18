@@ -191,7 +191,7 @@ export default function LiveFeedbackManagement() {
 
 // ── 사용법 안내 패널 ─────────────────────────────────────────────────────────────
 function HelpPanel() {
-    const [open, setOpen] = useState(true);
+    const [open, setOpen] = useState(false);
     const steps = [
         { icon: Plus, title: "1. 보드 만들기", body: "우측 상단 [새 보드] → 개인(분반) 세션을 고르고 제목을 입력하세요. 한 세션에 보드 1개입니다." },
         { icon: Tag, title: "2. 카테고리 정하기", body: "기수가 작성할 항목입니다. 기본은 칭찬·발전이고, 프리셋(질문·총평·인상깊은 점 등)이나 [직접 추가]로 자유롭게 구성·색 지정할 수 있어요. 만든 뒤에도 카드의 연필(수정)에서 변경 가능합니다." },

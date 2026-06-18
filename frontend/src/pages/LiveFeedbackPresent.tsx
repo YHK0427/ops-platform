@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, X, Wifi, WifiOff, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Wifi, WifiOff, Loader2, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     useAdminBoard, useAdminPosts,
@@ -29,6 +29,8 @@ export default function LiveFeedbackPresent() {
     const [idx, setIdx] = useState(0);
     // 익명 적용: 켜면 익명 글을 실명 대신 닉네임으로 투사(청중에게 작성자 숨김). 기본 ON.
     const [applyAnon, setApplyAnon] = useState(true);
+    // 카드 크기 조정 — 열 수가 적을수록 카드가 커짐(1~5열). 기본 5.
+    const [cols, setCols] = useState(5);
 
     useEffect(() => {
         if (idx > presenters.length - 1) setIdx(0);
@@ -76,7 +78,15 @@ export default function LiveFeedbackPresent() {
                             <button onClick={next} className="p-2 rounded-lg hover:bg-white/10" aria-label="다음 발표자"><ChevronRight className="w-5 h-5" /></button>
                         </>
                     )}
-                    <label className="flex items-center gap-1.5 ml-2 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 cursor-pointer select-none text-sm">
+                    {/* 카드 크기 조정 */}
+                    <div className="flex items-center gap-1 ml-2 px-1.5 py-1 rounded-lg bg-white/10">
+                        <button onClick={() => setCols((c) => Math.min(5, c + 1))} disabled={cols >= 5}
+                            className="p-1 rounded hover:bg-white/15 disabled:opacity-30" title="작게"><Minus className="w-4 h-4" /></button>
+                        <span className="text-xs text-gray-300 tabular-nums w-4 text-center">{cols}</span>
+                        <button onClick={() => setCols((c) => Math.max(1, c - 1))} disabled={cols <= 1}
+                            className="p-1 rounded hover:bg-white/15 disabled:opacity-30" title="크게"><Plus className="w-4 h-4" /></button>
+                    </div>
+                    <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 cursor-pointer select-none text-sm">
                         <input type="checkbox" checked={applyAnon} onChange={(e) => setApplyAnon(e.target.checked)} className="w-4 h-4 accent-rose-500" />
                         익명 적용
                     </label>
@@ -100,7 +110,7 @@ export default function LiveFeedbackPresent() {
                         {list.length === 0 ? (
                             <div className="h-full flex items-center justify-center text-gray-600 text-lg">아직 피드백이 없습니다</div>
                         ) : (
-                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            <div className="gap-4" style={{ columnCount: cols, columnGap: "1rem" }}>
                                 {list.map((post) => <PresentCard key={post.id} post={post} categories={categories} applyAnon={applyAnon} />)}
                             </div>
                         )}
@@ -122,7 +132,7 @@ function PresentCard({ post, categories, applyAnon }: { post: FeedbackPost; cate
             layout
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="rounded-2xl bg-white text-gray-900 p-5 shadow-lg"
+            className="rounded-2xl bg-white text-gray-900 p-5 shadow-lg mb-4 break-inside-avoid"
         >
             <div className="flex items-center gap-2 mb-3">
                 <span className="text-sm font-semibold text-gray-500">{displayName}</span>
