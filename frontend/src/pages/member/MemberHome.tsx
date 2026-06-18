@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { BarChart3, Wallet, ChevronRight, MessageSquareHeart, Megaphone } from "lucide-react";
+import { BarChart3, Wallet, ChevronRight, MessageSquareHeart, Megaphone, CalendarCheck } from "lucide-react";
 import { useMySummary } from "@/hooks/useMemberLedger";
 import { useOpenFeedbackBoard } from "@/hooks/useLiveFeedback";
 
@@ -37,6 +37,13 @@ export default function MemberHome() {
             title: "내 점수·장부",
             desc: "상·벌점·디파짓",
             color: "from-sky-500 to-indigo-500",
+        },
+        {
+            to: "/member/attendance",
+            icon: CalendarCheck,
+            title: "내 출결",
+            desc: "주차별 출석 현황",
+            color: "from-emerald-500 to-teal-600",
         },
     ];
 

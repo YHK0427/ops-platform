@@ -112,6 +112,34 @@ async def my_ledger(
     ]
 
 
+@router.get("/my-attendance")
+async def my_attendance(
+    member: dict = Depends(get_current_member),
+    db: AsyncSession = Depends(get_db),
+):
+    """로그인한 기수 본인의 세션별 출결 내역(주차순). 출석 집계가 끝난 세션만."""
+    result = await db.execute(
+        select(SessionModel.id, SessionModel.week_num, SessionModel.title,
+               SessionModel.date, Attendance.status, Attendance.excuse_type, Attendance.note)
+        .join(Attendance, Attendance.session_id == SessionModel.id)
+        .where(Attendance.member_id == member["member_id"],
+               Attendance.status != "PENDING")
+        .order_by(SessionModel.week_num.desc())
+    )
+    return [
+        {
+            "session_id": sid,
+            "week_num": week_num,
+            "title": title,
+            "session_date": sdate.isoformat() if sdate else None,
+            "status": status,
+            "excuse_type": excuse_type,
+            "note": note,
+        }
+        for sid, week_num, title, sdate, status, excuse_type, note in result.all()
+    ]
+
+
 @router.get("", response_model=list[MemberResponse])
 async def list_members(
     include_inactive: bool = Query(False),

@@ -31,3 +31,24 @@ export function useMyLedger() {
         },
     });
 }
+
+export interface MyAttendance {
+    session_id: number;
+    week_num: number;
+    title: string;
+    session_date: string | null;
+    status: string;
+    excuse_type: string | null;
+    note: string | null;
+}
+
+/** 로그인한 기수 본인의 세션별 출결 내역 */
+export function useMyAttendance() {
+    return useQuery({
+        queryKey: ["member", "attendance"],
+        queryFn: async () => {
+            const { data } = await memberApi.get<MyAttendance[]>("/members/my-attendance");
+            return data;
+        },
+    });
+}

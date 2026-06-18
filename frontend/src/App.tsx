@@ -42,6 +42,7 @@ const MemberLayout = lazy(() => import("@/pages/member/MemberLayout"));
 const MemberHome = lazy(() => import("@/pages/member/MemberHome"));
 const MemberReports = lazy(() => import("@/pages/member/MemberReports"));
 const MemberLedger = lazy(() => import("@/pages/member/MemberLedger"));
+const MemberAttendance = lazy(() => import("@/pages/member/MemberAttendance"));
 const SelfEvalForm = lazy(() => import("@/pages/member/SelfEvalForm"));
 const EvalComplete = lazy(() => import("@/pages/member/EvalComplete"));
 const MemberResult = lazy(() => import("@/pages/member/MemberResult"));
@@ -161,6 +162,7 @@ export default function App() {
                     <Route path="reports" element={<MemberReports />} />
                     <Route path="feedback" element={<MemberFeedbackList />} />
                     <Route path="ledger" element={<MemberLedger />} />
+                    <Route path="attendance" element={<MemberAttendance />} />
                   </Route>
                   {/* 전체화면 (탭 없음) */}
                   <Route path="eval/:roundId" element={<SelfEvalForm />} />
