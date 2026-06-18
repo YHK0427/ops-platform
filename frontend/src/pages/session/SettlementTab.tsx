@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, CheckCircle2, ExternalLink, Trophy, Trash2, Pencil, X, Check } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertTriangle, CheckCircle2, ExternalLink, Trophy, Trash2, Pencil, X, Check, Lock } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatNumber } from "@/lib/utils";
@@ -35,6 +36,10 @@ export default function SettlementTab() {
 
     // Merit Filter
     const [meritFilterMember, setMeritFilterMember] = useState<string>("all");
+
+    // 마감 확인 모달
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [meritConfirmed, setMeritConfirmed] = useState(false);
 
     // Set of penalty indices that are SKIPPED (unchecked)
     const [skippedIndices, setSkippedIndices] = useState<Set<number>>(new Set());
@@ -124,7 +129,7 @@ export default function SettlementTab() {
         setSkippedMeritIndices(newSkipped);
     };
 
-    const handleFinalize = () => {
+    const doFinalize = () => {
         // Build penalty overrides
         const overridesMap = new Map<number, Set<string>>();
         skippedIndices.forEach(idx => {
@@ -141,16 +146,15 @@ export default function SettlementTab() {
 
         const skip_merit_indices = Array.from(skippedMeritIndices);
 
-        if (confirm(`세션을 마감하시겠습니까?\n\n총 벌점: ${totalScoreDelta}\n총 차감액: ${formatNumber(totalDepositDelta)}원\n총 상점: +${totalMeritScore}\n\n마감 후에는 수정할 수 없으며, 벌점/상점이 확정됩니다.`)) {
-            finalizeSession({ sessionId: session.id, overrides, skip_merit_indices }, {
-                onSuccess: () => {
-                    toast.success("세션이 성공적으로 마감되었습니다.");
-                },
-                onError: (err) => {
-                    toast.error(`마감 실패: ${err.message}`);
-                }
-            });
-        }
+        finalizeSession({ sessionId: session.id, overrides, skip_merit_indices }, {
+            onSuccess: () => {
+                toast.success("세션이 성공적으로 마감되었습니다.");
+                setConfirmOpen(false);
+            },
+            onError: (err) => {
+                toast.error(`마감 실패: ${err.message}`);
+            }
+        });
     };
 
     if (isLoading) {
@@ -176,13 +180,73 @@ export default function SettlementTab() {
                     </p>
                 </div>
                 <Button
-                    onClick={handleFinalize}
+                    onClick={() => { setMeritConfirmed(false); setConfirmOpen(true); }}
                     disabled={isFinalizing}
                     className="bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-100 transition-all hover:scale-105 self-start md:self-auto"
                 >
                     {isFinalizing ? "마감 처리 중..." : "세션 마감"}
                 </Button>
             </div>
+
+            <Dialog open={confirmOpen} onOpenChange={(o) => { if (!o) setConfirmOpen(false); }}>
+                <DialogContent className="sm:max-w-[440px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Lock className="w-5 h-5 text-rose-600" /> 세션 마감 확인
+                        </DialogTitle>
+                    </DialogHeader>
+
+                    {/* 상점 적용 강조 안내 */}
+                    <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
+                        <div className="flex items-start gap-2.5">
+                            <Trophy className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-extrabold text-amber-900">
+                                    오프/오피 등 상점을 모두 부여하셨나요?
+                                </p>
+                                <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                                    Listen Up·BP·발전왕·번개 등 빠뜨린 상점이 없는지 마감 전에 꼭 확인하세요.
+                                </p>
+                            </div>
+                        </div>
+                        <label className="flex items-center gap-2 mt-3 pt-3 border-t border-amber-200 cursor-pointer select-none">
+                            <Checkbox checked={meritConfirmed} onCheckedChange={(v) => setMeritConfirmed(!!v)} />
+                            <span className="text-sm font-bold text-amber-900">상점을 모두 적용했습니다</span>
+                        </label>
+                    </div>
+
+                    {/* 정산 요약 */}
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-lg bg-gray-50 border border-gray-200 p-2.5">
+                            <p className="text-[11px] text-gray-500">총 벌점</p>
+                            <p className="text-base font-bold text-gray-900">{totalScoreDelta}</p>
+                        </div>
+                        <div className="rounded-lg bg-gray-50 border border-gray-200 p-2.5">
+                            <p className="text-[11px] text-gray-500">총 차감액</p>
+                            <p className="text-base font-bold text-gray-900">{formatNumber(totalDepositDelta)}원</p>
+                        </div>
+                        <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5">
+                            <p className="text-[11px] text-emerald-600">총 상점</p>
+                            <p className="text-base font-bold text-emerald-700">+{totalMeritScore}</p>
+                        </div>
+                    </div>
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                        마감하면 위 내역이 <strong className="text-gray-700">장부에 영구 기록</strong>되고 멤버 점수·디파짓에 즉시 반영됩니다.
+                        마감 후에도 <strong className="text-gray-700">장부에서 세션에 연결해 상점·벌점을 추가·수정</strong>할 수 있어요.
+                    </p>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setConfirmOpen(false)}>취소</Button>
+                        <Button
+                            onClick={doFinalize}
+                            disabled={!meritConfirmed || isFinalizing}
+                            className="bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50"
+                        >
+                            {isFinalizing ? "마감 처리 중..." : "세션 마감"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <div className="grid grid-cols-3 gap-2 md:gap-4">
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
@@ -252,10 +316,10 @@ export default function SettlementTab() {
                 </span>
             </div>
 
-            {/* Penalty table */}
-            <div className="rounded-xl border border-[var(--color-border)] overflow-x-auto bg-[var(--color-surface)]">
+            {/* Penalty table — 행이 많아지면 세로 스크롤(헤더 고정) */}
+            <div className="rounded-xl border border-[var(--color-border)] overflow-auto max-h-[55vh] bg-[var(--color-surface)]">
                 <Table>
-                    <TableHeader>
+                    <TableHeader className="sticky top-0 z-10">
                         <TableRow className="bg-gray-50 hover:bg-gray-50">
                             <TableHead className="w-[50px] text-center">적용</TableHead>
                             <TableHead>유형</TableHead>
@@ -426,9 +490,9 @@ function StagedMeritPanel({
                 </div>
             )}
 
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[50vh]">
             <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 z-10">
                     <TableRow className="bg-gray-50 hover:bg-gray-50">
                         <TableHead className="w-[50px] text-center">적용</TableHead>
                         <TableHead className="w-[80px]">구분</TableHead>
