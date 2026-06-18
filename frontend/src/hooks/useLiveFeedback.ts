@@ -379,3 +379,37 @@ export function useToggleReaction(boardId: number) {
         },
     });
 }
+
+export function useStaffToggleReaction(boardId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ postId, emoji, active }: { postId: number; emoji: string; active: boolean }) => {
+            if (active) {
+                await api.delete(`/live-feedback/posts/${postId}/reactions/${encodeURIComponent(emoji)}`);
+            } else {
+                await api.post(`/live-feedback/posts/${postId}/reactions`, { emoji });
+            }
+        },
+        onMutate: async ({ postId, emoji, active }) => {
+            qc.setQueryData<FeedbackPost[]>(lfKeys.posts(boardId), (prev) =>
+                (prev ?? []).map((p) => {
+                    if (p.id !== postId) return p;
+                    const counts = { ...p.reactions };
+                    const mine = new Set(p.my_reactions ?? []);
+                    if (active) {
+                        counts[emoji] = Math.max(0, (counts[emoji] ?? 1) - 1);
+                        if (counts[emoji] === 0) delete counts[emoji];
+                        mine.delete(emoji);
+                    } else {
+                        counts[emoji] = (counts[emoji] ?? 0) + 1;
+                        mine.add(emoji);
+                    }
+                    return { ...p, reactions: counts, my_reactions: [...mine] };
+                }),
+            );
+        },
+        onError: (e: any) => {
+            toast.error(e?.response?.data?.detail ?? "반응 실패");
+        },
+    });
+}

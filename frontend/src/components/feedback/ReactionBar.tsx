@@ -4,10 +4,11 @@ import { SmilePlus } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-export const FEEDBACK_EMOJIS = ["👍", "❤️", "👏", "🔥", "😮", "😂", "🥹", "💯", "🙌", "✨", "🤔", "👀"];
+export const FEEDBACK_EMOJIS = ["👍", "❤️", "👏", "🔥", "🎉", "😮", "😂", "🥹", "🥺", "😍", "🤩", "💯", "🙌", "💪", "🙏", "✨", "⭐", "🤔", "👀", "🫶"];
 const EMOJI_LABEL: Record<string, string> = {
-    "👍": "좋아요", "❤️": "최고예요", "👏": "박수", "🔥": "열정", "😮": "놀라움",
-    "😂": "웃겨요", "🥹": "감동", "💯": "완벽", "🙌": "멋져요", "✨": "인상적", "🤔": "흥미로움", "👀": "주목",
+    "👍": "좋아요", "❤️": "최고예요", "👏": "박수", "🔥": "열정", "🎉": "축하", "😮": "놀라움",
+    "😂": "웃겨요", "🥹": "감동", "🥺": "짠해요", "😍": "사랑", "🤩": "멋져요", "💯": "완벽",
+    "🙌": "최고", "💪": "화이팅", "🙏": "감사", "✨": "인상적", "⭐": "별점", "🤔": "흥미로움", "👀": "주목", "🫶": "응원",
 };
 
 interface ReactionBarProps {

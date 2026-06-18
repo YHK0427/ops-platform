@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2 } from "lucide-react";
+import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     useAdminBoard,
@@ -7,6 +7,7 @@ import {
     useDeletePost,
     useHidePost,
     useStaffCreatePost,
+    useStaffToggleReaction,
     type FeedbackPost,
     type FeedbackCategory,
     type PresenterColumn,
@@ -25,9 +26,10 @@ function groupBadgeClass(g: number | null): string {
     return "bg-gray-100 text-gray-500";
 }
 
-function PostCard({ post, categories }: { post: FeedbackPost; categories: FeedbackCategory[] }) {
+function PostCard({ post, categories, boardId }: { post: FeedbackPost; categories: FeedbackCategory[]; boardId: number }) {
     const del = useDeletePost();
     const hide = useHidePost();
+    const react = useStaffToggleReaction(boardId);
     return (
         <div
             className={cn(
@@ -85,7 +87,12 @@ function PostCard({ post, categories }: { post: FeedbackPost; categories: Feedba
                 ))}
             </div>
             <div className="mt-2">
-                <ReactionBar reactions={post.reactions} myReactions={post.my_reactions} canReact={false} />
+                <ReactionBar
+                    reactions={post.reactions}
+                    myReactions={post.my_reactions}
+                    canReact={!post.is_hidden}
+                    onToggle={(emoji, active) => react.mutate({ postId: post.id, emoji, active })}
+                />
             </div>
         </div>
     );
@@ -158,6 +165,13 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     const presenters: PresenterColumn[] = board?.presenters ?? [];
     const categories: FeedbackCategory[] = board?.categories ?? [];
     const isOpen = board?.is_open ?? false;
+    // 다 본 발표자는 접어둘 수 있게 — 기본 펼침, 접힌 발표자 id 집합
+    const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+    const toggleCollapse = (id: number) => setCollapsed((prev) => {
+        const n = new Set(prev);
+        n.has(id) ? n.delete(id) : n.add(id);
+        return n;
+    });
     const postsByPresenter = useMemo(() => {
         const map = new Map<number, FeedbackPost[]>();
         for (const p of posts ?? []) {
@@ -190,35 +204,46 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                     분반/발표순서를 먼저 지정하세요. (출석 탭에서 분반 배정)
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="columns-1 md:columns-2 lg:columns-3 gap-4">
                     {presenters.map((pr) => {
                         const list = postsByPresenter.get(pr.presenter_member_id) ?? [];
+                        const open = !collapsed.has(pr.presenter_member_id);
                         return (
-                            <div key={pr.presenter_member_id} className="rounded-2xl border border-gray-200 bg-gray-50/50 p-3">
-                                <div className="flex items-center justify-between mb-2.5 px-1">
-                                    <div className="flex items-center gap-2">
+                            <div key={pr.presenter_member_id} className={cn("rounded-2xl border border-gray-200 bg-gray-50/50 p-3 mb-4 break-inside-avoid", !open && "opacity-90")}>
+                                <button
+                                    onClick={() => toggleCollapse(pr.presenter_member_id)}
+                                    className={cn("w-full flex items-center justify-between px-1 text-left", open && "mb-2.5")}
+                                >
+                                    <div className="flex items-center gap-2 min-w-0">
                                         {pr.group_num != null && (
-                                            <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-bold", groupBadgeClass(pr.group_num))}>
+                                            <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-bold shrink-0", groupBadgeClass(pr.group_num))}>
                                                 {pr.group_num}분반
                                             </span>
                                         )}
-                                        <span className="text-sm font-bold text-gray-900">{pr.name}</span>
+                                        <span className="text-sm font-bold text-gray-900 truncate">{pr.name}</span>
                                         {pr.presenter_order != null && (
-                                            <span className="text-[11px] text-gray-400">#{pr.presenter_order}</span>
+                                            <span className="text-[11px] text-gray-400 shrink-0">#{pr.presenter_order}</span>
                                         )}
                                     </div>
-                                    <span className="text-xs text-gray-400">{list.length}</span>
-                                </div>
-                                <div className="space-y-2">
-                                    {list.length === 0 ? (
-                                        <p className="text-xs text-gray-400 px-1 py-3 text-center">아직 피드백이 없습니다</p>
-                                    ) : (
-                                        list.map((post) => <PostCard key={post.id} post={post} categories={categories} />)
-                                    )}
-                                </div>
-                                {isOpen && (
-                                    <StaffComposer boardId={boardId} presenterId={pr.presenter_member_id}
-                                        presenterName={pr.name} categories={categories} />
+                                    <div className="flex items-center gap-1.5 shrink-0 text-gray-400">
+                                        <span className="text-xs tabular-nums">{list.length}</span>
+                                        <ChevronDown className={cn("w-4 h-4 transition-transform", !open && "-rotate-90")} />
+                                    </div>
+                                </button>
+                                {open && (
+                                    <>
+                                        <div className="space-y-2">
+                                            {list.length === 0 ? (
+                                                <p className="text-xs text-gray-400 px-1 py-3 text-center">아직 피드백이 없습니다</p>
+                                            ) : (
+                                                list.map((post) => <PostCard key={post.id} post={post} categories={categories} boardId={boardId} />)
+                                            )}
+                                        </div>
+                                        {isOpen && (
+                                            <StaffComposer boardId={boardId} presenterId={pr.presenter_member_id}
+                                                presenterName={pr.name} categories={categories} />
+                                        )}
+                                    </>
                                 )}
                             </div>
                         );

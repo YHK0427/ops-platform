@@ -40,7 +40,7 @@ logger = logging.getLogger("live_feedback")
 
 router = APIRouter(prefix="/live-feedback", tags=["live-feedback"])
 
-ALLOWED_EMOJIS = ("👍", "❤️", "👏", "🔥", "😮", "😂", "🥹", "💯", "🙌", "✨", "🤔", "👀")
+ALLOWED_EMOJIS = ("👍", "❤️", "👏", "🔥", "🎉", "😮", "😂", "🥹", "🥺", "😍", "🤩", "💯", "🙌", "💪", "🙏", "✨", "⭐", "🤔", "👀", "🫶")
 MAX_CONTENT_LEN = 1000
 
 # 카테고리 색 팔레트 (프론트 정적 Tailwind 매핑과 일치해야 함)
@@ -266,12 +266,13 @@ async def _get_or_create_alias(
     return alias
 
 
-def _reaction_summary(post: LiveFeedbackPost, viewer_member_id: int | None = None):
+def _reaction_summary(post: LiveFeedbackPost, viewer_member_id: int | None = None, viewer_user_id: int | None = None):
     counts: dict[str, int] = {}
     mine: list[str] = []
     for r in post.reactions:
         counts[r.emoji] = counts.get(r.emoji, 0) + 1
-        if viewer_member_id is not None and r.member_id == viewer_member_id:
+        if (viewer_member_id is not None and r.member_id == viewer_member_id) or \
+           (viewer_user_id is not None and r.user_id == viewer_user_id):
             mine.append(r.emoji)
     return counts, mine
 
@@ -280,10 +281,12 @@ def _iso(dt) -> str | None:
     return dt.isoformat() if dt else None
 
 
-def _post_admin_dict(post: LiveFeedbackPost, alias_map: dict[str, str] | None = None) -> dict:
+def _post_admin_dict(post: LiveFeedbackPost, alias_map: dict[str, str] | None = None,
+                     viewer_user_id: int | None = None) -> dict:
     """운영진용 — 항상 실명(운영진끼리는 익명이어도 누군지 보임) + 익명 여부 배지.
-    anon_alias: 익명 글의 닉네임(발표용 화면에서 '익명 적용'을 켜면 실명 대신 표시)."""
-    counts, _ = _reaction_summary(post)
+    anon_alias: 익명 글의 닉네임(발표용 화면에서 '익명 적용'을 켜면 실명 대신 표시).
+    my_reactions: 이 운영진이 누른 반응(반응 토글 표시용)."""
+    counts, mine = _reaction_summary(post, viewer_user_id=viewer_user_id)
     is_staff = post.author_user_id is not None
     author_name = (post.author_user.display_name if post.author_user else None) if is_staff \
         else (post.author.name if post.author else None)
@@ -302,6 +305,7 @@ def _post_admin_dict(post: LiveFeedbackPost, alias_map: dict[str, str] | None = 
         "author_is_staff": is_staff,
         "anon_alias": anon_alias,
         "reactions": counts,
+        "my_reactions": mine,
         "created_at": _iso(post.created_at),
     }
 
@@ -554,11 +558,12 @@ async def delete_board(
 @router.get("/boards/{board_id}/posts")
 async def list_posts_admin(
     board_id: int,
-    _: dict = Depends(require_staff),
+    user: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
     await _get_board_or_404(db, board_id, cohort_id)
+    viewer_uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
     alias_q = await db.execute(
         select(LiveFeedbackAnonAlias.member_id, LiveFeedbackAnonAlias.user_id, LiveFeedbackAnonAlias.alias)
         .where(LiveFeedbackAnonAlias.board_id == board_id)
@@ -575,7 +580,7 @@ async def list_posts_admin(
         .where(LiveFeedbackPost.board_id == board_id)
         .order_by(LiveFeedbackPost.created_at)
     )
-    return [_post_admin_dict(p, alias_map) for p in q.scalars().all()]
+    return [_post_admin_dict(p, alias_map, viewer_user_id=viewer_uid) for p in q.scalars().all()]
 
 
 @router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -979,6 +984,66 @@ async def member_remove_reaction(
         select(LiveFeedbackReaction).where(
             LiveFeedbackReaction.post_id == post_id,
             LiveFeedbackReaction.member_id == member_id,
+            LiveFeedbackReaction.emoji == emoji,
+        )
+    )
+    row = existing.scalar_one_or_none()
+    if row:
+        await db.delete(row)
+        await db.commit()
+    await _broadcast_reaction(db, post_id, post.board_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/posts/{post_id}/reactions", status_code=201)
+async def staff_add_reaction(
+    post_id: int,
+    body: ReactionRequest,
+    user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """운영진이 피드백 글에 반응."""
+    if body.emoji not in ALLOWED_EMOJIS:
+        raise HTTPException(status_code=400, detail="허용되지 않은 이모지입니다")
+    post = await db.get(LiveFeedbackPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
+    await _get_board_or_404(db, post.board_id, cohort_id)
+    uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
+    if uid is None:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    dup = await db.execute(
+        select(LiveFeedbackReaction.id).where(
+            LiveFeedbackReaction.post_id == post_id,
+            LiveFeedbackReaction.user_id == uid,
+            LiveFeedbackReaction.emoji == body.emoji,
+        )
+    )
+    if dup.scalar_one_or_none() is None:
+        db.add(LiveFeedbackReaction(post_id=post_id, user_id=uid, emoji=body.emoji))
+        await db.commit()
+    await _broadcast_reaction(db, post_id, post.board_id)
+    return {"post_id": post_id, "emoji": body.emoji}
+
+
+@router.delete("/posts/{post_id}/reactions/{emoji}", status_code=status.HTTP_204_NO_CONTENT)
+async def staff_remove_reaction(
+    post_id: int,
+    emoji: str,
+    user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    post = await db.get(LiveFeedbackPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
+    await _get_board_or_404(db, post.board_id, cohort_id)
+    uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
+    existing = await db.execute(
+        select(LiveFeedbackReaction).where(
+            LiveFeedbackReaction.post_id == post_id,
+            LiveFeedbackReaction.user_id == uid,
             LiveFeedbackReaction.emoji == emoji,
         )
     )

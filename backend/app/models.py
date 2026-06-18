@@ -463,12 +463,17 @@ class LiveFeedbackReaction(Base):
 
     id = Column(Integer, primary_key=True)
     post_id = Column(Integer, ForeignKey("live_feedback_posts.id", ondelete="CASCADE"), nullable=False)
-    member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
+    # 반응 주체: 기수원(member_id) 또는 운영진(user_id) 중 하나
+    member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     emoji = Column(String(16), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        UniqueConstraint("post_id", "member_id", "emoji", name="uq_live_feedback_reaction"),
+        Index("uq_lf_reaction_member", "post_id", "member_id", "emoji",
+              unique=True, postgresql_where=text("member_id IS NOT NULL")),
+        Index("uq_lf_reaction_user", "post_id", "user_id", "emoji",
+              unique=True, postgresql_where=text("user_id IS NOT NULL")),
     )
 
     post = relationship("LiveFeedbackPost", back_populates="reactions")
