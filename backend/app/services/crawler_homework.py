@@ -179,6 +179,20 @@ async def scan_homework_all(
         ppt_a.scanned_at = datetime.now()
         logger.info(f"PPT MISSING for member_id={ppt_a.member_id}")
 
+    # REVIEW: 스캔 후에도 PENDING인 멤버 → MISSING (미제출)
+    # 결석/공결자는 위에서 이미 EXEMPT 처리되므로 여기 PENDING은 '출석했으나 미제출'만 남는다.
+    # (PPT와 동일 정책 — 기존엔 REVIEW만 누락되어 미제출자가 '미확인(PENDING)'으로 표시되던 버그)
+    pending_review_stmt = select(Assignment).where(
+        Assignment.session_id == session_id,
+        Assignment.type == "REVIEW",
+        Assignment.status == "PENDING",
+    )
+    pending_review_result = await db.execute(pending_review_stmt)
+    for rv_a in pending_review_result.scalars().all():
+        rv_a.status = "MISSING"
+        rv_a.scanned_at = datetime.now()
+        logger.info(f"REVIEW MISSING for member_id={rv_a.member_id}")
+
     await db.commit()
     return total_processed
 
@@ -198,7 +212,8 @@ async def scan_feedback_comments(
     - effective_targets = {본인} ∪ {target_member_ids} (본인 영상은 기본 포함)
     - effective_targets 내 모든 멤버의 영상에 댓글을 달았으면 PASS, 아니면 MISSING
     - target_member_ids 미설정 시 본인 영상만 체크
-    - 영상이 없는 멤버의 경우 체크 불가 → PASS 처리 (스캔 대상 아님)
+    - 결석/공결(ABSENT/EXCUSED) 멤버는 피드백 대상이 없으므로 EXEMPT
+    - 출석자 중 본인 영상이 없는 경우 체크 불가 → PASS 처리
     """
     req_session = await get_valid_requests_session(db)
     if req_session is None:
@@ -313,9 +328,23 @@ async def scan_feedback_comments(
     # 4. 멤버 이름 맵 (raw_data에 이름 저장용)
     member_name_map = {m.id: m.name for m in members}
 
+    # 4-1. 결석/공결(ABSENT/EXCUSED) 멤버 → FEEDBACK 면제(EXEMPT)
+    #      결석자는 발표 영상이 없어 피드백 대상이 없으므로 면제. (REVIEW EXEMPT 정책과 동일)
+    absent_stmt = select(Attendance.member_id).where(
+        Attendance.session_id == session_id,
+        Attendance.status.in_(("ABSENT", "EXCUSED")),
+    )
+    absent_result = await db.execute(absent_stmt)
+    absent_excused_ids = {row[0] for row in absent_result.all()}
+
     # 5. 각 멤버별 FEEDBACK 상태 업데이트
     count = 0
     for member in members:
+        # 결석/공결자: 피드백 의무 없음 → EXEMPT ("영상 없음 → PASS" 폴백보다 우선 적용)
+        if member.id in absent_excused_ids:
+            await upsert_assignment(db, session_id, member.id, "FEEDBACK", "EXEMPT")
+            count += 1
+            continue
         assignment = feedback_assignments.get(member.id)
         explicit_targets: list[int] = (assignment.target_member_ids or []) if assignment else []
 
