@@ -36,6 +36,11 @@ const EvalAudienceForm = lazy(() => import("@/pages/EvalAudienceForm"));
 const LiveFeedbackManagement = lazy(() => import("@/pages/LiveFeedbackManagement"));
 const LiveFeedbackPresent = lazy(() => import("@/pages/LiveFeedbackPresent"));
 const Announcements = lazy(() => import("@/pages/Announcements"));
+const ScoringManagement = lazy(() => import("@/pages/ScoringManagement"));
+const ScoringRoundDetail = lazy(() => import("@/pages/ScoringRoundDetail"));
+
+// ── 공개(무로그인) 채점 폼 — 어떤 가드에도 들어가면 안 된다 ──────────────
+const PublicScoringForm = lazy(() => import("@/pages/PublicScoringForm"));
 
 // ── Lazy-loaded member portal pages ────────────────────────────────────
 const MemberLayout = lazy(() => import("@/pages/member/MemberLayout"));
@@ -143,6 +148,11 @@ export default function App() {
               {/* 푸시 알림 클릭 랜딩 (세션별 라우팅) */}
               <Route path="/go/announcement/:id" element={<AnnouncementLanding />} />
 
+              {/* ── 공개 채점 폼 (로그인 불필요) ────────────────────────
+                  주의: AuthGuard/MemberGuard 바깥, catch-all(*) 앞에 두어야 한다.
+                  가드 안에 들어가면 외부 심사위원이 로그인 화면으로 튕긴다. */}
+              <Route path="/s/:publicToken" element={<PublicScoringForm />} />
+
               {/* ── 기수 포털 ──────────────────────────── */}
               <Route
                 path="/member"
@@ -197,6 +207,8 @@ export default function App() {
                   <Route path="/team-building/:boardId" element={<TeamBuildingBoard />} />
                   <Route path="/eval" element={<EvalManagement />} />
                   <Route path="/live-feedback" element={<LiveFeedbackManagement />} />
+                  <Route path="/scoring" element={<ScoringManagement />} />
+                  <Route path="/scoring/:roundId" element={<ScoringRoundDetail />} />
                   <Route path="/announcements" element={<Announcements />} />
                 </Route>
                 {/* Audience eval form — full-screen (no sidebar) */}

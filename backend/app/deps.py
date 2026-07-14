@@ -70,6 +70,26 @@ async def check_login_rate(ip: str, username: str = "") -> None:
         )
 
 
+async def check_public_rate(ip: str, bucket: str = "scoring", limit: int = 3000, window: int = 600) -> None:
+    """공개(무로그인) 엔드포인트용 레이트 리밋 — 아주 넉넉하게.
+
+    같은 강의실 WiFi에서 수백 명이 접속하면 공인 IP가 **하나로 뭉친다**(NAT).
+    한 사람이 폼을 여는 데만 조회·확인·제출로 3~4회 요청하므로, 한도를 낮게 잡으면
+    정상 참가자가 막힌다. 청중 수백 명을 상정해 넉넉히 두고, 스크립트성 폭주만 걸러낸다.
+    (개인 식별은 IP가 아니라 브라우저에 저장된 참가자 토큰으로 하므로, 같은 WiFi여도 서로 안 섞인다.)
+    """
+    redis = _get_redis_client()
+    key = f"public_rate:{bucket}:{ip}"
+    attempts = await redis.incr(key)
+    if attempts == 1:
+        await redis.expire(key, window)
+    if attempts > limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        )
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """AsyncSession 의존성"""
     async with AsyncSessionLocal() as session:
