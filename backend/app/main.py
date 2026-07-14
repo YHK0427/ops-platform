@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.logging_config import setup_logging
-from app.routers import assignments, auth, cohorts, crawler, evaluation, generation, live_feedback, members, sessions, ledger, team_building, notifications
+from app.routers import assignments, auth, cohorts, crawler, evaluation, generation, live_feedback, members, sessions, ledger, scoring, team_building, notifications
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,11 @@ async def lifespan(app: FastAPI):
     # 실시간 피드백 Redis pub/sub 구독 시작 (워커마다 1개)
     from app.services.live_feedback_ws import manager as live_feedback_manager
     await live_feedback_manager.start_subscriber()
+    # 심사 결과 실시간 반영 pub/sub 구독 시작 (워커마다 1개)
+    from app.services.scoring_ws import manager as scoring_manager
+    await scoring_manager.start_subscriber()
     yield
+    await scoring_manager.stop_subscriber()
     await live_feedback_manager.stop_subscriber()
     await app.state.arq_pool.close()
 
@@ -83,6 +87,9 @@ app.include_router(team_building.router, prefix="/api/v1")
 app.include_router(evaluation.router, prefix="/api/v1")
 app.include_router(live_feedback.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
+app.include_router(scoring.router, prefix="/api/v1")
+# 공개(무로그인) 채점 폼 — 인증 의존성 없음. 라우터 내부에서 public_token + 레이트리밋으로 방어.
+app.include_router(scoring.public_router, prefix="/api/v1")
 
 
 @app.get("/health")

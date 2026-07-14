@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Boolean, CheckConstraint, Column, Date, ForeignKey, Index,
-    Integer, String, Text, UniqueConstraint, func, text,
+    Integer, Numeric, String, Text, UniqueConstraint, func, text,
     TIMESTAMP,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -580,3 +580,227 @@ class AnnouncementComment(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     content = Column(String(1000), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+
+# ── 심사·점수 집계 (공개 링크 채점) ────────────────────────────────────────────
+# 주의: 여기서 "score"는 심사 점수다. 상벌점(Member.net_score)·평가 리커트
+# 점수(EvalResponse.score)와는 완전히 별개 도메인.
+
+class ScoringRound(Base):
+    """심사 라운드 — 공개 링크로 배포되는 채점 폼 1개. 세션 연동 또는 독립 이벤트."""
+    __tablename__ = "scoring_rounds"
+
+    id = Column(Integer, primary_key=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=False)
+    # NULL = 세션과 무관한 독립 심사 이벤트 (대상 팀을 직접 입력)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True)
+    name = Column(String(100), nullable=False)
+    intro = Column(Text, nullable=True)  # 참가자에게 보여줄 안내문 (수정 방법 안내 포함)
+
+    public_token = Column(String(64), nullable=False, unique=True)  # secrets.token_urlsafe(32)
+    is_open = Column(Boolean, default=False, server_default="false", nullable=False)
+    opened_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    closed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    # 그룹 총점(비중) — 제출 인원과 무관하게 고정. 실제 제출자 수로 자동 정규화된다.
+    judge_weight = Column(Numeric(6, 2), nullable=False, server_default="80")
+    observer_weight = Column(Numeric(6, 2), nullable=False, server_default="20")
+
+    observer_mode = Column(String(20), nullable=False, server_default="RANK")  # SCORE|RANK
+    # observer_mode='RANK' 일 때 등수 가중치 — **퍼센트**로 표기한다 (합 100).
+    # 엔진이 합계로 나눠 정규화하므로 실제로는 상대 비율로만 작동한다.
+    # 주의: 콜론 뒤에 공백 필수 — sa.text()는 ':1' 을 바인드 파라미터로 오인해 NULL로 렌더링한다.
+    rank_points = Column(
+        JSONB,
+        nullable=False,
+        server_default=text(
+            '\'[{"rank": 1, "points": 50}, {"rank": 2, "points": 30}, {"rank": 3, "points": 20}]\''
+        ),
+    )
+    exclude_own_team = Column(Boolean, default=False, server_default="false", nullable=False)
+
+    # 참관위원 소그룹 라벨 (예: ["운영진","기수","청중"]). 집계에는 영향을 주지 않고
+    # 제출현황·결과를 그룹별로 나눠 보기 위한 분류일 뿐이다. 빈 배열이면 그룹을 묻지 않는다.
+    observer_groups = Column(
+        JSONB, nullable=False, server_default=text('\'["운영진", "기수", "청중"]\''),
+    )
+
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        CheckConstraint("observer_mode IN ('SCORE','RANK')", name="ck_scoring_round_observer_mode"),
+        Index("ix_scoring_rounds_cohort", "cohort_id"),
+    )
+
+    criteria = relationship(
+        "ScoringCriterion", back_populates="round",
+        cascade="all, delete-orphan", order_by="ScoringCriterion.order_num",
+    )
+    targets = relationship(
+        "ScoringTarget", back_populates="round",
+        cascade="all, delete-orphan", order_by="ScoringTarget.order_num",
+    )
+    roster = relationship("ScoringRosterEntry", back_populates="round", cascade="all, delete-orphan")
+    participants = relationship("ScoringParticipant", back_populates="round", cascade="all, delete-orphan")
+
+
+class ScoringCriterion(Base):
+    """심사 기준 — 운영자가 자유롭게 추가/수정/삭제. 기준별 배점(max_score) 합이 만점."""
+    __tablename__ = "scoring_criteria"
+
+    id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("scoring_rounds.id", ondelete="CASCADE"), nullable=False)
+    label = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    max_score = Column(Numeric(6, 2), nullable=False)
+    order_num = Column(Integer, nullable=False, server_default="0")
+
+    __table_args__ = (
+        CheckConstraint("max_score > 0", name="ck_scoring_criterion_max_score"),
+        Index("ix_scoring_criteria_round", "round_id"),
+    )
+
+    round = relationship("ScoringRound", back_populates="criteria")
+
+
+class ScoringTarget(Base):
+    """심사 대상 = 팀. 세션 연동 시 Team에서 임포트, 독립 모드에선 이름만 직접 입력."""
+    __tablename__ = "scoring_targets"
+
+    id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("scoring_rounds.id", ondelete="CASCADE"), nullable=False)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
+    name = Column(String(100), nullable=False)  # 원본/식별용 (세션 팀 이름: "1조")
+    # 평가 폼·결과에 실제로 보이는 이름. 비어 있으면 name을 쓴다.
+    # 세션을 다시 임포트해도 team_id가 같으면 이 값은 보존된다.
+    display_name = Column(String(100), nullable=True)
+    order_num = Column(Integer, nullable=False, server_default="0")
+    # 자기팀 제외 판정용 스냅샷 (세션 연동 시 TeamMember에서 복사)
+    member_ids = Column(ARRAY(Integer), nullable=False, server_default=text("'{}'"))
+    # 팀원 이름 스냅샷 — 채점 폼에서 "어느 팀인지" 알아보게 하는 표시용.
+    # 이름만 따로 두는 이유: 독립 모드(외부 팀)에는 member_id가 없고, 멤버가 나중에 바뀌어도
+    # 심사 당시의 팀 구성이 보존돼야 하기 때문.
+    member_names = Column(ARRAY(String), nullable=False, server_default=text("'{}'"))
+
+    __table_args__ = (
+        Index("ix_scoring_targets_round", "round_id"),
+    )
+
+    round = relationship("ScoringRound", back_populates="targets")
+
+
+class ScoringRosterEntry(Base):
+    """사전 등록 명단 — 제출자 이름 매칭 + 제출 현황 체크리스트의 기준."""
+    __tablename__ = "scoring_roster"
+
+    id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("scoring_rounds.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(50), nullable=False)
+    role = Column(String(20), nullable=False, server_default="ANY")  # JUDGE|OBSERVER|ANY
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    note = Column(String(100), nullable=True)  # 소속 등 표시용
+    # 이 사람의 기본 소그룹. 제출 시 본인이 안 고르면 이 값을 물려받는다.
+    # (기수 멤버 임포트 → "기수", 운영진 임포트 → "운영진" 처럼 한 번에 태깅)
+    group_label = Column(String(30), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("role IN ('JUDGE','OBSERVER','ANY')", name="ck_scoring_roster_role"),
+        Index("ix_scoring_roster_round", "round_id"),
+    )
+
+    round = relationship("ScoringRound", back_populates="roster")
+    member = relationship("Member")
+
+
+class ScoringParticipant(Base):
+    """제출자 — 공개 폼에서 이름을 입력한 심사위원/참관위원 1명 (또는 운영진 대리 입력)."""
+    __tablename__ = "scoring_participants"
+
+    id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("scoring_rounds.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(20), nullable=False)  # JUDGE|OBSERVER
+    entered_name = Column(String(50), nullable=False)  # 본인이 입력한 원문 (항상 보존)
+    # 참관위원 소그룹 (라운드의 observer_groups 중 하나). 분류용 — 집계에는 영향 없음.
+    group_label = Column(String(30), nullable=True)
+
+    # 명단 매칭 결과 — 자동 매칭 후 운영진이 수동 보정 가능
+    matched_roster_id = Column(Integer, ForeignKey("scoring_roster.id", ondelete="SET NULL"), nullable=True)
+    matched_member_id = Column(Integer, ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+
+    token = Column(String(64), nullable=False, unique=True)  # 브라우저 저장용 (같은 기기 재접속 복원)
+    is_proxy = Column(Boolean, default=False, server_default="false", nullable=False)
+    proxy_by = Column(String(50), nullable=True)  # 대리 입력한 운영진 username
+
+    submitted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    ip = Column(String(45), nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        CheckConstraint("role IN ('JUDGE','OBSERVER')", name="ck_scoring_participant_role"),
+        Index("ix_scoring_participants_round", "round_id"),
+    )
+
+    round = relationship("ScoringRound", back_populates="participants")
+    matched_roster = relationship("ScoringRosterEntry")
+    matched_member = relationship("Member")
+    scores = relationship("ScoringScore", back_populates="participant", cascade="all, delete-orphan")
+    ranks = relationship("ScoringRank", back_populates="participant", cascade="all, delete-orphan")
+    comments = relationship("ScoringComment", back_populates="participant", cascade="all, delete-orphan")
+
+
+class ScoringScore(Base):
+    """기준별 점수 — 제출자 × 대상팀 × 기준."""
+    __tablename__ = "scoring_scores"
+
+    id = Column(Integer, primary_key=True)
+    participant_id = Column(Integer, ForeignKey("scoring_participants.id", ondelete="CASCADE"), nullable=False)
+    target_id = Column(Integer, ForeignKey("scoring_targets.id", ondelete="CASCADE"), nullable=False)
+    criterion_id = Column(Integer, ForeignKey("scoring_criteria.id", ondelete="CASCADE"), nullable=False)
+    score = Column(Numeric(6, 2), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("participant_id", "target_id", "criterion_id", name="uq_scoring_score"),
+    )
+
+    participant = relationship("ScoringParticipant", back_populates="scores")
+
+
+class ScoringRank(Base):
+    """참관위원 등수 선택 (observer_mode='RANK') — 제출자당 등수 1개, 팀 1개."""
+    __tablename__ = "scoring_ranks"
+
+    id = Column(Integer, primary_key=True)
+    participant_id = Column(Integer, ForeignKey("scoring_participants.id", ondelete="CASCADE"), nullable=False)
+    target_id = Column(Integer, ForeignKey("scoring_targets.id", ondelete="CASCADE"), nullable=False)
+    rank = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("participant_id", "rank", name="uq_scoring_rank_slot"),
+        UniqueConstraint("participant_id", "target_id", name="uq_scoring_rank_target"),
+        CheckConstraint("rank >= 1", name="ck_scoring_rank_positive"),
+    )
+
+    participant = relationship("ScoringParticipant", back_populates="ranks")
+
+
+class ScoringComment(Base):
+    """서술형 피드백 — criterion_id NULL이면 팀 총평, 값이 있으면 해당 기준에 대한 코멘트."""
+    __tablename__ = "scoring_comments"
+
+    id = Column(Integer, primary_key=True)
+    participant_id = Column(Integer, ForeignKey("scoring_participants.id", ondelete="CASCADE"), nullable=False)
+    target_id = Column(Integer, ForeignKey("scoring_targets.id", ondelete="CASCADE"), nullable=False)
+    criterion_id = Column(Integer, ForeignKey("scoring_criteria.id", ondelete="CASCADE"), nullable=True)
+    body = Column(Text, nullable=False)
+
+    __table_args__ = (
+        # criterion_id는 NULL(총평)일 수 있어 UniqueConstraint가 안 먹는다 → 부분 유니크 인덱스 2개
+        Index("uq_scoring_comment_criterion", "participant_id", "target_id", "criterion_id",
+              unique=True, postgresql_where=text("criterion_id IS NOT NULL")),
+        Index("uq_scoring_comment_overall", "participant_id", "target_id",
+              unique=True, postgresql_where=text("criterion_id IS NULL")),
+    )
+
+    participant = relationship("ScoringParticipant", back_populates="comments")
