@@ -22,7 +22,7 @@ import {
     ScoreSheet, emptySheet, fromSheetValue, toSheetValue, type SheetValue,
 } from "./ScoreSheet";
 
-const ROLE_KR: Record<string, string> = { JUDGE: "심사위원", OBSERVER: "참관위원", ANY: "무관" };
+const ROLE_KR: Record<string, string> = { JUDGE: "심사위원", OBSERVER: "청중", ANY: "무관" };
 
 export function ScoringSubmissions({ round }: { round: ScoringRound }) {
     const { data, isLoading } = useScoringParticipants(round.id);
@@ -264,7 +264,7 @@ function OpenParticipationOverview({ submitted }: { submitted: Participant[] }) 
                     심사위원 <b>{judges}명</b>
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-sky-50 text-sky-700">
-                    참관위원 <b>{observers.length}명</b>
+                    청중 <b>{observers.length}명</b>
                 </span>
                 {groups.map(([g, n]) => (
                     <span
@@ -535,7 +535,7 @@ function SubmissionFilterBar({
                     {([
                         ["ALL", "전체"],
                         ["JUDGE", "심사위원"],
-                        ["OBSERVER", "참관위원"],
+                        ["OBSERVER", "청중"],
                     ] as const).map(([key, label]) => (
                         <button
                             key={key}
@@ -853,7 +853,7 @@ function ProxySubmitDialog({
                                     onChange={(e) => setRole(e.target.value as ScoringRole)}
                                 >
                                     <option value="JUDGE">심사위원</option>
-                                    <option value="OBSERVER">참관위원</option>
+                                    <option value="OBSERVER">청중</option>
                                 </select>
                             </div>
                         </div>
@@ -880,6 +880,7 @@ function ProxySubmitDialog({
                             role={role}
                             observerMode={round.observer_mode}
                             rankSlots={round.rank_points.map((r) => r.rank)}
+                            areas={round.areas}
                             criteria={round.criteria}
                             targets={round.targets}
                             blockedTargetIds={blocked}

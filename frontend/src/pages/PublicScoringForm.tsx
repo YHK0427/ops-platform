@@ -19,6 +19,9 @@ import {
 } from "@/components/scoring/ScoreSheet";
 import type { ObserverMode, ScoringRole, Submission } from "@/hooks/useScoring";
 
+interface PubCriterion { id: number; label: string; description?: string | null; max_score: number }
+interface PubArea extends PubCriterion { criteria: PubCriterion[] }
+
 interface PublicRound {
     name: string;
     intro?: string | null;
@@ -26,7 +29,8 @@ interface PublicRound {
     observer_mode: ObserverMode;
     rank_slots: number[];
     observer_groups: string[];
-    criteria: { id: number; label: string; description?: string | null; max_score: number }[];
+    areas: PubArea[];
+    criteria: PubCriterion[];  // 미분류 기준
     targets: { id: number; name: string; members: string[] }[];
 }
 
@@ -263,7 +267,7 @@ export default function PublicScoringForm() {
                                     active={role === "OBSERVER"}
                                     onClick={() => setRole("OBSERVER")}
                                     icon={<Users className="w-4 h-4" />}
-                                    label="참관위원"
+                                    label="청중"
                                     // 등수 개수는 운영자 설정을 따라간다 (문구 고정 금지)
                                     desc={
                                         round.observer_mode === "RANK"
@@ -343,7 +347,7 @@ export default function PublicScoringForm() {
                         <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">
                             {name}
                             <span className="ml-1.5 text-xs text-[var(--color-text-muted)]">
-                                {role === "JUDGE" ? "심사위원" : "참관위원"}
+                                {role === "JUDGE" ? "심사위원" : "청중"}
                                 {role === "OBSERVER" && group ? ` · ${group}` : ""}
                             </span>
                         </span>
@@ -365,6 +369,7 @@ export default function PublicScoringForm() {
                     role={role}
                     observerMode={round.observer_mode}
                     rankSlots={round.rank_slots}
+                    areas={round.areas}
                     criteria={round.criteria}
                     targets={round.targets}
                     blockedTargetIds={blocked}

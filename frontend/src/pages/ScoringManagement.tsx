@@ -5,6 +5,7 @@ import {
     Check, ChevronRight, Download, Gavel, Link2, Loader2, Plus, QrCode, Trash2,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +27,7 @@ export default function ScoringManagement() {
         <div className="flex flex-col h-full">
             <PageHeader
                 title="심사/채점"
-                subtitle="공개 링크를 뿌려 심사위원·참관위원 점수를 모으고 실시간으로 집계합니다"
+                subtitle="공개 링크를 뿌려 심사위원·청중 점수를 모으고 실시간으로 집계합니다"
                 actions={
                     <CreateRoundDialog
                         pending={createMut.isPending}
@@ -43,6 +44,26 @@ export default function ScoringManagement() {
                 }
             />
             <div className="flex-1 overflow-auto px-6 py-4">
+                <ScreenGuide
+                    storageKey="scoring-list"
+                    title="심사/채점 사용법"
+                    images={[
+                        { src: "/help/scoring-weight.png", cap: "설정 · 집계 방식 — ①입력 멈추면 자동 저장 ②등수 비율(합 100% 권장) ③청중 소그룹 자유 편집" },
+                        { src: "/help/scoring-rubric.png", cap: "설정 · 심사 기준 — ①영역 배점은 세부항목 합 ②세부항목 없으면 영역 통째 채점 ③영역 밖 기준도 가능" },
+                        { src: "/help/scoring-deduction-rules.png", cap: "설정 · 감점 규정 — ①규정 종류는 실제 상황 이름으로 ②마감 시각 + 구간별/분당 선택 ③발표시간은 기준만 정하면 감점 탭에선 실제 시간만 입력" },
+                        { src: "/help/scoring-public-toggle.png", cap: "심사위원·청중용 채점 폼 — ①세부항목별/영역 통째 채점 선택 ②세부항목 없는 영역은 통째로만 ③공용 기기면 여기서 다음 사람으로" },
+                        { src: "/help/scoring-deductions-input.png", cap: "감점 탭 — ①실제 제출·발표시간만 입력하면 ②저장 시 감점이 자동 계산됩니다" },
+                        { src: "/help/scoring-results.png", cap: "결과 탭 — ①실시간 자동 갱신 ②심사위원만·청중만 필터 ③감점전 → 감점 → 최종" },
+                    ]}
+                    steps={[
+                        { title: "1. 새 심사 만들기", body: "‘새 심사’로 라운드를 만듭니다. 세션을 고르면 그 세션의 팀이 자동으로 심사 대상으로 들어옵니다. 세션 없이 팀을 직접 입력해도 됩니다(외부 대회)." },
+                        { title: "2. 설정 — 기준", body: "심사 기준을 영역 → 세부항목 2단계로 짭니다. 예: ‘주제 적합성 30점’ 아래 ‘문제 재정의 10점’ 등. 세부항목을 안 두면 그 영역은 통째로 채점합니다." },
+                        { title: "3. 설정 — 비중·청중", body: "심사위원 vs 청중 비중(합 100)을 정합니다. 청중은 등수 선택 또는 기준 채점 중 고르고, 소그룹(기수·운영진·참관위원 등)을 자유롭게 편집합니다." },
+                        { title: "4. 설정 — 감점 규정", body: "발표자료 지각·발표시간 초과·미달·형식 미준수 같은 감점을 규정으로 정의합니다. 발표시간은 기준 시간만 정해두면 감점 탭에서 실제 발표시간을 입력할 때 자동 계산됩니다. 마감 후 제출은 실격으로 처리할 수 있습니다." },
+                        { title: "5. 명단·링크 배포", body: "명단을 등록하면 ‘누가 냈는지’ 체크됩니다(없어도 됨). ‘채점 링크·QR’로 링크를 열고 배포하면 로그인 없이 누구나 이름만 넣고 채점합니다." },
+                        { title: "6. 감점 입력·실시간 집계", body: "‘감점’ 탭에서 팀별 감점을 입력하고, ‘결과’ 탭에서 원점수 → 감점 → 최종점수와 순위를 실시간으로 봅니다. 엑셀로도 내보낼 수 있습니다." },
+                    ]}
+                />
                 {isLoading ? (
                     <div className="flex justify-center py-16">
                         <Loader2 className="w-6 h-6 animate-spin text-[var(--color-text-muted)]" />

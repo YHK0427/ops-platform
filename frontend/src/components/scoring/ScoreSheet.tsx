@@ -1,13 +1,17 @@
-import { Ban, Trophy } from "lucide-react";
+import { useState } from "react";
+import { Ban, LayoutList, Square, Trophy } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { CommentEntry, ObserverMode, RankEntry, ScoreEntry, ScoringRole } from "@/hooks/useScoring";
 
 /**
- * 채점 시트 — 공개 폼과 운영진 대리입력이 공유하는 컨트롤드 컴포넌트.
+ * 채점 시트 — 공개 폼과 운영진 입력이 공유하는 컨트롤드 컴포넌트.
+ *
+ * 계층형 기준: 영역(area) 아래 세부항목(criterion). 영역마다 심사위원이
+ * "세부항목별 입력" 또는 "영역 통째 입력"을 고를 수 있다.
  *
  * 내부 상태는 평평한 맵으로 들고 있다가 제출 시 API 배열로 변환한다.
- * (배열로 들고 있으면 입력할 때마다 탐색·치환이 번거로움)
+ * 점수 키에 접두사를 붙여 구분: "c:{target}:{criterionId}" | "a:{target}:{areaId}"
  */
 
 export interface SheetCriterion {
@@ -17,23 +21,26 @@ export interface SheetCriterion {
     max_score: number;
 }
 
+export interface SheetArea {
+    id: number;
+    label: string;
+    description?: string | null;
+    max_score: number;
+    criteria: SheetCriterion[];  // 없으면 영역 통째로만 채점
+}
+
 export interface SheetTarget {
     id: number;
     name: string;
-    members?: string[]; // 팀원 이름 — 어느 팀인지 알아보게 하는 표시용
+    members?: string[];
 }
 
 export interface SheetValue {
-    scores: Record<string, number>;   // `${targetId}:${criterionId}` → 점수
-    comments: Record<string, string>; // `${targetId}:${criterionId}` 또는 `${targetId}:overall` → 내용
+    scores: Record<string, number>;   // "c:t:cid" | "a:t:aid" → 점수
+    comments: Record<string, string>; // "t:cid" | "t:overall" → 내용
     ranks: Record<number, number>;    // 등수 → targetId
 }
 
-/**
- * 등수 목록을 사람이 읽는 문구로. 등수 개수는 운영자가 자유롭게 바꾸므로,
- * 화면 어디서든 이 함수를 써서 실제 설정과 문구가 어긋나지 않게 한다.
- * 예: [1,2,3] → "1·2·3위", [1] → "1위"
- */
 export function rankLabel(ranks: number[]): string {
     const sorted = [...ranks].sort((a, b) => a - b);
     if (sorted.length === 0) return "등수";
@@ -42,14 +49,18 @@ export function rankLabel(ranks: number[]): string {
 
 export const emptySheet = (): SheetValue => ({ scores: {}, comments: {}, ranks: {} });
 
-const sk = (t: number, c: number) => `${t}:${c}`;
+const csk = (t: number, c: number) => `c:${t}:${c}`;   // 세부항목/미분류 점수
+const ask = (t: number, a: number) => `a:${t}:${a}`;   // 영역 통째 점수
 const ck = (t: number, c: number | null) => `${t}:${c ?? "overall"}`;
 
 export function toSheetValue(
     scores: ScoreEntry[], ranks: RankEntry[], comments: CommentEntry[],
 ): SheetValue {
     const v = emptySheet();
-    for (const s of scores) v.scores[sk(s.target_id, s.criterion_id)] = s.score;
+    for (const s of scores) {
+        if (s.criterion_id != null) v.scores[csk(s.target_id, s.criterion_id)] = s.score;
+        else if (s.area_id != null) v.scores[ask(s.target_id, s.area_id)] = s.score;
+    }
     for (const r of ranks) v.ranks[r.rank] = r.target_id;
     for (const c of comments) v.comments[ck(c.target_id, c.criterion_id ?? null)] = c.body;
     return v;
@@ -59,8 +70,10 @@ export function fromSheetValue(v: SheetValue): {
     scores: ScoreEntry[]; ranks: RankEntry[]; comments: CommentEntry[];
 } {
     const scores: ScoreEntry[] = Object.entries(v.scores).map(([key, score]) => {
-        const [t, c] = key.split(":").map(Number);
-        return { target_id: t, criterion_id: c, score };
+        const [kind, t, id] = key.split(":");
+        return kind === "a"
+            ? { target_id: Number(t), area_id: Number(id), score }
+            : { target_id: Number(t), criterion_id: Number(id), score };
     });
     const ranks: RankEntry[] = Object.entries(v.ranks)
         .filter(([, targetId]) => !!targetId)
@@ -78,7 +91,8 @@ interface Props {
     role: ScoringRole;
     observerMode: ObserverMode;
     rankSlots: number[];
-    criteria: SheetCriterion[];
+    areas: SheetArea[];
+    criteria: SheetCriterion[];  // 미분류(평면) 기준
     targets: SheetTarget[];
     blockedTargetIds: number[];
     value: SheetValue;
@@ -86,21 +100,42 @@ interface Props {
 }
 
 export function ScoreSheet({
-    role, observerMode, rankSlots, criteria, targets, blockedTargetIds, value, onChange,
+    role, observerMode, rankSlots, areas, criteria, targets, blockedTargetIds, value, onChange,
 }: Props) {
-    // 참관위원 + RANK 모드 → 점수 입력 대신 등수 선택
+    // 청중 + RANK 모드 → 점수 입력 대신 등수 선택
     const rankMode = role === "OBSERVER" && observerMode === "RANK";
     const blocked = new Set(blockedTargetIds);
 
-    const setScore = (t: number, c: number, raw: string, max: number) => {
+    // 영역별 입력 방식 토글 상태 {"t:aid": "detail"|"lump"} — 초기값은 기존 데이터로 추론
+    const [areaMode, setAreaMode] = useState<Record<string, "detail" | "lump">>(() => {
+        const m: Record<string, "detail" | "lump"> = {};
+        for (const t of targets) for (const a of areas) {
+            const key = `${t.id}:${a.id}`;
+            if (value.scores[ask(t.id, a.id)] != null) m[key] = "lump";
+            else if (a.criteria.some((c) => value.scores[csk(t.id, c.id)] != null)) m[key] = "detail";
+        }
+        return m;
+    });
+    const modeOf = (t: number, a: SheetArea): "detail" | "lump" =>
+        a.criteria.length === 0 ? "lump" : (areaMode[`${t}:${a.id}`] ?? "detail");
+
+    const setKey = (key: string, raw: string, max: number) => {
         const next = { ...value.scores };
-        if (raw === "") {
-            delete next[sk(t, c)];
-        } else {
+        if (raw === "") delete next[key];
+        else {
             const n = Number(raw);
             if (Number.isNaN(n)) return;
-            next[sk(t, c)] = Math.max(0, Math.min(max, n));
+            next[key] = Math.max(0, Math.min(max, n));
         }
+        onChange({ ...value, scores: next });
+    };
+
+    const switchAreaMode = (t: number, a: SheetArea, mode: "detail" | "lump") => {
+        setAreaMode((m) => ({ ...m, [`${t}:${a.id}`]: mode }));
+        // 다른 방식의 값은 지운다 (한 영역은 한 방식으로만)
+        const next = { ...value.scores };
+        if (mode === "lump") a.criteria.forEach((c) => delete next[csk(t, c.id)]);
+        else delete next[ask(t, a.id)];
         onChange({ ...value, scores: next });
     };
 
@@ -109,7 +144,6 @@ export function ScoreSheet({
 
     const setRank = (rank: number, targetId: number | null) => {
         const next = { ...value.ranks };
-        // 같은 팀이 다른 등수에 이미 있으면 그 자리를 비운다 (한 팀은 한 등수만)
         for (const [r, t] of Object.entries(next)) {
             if (targetId && t === targetId && Number(r) !== rank) delete next[Number(r)];
         }
@@ -117,6 +151,19 @@ export function ScoreSheet({
         else delete next[rank];
         onChange({ ...value, ranks: next });
     };
+
+    // 팀 t의 현재 득점 합 / 만점
+    const targetSum = (t: number) => {
+        let s = 0;
+        for (const a of areas) {
+            if (modeOf(t, a) === "lump") s += value.scores[ask(t, a.id)] ?? 0;
+            else a.criteria.forEach((c) => (s += value.scores[csk(t, c.id)] ?? 0));
+        }
+        criteria.forEach((c) => (s += value.scores[csk(t, c.id)] ?? 0));
+        return s;
+    };
+    const maxSum = areas.reduce((s, a) => s + a.max_score, 0)
+        + criteria.reduce((s, c) => s + c.max_score, 0);
 
     if (rankMode) {
         return (
@@ -131,7 +178,6 @@ export function ScoreSheet({
                     <p className="text-xs text-[var(--color-text-muted)] mb-4">
                         가장 좋았던 팀부터 순서대로 골라주세요. 한 팀은 한 등수에만 선택할 수 있습니다.
                     </p>
-
                     <div className="space-y-3">
                         {rankSlots.map((rank) => (
                             <div key={rank} className="flex items-center gap-3">
@@ -156,7 +202,6 @@ export function ScoreSheet({
                         ))}
                     </div>
                 </div>
-
                 {targets.map((t) => (
                     <TargetCommentCard
                         key={t.id}
@@ -174,17 +219,12 @@ export function ScoreSheet({
         <div className="space-y-5">
             {targets.map((t) => {
                 const isBlocked = blocked.has(t.id);
-                const sum = criteria.reduce((acc, c) => acc + (value.scores[sk(t.id, c.id)] ?? 0), 0);
-                const maxSum = criteria.reduce((acc, c) => acc + c.max_score, 0);
-
                 return (
                     <div
                         key={t.id}
                         className={cn(
                             "rounded-xl border bg-white p-5",
-                            isBlocked
-                                ? "border-zinc-200 opacity-60"
-                                : "border-[var(--color-border-subtle)]",
+                            isBlocked ? "border-zinc-200 opacity-60" : "border-[var(--color-border-subtle)]",
                         )}
                     >
                         <div className="flex items-start justify-between gap-3 mb-4">
@@ -205,46 +245,84 @@ export function ScoreSheet({
                             </div>
                             {!isBlocked && (
                                 <span className="shrink-0 text-sm font-bold text-[var(--color-accent)]">
-                                    {sum} <span className="text-[var(--color-text-muted)] font-normal">/ {maxSum}</span>
+                                    {targetSum(t.id)} <span className="text-[var(--color-text-muted)] font-normal">/ {maxSum}</span>
                                 </span>
                             )}
                         </div>
 
                         <fieldset disabled={isBlocked} className="space-y-4">
-                            {criteria.map((c) => (
-                                <div key={c.id} className="space-y-2">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-                                                {c.label}
+                            {/* 영역 */}
+                            {areas.map((a) => {
+                                const mode = modeOf(t.id, a);
+                                const areaSum = mode === "lump"
+                                    ? (value.scores[ask(t.id, a.id)] ?? 0)
+                                    : a.criteria.reduce((s, c) => s + (value.scores[csk(t.id, c.id)] ?? 0), 0);
+                                return (
+                                    <div key={a.id} className="rounded-lg border border-[var(--color-border-subtle)] p-3.5 space-y-3">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <span className="text-sm font-bold text-[var(--color-text-primary)]">{a.label}</span>
+                                                <span className="ml-2 text-xs text-[var(--color-text-muted)]">{a.max_score}점</span>
+                                                {a.description && (
+                                                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{a.description}</p>
+                                                )}
+                                            </div>
+                                            <span className="shrink-0 text-sm font-bold text-[var(--color-accent)]">
+                                                {areaSum}<span className="text-[var(--color-text-muted)] font-normal">/{a.max_score}</span>
                                             </span>
-                                            <span className="ml-2 text-xs text-[var(--color-text-muted)]">
-                                                {c.max_score}점 만점
-                                            </span>
-                                            {c.description && (
-                                                <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                                                    {c.description}
-                                                </p>
-                                            )}
                                         </div>
-                                        <Input
-                                            type="number"
-                                            min={0}
-                                            max={c.max_score}
-                                            step="0.5"
-                                            className="w-24 shrink-0 text-center"
-                                            value={value.scores[sk(t.id, c.id)] ?? ""}
-                                            onChange={(e) => setScore(t.id, c.id, e.target.value, c.max_score)}
-                                            placeholder="점수"
-                                        />
+
+                                        {/* 세부항목이 있으면 방식 토글 */}
+                                        {a.criteria.length > 0 && (
+                                            <div className="inline-flex rounded-lg border border-[var(--color-border-subtle)] p-0.5 bg-[var(--color-hover)] text-xs">
+                                                <button type="button"
+                                                    onClick={() => switchAreaMode(t.id, a, "detail")}
+                                                    className={cn("inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium",
+                                                        mode === "detail" ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-secondary)]")}>
+                                                    <LayoutList className="w-3 h-3" /> 세부항목별
+                                                </button>
+                                                <button type="button"
+                                                    onClick={() => switchAreaMode(t.id, a, "lump")}
+                                                    className={cn("inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium",
+                                                        mode === "lump" ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-secondary)]")}>
+                                                    <Square className="w-3 h-3" /> 영역 통째
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {mode === "lump" ? (
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="text-sm text-[var(--color-text-secondary)]">이 영역 점수</span>
+                                                <Input type="number" min={0} max={a.max_score} step="0.5"
+                                                    className="w-24 shrink-0 text-center"
+                                                    value={value.scores[ask(t.id, a.id)] ?? ""}
+                                                    onChange={(e) => setKey(ask(t.id, a.id), e.target.value, a.max_score)}
+                                                    placeholder="점수" />
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3 pl-3 border-l-2 border-[var(--color-border-subtle)]">
+                                                {a.criteria.map((c) => (
+                                                    <SubRow key={c.id}
+                                                        c={c}
+                                                        score={value.scores[csk(t.id, c.id)] ?? ""}
+                                                        onScore={(v) => setKey(csk(t.id, c.id), v, c.max_score)}
+                                                        comment={value.comments[ck(t.id, c.id)] ?? ""}
+                                                        onComment={(v) => setComment(t.id, c.id, v)} />
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
-                                    <textarea
-                                        className="w-full min-h-[52px] px-3 py-2 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm resize-y placeholder:text-[var(--color-text-muted)]"
-                                        placeholder={`${c.label}에 대한 코멘트 (선택)`}
-                                        value={value.comments[ck(t.id, c.id)] ?? ""}
-                                        onChange={(e) => setComment(t.id, c.id, e.target.value)}
-                                    />
-                                </div>
+                                );
+                            })}
+
+                            {/* 미분류 기준 */}
+                            {criteria.map((c) => (
+                                <SubRow key={c.id}
+                                    c={c}
+                                    score={value.scores[csk(t.id, c.id)] ?? ""}
+                                    onScore={(v) => setKey(csk(t.id, c.id), v, c.max_score)}
+                                    comment={value.comments[ck(t.id, c.id)] ?? ""}
+                                    onComment={(v) => setComment(t.id, c.id, v)} />
                             ))}
 
                             <div className="pt-2 border-t border-[var(--color-border-subtle)]">
@@ -260,6 +338,39 @@ export function ScoreSheet({
                     </div>
                 );
             })}
+        </div>
+    );
+}
+
+function SubRow({
+    c, score, onScore, comment, onComment,
+}: {
+    c: SheetCriterion;
+    score: number | "";
+    onScore: (v: string) => void;
+    comment: string;
+    onComment: (v: string) => void;
+}) {
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                    <span className="text-sm font-semibold text-[var(--color-text-primary)]">{c.label}</span>
+                    <span className="ml-2 text-xs text-[var(--color-text-muted)]">{c.max_score}점 만점</span>
+                    {c.description && (
+                        <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{c.description}</p>
+                    )}
+                </div>
+                <Input type="number" min={0} max={c.max_score} step="0.5"
+                    className="w-24 shrink-0 text-center" value={score}
+                    onChange={(e) => onScore(e.target.value)} placeholder="점수" />
+            </div>
+            <textarea
+                className="w-full min-h-[52px] px-3 py-2 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm resize-y placeholder:text-[var(--color-text-muted)]"
+                placeholder={`${c.label}에 대한 코멘트 (선택)`}
+                value={comment}
+                onChange={(e) => onComment(e.target.value)}
+            />
         </div>
     );
 }

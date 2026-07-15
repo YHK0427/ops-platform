@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-    AlertCircle, CloudOff, Download, GripVertical, Loader2, Plus, RotateCcw, Save, Search, Shield,
-    Trash2, UserPlus, X,
+    AlertCircle, CloudOff, Download, GripVertical, Loader2, Minus, Plus, RotateCcw, Save, Search,
+    Shield, Trash2, UserPlus, X,
 } from "lucide-react";
 import { CircleCheck as CloudCheck } from "lucide-react";
 import { AutosaveProvider, useAutosave, type PanelStatus } from "./autosave";
@@ -14,17 +14,11 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useSessions } from "@/hooks/useSessions";
 import {
-    useImportMembers, useImportSessionTeams, useImportStaff, useSaveCriteria, useSaveRoster, useSaveTargets,
-    useUpdateRound,
+    useImportMembers, useImportSessionTeams, useImportStaff, useSaveDeductionRules, useSaveRoster,
+    useSaveRubric, useSaveTargets, useUpdateRound,
+    type DeductionKind, type DeductionRule, type RubricInput,
     type ScoringRound, type ScoringRole,
 } from "@/hooks/useScoring";
-
-interface CriterionDraft {
-    id?: number;
-    label: string;
-    description?: string | null;
-    max_score: number;
-}
 
 interface TargetDraft {
     id?: number;
@@ -49,9 +43,10 @@ export function ScoringSettings({ round }: { round: ScoringRound }) {
                 <div className="space-y-5">
                     <SaveBar statuses={statuses} saveAll={saveAll} />
                     <WeightPanel round={round} />
-                    <CriteriaPanel round={round} />
+                    <RubricPanel round={round} />
                     <TargetsPanel round={round} />
                     <RosterPanel round={round} />
+                    <DeductionRulesPanel round={round} />
                 </div>
             )}
         </AutosaveProvider>
@@ -59,7 +54,7 @@ export function ScoringSettings({ round }: { round: ScoringRound }) {
 }
 
 /** 스크롤해도 계속 보이는 저장 상태 바. 자동 저장이 기본이고, 수동 저장 버튼도 남겨둔다. */
-function SaveBar({
+export function SaveBar({
     statuses, saveAll,
 }: {
     statuses: Record<string, PanelStatus>;
@@ -221,7 +216,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
     const perPerson = rankPts.reduce((a, p) => a + p.points, 0);
 
     return (
-        <Panel title="집계 방식">
+        <Panel title="집계 방식" subtitle="심사위원·청중 비중과 청중 채점 방식을 정합니다. 최종점수 = 심사 + 청중 − 감점.">
             <div>
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                     <Label>비중 배분</Label>
@@ -249,7 +244,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                         </p>
                     </div>
                     <div className="space-y-2">
-                        <Label className="text-xs text-[var(--color-text-secondary)]">참관위원</Label>
+                        <Label className="text-xs text-[var(--color-text-secondary)]">청중</Label>
                         <Input
                             type="number"
                             min={0}
@@ -258,7 +253,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                             onChange={(e) => setObserverLinked(e.target.value)}
                         />
                         <p className="text-xs text-[var(--color-text-muted)]">
-                            몇 명이 제출하든 참관위원 전체 기여는 이 점수로 고정됩니다.
+                            몇 명이 제출하든 청중 전체 기여는 이 점수로 고정됩니다.
                         </p>
                     </div>
                 </div>
@@ -268,7 +263,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
             </div>
 
             <div className="space-y-2">
-                <Label>참관위원 채점 방식</Label>
+                <Label>청중 채점 방식</Label>
                 <div className="flex flex-wrap gap-2">
                     <ModeButton active={mode === "RANK"} onClick={() => setMode("RANK")}>
                         {/* 등수 개수는 아래에서 운영자가 바꾸므로 문구도 그 설정을 따라간다 */}
@@ -314,7 +309,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                         )}
                     </div>
                     <p className="text-xs text-[var(--color-text-muted)]">
-                        참관위원 표 1장을 등수별로 몇 %씩 쳐줄지 정합니다. 참관위원이 몇 명이든 이들의 기여
+                        청중 표 1장을 등수별로 몇 %씩 쳐줄지 정합니다. 청중이 몇 명이든 이들의 기여
                         합계는 항상 <b>{observer}점</b>으로 고정되고, 그 안에서 받은 표를 이 비율대로 나눠 갖습니다.
                         합계가 100%가 아니어도 비율대로 동작하지만, 100%로 맞추면 읽기 쉽습니다.
                     </p>
@@ -362,16 +357,16 @@ function WeightPanel({ round }: { round: ScoringRound }) {
             )}
 
             <div className="space-y-2 p-4 rounded-lg bg-[var(--color-hover)]">
-                <Label>참관위원 소그룹</Label>
+                <Label>청중 소그룹</Label>
                 <p className="text-xs text-[var(--color-text-muted)]">
                     {groups.length === 0 ? (
                         <>
-                            지금은 그룹이 없어서 <b>참관위원에게 소속을 묻지 않습니다.</b> 그룹을 추가하면
+                            지금은 그룹이 없어서 <b>청중에게 소속을 묻지 않습니다.</b> 그룹을 추가하면
                             폼에서 고르게 되고, 제출현황·결과·엑셀에서 그룹별로 나눠 볼 수 있습니다.
                         </>
                     ) : (
                         <>
-                            참관위원은 폼에서 <b>{groups.join(" / ")}</b> 중 하나를 고릅니다.
+                            청중은 폼에서 <b>{groups.join(" / ")}</b> 중 하나를 고릅니다.
                             <b> 집계에는 영향이 없고</b>, 제출현황·결과·엑셀에서 그룹별로 나눠 보기 위한 분류입니다.
                         </>
                     )}
@@ -394,7 +389,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                     ))}
                     {groups.length === 0 && (
                         <span className="text-xs text-[var(--color-text-muted)] py-1">
-                            그룹 없음 — 참관위원에게 그룹을 묻지 않습니다.
+                            그룹 없음 — 청중에게 그룹을 묻지 않습니다.
                         </span>
                     )}
                 </div>
@@ -442,95 +437,196 @@ function WeightPanel({ round }: { round: ScoringRound }) {
 
 // ── 심사 기준 ────────────────────────────────────────────────────────────────
 
-function CriteriaPanel({ round }: { round: ScoringRound }) {
-    const save = useSaveCriteria(round.id);
-    const [items, setItems] = useState<CriterionDraft[]>(round.criteria);
+interface SubDraft { id?: number; label: string; description?: string | null; max_score: number }
+interface AreaDraft {
+    id?: number;
+    label: string;
+    description?: string | null;
+    max_score: number;   // 세부항목 있으면 자동 합산
+    criteria: SubDraft[];
+}
 
-    const payload = (list: CriterionDraft[]) =>
-        list.map((c) => ({
-            id: c.id,
-            label: c.label.trim(),
-            description: c.description ?? null,
-            max_score: Number(c.max_score),
-        }));
+function toAreaDrafts(round: ScoringRound): AreaDraft[] {
+    return (round.areas ?? []).map((a) => ({
+        id: a.id, label: a.label, description: a.description, max_score: a.max_score,
+        criteria: (a.criteria ?? []).map((c) => ({
+            id: c.id, label: c.label, description: c.description, max_score: c.max_score,
+        })),
+    }));
+}
+
+function RubricPanel({ round }: { round: ScoringRound }) {
+    const save = useSaveRubric(round.id);
+    const [areas, setAreas] = useState<AreaDraft[]>(() => toAreaDrafts(round));
+    const [ungrouped, setUngrouped] = useState<SubDraft[]>(round.criteria ?? []);
+
+    const areaMax = (a: AreaDraft) =>
+        a.criteria.length ? a.criteria.reduce((s, c) => s + (Number(c.max_score) || 0), 0) : Number(a.max_score) || 0;
+
+    const payload = (as: AreaDraft[], ug: SubDraft[]): RubricInput => ({
+        areas: as.map((a) => ({
+            id: a.id, label: a.label.trim(), description: a.description ?? null,
+            max_score: a.criteria.length ? null : Number(a.max_score),
+            criteria: a.criteria.map((c) => ({
+                id: c.id, label: c.label.trim(), description: c.description ?? null, max_score: Number(c.max_score),
+            })),
+        })),
+        ungrouped: ug.map((c) => ({
+            id: c.id, label: c.label.trim(), description: c.description ?? null, max_score: Number(c.max_score),
+        })),
+    });
 
     const { isDirty, acceptServer } = useAutosave({
-        id: "criteria",
-        value: payload(items),
-        // 기준명이 비었거나 배점이 0 이하면 저장하지 않는다 (아직 입력 중일 수 있으므로)
-        canSave: (v) => v.every((c) => c.label.length > 0 && c.max_score > 0),
+        id: "rubric",
+        value: payload(areas, ungrouped),
+        // 라벨 빈 항목·배점 0 이하가 있으면 저장 보류 (입력 중일 수 있음)
+        canSave: (v) =>
+            v.areas.every((a) =>
+                a.label.length > 0 &&
+                (a.criteria.length
+                    ? a.criteria.every((c) => c.label.length > 0 && c.max_score > 0)
+                    : (a.max_score ?? 0) > 0),
+            ) && v.ungrouped.every((c) => c.label.length > 0 && c.max_score > 0),
         save: (v) => save.mutateAsync(v),
-        serverValue: payload(round.criteria),
+        serverValue: payload(toAreaDrafts(round), round.criteria ?? []),
     });
 
     useEffect(() => {
         if (isDirty) return;
-        setItems(round.criteria);
-        acceptServer(payload(round.criteria));
+        setAreas(toAreaDrafts(round));
+        setUngrouped(round.criteria ?? []);
+        acceptServer(payload(toAreaDrafts(round), round.criteria ?? []));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [round.criteria]);
+    }, [round.areas, round.criteria]);
 
-    const total = items.reduce((a, c) => a + (Number(c.max_score) || 0), 0);
+    const total = areas.reduce((s, a) => s + areaMax(a), 0)
+        + ungrouped.reduce((s, c) => s + (Number(c.max_score) || 0), 0);
+
+    const updArea = (i: number, patch: Partial<AreaDraft>) =>
+        setAreas(areas.map((a, j) => (j === i ? { ...a, ...patch } : a)));
+    const updSub = (ai: number, ci: number, patch: Partial<SubDraft>) =>
+        setAreas(areas.map((a, j) => j === ai
+            ? { ...a, criteria: a.criteria.map((c, k) => (k === ci ? { ...c, ...patch } : c)) } : a));
 
     return (
         <Panel
-            title="심사 기준"
+            title="심사 기준 (영역 → 세부항목)"
             subtitle={`만점 합계 ${total}점 — 이 만점 대비 득점 비율이 비중으로 환산됩니다`}
         >
-            <div className="space-y-2">
-                {items.map((c, i) => (
-                    <div key={c.id ?? `new-${i}`} className="flex items-start gap-2">
-                        <GripVertical className="w-4 h-4 mt-3 text-[var(--color-text-muted)] shrink-0" />
-                        <div className="flex-1 space-y-2">
-                            <div className="flex gap-2">
+            <p className="text-xs text-[var(--color-text-muted)]">
+                영역 아래에 세부항목을 두면 심사위원이 <b>세부항목별로 또는 영역 통째로</b> 골라 채점할 수 있습니다.
+                세부항목을 안 두면 그 영역은 통째로만 채점합니다.
+            </p>
+
+            <div className="space-y-3">
+                {areas.map((a, ai) => (
+                    <div key={a.id ?? `na-${ai}`} className="rounded-xl border border-[var(--color-border-subtle)] p-4 space-y-3">
+                        <div className="flex items-start gap-2">
+                            <div className="flex-1 space-y-2">
+                                <div className="flex gap-2 items-center">
+                                    <span className="text-xs font-bold text-[var(--color-text-muted)] shrink-0">영역</span>
+                                    <Input
+                                        placeholder="영역명 (예: 주제 적합성)"
+                                        value={a.label}
+                                        onChange={(e) => updArea(ai, { label: e.target.value })}
+                                    />
+                                    {a.criteria.length > 0 ? (
+                                        <span className="shrink-0 text-sm font-bold text-[var(--color-accent)] w-20 text-right">
+                                            {areaMax(a)}점
+                                        </span>
+                                    ) : (
+                                        <Input
+                                            type="number" className="w-24 shrink-0" placeholder="배점"
+                                            value={a.max_score}
+                                            onChange={(e) => updArea(ai, { max_score: Number(e.target.value) })}
+                                        />
+                                    )}
+                                </div>
                                 <Input
-                                    placeholder="기준명 (예: 논리성)"
-                                    value={c.label}
-                                    onChange={(e) => {
-                                        const next = [...items];
-                                        next[i] = { ...c, label: e.target.value };
-                                        setItems(next);
-                                    }}
-                                />
-                                <Input
-                                    type="number"
-                                    className="w-28"
-                                    placeholder="배점"
-                                    value={c.max_score}
-                                    onChange={(e) => {
-                                        const next = [...items];
-                                        next[i] = { ...c, max_score: Number(e.target.value) };
-                                        setItems(next);
-                                    }}
+                                    placeholder="영역 설명 (선택) — 심사위원에게 보입니다"
+                                    value={a.description ?? ""}
+                                    onChange={(e) => updArea(ai, { description: e.target.value })}
                                 />
                             </div>
-                            <Input
-                                placeholder="설명 (선택) — 심사위원에게 보입니다"
-                                value={c.description ?? ""}
-                                onChange={(e) => {
-                                    const next = [...items];
-                                    next[i] = { ...c, description: e.target.value };
-                                    setItems(next);
-                                }}
-                            />
+                            <Button size="sm" variant="ghost" className="text-rose-500"
+                                onClick={() => setAreas(areas.filter((_, j) => j !== ai))}>
+                                <Trash2 className="w-4 h-4" />
+                            </Button>
                         </div>
-                        <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-rose-500 mt-1"
-                            onClick={() => setItems(items.filter((_, j) => j !== i))}
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </Button>
+
+                        {/* 세부항목 */}
+                        <div className="pl-4 space-y-2 border-l-2 border-[var(--color-border-subtle)]">
+                            {a.criteria.map((c, ci) => (
+                                <div key={c.id ?? `ns-${ci}`} className="flex items-start gap-2">
+                                    <GripVertical className="w-4 h-4 mt-2.5 text-[var(--color-text-muted)] shrink-0" />
+                                    <div className="flex-1 space-y-1.5">
+                                        <div className="flex gap-2">
+                                            <Input
+                                                placeholder="세부항목 (예: 문제 재정의)"
+                                                value={c.label}
+                                                onChange={(e) => updSub(ai, ci, { label: e.target.value })}
+                                            />
+                                            <Input
+                                                type="number" className="w-24" placeholder="배점"
+                                                value={c.max_score}
+                                                onChange={(e) => updSub(ai, ci, { max_score: Number(e.target.value) })}
+                                            />
+                                        </div>
+                                        <Input
+                                            placeholder="설명 (선택)"
+                                            value={c.description ?? ""}
+                                            onChange={(e) => updSub(ai, ci, { description: e.target.value })}
+                                        />
+                                    </div>
+                                    <Button size="sm" variant="ghost" className="text-rose-500 mt-0.5"
+                                        onClick={() => updArea(ai, { criteria: a.criteria.filter((_, k) => k !== ci) })}>
+                                        <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            ))}
+                            <Button size="sm" variant="ghost" className="text-xs"
+                                onClick={() => updArea(ai, { criteria: [...a.criteria, { label: "", description: "", max_score: 10 }] })}>
+                                <Plus className="w-3.5 h-3.5 mr-1" /> 세부항목 추가
+                            </Button>
+                        </div>
                     </div>
                 ))}
             </div>
-            <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setItems([...items, { label: "", description: "", max_score: 10 }])}
-            >
-                <Plus className="w-4 h-4 mr-1" /> 기준 추가
+
+            <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline"
+                    onClick={() => setAreas([...areas, { label: "", description: "", max_score: 30, criteria: [] }])}>
+                    <Plus className="w-4 h-4 mr-1" /> 영역 추가
+                </Button>
+            </div>
+
+            {/* 미분류(평면) 기준 */}
+            {ungrouped.length > 0 && (
+                <div className="pt-2 space-y-2">
+                    <p className="text-xs font-bold text-[var(--color-text-secondary)]">영역 없는 기준</p>
+                    {ungrouped.map((c, i) => (
+                        <div key={c.id ?? `nu-${i}`} className="flex items-start gap-2">
+                            <div className="flex-1 space-y-1.5">
+                                <div className="flex gap-2">
+                                    <Input placeholder="기준명" value={c.label}
+                                        onChange={(e) => setUngrouped(ungrouped.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
+                                    <Input type="number" className="w-24" placeholder="배점" value={c.max_score}
+                                        onChange={(e) => setUngrouped(ungrouped.map((x, j) => j === i ? { ...x, max_score: Number(e.target.value) } : x))} />
+                                </div>
+                                <Input placeholder="설명 (선택)" value={c.description ?? ""}
+                                    onChange={(e) => setUngrouped(ungrouped.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} />
+                            </div>
+                            <Button size="sm" variant="ghost" className="text-rose-500 mt-0.5"
+                                onClick={() => setUngrouped(ungrouped.filter((_, j) => j !== i))}>
+                                <Trash2 className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+            )}
+            <Button size="sm" variant="ghost" className="text-xs"
+                onClick={() => setUngrouped([...ungrouped, { label: "", description: "", max_score: 10 }])}>
+                <Plus className="w-3.5 h-3.5 mr-1" /> 영역 없는 기준 추가
             </Button>
         </Panel>
     );
@@ -813,7 +909,7 @@ function RosterPanel({ round }: { round: ScoringRound }) {
                 >
                     <option value="ALL">역할 전체</option>
                     <option value="JUDGE">심사위원</option>
-                    <option value="OBSERVER">참관위원</option>
+                    <option value="OBSERVER">청중</option>
                     <option value="ANY">무관</option>
                 </select>
                 <select
@@ -857,7 +953,8 @@ function RosterPanel({ round }: { round: ScoringRound }) {
                 </p>
             )}
 
-            <div className="space-y-2">
+            {/* 명단이 많아지면 페이지가 너무 길어져 스크롤 박스로 감싼다 */}
+            <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
                 {visible.length === 0 && items.length > 0 && (
                     <p className="text-center py-6 text-sm text-[var(--color-text-muted)]">
                         조건에 맞는 사람이 없습니다.
@@ -886,7 +983,7 @@ function RosterPanel({ round }: { round: ScoringRound }) {
                         >
                             <option value="ANY">무관</option>
                             <option value="JUDGE">심사위원</option>
-                            <option value="OBSERVER">참관위원</option>
+                            <option value="OBSERVER">청중</option>
                         </select>
                         <select
                             className="h-9 px-2 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm w-28"
@@ -939,6 +1036,230 @@ function RosterPanel({ round }: { round: ScoringRound }) {
                 <Plus className="w-4 h-4 mr-1" /> 이름 추가
             </Button>
         </Panel>
+    );
+}
+
+// ── 감점 규정 ────────────────────────────────────────────────────────────────
+
+interface RuleDraft {
+    id?: number;
+    label: string;
+    description?: string | null;
+    kind: DeductionKind;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    config: Record<string, any>;
+}
+
+const KIND_LABEL: Record<DeductionKind, string> = {
+    TIME: "발표자료 지각 (마감 기준 자동 판정)",
+    DURATION: "발표시간 초과·미달 (기준 시간)",
+    FLAG: "형식 미준수 등 (체크형)",
+};
+
+function DeductionRulesPanel({ round }: { round: ScoringRound }) {
+    const save = useSaveDeductionRules(round.id);
+    const toDraft = (rs: DeductionRule[]): RuleDraft[] =>
+        rs.map((r) => ({ id: r.id, label: r.label, description: r.description, kind: r.kind, config: r.config ?? {} }));
+    const [rules, setRules] = useState<RuleDraft[]>(() => toDraft(round.deduction_rules ?? []));
+
+    const payload = (list: RuleDraft[]) =>
+        list.map((r) => ({
+            id: r.id, label: r.label.trim(), description: r.description ?? null,
+            kind: r.kind, config: r.config,
+        }));
+
+    const { isDirty, acceptServer } = useAutosave({
+        id: "deduction-rules",
+        value: payload(rules),
+        canSave: (v) => v.every((r) => r.label.length > 0),
+        save: (v) => save.mutateAsync(v),
+        serverValue: payload(toDraft(round.deduction_rules ?? [])),
+    });
+
+    useEffect(() => {
+        if (isDirty) return;
+        setRules(toDraft(round.deduction_rules ?? []));
+        acceptServer(payload(toDraft(round.deduction_rules ?? [])));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [round.deduction_rules]);
+
+    const upd = (i: number, patch: Partial<RuleDraft>) =>
+        setRules(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+    const updCfg = (i: number, patch: Record<string, unknown>) =>
+        setRules(rules.map((r, j) => (j === i ? { ...r, config: { ...r.config, ...patch } } : r)));
+
+    return (
+        <Panel
+            title="감점 규정"
+            subtitle="최종점수 = 심사 + 청중 − 감점. 규정을 만들면 아래 '감점' 탭에서 팀별로 입력합니다. (심사위원·청중에겐 안 보임)"
+        >
+            <div className="space-y-3">
+                {rules.map((r, i) => (
+                    <div key={r.id ?? `nr-${i}`} className="rounded-xl border border-[var(--color-border-subtle)] p-4 space-y-3">
+                        <div className="flex items-start gap-2">
+                            <div className="flex-1 space-y-2">
+                                <div className="flex flex-wrap gap-2">
+                                    <Input className="flex-1 min-w-[180px]" placeholder="규정명 (예: 발표자료 지각 제출)"
+                                        value={r.label} onChange={(e) => upd(i, { label: e.target.value })} />
+                                    <select
+                                        className="h-9 px-2 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm"
+                                        value={r.kind}
+                                        onChange={(e) => upd(i, { kind: e.target.value as DeductionKind, config: {} })}
+                                    >
+                                        {(["TIME", "DURATION", "FLAG"] as DeductionKind[]).map((k) => (
+                                            <option key={k} value={k}>{KIND_LABEL[k]}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <Input placeholder="설명 (선택)" value={r.description ?? ""}
+                                    onChange={(e) => upd(i, { description: e.target.value })} />
+                            </div>
+                            <Button size="sm" variant="ghost" className="text-rose-500"
+                                onClick={() => setRules(rules.filter((_, j) => j !== i))}>
+                                <Trash2 className="w-4 h-4" />
+                            </Button>
+                        </div>
+
+                        <div className="pl-1 pt-1 border-t border-[var(--color-border-subtle)]">
+                            {r.kind === "TIME" && <TimeRuleConfig config={r.config} onChange={(p) => updCfg(i, p)} />}
+                            {r.kind === "DURATION" && <DurationRuleConfig config={r.config} onChange={(p) => updCfg(i, p)} />}
+                            {r.kind === "FLAG" && <FlagRuleConfig config={r.config} onChange={(p) => updCfg(i, p)} />}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <Button size="sm" variant="outline"
+                onClick={() => setRules([...rules, { label: "", kind: "FLAG", config: { points: 1 } }])}>
+                <Plus className="w-4 h-4 mr-1" /> 감점 규정 추가
+            </Button>
+        </Panel>
+    );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function TimeRuleConfig({ config, onChange }: { config: Record<string, any>; onChange: (p: Record<string, unknown>) => void }) {
+    const mode = config.mode ?? "STEPS";
+    const steps: { after_minutes: number; points: number; disqualify?: boolean }[] = config.steps ?? [];
+    return (
+        <div className="space-y-2 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+                <Label className="text-xs">마감 시각</Label>
+                <Input type="datetime-local" className="w-56 h-8"
+                    value={config.deadline ?? ""} onChange={(e) => onChange({ deadline: e.target.value })} />
+                <span className="text-xs text-[var(--color-text-muted)]">기준 · 팀별 실제 제출시각으로 자동 판정</span>
+            </div>
+            <div className="flex gap-2">
+                <ModeButton active={mode === "STEPS"} onClick={() => onChange({ mode: "STEPS" })}>구간별</ModeButton>
+                <ModeButton active={mode === "INTERVAL"} onClick={() => onChange({ mode: "INTERVAL" })}>분당 감점</ModeButton>
+            </div>
+
+            {mode === "INTERVAL" ? (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <Input type="number" className="w-20 h-8" placeholder="분"
+                        value={config.interval_minutes ?? ""} onChange={(e) => onChange({ interval_minutes: Number(e.target.value) })} />
+                    <span className="text-xs">분마다</span>
+                    <Input type="number" step="0.1" className="w-20 h-8" placeholder="점"
+                        value={config.interval_points ?? ""} onChange={(e) => onChange({ interval_points: Number(e.target.value) })} />
+                    <span className="text-xs">점 · 상한</span>
+                    <Input type="number" step="0.1" className="w-20 h-8" placeholder="없음"
+                        value={config.max_points ?? ""} onChange={(e) => onChange({ max_points: e.target.value === "" ? null : Number(e.target.value) })} />
+                    <span className="text-xs">점</span>
+                </div>
+            ) : (
+                <div className="space-y-1.5">
+                    {steps.map((st, si) => (
+                        <div key={si} className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="text-xs text-[var(--color-text-muted)]">마감 +</span>
+                            <Input type="number" className="w-24 h-8" placeholder="분"
+                                value={st.after_minutes}
+                                onChange={(e) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, after_minutes: Number(e.target.value) } : x) })} />
+                            <span className="text-xs">분 초과 →</span>
+                            <Input type="number" step="0.1" className="w-20 h-8" placeholder="점" disabled={!!st.disqualify}
+                                value={st.disqualify ? "" : st.points}
+                                onChange={(e) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, points: Number(e.target.value) } : x) })} />
+                            <label className="flex items-center gap-1 text-xs">
+                                <Checkbox checked={!!st.disqualify}
+                                    onCheckedChange={(v) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, disqualify: !!v } : x) })} />
+                                실격
+                            </label>
+                            <Button size="sm" variant="ghost" className="h-7 text-rose-500"
+                                onClick={() => onChange({ steps: steps.filter((_, k) => k !== si) })}>
+                                <Minus className="w-3.5 h-3.5" />
+                            </Button>
+                        </div>
+                    ))}
+                    <Button size="sm" variant="ghost" className="text-xs"
+                        onClick={() => onChange({ steps: [...steps, { after_minutes: 0, points: 1 }] })}>
+                        <Plus className="w-3.5 h-3.5 mr-1" /> 구간 추가
+                    </Button>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                        경과분이 큰 구간부터 적용됩니다. '실격'을 체크하면 그 구간부터 순위에서 제외됩니다.
+                    </p>
+                </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 text-sm pt-1">
+                <Label className="text-xs">마감 +</Label>
+                <Input type="number" className="w-24 h-8" placeholder="없음"
+                    value={config.disqualify_after_minutes ?? ""}
+                    onChange={(e) => onChange({ disqualify_after_minutes: e.target.value === "" ? null : Number(e.target.value) })} />
+                <span className="text-xs">분 초과 시 실격 (선택)</span>
+            </div>
+        </div>
+    );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DurationRuleConfig({ config, onChange }: { config: Record<string, any>; onChange: (p: Record<string, unknown>) => void }) {
+    // 기준 시간·허용 오차·단위는 초 단위로 저장. UI는 분:초로 입력받아 초로 환산.
+    const targetMin = Math.floor((Number(config.target_seconds) || 0) / 60);
+    const targetSec = (Number(config.target_seconds) || 0) % 60;
+    const setTarget = (min: number, sec: number) => onChange({ target_seconds: min * 60 + sec });
+    return (
+        <div className="space-y-2 pt-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs w-16">기준 시간</span>
+                <Input type="number" min={0} className="w-16 h-8" placeholder="분"
+                    value={targetMin || ""} onChange={(e) => setTarget(Number(e.target.value) || 0, targetSec)} />
+                <span className="text-xs">분</span>
+                <Input type="number" min={0} max={59} className="w-16 h-8" placeholder="초"
+                    value={targetSec || ""} onChange={(e) => setTarget(targetMin, Number(e.target.value) || 0)} />
+                <span className="text-xs">초</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs w-16">허용 오차</span>
+                <Input type="number" min={0} className="w-16 h-8" placeholder="0"
+                    value={config.tolerance_seconds ?? ""} onChange={(e) => onChange({ tolerance_seconds: e.target.value === "" ? 0 : Number(e.target.value) })} />
+                <span className="text-xs">초 이내는 감점 없음</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs w-16">초과·미달</span>
+                <Input type="number" min={1} className="w-16 h-8" placeholder="30"
+                    value={config.unit_seconds ?? ""} onChange={(e) => onChange({ unit_seconds: Number(e.target.value) })} />
+                <span className="text-xs">초마다</span>
+                <Input type="number" step="0.1" className="w-20 h-8" placeholder="점"
+                    value={config.unit_points ?? ""} onChange={(e) => onChange({ unit_points: Number(e.target.value) })} />
+                <span className="text-xs">점 · 상한</span>
+                <Input type="number" step="0.1" className="w-20 h-8" placeholder="없음"
+                    value={config.max_points ?? ""} onChange={(e) => onChange({ max_points: e.target.value === "" ? null : Number(e.target.value) })} />
+                <span className="text-xs">점</span>
+            </div>
+            <p className="text-xs text-[var(--color-text-muted)]">
+                감점 탭에서 팀별 <b>실제 발표시간</b>을 적으면 기준 시간과의 차이로 자동 감점됩니다.
+            </p>
+        </div>
+    );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function FlagRuleConfig({ config, onChange }: { config: Record<string, any>; onChange: (p: Record<string, unknown>) => void }) {
+    return (
+        <div className="flex flex-wrap items-center gap-2 text-sm pt-3">
+            <span className="text-xs">해당 시</span>
+            <Input type="number" step="0.1" className="w-20 h-8" placeholder="점"
+                value={config.points ?? ""} onChange={(e) => onChange({ points: Number(e.target.value) })} />
+            <span className="text-xs">점 감점</span>
+        </div>
     );
 }
 

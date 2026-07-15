@@ -56,7 +56,7 @@ export function ScoringResults({ round, connected }: { round: ScoringRound; conn
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                     <Stat label="심사위원" value={`${data.judge_submitted}명`} />
-                    <Stat label="참관위원" value={`${data.observer_submitted}명`} />
+                    <Stat label="청중" value={`${data.observer_submitted}명`} />
                     {Object.entries(data.observer_by_group ?? {}).map(([g, n]) => (
                         <Stat key={g} label={g} value={`${n}명`} subtle />
                     ))}
@@ -140,7 +140,7 @@ function FilterBar({
         role === "JUDGE"
             ? `심사위원 점수만 — ${round.judge_weight}점 만점 기준`
             : role === "OBSERVER"
-                ? `참관위원 점수만 — ${round.observer_weight}점 만점 기준`
+                ? `청중 점수만 — ${round.observer_weight}점 만점 기준`
                 : null;
 
     return (
@@ -156,7 +156,7 @@ function FilterBar({
                     {([
                         ["ALL", "전체"],
                         ["JUDGE", "심사위원만"],
-                        ["OBSERVER", "참관위원만"],
+                        ["OBSERVER", "청중만"],
                     ] as const).map(([key, label]) => (
                         <button
                             key={key}
@@ -174,10 +174,10 @@ function FilterBar({
                     ))}
                 </div>
 
-                {/* 참관위원 소그룹 — 심사위원만 보기일 땐 의미 없으니 숨긴다 */}
+                {/* 청중 소그룹 — 심사위원만 보기일 땐 의미 없으니 숨긴다 */}
                 {role !== "JUDGE" && groupsAvailable.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs text-[var(--color-text-muted)]">참관위원 그룹</span>
+                        <span className="text-xs text-[var(--color-text-muted)]">청중 그룹</span>
                         {groupsAvailable.map((g) => (
                             <button
                                 key={g}
@@ -216,7 +216,7 @@ function FilterBar({
                 <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
                     <b>부분 집계 중</b> — 선택한 사람들의 점수만으로 순위를 다시 계산했습니다.
                     {scopeNote ? ` ${scopeNote}.` : ""}
-                    {groups.length > 0 ? ` 참관위원은 ${groups.join(", ")}만 반영.` : ""}
+                    {groups.length > 0 ? ` 청중은 ${groups.join(", ")}만 반영.` : ""}
                 </p>
             )}
         </section>
@@ -242,13 +242,24 @@ function Stat({ label, value, subtle }: { label: string; value: string; subtle?:
 // ── 순위 테이블 ──────────────────────────────────────────────────────────────
 
 function RankTable({ data, round }: { data: Results; round: ScoringRound }) {
+    const hasDed = data.has_deductions;
+    // 점수 컬럼 = 영역별 평균(area_avg) + 미분류 기준(criterion_avg)
+    const cols: { label: string; max: number; get: (r: Results["results"][number]) => number }[] = [
+        ...round.areas.map((a) => ({
+            label: a.label, max: a.max_score, get: (r: Results["results"][number]) => r.area_avg?.[a.id] ?? 0,
+        })),
+        ...round.criteria.map((c) => ({
+            label: c.label, max: c.max_score, get: (r: Results["results"][number]) => r.criterion_avg?.[c.id] ?? 0,
+        })),
+    ];
     return (
         <section className="rounded-xl border border-[var(--color-border-subtle)] bg-white overflow-hidden">
             <div className="px-5 py-3 border-b border-[var(--color-border-subtle)]">
                 <h2 className="font-bold text-[var(--color-text-primary)]">순위</h2>
                 <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                    심사위원 {round.judge_weight}점 + 참관위원 {round.observer_weight}점 = {" "}
+                    심사위원 {round.judge_weight}점 + 청중 {round.observer_weight}점 = {" "}
                     {Number(round.judge_weight) + Number(round.observer_weight)}점 만점
+                    {hasDed ? " · 감점 반영" : ""}
                 </p>
             </div>
             <div className="overflow-x-auto">
@@ -258,37 +269,43 @@ function RankTable({ data, round }: { data: Results; round: ScoringRound }) {
                             <TableHead className="w-14">순위</TableHead>
                             <TableHead>팀</TableHead>
                             <TableHead className="text-right">심사위원</TableHead>
-                            <TableHead className="text-right">참관위원</TableHead>
-                            <TableHead className="text-right">총점</TableHead>
-                            {round.criteria.map((c) => (
-                                <TableHead key={c.id} className="text-right whitespace-nowrap">
+                            <TableHead className="text-right">청중</TableHead>
+                            {hasDed && <TableHead className="text-right">감점전</TableHead>}
+                            {hasDed && <TableHead className="text-right text-rose-500">감점</TableHead>}
+                            <TableHead className="text-right">{hasDed ? "최종" : "총점"}</TableHead>
+                            {cols.map((c, i) => (
+                                <TableHead key={i} className="text-right whitespace-nowrap">
                                     {c.label}
-                                    <span className="text-[10px] text-[var(--color-text-muted)] ml-1">
-                                        /{c.max_score}
-                                    </span>
+                                    <span className="text-[10px] text-[var(--color-text-muted)] ml-1">/{c.max}</span>
                                 </TableHead>
                             ))}
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {data.results.map((r) => (
-                            <TableRow key={r.target_id} className={r.rank === 1 ? "bg-amber-50/60" : undefined}>
+                            <TableRow key={r.target_id} className={cn(
+                                r.disqualified ? "bg-rose-50/50" : r.rank === 1 ? "bg-amber-50/60" : undefined,
+                            )}>
                                 <TableCell className="font-bold">
-                                    {r.rank === 1 ? "🥇" : r.rank === 2 ? "🥈" : r.rank === 3 ? "🥉" : r.rank}
+                                    {r.disqualified ? "실격"
+                                        : r.rank === 1 ? "🥇" : r.rank === 2 ? "🥈" : r.rank === 3 ? "🥉" : r.rank}
                                 </TableCell>
                                 <TableCell className="font-semibold">{r.name}</TableCell>
-                                <TableCell className="text-right text-[var(--color-text-secondary)]">
-                                    {r.judge_points}
-                                </TableCell>
-                                <TableCell className="text-right text-[var(--color-text-secondary)]">
-                                    {r.observer_points}
-                                </TableCell>
-                                <TableCell className="text-right font-bold text-[var(--color-accent)]">
+                                <TableCell className="text-right text-[var(--color-text-secondary)]">{r.judge_points}</TableCell>
+                                <TableCell className="text-right text-[var(--color-text-secondary)]">{r.observer_points}</TableCell>
+                                {hasDed && <TableCell className="text-right text-[var(--color-text-muted)]">{r.pre_deduction}</TableCell>}
+                                {hasDed && (
+                                    <TableCell className="text-right text-rose-500">
+                                        {r.deduction ? `−${r.deduction}` : "0"}
+                                    </TableCell>
+                                )}
+                                <TableCell className={cn("text-right font-bold",
+                                    r.disqualified ? "text-rose-400 line-through" : "text-[var(--color-accent)]")}>
                                     {r.total}
                                 </TableCell>
-                                {round.criteria.map((c) => (
-                                    <TableCell key={c.id} className="text-right text-[var(--color-text-muted)]">
-                                        {r.criterion_avg[c.id] ?? 0}
+                                {cols.map((c, i) => (
+                                    <TableCell key={i} className="text-right text-[var(--color-text-muted)]">
+                                        {c.get(r)}
                                     </TableCell>
                                 ))}
                             </TableRow>
@@ -306,11 +323,11 @@ function TotalChart({ data }: { data: Results }) {
     const chart = data.results.map((r) => ({
         name: r.name,
         심사위원: r.judge_points,
-        참관위원: r.observer_points,
+        청중: r.observer_points,
     }));
 
     return (
-        <Panel title="팀별 총점" subtitle="심사위원 / 참관위원 기여분을 나눠서 표시">
+        <Panel title="팀별 총점" subtitle="심사위원 / 청중 기여분을 나눠서 표시">
             <ResponsiveContainer width="100%" height={Math.max(220, chart.length * 46)}>
                 <BarChart data={chart} layout="vertical" margin={{ left: 8, right: 16 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
@@ -319,7 +336,7 @@ function TotalChart({ data }: { data: Results }) {
                     <Tooltip />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar dataKey="심사위원" stackId="a" fill={JUDGE_COLOR} radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="참관위원" stackId="a" fill={OBSERVER_COLOR} radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="청중" stackId="a" fill={OBSERVER_COLOR} radius={[0, 4, 4, 0]} />
                 </BarChart>
             </ResponsiveContainer>
         </Panel>
@@ -348,12 +365,21 @@ function CriteriaRadar({ data, round }: { data: Results; round: ScoringRound }) 
 
     const visible = data.results.filter((r) => shown.includes(r.target_id));
 
-    // 기준별 배점이 달라 절대 점수를 겹치면 왜곡된다 → 만점 대비 % 로 정규화
-    const chart = round.criteria.map((c) => {
-        const row: Record<string, string | number> = { criterion: c.label };
+    // 축 = 영역(area_avg) + 미분류 기준(criterion_avg). 세부항목까진 안 펼침(난립 방지).
+    const axes: { label: string; max: number; get: (r: Results["results"][number]) => number }[] = [
+        ...round.areas.map((a) => ({
+            label: a.label, max: a.max_score, get: (r: Results["results"][number]) => r.area_avg?.[a.id] ?? 0,
+        })),
+        ...round.criteria.map((c) => ({
+            label: c.label, max: c.max_score, get: (r: Results["results"][number]) => r.criterion_avg?.[c.id] ?? 0,
+        })),
+    ];
+
+    // 배점이 달라 절대 점수를 겹치면 왜곡된다 → 만점 대비 % 로 정규화
+    const chart = axes.map((ax) => {
+        const row: Record<string, string | number> = { criterion: ax.label };
         for (const r of visible) {
-            const avg = r.criterion_avg[c.id] ?? 0;
-            row[r.name] = c.max_score > 0 ? Math.round((avg / c.max_score) * 100) : 0;
+            row[r.name] = ax.max > 0 ? Math.round((ax.get(r) / ax.max) * 100) : 0;
         }
         return row;
     });
@@ -362,11 +388,11 @@ function CriteriaRadar({ data, round }: { data: Results; round: ScoringRound }) 
     const colorOf = (id: number) =>
         RADAR_PALETTE[data.results.findIndex((r) => r.target_id === id) % RADAR_PALETTE.length];
 
-    if (round.criteria.length < 3) {
+    if (axes.length < 3) {
         return (
-            <Panel title="기준별 강약점" subtitle="기준이 3개 이상일 때 레이더로 비교됩니다">
+            <Panel title="영역별 강약점" subtitle="영역·기준이 3개 이상일 때 레이더로 비교됩니다">
                 <div className="h-[220px] flex items-center justify-center text-sm text-[var(--color-text-muted)]">
-                    심사 기준을 3개 이상 만들면 팀별 강약점을 비교할 수 있습니다.
+                    심사 영역(또는 기준)을 3개 이상 만들면 팀별 강약점을 비교할 수 있습니다.
                 </div>
             </Panel>
         );
@@ -449,7 +475,7 @@ function CriteriaRadar({ data, round }: { data: Results; round: ScoringRound }) 
     );
 }
 
-// ── 참관위원 등수 득표 ───────────────────────────────────────────────────────
+// ── 청중 등수 득표 ───────────────────────────────────────────────────────
 
 function RankVotesChart({ data }: { data: Results }) {
     const slots = Array.from(
@@ -458,9 +484,9 @@ function RankVotesChart({ data }: { data: Results }) {
 
     if (slots.length === 0) {
         return (
-            <Panel title="참관위원 득표" subtitle="아직 등수 투표가 없습니다">
+            <Panel title="청중 득표" subtitle="아직 등수 투표가 없습니다">
                 <div className="h-[160px] flex items-center justify-center text-sm text-[var(--color-text-muted)]">
-                    참관위원이 등수를 선택하면 여기에 표시됩니다.
+                    청중이 등수를 선택하면 여기에 표시됩니다.
                 </div>
             </Panel>
         );
@@ -473,7 +499,7 @@ function RankVotesChart({ data }: { data: Results }) {
     });
 
     return (
-        <Panel title="참관위원 득표" subtitle="등수별 득표수 — 몰표인지 갈렸는지 확인">
+        <Panel title="청중 득표" subtitle="등수별 득표수 — 몰표인지 갈렸는지 확인">
             <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={chart} margin={{ left: 8, right: 16 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
@@ -572,7 +598,7 @@ function SubmitterList({ data, round }: { data: Results; round: ScoringRound }) 
             (s) =>
                 s.name.toLowerCase().includes(needle)
                 || (s.group_label ?? "").toLowerCase().includes(needle)
-                || (s.role === "JUDGE" ? "심사위원" : "참관위원").includes(needle),
+                || (s.role === "JUDGE" ? "심사위원" : "청중").includes(needle),
         )
         : list;
 
@@ -676,7 +702,7 @@ function SubmitterList({ data, round }: { data: Results; round: ScoringRound }) 
                                             : "bg-sky-50 text-sky-600",
                                     )}
                                 >
-                                    {s.role === "JUDGE" ? "심사위원" : "참관위원"}
+                                    {s.role === "JUDGE" ? "심사위원" : "청중"}
                                 </span>
                                 {s.group_label && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--color-hover)] text-[var(--color-text-secondary)]">
@@ -727,8 +753,20 @@ function SubmissionDetail({
     results: Results["results"];
 }) {
     const tname = new Map(results.map((r) => [r.target_id, r.name]));
-    const cname = new Map(round.criteria.map((c) => [c.id, c.label]));
-    const cmax = new Map(round.criteria.map((c) => [c.id, c.max_score]));
+    // 코멘트/세부항목 라벨: 미분류 + 영역 내 세부항목 모두
+    const allCrit = [...round.criteria, ...round.areas.flatMap((a) => a.criteria)];
+    const cname = new Map(allCrit.map((c) => [c.id, c.label]));
+    const cmax = new Map(allCrit.map((c) => [c.id, c.max_score]));
+    // 영역 통째 점수 라벨·배점
+    const aname = new Map(round.areas.map((a) => [a.id, a.label]));
+    const amax = new Map(round.areas.map((a) => [a.id, a.max_score]));
+
+    const itemLabel = (s: { criterion_id?: number | null; area_id?: number | null }) =>
+        s.criterion_id != null ? cname.get(s.criterion_id) ?? "?"
+            : s.area_id != null ? `${aname.get(s.area_id) ?? "?"} (통째)` : "?";
+    const itemMax = (s: { criterion_id?: number | null; area_id?: number | null }) =>
+        s.criterion_id != null ? cmax.get(s.criterion_id) ?? 0
+            : s.area_id != null ? amax.get(s.area_id) ?? 0 : 0;
 
     if (sub.ranks.length > 0) {
         return (
@@ -800,18 +838,18 @@ function SubmissionDetail({
                             </span>
                         </div>
                         <div className="space-y-1">
-                            {b.scores.map((s) => (
+                            {b.scores.map((s, si) => (
                                 <div
-                                    key={s.criterion_id}
+                                    key={si}
                                     className="flex items-center justify-between text-sm"
                                 >
                                     <span className="text-[var(--color-text-secondary)]">
-                                        {cname.get(s.criterion_id) ?? "?"}
+                                        {itemLabel(s)}
                                     </span>
                                     <span className="text-[var(--color-text-primary)]">
                                         {s.score}
                                         <span className="text-xs text-[var(--color-text-muted)]">
-                                            {" "}/ {cmax.get(s.criterion_id) ?? 0}
+                                            {" "}/ {itemMax(s)}
                                         </span>
                                     </span>
                                 </div>
@@ -841,7 +879,9 @@ function SubmissionDetail({
 // ── 서술형 피드백 ────────────────────────────────────────────────────────────
 
 function CommentsPanel({ data, round }: { data: Results; round: ScoringRound }) {
-    const cname = new Map(round.criteria.map((c) => [c.id, c.label]));
+    const cname = new Map(
+        [...round.criteria, ...round.areas.flatMap((a) => a.criteria)].map((c) => [c.id, c.label]),
+    );
     const withComments = data.results.filter((r) => r.comments.length > 0);
 
     if (withComments.length === 0) return null;
@@ -874,7 +914,7 @@ function CommentsPanel({ data, round }: { data: Results; round: ScoringRound }) 
                                             {c.participant_name}
                                         </span>
                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white text-[var(--color-text-muted)]">
-                                            {c.role === "JUDGE" ? "심사위원" : "참관위원"}
+                                            {c.role === "JUDGE" ? "심사위원" : "청중"}
                                         </span>
                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white text-[var(--color-accent)] font-medium">
                                             {c.criterion_id ? cname.get(c.criterion_id) ?? "기준" : "총평"}
