@@ -8,10 +8,42 @@ export type ScoringRole = "JUDGE" | "OBSERVER";
 
 export interface Criterion {
     id: number;
+    area_id?: number | null;
     label: string;
     description?: string | null;
     max_score: number;
     order_num: number;
+}
+
+export interface Area {
+    id: number;
+    label: string;
+    description?: string | null;
+    max_score: number;
+    order_num: number;
+    criteria: Criterion[];  // 세부항목 (없으면 영역 통째로 채점)
+}
+
+export type DeductionKind = "TIME" | "DURATION" | "FLAG";
+
+export interface DeductionRule {
+    id: number;
+    label: string;
+    description?: string | null;
+    kind: DeductionKind;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    config: Record<string, any>;
+    order_num: number;
+}
+
+export interface Deduction {
+    target_id: number;
+    rule_id: number;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    input: Record<string, any>;
+    points: number;
+    disqualified: boolean;
+    note?: string | null;
 }
 
 export interface Target {
@@ -53,11 +85,13 @@ export interface ScoringRound {
     observer_mode: ObserverMode;
     rank_points: RankPoint[];
     exclude_own_team: boolean;
-    /** 참관위원 소그룹 라벨 (운영진/기수/청중 …). 분류·표시용 — 집계엔 영향 없음. */
+    /** 청중 소그룹 라벨 (기수/운영진/청중 …). 분류·표시용 — 집계엔 영향 없음. */
     observer_groups: string[];
-    criteria: Criterion[];
+    areas: Area[];
+    criteria: Criterion[];  // 미분류(평면) 기준만
     targets: Target[];
     roster: RosterEntry[];
+    deduction_rules: DeductionRule[];
     submitted_count: number;
     created_at?: string | null;
 }
@@ -104,11 +138,15 @@ export interface TargetResult {
     name: string;
     judge_points: number;
     observer_points: number;
+    pre_deduction: number;
+    deduction: number;
     total: number;
+    disqualified: boolean;
     rank: number;
     judge_count: number;
     observer_count: number;
     criterion_avg: Record<number, number>;
+    area_avg: Record<number, number>;
     rank_votes: Record<number, number>;
     comments: TargetComment[];
 }
@@ -137,14 +175,19 @@ export interface Results {
     submitters: Submitter[];
     judge_submitted: number;
     observer_submitted: number;
-    /** 참관위원 소그룹별 제출 인원 — 분류용 표시. */
+    /** 청중 소그룹별 제출 인원 — 분류용 표시. */
     observer_by_group: Record<string, number>;
+    /** 팀별 감점 상세 {target_id: [{rule_label, points, disqualified}]} */
+    deduction_detail: Record<number, { rule_label: string; points: number; disqualified: boolean }[]>;
+    has_deductions: boolean;
     roster_total: number;
 }
 
 export interface ScoreEntry {
     target_id: number;
-    criterion_id: number;
+    /** 세부항목/미분류면 criterion_id, 영역 통째면 area_id (둘 중 하나) */
+    criterion_id?: number | null;
+    area_id?: number | null;
     score: number;
 }
 
@@ -179,7 +222,13 @@ export const scoringKeys = {
     round: (id: number) => [...scoringKeys.all, "round", id] as const,
     participants: (id: number) => [...scoringKeys.all, "participants", id] as const,
     results: (id: number) => [...scoringKeys.all, "results", id] as const,
+    deductions: (id: number) => [...scoringKeys.all, "deductions", id] as const,
 };
+
+export interface DeductionsGrid {
+    rules: DeductionRule[];
+    deductions: Deduction[];
+}
 
 // ── Queries ──────────────────────────────────────────────────────────────────
 
@@ -241,9 +290,60 @@ function useRoundMutation<TArgs>(
             qc.invalidateQueries({ queryKey: scoringKeys.round(roundId) });
             qc.invalidateQueries({ queryKey: scoringKeys.results(roundId) });
             qc.invalidateQueries({ queryKey: scoringKeys.participants(roundId) });
+            qc.invalidateQueries({ queryKey: scoringKeys.deductions(roundId) });
             qc.invalidateQueries({ queryKey: scoringKeys.rounds() });
         },
     });
+}
+
+// ── 루브릭 (영역/세부항목) ──
+
+export interface RubricAreaInput {
+    id?: number;
+    label: string;
+    description?: string | null;
+    max_score?: number | null;  // 세부항목 있으면 합으로 자동
+    criteria: { id?: number; label: string; description?: string | null; max_score: number }[];
+}
+
+export interface RubricInput {
+    areas: RubricAreaInput[];
+    ungrouped: { id?: number; label: string; description?: string | null; max_score: number }[];
+}
+
+export function useSaveRubric(roundId: number) {
+    return useRoundMutation(
+        (id, body: RubricInput) => api.put(`/scoring/rounds/${id}/rubric`, body),
+        roundId,
+    );
+}
+
+// ── 감점 규정 / 팀별 감점 ──
+
+export function useSaveDeductionRules(roundId: number) {
+    return useRoundMutation(
+        (id, body: {
+            id?: number; label: string; description?: string | null;
+            kind: DeductionKind; config: Record<string, unknown>;
+        }[]) => api.put(`/scoring/rounds/${id}/deduction-rules`, body),
+        roundId,
+    );
+}
+
+export function useDeductions(id: number | null) {
+    return useQuery({
+        queryKey: scoringKeys.deductions(id ?? 0),
+        queryFn: async () => (await api.get<DeductionsGrid>(`/scoring/rounds/${id}/deductions`)).data,
+        enabled: !!id,
+    });
+}
+
+export function useSaveDeductions(roundId: number) {
+    return useRoundMutation(
+        (id, body: { target_id: number; rule_id: number; input: Record<string, unknown>; note?: string | null }[]) =>
+            api.put(`/scoring/rounds/${id}/deductions`, body),
+        roundId,
+    );
 }
 
 export function useCreateRound() {

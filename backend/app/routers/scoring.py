@@ -28,12 +28,14 @@ from app.deps import (
     check_public_rate, decode_ws_token, get_current_cohort_id, get_db, get_real_ip, require_staff,
 )
 from app.models import (
-    Member, ScoringComment, ScoringCriterion, ScoringParticipant, ScoringRank,
+    Member, ScoringArea, ScoringComment, ScoringCriterion, ScoringDeduction,
+    ScoringDeductionRule, ScoringParticipant, ScoringRank,
     ScoringRosterEntry, ScoringRound, ScoringScore, ScoringTarget,
     Session as SessionModel, Team, TeamMember, User,
 )
+from app.services.scoring_deductions import compute_deduction
 from app.services.scoring_engine import (
-    CriterionLite, ParticipantLite, RankLite, ScoreLite, compute_results,
+    AreaLite, CriterionLite, ParticipantLite, RankLite, ScoreLite, compute_results,
 )
 from app.services.scoring_ws import manager
 
@@ -69,11 +71,35 @@ class CriterionIn(BaseModel):
 
 class CriterionOut(BaseModel):
     id: int
+    area_id: int | None = None
     label: str
     description: str | None = None
     max_score: float
     order_num: int
     model_config = {"from_attributes": True}
+
+
+class AreaOut(BaseModel):
+    id: int
+    label: str
+    description: str | None = None
+    max_score: float
+    order_num: int
+    criteria: list[CriterionOut] = []
+
+
+class AreaIn(BaseModel):
+    id: int | None = None
+    label: str = Field(..., max_length=100)
+    description: str | None = None
+    max_score: float | None = Field(None, gt=0)  # 세부항목 있으면 합으로 자동 계산
+    criteria: list[CriterionIn] = []
+
+
+class RubricIn(BaseModel):
+    """루브릭 일괄 저장 — 영역(세부항목 포함) + 미분류 기준."""
+    areas: list[AreaIn] = []
+    ungrouped: list[CriterionIn] = []
 
 
 class TargetIn(BaseModel):
@@ -148,9 +174,11 @@ class RoundOut(BaseModel):
     rank_points: list[RankPoint]
     exclude_own_team: bool
     observer_groups: list[str] = []
-    criteria: list[CriterionOut] = []
+    areas: list[AreaOut] = []
+    criteria: list[CriterionOut] = []  # 미분류(평면) 기준만
     targets: list[TargetOut] = []
     roster: list[RosterOut] = []
+    deduction_rules: list["DeductionRuleOut"] = []
     submitted_count: int = 0
     created_at: datetime | None = None
 
@@ -195,7 +223,9 @@ class SubmissionStatus(BaseModel):
 
 class ScoreIn(BaseModel):
     target_id: int
-    criterion_id: int
+    # 세부항목/미분류 점수면 criterion_id, 영역 통째 점수면 area_id (둘 중 하나)
+    criterion_id: int | None = None
+    area_id: int | None = None
     score: float = Field(..., ge=0)
 
 
@@ -251,6 +281,14 @@ class PublicCriterion(BaseModel):
     max_score: float
 
 
+class PublicArea(BaseModel):
+    id: int
+    label: str
+    description: str | None = None
+    max_score: float
+    criteria: list[PublicCriterion] = []  # 세부항목 (없으면 영역 통째로만 채점)
+
+
 class PublicTarget(BaseModel):
     id: int
     name: str
@@ -258,14 +296,15 @@ class PublicTarget(BaseModel):
 
 
 class PublicRound(BaseModel):
-    """공개 폼용 — 명단·점수·기수 정보는 절대 포함하지 않는다."""
+    """공개 폼용 — 명단·점수·기수 정보·감점 규정은 절대 포함하지 않는다."""
     name: str
     intro: str | None = None
     is_open: bool
     observer_mode: str
     rank_slots: list[int]  # RANK 모드에서 선택해야 할 등수 목록 [1,2,3]
-    observer_groups: list[str] = []  # 비어 있으면 참관위원에게 그룹을 묻지 않는다
-    criteria: list[PublicCriterion]
+    observer_groups: list[str] = []  # 비어 있으면 청중에게 그룹을 묻지 않는다
+    areas: list[PublicArea] = []
+    criteria: list[PublicCriterion] = []  # 미분류 기준
     targets: list[PublicTarget]
 
 
@@ -298,13 +337,59 @@ class TargetResultOut(BaseModel):
     name: str
     judge_points: float
     observer_points: float
-    total: float
+    pre_deduction: float          # 감점 전 (심사 + 청중)
+    deduction: float              # 감점 총합
+    total: float                  # 감점 후 최종
+    disqualified: bool = False
     rank: int
     judge_count: int
     observer_count: int
     criterion_avg: dict[int, float]
+    area_avg: dict[int, float] = {}
     rank_votes: dict[int, int]
     comments: list[TargetComment] = []
+
+
+# ── 감점 스키마 ──
+
+class DeductionRuleIn(BaseModel):
+    id: int | None = None
+    label: str = Field(..., max_length=100)
+    description: str | None = None
+    kind: str = Field(..., pattern=r"^(TIME|DURATION|FLAG)$")
+    config: dict = {}
+
+
+class DeductionRuleOut(BaseModel):
+    id: int
+    label: str
+    description: str | None = None
+    kind: str
+    config: dict
+    order_num: int
+    model_config = {"from_attributes": True}
+
+
+class DeductionIn(BaseModel):
+    target_id: int
+    rule_id: int
+    input: dict = {}
+    note: str | None = Field(None, max_length=200)
+
+
+class DeductionOut(BaseModel):
+    target_id: int
+    rule_id: int
+    input: dict
+    points: float
+    disqualified: bool
+    note: str | None = None
+    model_config = {"from_attributes": True}
+
+
+class DeductionsGrid(BaseModel):
+    rules: list[DeductionRuleOut]
+    deductions: list[DeductionOut]
 
 
 class SubmitterLite(BaseModel):
@@ -323,8 +408,11 @@ class ResultsOut(BaseModel):
     submitters: list[SubmitterLite] = []
     judge_submitted: int
     observer_submitted: int
-    # 참관위원 소그룹별 제출 인원 {"운영진": 3, "청중": 12, ...} — 분류용 표시일 뿐 집계엔 영향 없음
+    # 청중 소그룹별 제출 인원 {"운영진": 3, "청중": 12, ...} — 분류용 표시일 뿐 집계엔 영향 없음
     observer_by_group: dict[str, int] = {}
+    # 팀별 감점 상세 {target_id: [{rule_label, points, disqualified}]}
+    deduction_detail: dict[int, list[dict]] = {}
+    has_deductions: bool = False
     roster_total: int
 
 
@@ -335,9 +423,11 @@ async def _get_round_or_404(round_id: int, db: AsyncSession, cohort_id: int) -> 
         select(ScoringRound)
         .where(ScoringRound.id == round_id, ScoringRound.cohort_id == cohort_id)
         .options(
+            selectinload(ScoringRound.areas).selectinload(ScoringArea.criteria),
             selectinload(ScoringRound.criteria),
             selectinload(ScoringRound.targets),
             selectinload(ScoringRound.roster),
+            selectinload(ScoringRound.deduction_rules),
         )
         # populate_existing 필수 — 세션이 expire_on_commit=False 라서, 저장 직후 다시 조회하면
         # 아까 로드해 둔(비어 있던) 컬렉션이 그대로 재사용돼 방금 추가한 행이 응답에서 누락된다.
@@ -425,9 +515,25 @@ async def _round_out(db: AsyncSession, rnd: ScoringRound) -> RoundOut:
         rank_points=[RankPoint(**rp) for rp in (rnd.rank_points or [])],
         exclude_own_team=rnd.exclude_own_team,
         observer_groups=list(rnd.observer_groups or []),
-        criteria=[CriterionOut.model_validate(c) for c in sorted(rnd.criteria, key=lambda c: c.order_num)],
+        areas=[
+            AreaOut(
+                id=a.id, label=a.label, description=a.description,
+                max_score=float(a.max_score), order_num=a.order_num,
+                criteria=[CriterionOut.model_validate(c) for c in sorted(a.criteria, key=lambda c: c.order_num)],
+            )
+            for a in sorted(rnd.areas, key=lambda a: a.order_num)
+        ],
+        # 미분류(평면) 기준만 — 영역 소속 세부항목은 areas 안에 들어간다
+        criteria=[
+            CriterionOut.model_validate(c)
+            for c in sorted(rnd.criteria, key=lambda c: c.order_num) if c.area_id is None
+        ],
         targets=[TargetOut.model_validate(t) for t in sorted(rnd.targets, key=lambda t: t.order_num)],
         roster=[RosterOut.model_validate(r) for r in rnd.roster],
+        deduction_rules=[
+            DeductionRuleOut.model_validate(dr)
+            for dr in sorted(rnd.deduction_rules, key=lambda d: d.order_num)
+        ],
         submitted_count=await _submitted_count(db, rnd.id),
         created_at=rnd.created_at,
     )
@@ -444,7 +550,8 @@ async def _load_submission(db: AsyncSession, p: ScoringParticipant) -> tuple[lis
         select(ScoringComment).where(ScoringComment.participant_id == p.id)
     )).scalars().all()
     return (
-        [ScoreIn(target_id=s.target_id, criterion_id=s.criterion_id, score=float(s.score)) for s in scores],
+        [ScoreIn(target_id=s.target_id, criterion_id=s.criterion_id, area_id=s.area_id,
+                 score=float(s.score)) for s in scores],
         [RankIn(target_id=r.target_id, rank=r.rank) for r in ranks],
         [CommentIn(target_id=c.target_id, criterion_id=c.criterion_id, body=c.body) for c in comments],
     )
@@ -456,6 +563,7 @@ async def _save_submission(
     """제출 저장 (전체 교체 upsert). 유효성 검증 후 기존 값을 지우고 새로 넣는다."""
     valid_targets = {t.id for t in rnd.targets}
     valid_criteria = {c.id: float(c.max_score) for c in rnd.criteria}
+    valid_areas = {a.id: float(a.max_score) for a in rnd.areas}
     blocked = set(_blocked_targets(rnd, p.matched_member_id))
 
     for s in body.scores:
@@ -463,13 +571,35 @@ async def _save_submission(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "존재하지 않는 심사 대상입니다")
         if s.target_id in blocked:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "본인 소속 팀은 채점할 수 없습니다")
-        if s.criterion_id not in valid_criteria:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "존재하지 않는 심사 기준입니다")
-        if s.score > valid_criteria[s.criterion_id]:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                f"배점({valid_criteria[s.criterion_id]:g}점)을 초과한 점수입니다",
-            )
+        if s.criterion_id is not None:
+            if s.criterion_id not in valid_criteria:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "존재하지 않는 심사 기준입니다")
+            if s.score > valid_criteria[s.criterion_id]:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"배점({valid_criteria[s.criterion_id]:g}점)을 초과한 점수입니다",
+                )
+        elif s.area_id is not None:  # 영역 통째 점수
+            if s.area_id not in valid_areas:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "존재하지 않는 심사 영역입니다")
+            if s.score > valid_areas[s.area_id]:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"영역 배점({valid_areas[s.area_id]:g}점)을 초과한 점수입니다",
+                )
+        else:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "점수 대상이 지정되지 않았습니다")
+
+    # 한 영역을 통째·세부항목 두 방식으로 동시에 보내면 안 된다 (엔진이 통째를 우선하므로 혼란)
+    area_of = {c.id: c.area_id for c in rnd.criteria if c.area_id is not None}
+    for tid in {s.target_id for s in body.scores}:
+        lump_areas = {s.area_id for s in body.scores if s.target_id == tid and s.area_id is not None}
+        detail_areas = {area_of[s.criterion_id] for s in body.scores
+                        if s.target_id == tid and s.criterion_id is not None
+                        and s.criterion_id in area_of}
+        if lump_areas & detail_areas:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "같은 영역을 통째와 세부항목으로 동시에 채점할 수 없습니다")
 
     for r in body.ranks:
         if r.target_id not in valid_targets:
@@ -498,7 +628,7 @@ async def _save_submission(
 
     for s in body.scores:
         db.add(ScoringScore(participant_id=p.id, target_id=s.target_id,
-                            criterion_id=s.criterion_id, score=s.score))
+                            criterion_id=s.criterion_id, area_id=s.area_id, score=s.score))
     for r in body.ranks:
         db.add(ScoringRank(participant_id=p.id, target_id=r.target_id, rank=r.rank))
     for c in body.comments:
@@ -652,7 +782,7 @@ async def open_round(
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
-    if not rnd.criteria:
+    if not rnd.areas and not rnd.criteria:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "심사 기준을 1개 이상 등록해야 링크를 열 수 있습니다")
     if not rnd.targets:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "심사 대상을 1개 이상 등록해야 링크를 열 수 있습니다")
@@ -710,6 +840,77 @@ async def put_criteria(
     for cid, c in existing.items():
         if cid not in keep:
             await db.delete(c)
+
+    await db.commit()
+    rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await manager.broadcast(round_id, {"type": "config.changed"})
+    return await _round_out(db, rnd)
+
+
+@router.put("/rounds/{round_id}/rubric", response_model=RoundOut)
+async def put_rubric(
+    round_id: int,
+    body: RubricIn,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+):
+    """루브릭 일괄 저장 — 영역(세부항목 포함) + 미분류 기준. 목록에서 빠지면 삭제(점수 CASCADE).
+
+    영역 만점: 세부항목이 있으면 그 합으로 자동 계산, 없으면 area.max_score(영역 통째 채점).
+    """
+    rnd = await _get_round_or_404(round_id, db, cohort_id)
+    existing_areas = {a.id: a for a in rnd.areas}
+    existing_crit = {c.id: c for c in rnd.criteria}
+    keep_areas: set[int] = set()
+    keep_crit: set[int] = set()
+
+    for ai, area_in in enumerate(body.areas):
+        sub_sum = sum(c.max_score for c in area_in.criteria)
+        area_max = sub_sum if area_in.criteria else (area_in.max_score or 0)
+        if area_max <= 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                f"'{area_in.label}' 영역의 배점을 정해 주세요")
+        if area_in.id and area_in.id in existing_areas:
+            a = existing_areas[area_in.id]
+            a.label, a.description, a.max_score, a.order_num = (
+                area_in.label, area_in.description, area_max, ai)
+            keep_areas.add(a.id)
+        else:
+            a = ScoringArea(round_id=round_id, label=area_in.label,
+                            description=area_in.description, max_score=area_max, order_num=ai)
+            db.add(a)
+            await db.flush()  # a.id 확보
+
+        for ci, c_in in enumerate(area_in.criteria):
+            if c_in.id and c_in.id in existing_crit:
+                c = existing_crit[c_in.id]
+                c.area_id, c.label, c.description, c.max_score, c.order_num = (
+                    a.id, c_in.label, c_in.description, c_in.max_score, ci)
+                keep_crit.add(c.id)
+            else:
+                db.add(ScoringCriterion(
+                    round_id=round_id, area_id=a.id, label=c_in.label,
+                    description=c_in.description, max_score=c_in.max_score, order_num=ci))
+
+    base = len(body.areas)
+    for ci, c_in in enumerate(body.ungrouped):
+        if c_in.id and c_in.id in existing_crit:
+            c = existing_crit[c_in.id]
+            c.area_id, c.label, c.description, c.max_score, c.order_num = (
+                None, c_in.label, c_in.description, c_in.max_score, base + ci)
+            keep_crit.add(c.id)
+        else:
+            db.add(ScoringCriterion(
+                round_id=round_id, area_id=None, label=c_in.label,
+                description=c_in.description, max_score=c_in.max_score, order_num=base + ci))
+
+    for cid, c in existing_crit.items():
+        if cid not in keep_crit:
+            await db.delete(c)
+    for aid, a in existing_areas.items():
+        if aid not in keep_areas:
+            await db.delete(a)
 
     await db.commit()
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -1097,6 +1298,112 @@ async def proxy_submit(
     )
 
 
+# ── 운영진: 감점 규정 / 팀별 감점 ─────────────────────────────────────────────
+
+@router.put("/rounds/{round_id}/deduction-rules", response_model=RoundOut)
+async def put_deduction_rules(
+    round_id: int,
+    body: list[DeductionRuleIn],
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+):
+    """감점 규정 일괄 저장. 규정이 바뀌면 관련 팀 감점을 규정 config로 재계산한다."""
+    rnd = await _get_round_or_404(round_id, db, cohort_id)
+    existing = {r.id: r for r in rnd.deduction_rules}
+    keep: set[int] = set()
+
+    for i, item in enumerate(body):
+        if item.id and item.id in existing:
+            r = existing[item.id]
+            r.label, r.description, r.kind, r.config, r.order_num = (
+                item.label, item.description, item.kind, item.config, i)
+            keep.add(r.id)
+        else:
+            db.add(ScoringDeductionRule(
+                round_id=round_id, label=item.label, description=item.description,
+                kind=item.kind, config=item.config, order_num=i))
+
+    for rid, r in existing.items():
+        if rid not in keep:
+            await db.delete(r)
+
+    await db.flush()
+    # 남은 규정 기준으로 팀 감점 재계산 (config 변경 반영)
+    await _recompute_deductions(db, round_id)
+    await db.commit()
+
+    rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await manager.broadcast(round_id, {"type": "config.changed"})
+    return await _round_out(db, rnd)
+
+
+async def _recompute_deductions(db: AsyncSession, round_id: int) -> None:
+    """모든 팀 감점의 points·disqualified 를 현재 규정 config로 다시 계산."""
+    rules = {r.id: r for r in (await db.execute(
+        select(ScoringDeductionRule).where(ScoringDeductionRule.round_id == round_id)
+    )).scalars().all()}
+    dedns = (await db.execute(
+        select(ScoringDeduction).where(ScoringDeduction.round_id == round_id)
+    )).scalars().all()
+    for d in dedns:
+        rule = rules.get(d.rule_id)
+        if rule is None:
+            continue
+        pts, dq = compute_deduction(rule.kind, rule.config or {}, d.input or {})
+        d.points, d.disqualified = pts, dq
+
+
+@router.get("/rounds/{round_id}/deductions", response_model=DeductionsGrid)
+async def get_deductions(
+    round_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+):
+    rnd = await _get_round_or_404(round_id, db, cohort_id)
+    dedns = (await db.execute(
+        select(ScoringDeduction).where(ScoringDeduction.round_id == round_id)
+    )).scalars().all()
+    return DeductionsGrid(
+        rules=[DeductionRuleOut.model_validate(r)
+               for r in sorted(rnd.deduction_rules, key=lambda x: x.order_num)],
+        deductions=[
+            DeductionOut(target_id=d.target_id, rule_id=d.rule_id, input=d.input or {},
+                         points=float(d.points), disqualified=d.disqualified, note=d.note)
+            for d in dedns
+        ],
+    )
+
+
+@router.put("/rounds/{round_id}/deductions", response_model=DeductionsGrid)
+async def put_deductions(
+    round_id: int,
+    body: list[DeductionIn],
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+):
+    """팀별 감점 입력 일괄 저장 (전체 교체). 서버가 규정 config로 points·disqualified 계산."""
+    rnd = await _get_round_or_404(round_id, db, cohort_id)
+    valid_targets = {t.id for t in rnd.targets}
+    rules = {r.id: r for r in rnd.deduction_rules}
+
+    await db.execute(delete(ScoringDeduction).where(ScoringDeduction.round_id == round_id))
+    for item in body:
+        if item.target_id not in valid_targets or item.rule_id not in rules:
+            continue  # 삭제된 팀/규정은 조용히 무시
+        rule = rules[item.rule_id]
+        pts, dq = compute_deduction(rule.kind, rule.config or {}, item.input or {})
+        db.add(ScoringDeduction(
+            round_id=round_id, target_id=item.target_id, rule_id=item.rule_id,
+            input=item.input or {}, points=pts, disqualified=dq, note=item.note))
+
+    await db.commit()
+    await manager.broadcast(round_id, {"type": "submission.changed"})
+    return await get_deductions(round_id, db, _, cohort_id)
+
+
 # ── 운영진: 결과 집계 ─────────────────────────────────────────────────────────
 
 @router.get("/rounds/{round_id}/results", response_model=ResultsOut)
@@ -1146,18 +1453,46 @@ async def get_results(
 
     targets = sorted(rnd.targets, key=lambda t: t.order_num)
     criteria = sorted(rnd.criteria, key=lambda c: c.order_num)
+    areas = sorted(rnd.areas, key=lambda a: a.order_num)
+
+    # 팀별 감점 합계·실격 (필터와 무관하게 항상 반영 — 감점은 사실이므로)
+    dedns = (await db.execute(
+        select(ScoringDeduction).where(ScoringDeduction.round_id == round_id)
+    )).scalars().all()
+    rule_label = {r.id: r.label for r in rnd.deduction_rules}
+    deduction_by_target: dict[int, float] = {}
+    disqualified: set[int] = set()
+    deduction_detail: dict[int, list[dict]] = {}
+    for d in dedns:
+        if d.disqualified:
+            disqualified.add(d.target_id)
+        if float(d.points) or d.disqualified:
+            deduction_by_target[d.target_id] = deduction_by_target.get(d.target_id, 0.0) + float(d.points)
+            deduction_detail.setdefault(d.target_id, []).append({
+                "rule_label": rule_label.get(d.rule_id, "감점"),
+                "points": float(d.points),
+                "disqualified": d.disqualified,
+            })
 
     computed = compute_results(
         judge_weight=float(rnd.judge_weight),
         observer_weight=float(rnd.observer_weight),
         observer_mode=rnd.observer_mode,
         rank_points=list(rnd.rank_points or []),
-        criteria=[CriterionLite(id=c.id, max_score=float(c.max_score)) for c in criteria],
+        criteria=[CriterionLite(id=c.id, max_score=float(c.max_score), area_id=c.area_id) for c in criteria],
+        areas=[
+            AreaLite(id=a.id, max_score=float(a.max_score),
+                     criterion_ids=tuple(c.id for c in criteria if c.area_id == a.id))
+            for a in areas
+        ],
         target_ids=[t.id for t in targets],
         participants=[ParticipantLite(id=p.id, role=p.role, name=p.entered_name) for p in submitted],
         scores=[ScoreLite(participant_id=s.participant_id, target_id=s.target_id,
-                          criterion_id=s.criterion_id, score=float(s.score)) for s in scores],
+                          criterion_id=s.criterion_id, area_id=s.area_id, score=float(s.score))
+                for s in scores],
         ranks=[RankLite(participant_id=r.participant_id, target_id=r.target_id, rank=r.rank) for r in ranks],
+        deductions=deduction_by_target,
+        disqualified=disqualified,
     )
 
     name_by_id = {t.id: _tname(t) for t in targets}
@@ -1179,18 +1514,22 @@ async def get_results(
             name=name_by_id.get(r.target_id, "?"),
             judge_points=r.judge_points,
             observer_points=r.observer_points,
+            pre_deduction=r.pre_deduction,
+            deduction=r.deduction,
             total=r.total,
+            disqualified=r.disqualified,
             rank=r.rank,
             judge_count=r.judge_count,
             observer_count=r.observer_count,
             criterion_avg=r.criterion_avg,
+            area_avg=r.area_avg,
             rank_votes=r.rank_votes,
             comments=comments_by_target.get(r.target_id, []),
         )
         for r in computed
     ]
 
-    # 심사위원별 상세 (히트맵 — 관대/엄격 편차 확인용)
+    # 심사위원별 상세 (히트맵 — 관대/엄격 편차 확인용). 영역 통째·세부항목·미분류 모두 합산.
     totals_by: dict[int, dict[int, float]] = {}
     for s in scores:
         totals_by.setdefault(s.participant_id, {})
@@ -1228,6 +1567,8 @@ async def get_results(
         judge_submitted=len([p for p in submitted if p.role == "JUDGE"]),
         observer_submitted=len([p for p in submitted if p.role == "OBSERVER"]),
         observer_by_group=by_group,
+        deduction_detail=deduction_detail,
+        has_deductions=bool(rnd.deduction_rules),
         roster_total=len(rnd.roster),
     )
 
@@ -1265,6 +1606,7 @@ async def _get_public_round(token: str, db: AsyncSession) -> ScoringRound:
         select(ScoringRound)
         .where(ScoringRound.public_token == token)
         .options(
+            selectinload(ScoringRound.areas).selectinload(ScoringArea.criteria),
             selectinload(ScoringRound.criteria),
             selectinload(ScoringRound.targets),
             selectinload(ScoringRound.roster),
@@ -1290,10 +1632,21 @@ async def public_get_round(
         observer_mode=rnd.observer_mode,
         rank_slots=_rank_slots(rnd),
         observer_groups=list(rnd.observer_groups or []),
-        criteria=[
+        areas=[
+            PublicArea(
+                id=a.id, label=a.label, description=a.description, max_score=float(a.max_score),
+                criteria=[
+                    PublicCriterion(id=c.id, label=c.label, description=c.description,
+                                    max_score=float(c.max_score))
+                    for c in sorted(a.criteria, key=lambda c: c.order_num)
+                ],
+            )
+            for a in sorted(rnd.areas, key=lambda a: a.order_num)
+        ],
+        criteria=[  # 미분류 기준만
             PublicCriterion(id=c.id, label=c.label, description=c.description,
                             max_score=float(c.max_score))
-            for c in sorted(rnd.criteria, key=lambda c: c.order_num)
+            for c in sorted(rnd.criteria, key=lambda c: c.order_num) if c.area_id is None
         ],
         targets=[
             PublicTarget(id=t.id, name=_tname(t), members=list(t.member_names or []))

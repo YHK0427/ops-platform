@@ -619,10 +619,11 @@ class ScoringRound(Base):
     )
     exclude_own_team = Column(Boolean, default=False, server_default="false", nullable=False)
 
-    # 참관위원 소그룹 라벨 (예: ["운영진","기수","청중"]). 집계에는 영향을 주지 않고
-    # 제출현황·결과를 그룹별로 나눠 보기 위한 분류일 뿐이다. 빈 배열이면 그룹을 묻지 않는다.
+    # 청중 소그룹 라벨. 집계에는 영향을 주지 않고 제출현황·결과를 그룹별로 나눠 보기 위한
+    # 분류일 뿐이다. 빈 배열이면 그룹을 묻지 않는다. (운영자가 자유롭게 편집 — 아래는 기본값)
     observer_groups = Column(
-        JSONB, nullable=False, server_default=text('\'["운영진", "기수", "청중"]\''),
+        JSONB, nullable=False,
+        server_default=text('\'["기수", "운영진", "참관위원", "일반청중(OB·기타)"]\''),
     )
 
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
@@ -633,6 +634,10 @@ class ScoringRound(Base):
         Index("ix_scoring_rounds_cohort", "cohort_id"),
     )
 
+    areas = relationship(
+        "ScoringArea", back_populates="round",
+        cascade="all, delete-orphan", order_by="ScoringArea.order_num",
+    )
     criteria = relationship(
         "ScoringCriterion", back_populates="round",
         cascade="all, delete-orphan", order_by="ScoringCriterion.order_num",
@@ -643,14 +648,47 @@ class ScoringRound(Base):
     )
     roster = relationship("ScoringRosterEntry", back_populates="round", cascade="all, delete-orphan")
     participants = relationship("ScoringParticipant", back_populates="round", cascade="all, delete-orphan")
+    deduction_rules = relationship(
+        "ScoringDeductionRule", back_populates="round",
+        cascade="all, delete-orphan", order_by="ScoringDeductionRule.order_num",
+    )
+    deductions = relationship("ScoringDeduction", back_populates="round", cascade="all, delete-orphan")
+
+
+class ScoringArea(Base):
+    """심사 영역 — 세부항목(ScoringCriterion)의 상위 그룹. 영역 만점 = 세부항목 배점 합.
+
+    영역에 세부항목이 없으면 영역 자체를 하나의 채점 단위로 쓴다(max_score로 통째 채점).
+    """
+    __tablename__ = "scoring_areas"
+
+    id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("scoring_rounds.id", ondelete="CASCADE"), nullable=False)
+    label = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    max_score = Column(Numeric(6, 2), nullable=False)  # 세부항목 있으면 그 합과 일치해야 함
+    order_num = Column(Integer, nullable=False, server_default="0")
+
+    __table_args__ = (
+        CheckConstraint("max_score > 0", name="ck_scoring_area_max_score"),
+        Index("ix_scoring_areas_round", "round_id"),
+    )
+
+    round = relationship("ScoringRound", back_populates="areas")
+    criteria = relationship(
+        "ScoringCriterion", back_populates="area",
+        cascade="all, delete-orphan", order_by="ScoringCriterion.order_num",
+    )
 
 
 class ScoringCriterion(Base):
-    """심사 기준 — 운영자가 자유롭게 추가/수정/삭제. 기준별 배점(max_score) 합이 만점."""
+    """심사 세부항목 — 영역(area) 아래의 채점 라인. area_id=NULL이면 미분류(평면) 기준."""
     __tablename__ = "scoring_criteria"
 
     id = Column(Integer, primary_key=True)
     round_id = Column(Integer, ForeignKey("scoring_rounds.id", ondelete="CASCADE"), nullable=False)
+    # NULL = 미분류(구버전 평면 기준). 값 있으면 해당 영역의 세부항목.
+    area_id = Column(Integer, ForeignKey("scoring_areas.id", ondelete="CASCADE"), nullable=True)
     label = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     max_score = Column(Numeric(6, 2), nullable=False)
@@ -659,9 +697,11 @@ class ScoringCriterion(Base):
     __table_args__ = (
         CheckConstraint("max_score > 0", name="ck_scoring_criterion_max_score"),
         Index("ix_scoring_criteria_round", "round_id"),
+        Index("ix_scoring_criteria_area", "area_id"),
     )
 
     round = relationship("ScoringRound", back_populates="criteria")
+    area = relationship("ScoringArea", back_populates="criteria")
 
 
 class ScoringTarget(Base):
@@ -751,17 +791,31 @@ class ScoringParticipant(Base):
 
 
 class ScoringScore(Base):
-    """기준별 점수 — 제출자 × 대상팀 × 기준."""
+    """점수 — 제출자 × 대상팀 × (세부항목 또는 영역통째).
+
+    한 행은 셋 중 하나:
+    - criterion_id 有 / area_id 無  → 미분류(평면) 기준 점수
+    - criterion_id 有 / area_id 有  → 영역 세부항목 점수
+    - criterion_id 無 / area_id 有  → 영역 통째 점수(세부항목별로 안 매기는 심사위원)
+    """
     __tablename__ = "scoring_scores"
 
     id = Column(Integer, primary_key=True)
     participant_id = Column(Integer, ForeignKey("scoring_participants.id", ondelete="CASCADE"), nullable=False)
     target_id = Column(Integer, ForeignKey("scoring_targets.id", ondelete="CASCADE"), nullable=False)
-    criterion_id = Column(Integer, ForeignKey("scoring_criteria.id", ondelete="CASCADE"), nullable=False)
+    area_id = Column(Integer, ForeignKey("scoring_areas.id", ondelete="CASCADE"), nullable=True)
+    criterion_id = Column(Integer, ForeignKey("scoring_criteria.id", ondelete="CASCADE"), nullable=True)
     score = Column(Numeric(6, 2), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("participant_id", "target_id", "criterion_id", name="uq_scoring_score"),
+        CheckConstraint("criterion_id IS NOT NULL OR area_id IS NOT NULL",
+                        name="ck_scoring_score_target"),
+        # 세부항목/미분류 점수: 제출자·팀·세부항목당 1개
+        Index("uq_scoring_score_criterion", "participant_id", "target_id", "criterion_id",
+              unique=True, postgresql_where=text("criterion_id IS NOT NULL")),
+        # 영역 통째 점수: 제출자·팀·영역당 1개
+        Index("uq_scoring_score_area", "participant_id", "target_id", "area_id",
+              unique=True, postgresql_where=text("criterion_id IS NULL")),
     )
 
     participant = relationship("ScoringParticipant", back_populates="scores")
@@ -804,3 +858,55 @@ class ScoringComment(Base):
     )
 
     participant = relationship("ScoringParticipant", back_populates="comments")
+
+
+class ScoringDeductionRule(Base):
+    """감점 규정 정의 — 운영자가 라운드마다 만든다. 팀별 적용은 ScoringDeduction.
+
+    kind별 config(JSONB):
+    - TIME (발표자료 지각): {deadline, mode:"INTERVAL"|"STEPS", interval_minutes, interval_points,
+             max_points?, steps:[{after_minutes, points, disqualify?}], disqualify_after_minutes?}
+      → 팀 input {submitted_at} 로 마감 대비 지연분을 자동 판정
+    - DURATION (발표시간 초과·미달): {target_seconds, tolerance_seconds, unit_seconds, unit_points, max_points?}
+      → 팀 input {actual_seconds}. 기준 시간과의 차이가 허용오차를 넘으면 단위마다 감점
+    - FLAG (형식 미준수 등): {points}  → 팀 input {checked}
+    """
+    __tablename__ = "scoring_deduction_rules"
+
+    id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("scoring_rounds.id", ondelete="CASCADE"), nullable=False)
+    label = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    kind = Column(String(20), nullable=False)  # TIME|DURATION|FLAG
+    config = Column(JSONB, nullable=False, server_default=text("'{}'"))
+    order_num = Column(Integer, nullable=False, server_default="0")
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('TIME','DURATION','FLAG')", name="ck_scoring_deduction_rule_kind"),
+        Index("ix_scoring_deduction_rules_round", "round_id"),
+    )
+
+    round = relationship("ScoringRound", back_populates="deduction_rules")
+
+
+class ScoringDeduction(Base):
+    """팀별 감점 적용값 — 운영자 입력. points·disqualified 는 규정 config로 서버가 계산해 캐시."""
+    __tablename__ = "scoring_deductions"
+
+    id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("scoring_rounds.id", ondelete="CASCADE"), nullable=False)
+    target_id = Column(Integer, ForeignKey("scoring_targets.id", ondelete="CASCADE"), nullable=False)
+    rule_id = Column(Integer, ForeignKey("scoring_deduction_rules.id", ondelete="CASCADE"), nullable=False)
+    input = Column(JSONB, nullable=False, server_default=text("'{}'"))
+    points = Column(Numeric(6, 2), nullable=False, server_default="0")  # 감점(양수 = 그만큼 차감)
+    disqualified = Column(Boolean, default=False, server_default="false", nullable=False)
+    note = Column(String(200), nullable=True)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("target_id", "rule_id", name="uq_scoring_deduction"),
+        Index("ix_scoring_deductions_round", "round_id"),
+    )
+
+    round = relationship("ScoringRound", back_populates="deductions")
+    rule = relationship("ScoringDeductionRule")
