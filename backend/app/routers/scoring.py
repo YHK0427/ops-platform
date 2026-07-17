@@ -550,7 +550,18 @@ async def _round_out(db: AsyncSession, rnd: ScoringRound) -> RoundOut:
     )
 
 
-async def _load_submission(db: AsyncSession, p: ScoringParticipant) -> tuple[list[ScoreIn], list[RankIn], list[CommentIn]]:
+async def _load_submission(
+    db: AsyncSession, p: ScoringParticipant, prefer_draft: bool = False,
+) -> tuple[list[ScoreIn], list[RankIn], list[CommentIn]]:
+    # 본인이 재접속했을 때만(prefer_draft=True) 미제출 초안을 보여준다 — 운영진 화면(대리입력)은
+    # 항상 정식 제출분만 봐야 하므로 기본값 False.
+    if prefer_draft and p.draft:
+        d = p.draft
+        return (
+            [ScoreIn(**s) for s in d.get("scores", [])],
+            [RankIn(**r) for r in d.get("ranks", [])],
+            [CommentIn(**c) for c in d.get("comments", [])],
+        )
     scores = (await db.execute(
         select(ScoringScore).where(ScoringScore.participant_id == p.id)
     )).scalars().all()
@@ -648,6 +659,7 @@ async def _save_submission(
                                   criterion_id=c.criterion_id, body=c.body.strip()))
 
     p.submitted_at = datetime.now(timezone.utc)
+    p.draft = None  # 정식 제출됐으니 자동저장 초안은 더 이상 필요 없다 — 다음 편집부터 새로 쌓인다
 
 
 # ── 운영진: 라운드 CRUD ───────────────────────────────────────────────────────
@@ -1681,6 +1693,21 @@ async def public_get_round(
     )
 
 
+@public_router.get("/{token}/match-roster")
+async def public_match_roster(
+    token: str,
+    request: Request,
+    name: str = Query(..., min_length=1, max_length=50),
+    role: str = Query(..., pattern=r"^(JUDGE|OBSERVER)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    """이름 입력 중 실시간 미리보기용 — 명단에서 매칭되는 사람의 소그룹만 알려준다(명단 자체는 노출 안 함)."""
+    await check_public_rate(get_real_ip(request))
+    rnd = await _get_public_round(token, db)
+    entry, _cands = _match_roster(name.strip(), role, list(rnd.roster))
+    return {"group_label": entry.group_label if entry else None}
+
+
 @public_router.post("/{token}/identify", response_model=IdentifyOut)
 async def public_identify(
     token: str,
@@ -1724,7 +1751,7 @@ async def public_identify(
             existing.group_label = group_label
         await db.commit()
         await db.refresh(existing)
-        scores, ranks, comments = await _load_submission(db, existing)
+        scores, ranks, comments = await _load_submission(db, existing, prefer_draft=True)
         return IdentifyOut(
             existing=existing.submitted_at is not None,
             participant_token=existing.token,
@@ -1782,7 +1809,7 @@ async def public_get_me(
     if p is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "제출 기록을 찾을 수 없습니다")
 
-    scores, ranks, comments = await _load_submission(db, p)
+    scores, ranks, comments = await _load_submission(db, p, prefer_draft=True)
     return MySubmission(
         participant_token=p.token, role=p.role, entered_name=p.entered_name,
         group_label=p.group_label,
@@ -1790,6 +1817,38 @@ async def public_get_me(
         scores=scores, ranks=ranks, comments=comments,
         blocked_target_ids=_blocked_targets(rnd, p.matched_member_id),
     )
+
+
+@public_router.put("/{token}/draft", status_code=status.HTTP_204_NO_CONTENT)
+async def public_save_draft(
+    token: str,
+    body: PublicSubmissionIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """자동저장 — 정식 제출이 아니다. scoring_scores/ranks/comments·submitted_at은 안 건드리고
+    참가자 행의 draft 컬럼에만 쌓는다. 그래서 제출현황·집계·결과에는 잡히지 않는다.
+    '제출' 버튼을 눌러야(POST /submit) 실제로 반영된다."""
+    await check_public_rate(get_real_ip(request))
+    rnd = await _get_public_round(token, db)
+    if not rnd.is_open:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "마감된 심사입니다")
+
+    p = (await db.execute(
+        select(ScoringParticipant).where(
+            ScoringParticipant.round_id == rnd.id,
+            ScoringParticipant.token == body.participant_token,
+        )
+    )).scalar_one_or_none()
+    if p is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "제출 자격을 확인할 수 없습니다. 이름을 다시 입력해 주세요.")
+
+    p.draft = {
+        "scores": [s.model_dump() for s in body.scores],
+        "ranks": [r.model_dump() for r in body.ranks],
+        "comments": [c.model_dump() for c in body.comments],
+    }
+    await db.commit()
 
 
 @public_router.post("/{token}/submit", status_code=status.HTTP_204_NO_CONTENT)

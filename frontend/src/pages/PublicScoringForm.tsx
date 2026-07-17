@@ -57,6 +57,8 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
     const [name, setName] = useState("");
     const [role, setRole] = useState<ScoringRole>(feedbackOnly ? "OBSERVER" : "JUDGE");
     const [group, setGroup] = useState<string>("");
+    // 소속을 자동으로 채웠는지 — 본인이 직접 고르면 이후 이름 수정에도 그 선택을 덮어쓰지 않는다
+    const [groupTouched, setGroupTouched] = useState(false);
     const [participantToken, setPToken] = useState<string | null>(null);
     const [blocked, setBlocked] = useState<number[]>([]);
     const [sheet, setSheet] = useState<SheetValue>(emptySheet());
@@ -109,6 +111,7 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
         setPToken(null);
         setName("");
         setGroup("");
+        setGroupTouched(false);
         setRole(feedbackOnly ? "OBSERVER" : "JUDGE");
         setBlocked([]);
         setSheet(emptySheet());
@@ -120,14 +123,38 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
         setName(s.entered_name);
         setRole(s.role);
         setGroup(s.group_label ?? "");
+        setGroupTouched(true);
         setBlocked(s.blocked_target_ids);
         setSheet(toSheetValue(s.scores, s.ranks, s.comments));
         setParticipantToken(storageKey, s.participant_token);
     };
 
+    // 이름을 입력하는 동안(청중만) 명단에서 매칭되는 사람을 찾아 소속을 자동으로 채운다.
+    // 본인이 직접 소속 버튼을 눌렀으면(groupTouched) 더 이상 덮어쓰지 않는다.
+    useEffect(() => {
+        if (stage !== "intro" || role !== "OBSERVER" || groupTouched) return;
+        if (!name.trim() || (round?.observer_groups ?? []).length === 0) return;
+        const t = window.setTimeout(async () => {
+            try {
+                const { data } = await publicApi.get<{ group_label: string | null }>(
+                    `/scoring/${publicToken}/match-roster`,
+                    { params: { name: name.trim(), role: "OBSERVER" } },
+                );
+                if (data.group_label && (round?.observer_groups ?? []).includes(data.group_label)) {
+                    setGroup(data.group_label);
+                }
+            } catch {
+                /* 매칭 실패해도 수동 선택은 그대로 가능하니 조용히 무시 */
+            }
+        }, 400);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [name, role, stage, groupTouched, publicToken]);
+
     // 청중 피드백 자동 저장(feedbackOnly 전용) — 입력을 멈추면 1.5초 뒤 자동 저장.
-    // require_feedback 완료 검증은 하지 않는다(feedback_only:false) — 쓰다 만 것도 그냥 저장해야
-    // 타이핑 중간에 에러 토스트가 뜨지 않는다. 완료 검증은 "피드백 제출" 버튼에서만 한다.
+    // 정식 제출(/submit)이 아니라 초안 전용 엔드포인트(/draft)로 보낸다 — 그래야 "저장했다고
+    // 곧바로 제출한 걸로 잡히는" 문제 없이, 제출현황·집계에는 "제출" 버튼을 눌러야만 반영된다.
+    // 완료 검증(빈 팀 없는지)도 그래서 여기선 안 하고 "피드백 제출" 버튼에서만 한다.
     const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
     const savedCommentsRef = useRef<string>("");
     const autoSaveTimer = useRef<number | null>(null);
@@ -149,8 +176,8 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
             setAutoSaveStatus("saving");
             try {
                 const { scores, ranks, comments } = fromSheetValue(sheet);
-                await publicApi.post(`/scoring/${publicToken}/submit`, {
-                    participant_token: participantToken, scores, ranks, comments, feedback_only: false,
+                await publicApi.put(`/scoring/${publicToken}/draft`, {
+                    participant_token: participantToken, scores, ranks, comments,
                 });
                 savedCommentsRef.current = snapshot;
                 setAutoSaveStatus("saved");
@@ -335,7 +362,7 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
                         {feedbackOnly ? (
                             <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-accent)] bg-[var(--color-accent-dim)] rounded-lg px-3 py-2">
                                 <Users className="w-3.5 h-3.5 shrink-0" />
-                                청중 피드백 전용 링크 — 순위 투표는 원래 링크에서 이미 하셨을 거예요.
+                                청중 피드백 전용 링크입니다.
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -377,7 +404,7 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
                                         <button
                                             key={g}
                                             type="button"
-                                            onClick={() => setGroup(g)}
+                                            onClick={() => { setGroup(g); setGroupTouched(true); }}
                                             className={cn(
                                                 "px-3 py-1.5 rounded-full border-2 text-sm font-medium transition-colors",
                                                 group === g
@@ -455,12 +482,12 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
                     {feedbackOnly && (
                         <p className="text-[11px] text-[var(--color-text-muted)] flex items-center gap-1">
                             {autoSaveStatus === "saving" && (
-                                <><Loader2 className="w-3 h-3 animate-spin" /> 저장 중…</>
+                                <><Loader2 className="w-3 h-3 animate-spin" /> 임시 저장 중…</>
                             )}
-                            {autoSaveStatus === "dirty" && "입력을 멈추면 자동으로 저장됩니다"}
-                            {autoSaveStatus === "saved" && "자동 저장됨 — 다 쓰셨으면 위 버튼으로 제출해 주세요"}
+                            {autoSaveStatus === "dirty" && "입력을 멈추면 임시 저장됩니다 (제출은 별도)"}
+                            {autoSaveStatus === "saved" && "임시 저장됨 — 아직 제출은 안 됐어요. 다 쓰셨으면 위 버튼으로 제출해 주세요"}
                             {autoSaveStatus === "error" && (
-                                <span className="text-rose-500">자동 저장 실패 — 위 버튼으로 다시 제출해 주세요</span>
+                                <span className="text-rose-500">임시 저장 실패 — 위 버튼으로 제출해 주세요</span>
                             )}
                         </p>
                     )}

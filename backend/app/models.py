@@ -778,6 +778,11 @@ class ScoringParticipant(Base):
     is_proxy = Column(Boolean, default=False, server_default="false", nullable=False)
     proxy_by = Column(String(50), nullable=True)  # 대리 입력한 운영진 username
 
+    # 자동저장 초안 — {scores, ranks, comments}(SubmissionIn 모양). 정식 제출(POST /submit)
+    # 전까지는 이 컬럼에만 쌓이고 scoring_scores/ranks/comments·submitted_at엔 반영 안 된다.
+    # 즉 제출현황·집계엔 안 잡힌다. 정식 제출 시 커밋되며 이 필드는 비운다.
+    draft = Column(JSONB, nullable=True)
+
     submitted_at = Column(TIMESTAMP(timezone=True), nullable=True)
     ip = Column(String(45), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
