@@ -526,7 +526,9 @@ function RankVotesChart({ data }: { data: Results }) {
 function JudgeMatrix({ data }: { data: Results }) {
     if (data.judges.length === 0) return null;
 
-    const maxSum = data.round.criteria.reduce((a, c) => a + c.max_score, 0);
+    // 영역(area) 배점을 빼먹으면 만점이 실제보다 작게 잡혀 색 농도·표시 만점이 다 틀어진다.
+    const maxSum = data.round.areas.reduce((a, ar) => a + ar.max_score, 0)
+        + data.round.criteria.reduce((a, c) => a + c.max_score, 0);
     // 색 농도로 관대/엄격을 한눈에
     const shade = (v: number | undefined) => {
         if (v === undefined || maxSum === 0) return undefined;
@@ -817,7 +819,9 @@ function SubmissionDetail({
         byTarget.set(c.target_id, b);
     }
 
-    const max = round.criteria.reduce((a, c) => a + c.max_score, 0);
+    // 영역(area) 배점을 빼먹으면 만점이 실제보다 작게 잡힌다 — 영역 통째 채점분도 합쳐야 한다.
+    const max = round.areas.reduce((a, ar) => a + ar.max_score, 0)
+        + round.criteria.reduce((a, c) => a + c.max_score, 0);
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3">

@@ -975,10 +975,10 @@ function RosterPanel({ round }: { round: ScoringRound }) {
                     </p>
                 )}
                 {visible.map(({ r, i }) => (
-                    <div key={r.id ?? `new-${i}`} className="flex items-center gap-2">
+                    <div key={r.id ?? `new-${i}`} className="flex flex-wrap items-center gap-2">
                         <Input
                             placeholder="이름"
-                            className="flex-1"
+                            className="flex-1 min-w-[140px]"
                             value={r.name}
                             onChange={(e) => {
                                 const next = [...items];

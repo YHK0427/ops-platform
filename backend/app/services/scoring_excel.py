@@ -178,7 +178,9 @@ async def generate_scoring_excel(db: AsyncSession, rnd: ScoringRound) -> io.Byte
     ws2 = wb.create_sheet("심사위원별")
     ws2["A1"] = "제출자별 부여 점수 (기준 원점수 합계) — 빈칸은 채점하지 않은 팀"
     ws2["A1"].font = TITLE_FONT
-    max_total = sum(float(c.max_score) for c in criteria)
+    # 영역(area)은 세부항목이 있어도 없어도(통째만) 배점을 한 번만 센다 — criteria만 더하면
+    # 세부항목 없는(통째 전용) 영역의 배점이 통째로 빠진다.
+    max_total = sum(float(a.max_score) for a in areas) + sum(float(c.max_score) for c in ungrouped)
     ws2["A2"] = f"기준 만점 합계: {max_total:g}점"
 
     head2 = ["제출자", "역할"] + [disp(t) for t in targets]

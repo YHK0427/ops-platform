@@ -27,19 +27,19 @@ export function PageHeader({ title, subtitle, actions, className, showBackButton
     return (
         <header
             className={cn(
-                "sticky top-0 z-10 flex items-center justify-between gap-4",
-                "px-6 py-4 border-b border-[var(--color-border-subtle)]",
+                "sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2",
+                "px-4 sm:px-6 py-4 border-b border-[var(--color-border-subtle)]",
                 "bg-white/80 backdrop-blur-md",
                 className
             )}
         >
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                 {showBackButton && (
                     <Button
                         variant="ghost"
                         size="icon"
                         onClick={handleBack}
-                        className="h-8 w-8 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                        className="h-8 w-8 shrink-0 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                     >
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
@@ -53,7 +53,7 @@ export function PageHeader({ title, subtitle, actions, className, showBackButton
                     )}
                 </div>
             </div>
-            {actions && <div className="flex items-center gap-2">{actions}</div>}
+            {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
     );
 }

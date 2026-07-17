@@ -83,14 +83,14 @@ export default function ScoringRoundDetail() {
                 }
             />
 
-            <div className="px-6 pt-3 border-b border-[var(--color-border-subtle)]">
-                <div className="flex gap-1">
+            <div className="px-4 sm:px-6 pt-3 border-b border-[var(--color-border-subtle)] overflow-x-auto">
+                <div className="flex gap-1 w-max min-w-full">
                     {TABS.map((t) => (
                         <button
                             key={t.key}
                             onClick={() => setTab(t.key)}
                             className={cn(
-                                "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors",
+                                "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap shrink-0",
                                 tab === t.key
                                     ? "border-[var(--color-accent)] text-[var(--color-accent)]"
                                     : "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",

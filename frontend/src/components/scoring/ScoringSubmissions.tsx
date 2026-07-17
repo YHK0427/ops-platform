@@ -19,7 +19,8 @@ import {
     type Participant, type RosterEntry, type ScoringRole, type ScoringRound,
 } from "@/hooks/useScoring";
 import {
-    ScoreSheet, emptySheet, fromSheetValue, toSheetValue, type SheetValue,
+    ask, ck, csk, ScoreSheet, emptySheet, fromSheetValue, toSheetValue,
+    type SheetArea, type SheetCriterion, type SheetTarget, type SheetValue,
 } from "./ScoreSheet";
 
 const ROLE_KR: Record<string, string> = { JUDGE: "심사위원", OBSERVER: "청중", ANY: "무관" };
@@ -63,18 +64,20 @@ export function ScoringSubmissions({ round }: { round: ScoringRound }) {
     // (그룹만 지정해두면 참가자가 폼에서 자기 그룹을 고르므로 그룹별 집계는 그대로 가능)
     const hasRoster = data.roster.length > 0;
 
-    // 명단 각 줄의 실제 그룹 — 제출자가 폼에서 고른 값이 우선, 없으면 명단에 태깅된 기본 그룹
-    const rowGroup = (rosterId: number, fallback?: string | null) => {
-        const pid = data.roster_submitted[rosterId];
+    // 명단 각 줄의 실제 그룹 — 제출자가 폼에서 고른 값이 우선, 없으면 명단에 태깅된 기본 그룹.
+    // 심사위원은 애초에 소그룹 개념이 없다 — "미분류"는 그룹 안 고른 청중용 버킷이므로 섞지 않는다.
+    const rowGroup = (r: { id: number; role: ScoringRole | "ANY"; group_label?: string | null }): string | null => {
+        if (r.role === "JUDGE") return "심사위원";
+        const pid = data.roster_submitted[r.id];
         const p = data.participants.find((x) => x.id === pid);
-        return p?.group_label ?? fallback ?? null;
+        return p?.group_label ?? r.group_label ?? null;
     };
 
     const groupsAvailable = Array.from(
         new Set(
             data.roster
-                .map((r) => rowGroup(r.id, r.group_label))
-                .filter((g): g is string => !!g),
+                .map((r) => rowGroup(r))
+                .filter((g): g is string => !!g && g !== "심사위원"),
         ),
     );
 
@@ -82,7 +85,7 @@ export function ScoringSubmissions({ round }: { round: ScoringRound }) {
     const visibleRoster = data.roster.filter((r) => {
         if (roleFilter !== "ALL" && r.role !== "ANY" && r.role !== roleFilter) return false;
         if (groupFilter.length === 0) return true;
-        const g = rowGroup(r.id, r.group_label);
+        const g = rowGroup(r);
         return groupFilter.includes(g ?? "미분류");
     }).sort((a, b) => (a.role === "JUDGE" ? 0 : 1) - (b.role === "JUDGE" ? 0 : 1));
 
@@ -195,9 +198,9 @@ export function ScoringSubmissions({ round }: { round: ScoringRound }) {
                                             {ROLE_KR[r.role]}
                                         </TableCell>
                                         <TableCell className="text-xs">
-                                            {rowGroup(r.id, r.group_label) ? (
+                                            {rowGroup(r) ? (
                                                 <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-600">
-                                                    {rowGroup(r.id, r.group_label)}
+                                                    {rowGroup(r)}
                                                 </span>
                                             ) : (
                                                 <span className="text-[var(--color-text-muted)]">—</span>
@@ -448,15 +451,15 @@ function SubmissionOverview({
 }: {
     roster: RosterEntry[];
     rosterSubmitted: Record<number, number>;
-    rowGroup: (rosterId: number, fallback?: string | null) => string | null;
+    rowGroup: (r: RosterEntry) => string | null;
     unmatchedCount: number;
     onPickGroup: (g: string) => void;
     activeGroups: string[];
 }) {
-    // 그룹 → {제출, 전체, 미제출자 이름}
+    // 그룹 → {제출, 전체, 미제출자 이름} — rowGroup이 심사위원을 "심사위원" 버킷으로 이미 분리해준다.
     const buckets = new Map<string, { done: number; total: number; missing: string[] }>();
     for (const r of roster) {
-        const g = rowGroup(r.id, r.group_label) ?? "미분류";
+        const g = rowGroup(r) ?? "미분류";
         const b = buckets.get(g) ?? { done: 0, total: 0, missing: [] };
         b.total += 1;
         if (rosterSubmitted[r.id]) b.done += 1;
@@ -792,6 +795,237 @@ function RosterPicker({ round, unmatched }: { round: ScoringRound; unmatched: Pa
     );
 }
 
+interface GridCol {
+    id: number;
+    label: string;
+    max: number;
+    kind: "criterion" | "area";
+    areaLabel?: string;
+}
+
+type AreaMode = Record<number, "detail" | "lump">;
+
+/** 세부항목 있는 영역은 areaMode에 따라 세부항목별/영역 통째로 펼친 컬럼 목록.
+ *  운영진 대리입력 표·코멘트 탭이 공유한다 — 종이 점수판 그대로 옮겨 적기 좋게 항상 이 순서로 고정. */
+function buildProxyColumns(areas: SheetArea[], criteria: SheetCriterion[], areaMode: AreaMode): GridCol[] {
+    const cols: GridCol[] = [];
+    for (const a of areas) {
+        const mode = a.criteria.length === 0 ? "lump" : (areaMode[a.id] ?? "detail");
+        if (mode === "detail") {
+            for (const c of a.criteria) {
+                cols.push({ id: c.id, label: c.label, max: c.max_score, kind: "criterion", areaLabel: a.label });
+            }
+        } else {
+            cols.push({ id: a.id, label: a.label, max: a.max_score, kind: "area" });
+        }
+    }
+    for (const c of criteria) {
+        cols.push({ id: c.id, label: c.label, max: c.max_score, kind: "criterion" });
+    }
+    return cols;
+}
+
+const colKey = (col: GridCol, targetId: number) =>
+    col.kind === "area" ? ask(targetId, col.id) : csk(targetId, col.id);
+
+/** areaMode 초기값 추론 — 이미 lump(area) 키로 저장돼 있으면 lump, 아니면 detail. */
+function inferAreaMode(areas: SheetArea[], targets: SheetTarget[], value: SheetValue): AreaMode {
+    const m: AreaMode = {};
+    for (const a of areas) {
+        if (a.criteria.length === 0) continue;
+        const hasLump = targets.some((t) => value.scores[ask(t.id, a.id)] != null);
+        m[a.id] = hasLump ? "lump" : "detail";
+    }
+    return m;
+}
+
+/** 심사위원 점수 표 입력 — 종이 점수판을 그대로 옮겨 적는 용도라 팀×기준을 표로 펼쳐서 빠르게 채운다.
+ *  세부항목 있는 영역은 영역 단위로 세부항목별/영역 통째를 고를 수 있다(그 판이 그렇게 매겨졌을 수 있으므로). */
+function ProxyScoreGrid({
+    areas, criteria, targets, blockedTargetIds, value, onChange, areaMode, onAreaModeChange,
+}: {
+    areas: SheetArea[];
+    criteria: SheetCriterion[];
+    targets: SheetTarget[];
+    blockedTargetIds: number[];
+    value: SheetValue;
+    onChange: (v: SheetValue) => void;
+    areaMode: AreaMode;
+    onAreaModeChange: (m: AreaMode) => void;
+}) {
+    const cols = buildProxyColumns(areas, criteria, areaMode);
+    const blocked = new Set(blockedTargetIds);
+    const maxSum = cols.reduce((s, c) => s + c.max, 0);
+    const areasWithChoice = areas.filter((a) => a.criteria.length > 0);
+
+    const setScore = (key: string, raw: string, max: number) => {
+        const next = { ...value.scores };
+        if (raw === "") delete next[key];
+        else {
+            const n = Number(raw);
+            if (Number.isNaN(n)) return;
+            next[key] = Math.max(0, Math.min(max, n));
+        }
+        onChange({ ...value, scores: next });
+    };
+
+    const switchAreaMode = (a: SheetArea, mode: "detail" | "lump") => {
+        onAreaModeChange({ ...areaMode, [a.id]: mode });
+        // 다른 방식으로 이미 입력된 값은 지운다 — 한 영역은 한 방식으로만 제출되어야 한다.
+        const next = { ...value.scores };
+        for (const t of targets) {
+            if (mode === "lump") a.criteria.forEach((c) => delete next[csk(t.id, c.id)]);
+            else delete next[ask(t.id, a.id)];
+        }
+        onChange({ ...value, scores: next });
+    };
+
+    return (
+        <div className="space-y-2">
+            {areasWithChoice.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3">
+                    {areasWithChoice.map((a) => {
+                        const mode = areaMode[a.id] ?? "detail";
+                        return (
+                            <div key={a.id} className="inline-flex items-center gap-1.5 text-xs">
+                                <span className="text-[var(--color-text-muted)]">{a.label}</span>
+                                <div className="inline-flex rounded-lg border border-[var(--color-border-subtle)] p-0.5 bg-[var(--color-hover)]">
+                                    <button type="button" onClick={() => switchAreaMode(a, "detail")}
+                                        className={cn("px-2 py-1 rounded-md font-medium",
+                                            mode === "detail" ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-secondary)]")}>
+                                        세부항목별
+                                    </button>
+                                    <button type="button" onClick={() => switchAreaMode(a, "lump")}
+                                        className={cn("px-2 py-1 rounded-md font-medium",
+                                            mode === "lump" ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-secondary)]")}>
+                                        영역 통째
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+            <div className="overflow-auto border border-[var(--color-border-subtle)] rounded-xl max-h-[55vh]">
+                <table className="border-collapse text-sm">
+                    <thead>
+                        <tr className="bg-[var(--color-hover)]">
+                            <th className="sticky left-0 top-0 z-20 bg-[var(--color-hover)] text-left px-3 py-2 font-bold text-[var(--color-text-primary)] min-w-[110px]">
+                                팀
+                            </th>
+                            {cols.map((c) => (
+                                <th key={`${c.kind}-${c.id}`} className="sticky top-0 z-10 bg-[var(--color-hover)] px-2 py-2 text-center font-medium text-[var(--color-text-secondary)] min-w-[92px]">
+                                    {c.areaLabel && <div className="text-[10px] text-[var(--color-text-muted)]">{c.areaLabel}</div>}
+                                    <div className="[word-break:keep-all]">{c.label}</div>
+                                    <div className="text-[10px] text-[var(--color-text-muted)]">{c.max}점</div>
+                                </th>
+                            ))}
+                            <th className="sticky top-0 z-10 bg-[var(--color-hover)] px-3 py-2 text-center font-bold text-[var(--color-accent)] min-w-[80px]">
+                                합계
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {targets.map((t) => {
+                            const isBlocked = blocked.has(t.id);
+                            const rowSum = cols.reduce((s, c) => s + (value.scores[colKey(c, t.id)] ?? 0), 0);
+                            return (
+                                <tr key={t.id} className={cn("border-t border-[var(--color-border-subtle)]", isBlocked && "opacity-50 bg-zinc-50")}>
+                                    <td className="sticky left-0 z-10 bg-white px-3 py-2 font-semibold text-[var(--color-text-primary)]">
+                                        {t.name}
+                                        {isBlocked && <span className="block text-[10px] font-normal text-zinc-400">본인 소속팀</span>}
+                                    </td>
+                                    {cols.map((c) => {
+                                        const key = colKey(c, t.id);
+                                        return (
+                                            <td key={key} className="px-1.5 py-1.5">
+                                                <Input
+                                                    type="number" min={0} max={c.max} step="0.5" disabled={isBlocked}
+                                                    className="w-20 h-8 text-center mx-auto"
+                                                    value={value.scores[key] ?? ""}
+                                                    onChange={(e) => setScore(key, e.target.value, c.max)}
+                                                />
+                                            </td>
+                                        );
+                                    })}
+                                    <td className="px-3 py-2 text-center font-bold text-[var(--color-accent)]">
+                                        {isBlocked ? "—" : `${rowSum}/${maxSum}`}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+/** 심사위원 코멘트 입력 — 기준별 코멘트 + 팀 총평. 점수 표와 분리해 표는 숫자만 빠르게 훑게 한다. */
+function ProxyCommentPanel({
+    areas, criteria, targets, blockedTargetIds, value, onChange, areaMode,
+}: {
+    areas: SheetArea[];
+    criteria: SheetCriterion[];
+    targets: SheetTarget[];
+    blockedTargetIds: number[];
+    value: SheetValue;
+    onChange: (v: SheetValue) => void;
+    areaMode: AreaMode;
+}) {
+    // 영역 통째로 매기기로 한 영역은 세부항목 코멘트 자체가 없다(점수 표와 동일한 기준).
+    const cols = buildProxyColumns(areas, criteria, areaMode).filter((c) => c.kind === "criterion");
+    const blocked = new Set(blockedTargetIds);
+
+    const setComment = (t: number, c: number | null, body: string) =>
+        onChange({ ...value, comments: { ...value.comments, [ck(t, c)]: body } });
+
+    return (
+        <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+            {targets.map((t) => {
+                const isBlocked = blocked.has(t.id);
+                return (
+                    <div
+                        key={t.id}
+                        className={cn(
+                            "rounded-xl border bg-white p-4 space-y-3",
+                            isBlocked ? "border-zinc-200 opacity-60" : "border-[var(--color-border-subtle)]",
+                        )}
+                    >
+                        <h4 className="font-bold text-sm text-[var(--color-text-primary)]">{t.name}</h4>
+                        {cols.length > 0 && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {cols.map((c) => (
+                                    <div key={`${c.kind}-${c.id}`} className="space-y-1">
+                                        <Label className="text-xs">{c.label}</Label>
+                                        <textarea
+                                            disabled={isBlocked}
+                                            className="w-full min-h-[52px] px-2 py-1.5 rounded-lg border border-[var(--color-border-subtle)] text-sm resize-y disabled:bg-zinc-50"
+                                            placeholder="코멘트 (선택)"
+                                            value={value.comments[ck(t.id, c.id)] ?? ""}
+                                            onChange={(e) => setComment(t.id, c.id, e.target.value)}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div className="space-y-1">
+                            <Label className="text-xs font-semibold">총평</Label>
+                            <textarea
+                                disabled={isBlocked}
+                                className="w-full min-h-[60px] px-2 py-1.5 rounded-lg border border-[var(--color-border-subtle)] text-sm resize-y disabled:bg-zinc-50"
+                                placeholder="팀 전체에 대한 총평 (선택)"
+                                value={value.comments[ck(t.id, null)] ?? ""}
+                                onChange={(e) => setComment(t.id, null, e.target.value)}
+                            />
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 /** 운영진 입력 — 종이로 받은 점수를 대신 넣거나, 기존 제출을 고친다.
  *  is_proxy는 DB에 남기지만 화면에는 표시하지 않는다(불공정해 보인다는 피드백). */
 function ProxySubmitDialog({
@@ -811,6 +1045,11 @@ function ProxySubmitDialog({
     const [blocked, setBlocked] = useState<number[]>([]);
     const [loading, setLoading] = useState(false);
     const [loadedFor, setLoadedFor] = useState<number | null>(null);
+    // 심사위원 입력은 대부분 운영진이 종이 점수를 옮겨 적는 용도라 표로 빠르게 입력하고,
+    // 코멘트는 따로 탭으로 뺀다. 청중(순위·기준채점)은 기존 ScoreSheet를 그대로 쓴다.
+    const [tab, setTab] = useState<"score" | "comment">("score");
+    // 세부항목 있는 영역별 세부항목별/영역 통째 — 점수 탭·코멘트 탭이 같은 값을 봐야 하므로 여기서 관리.
+    const [areaMode, setAreaMode] = useState<AreaMode>({});
 
     // 다이얼로그가 열릴 때 대상에 맞춰 초기화 (기존 제출이면 불러온다)
     if (open && participant && loadedFor !== participant.id) {
@@ -821,8 +1060,10 @@ function ProxySubmitDialog({
         setGroup(participant.group_label ?? "");
         fetchParticipantSubmission(participant.id)
             .then((s) => {
-                setSheet(toSheetValue(s.scores, s.ranks, s.comments));
+                const loaded = toSheetValue(s.scores, s.ranks, s.comments);
+                setSheet(loaded);
                 setBlocked(s.blocked_target_ids);
+                setAreaMode(inferAreaMode(round.areas, round.targets, loaded));
             })
             .catch(() => toast.error("기존 제출을 불러오지 못했습니다"))
             .finally(() => setLoading(false));
@@ -834,10 +1075,12 @@ function ProxySubmitDialog({
         setGroup(rosterHint?.group_label ?? "");
         setSheet(emptySheet());
         setBlocked([]);
+        setAreaMode(inferAreaMode(round.areas, round.targets, emptySheet()));
     }
 
     const close = () => {
         setLoadedFor(null);
+        setTab("score");
         onClose();
     };
 
@@ -869,7 +1112,10 @@ function ProxySubmitDialog({
 
     return (
         <Dialog open={open} onOpenChange={(o) => !o && close()}>
-            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogContent className={cn(
+                "max-h-[88vh] overflow-y-auto",
+                role === "JUDGE" ? "sm:max-w-5xl" : "max-w-3xl",
+            )}>
                 <DialogHeader>
                     <DialogTitle>{participant ? "제출 수정" : "점수 입력"}</DialogTitle>
                     <DialogDescription>
@@ -924,17 +1170,56 @@ function ProxySubmitDialog({
                             </div>
                         )}
 
-                        <ScoreSheet
-                            role={role}
-                            observerMode={round.observer_mode}
-                            rankSlots={round.rank_points.map((r) => r.rank)}
-                            areas={round.areas}
-                            criteria={round.criteria}
-                            targets={round.targets}
-                            blockedTargetIds={blocked}
-                            value={sheet}
-                            onChange={setSheet}
-                        />
+                        {role === "JUDGE" ? (
+                            <div className="space-y-3">
+                                <div className="inline-flex rounded-lg border border-[var(--color-border-subtle)] p-0.5 bg-[var(--color-hover)] text-sm">
+                                    <button type="button" onClick={() => setTab("score")}
+                                        className={cn("px-3 py-1.5 rounded-md font-medium",
+                                            tab === "score" ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-secondary)]")}>
+                                        점수
+                                    </button>
+                                    <button type="button" onClick={() => setTab("comment")}
+                                        className={cn("px-3 py-1.5 rounded-md font-medium",
+                                            tab === "comment" ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-secondary)]")}>
+                                        코멘트
+                                    </button>
+                                </div>
+                                {tab === "score" ? (
+                                    <ProxyScoreGrid
+                                        areas={round.areas}
+                                        criteria={round.criteria}
+                                        targets={round.targets}
+                                        blockedTargetIds={blocked}
+                                        value={sheet}
+                                        onChange={setSheet}
+                                        areaMode={areaMode}
+                                        onAreaModeChange={setAreaMode}
+                                    />
+                                ) : (
+                                    <ProxyCommentPanel
+                                        areas={round.areas}
+                                        criteria={round.criteria}
+                                        targets={round.targets}
+                                        blockedTargetIds={blocked}
+                                        value={sheet}
+                                        onChange={setSheet}
+                                        areaMode={areaMode}
+                                    />
+                                )}
+                            </div>
+                        ) : (
+                            <ScoreSheet
+                                role={role}
+                                observerMode={round.observer_mode}
+                                rankSlots={round.rank_points.map((r) => r.rank)}
+                                areas={round.areas}
+                                criteria={round.criteria}
+                                targets={round.targets}
+                                blockedTargetIds={blocked}
+                                value={sheet}
+                                onChange={setSheet}
+                            />
+                        )}
                     </div>
                 )}
 

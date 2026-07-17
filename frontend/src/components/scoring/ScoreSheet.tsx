@@ -49,8 +49,8 @@ export function rankLabel(ranks: number[]): string {
 
 export const emptySheet = (): SheetValue => ({ scores: {}, comments: {}, ranks: {} });
 
-const csk = (t: number, c: number) => `c:${t}:${c}`;   // 세부항목/미분류 점수
-const ask = (t: number, a: number) => `a:${t}:${a}`;   // 영역 통째 점수
+export const csk = (t: number, c: number) => `c:${t}:${c}`;   // 세부항목/미분류 점수
+export const ask = (t: number, a: number) => `a:${t}:${a}`;   // 영역 통째 점수
 export const ck = (t: number, c: number | null) => `${t}:${c ?? "overall"}`;
 
 export function toSheetValue(
