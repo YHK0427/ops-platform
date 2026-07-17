@@ -144,6 +144,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
     const [mode, setMode] = useState(round.observer_mode);
     const [rankPts, setRankPts] = useState(round.rank_points);
     const [excludeOwn, setExcludeOwn] = useState(round.exclude_own_team);
+    const [requireFeedback, setRequireFeedback] = useState(round.require_feedback);
     const [intro, setIntro] = useState(round.intro ?? "");
     const [groups, setGroups] = useState<string[]>(round.observer_groups ?? []);
     const [newGroup, setNewGroup] = useState("");
@@ -154,6 +155,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         observer_mode: mode,
         rank_points: rankPts,
         exclude_own_team: excludeOwn,
+        require_feedback: requireFeedback,
         observer_groups: groups,
         intro,
     };
@@ -163,6 +165,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         observer_mode: round.observer_mode,
         rank_points: round.rank_points,
         exclude_own_team: round.exclude_own_team,
+        require_feedback: round.require_feedback,
         observer_groups: round.observer_groups ?? [],
         intro: round.intro ?? "",
     };
@@ -187,6 +190,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         setMode(round.observer_mode);
         setRankPts(round.rank_points);
         setExcludeOwn(round.exclude_own_team);
+        setRequireFeedback(round.require_feedback);
         setIntro(round.intro ?? "");
         setGroups(round.observer_groups ?? []);
         acceptServer(serverDraft);
@@ -419,6 +423,16 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                     (명단에서 기수 멤버로 매칭된 사람만 적용 — 외부 심사위원은 영향 없음)
                 </span>
             </label>
+
+            {mode === "RANK" && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox checked={requireFeedback} onCheckedChange={(v) => setRequireFeedback(!!v)} />
+                    <span className="text-sm text-[var(--color-text-primary)]">청중 피드백 필수</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">
+                        (켜면 청중 피드백 링크에서 모든 팀에 한마디씩 남겨야 제출됨 — 심사위원 총평엔 적용 안 됨)
+                    </span>
+                </label>
+            )}
 
             <div className="space-y-2">
                 <Label>참가자 안내문</Label>
@@ -1138,22 +1152,30 @@ function DeductionRulesPanel({ round }: { round: ScoringRound }) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function TimeRuleConfig({ config, onChange }: { config: Record<string, any>; onChange: (p: Record<string, unknown>) => void }) {
-    const mode = config.mode ?? "STEPS";
-    const steps: { after_minutes: number; points: number; disqualify?: boolean }[] = config.steps ?? [];
+    const timeMode = config.mode ?? "STEPS";
+    const steps: { at?: string; after_minutes?: number; points: number; disqualify?: boolean }[] = config.steps ?? [];
+    // 구간 시간 표기 방식 — '시각 지정'(at)이 신규 기본, '마감 + N분'(after_minutes)은 구버전 호환용.
+    // 이미 at로 만든 구간이 있으면 그쪽을 기본으로 보여준다. 기존 규정은 손대지 않는 한 그대로 동작한다.
+    const clockMode = config.step_time_mode === "clock"
+        || (steps.length > 0 && steps.every((s) => s.at != null))
+        || (steps.length === 0 && config.step_time_mode !== "offset");
+
     return (
         <div className="space-y-2 pt-3">
             <div className="flex flex-wrap items-center gap-2">
                 <Label className="text-xs">마감 시각</Label>
-                <Input type="datetime-local" className="w-56 h-8"
+                <Input type="datetime-local" step="1" className="w-64 h-8"
                     value={config.deadline ?? ""} onChange={(e) => onChange({ deadline: e.target.value })} />
-                <span className="text-xs text-[var(--color-text-muted)]">기준 · 팀별 실제 제출시각으로 자동 판정</span>
+                <span className="text-xs text-[var(--color-text-muted)]">
+                    {timeMode === "INTERVAL" || !clockMode ? "기준 · 팀별 실제 제출시각으로 자동 판정" : "'마감 + N분' 구간을 쓸 때만 필요 (시각 지정 구간엔 안 씀)"}
+                </span>
             </div>
             <div className="flex gap-2">
-                <ModeButton active={mode === "STEPS"} onClick={() => onChange({ mode: "STEPS" })}>구간별</ModeButton>
-                <ModeButton active={mode === "INTERVAL"} onClick={() => onChange({ mode: "INTERVAL" })}>분당 감점</ModeButton>
+                <ModeButton active={timeMode === "STEPS"} onClick={() => onChange({ mode: "STEPS" })}>구간별</ModeButton>
+                <ModeButton active={timeMode === "INTERVAL"} onClick={() => onChange({ mode: "INTERVAL" })}>분당 감점</ModeButton>
             </div>
 
-            {mode === "INTERVAL" ? (
+            {timeMode === "INTERVAL" ? (
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                     <Input type="number" className="w-20 h-8" placeholder="분"
                         value={config.interval_minutes ?? ""} onChange={(e) => onChange({ interval_minutes: Number(e.target.value) })} />
@@ -1167,44 +1189,85 @@ function TimeRuleConfig({ config, onChange }: { config: Record<string, any>; onC
                 </div>
             ) : (
                 <div className="space-y-1.5">
-                    {steps.map((st, si) => (
-                        <div key={si} className="flex flex-wrap items-center gap-2 text-sm">
-                            <span className="text-xs text-[var(--color-text-muted)]">마감 +</span>
-                            <Input type="number" className="w-24 h-8" placeholder="분"
-                                value={st.after_minutes}
-                                onChange={(e) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, after_minutes: Number(e.target.value) } : x) })} />
-                            <span className="text-xs">분 초과 →</span>
-                            <Input type="number" step="0.1" className="w-20 h-8" placeholder="점" disabled={!!st.disqualify}
-                                value={st.disqualify ? "" : st.points}
-                                onChange={(e) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, points: Number(e.target.value) } : x) })} />
-                            <label className="flex items-center gap-1 text-xs">
-                                <Checkbox checked={!!st.disqualify}
-                                    onCheckedChange={(v) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, disqualify: !!v } : x) })} />
-                                실격
-                            </label>
-                            <Button size="sm" variant="ghost" className="h-7 text-rose-500"
-                                onClick={() => onChange({ steps: steps.filter((_, k) => k !== si) })}>
-                                <Minus className="w-3.5 h-3.5" />
-                            </Button>
-                        </div>
-                    ))}
+                    <div className="inline-flex rounded-lg border border-[var(--color-border-subtle)] p-0.5 bg-[var(--color-hover)] text-xs">
+                        <button type="button"
+                            onClick={() => onChange({ step_time_mode: "clock" })}
+                            className={cn("px-2.5 py-1 rounded-md font-medium",
+                                clockMode ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-secondary)]")}>
+                            시각 지정
+                        </button>
+                        <button type="button"
+                            onClick={() => onChange({ step_time_mode: "offset" })}
+                            className={cn("px-2.5 py-1 rounded-md font-medium",
+                                !clockMode ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-secondary)]")}>
+                            마감 + N분
+                        </button>
+                    </div>
+                    {steps.map((st, si) => {
+                        const isClock = st.at != null;
+                        return (
+                            <div key={si} className="flex flex-wrap items-center gap-2 text-sm">
+                                {isClock ? (
+                                    <>
+                                        <Input type="datetime-local" step="1" className="w-64 h-8"
+                                            value={st.at ?? ""}
+                                            onChange={(e) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, at: e.target.value } : x) })} />
+                                        <span className="text-xs">이후 제출 →</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="text-xs text-[var(--color-text-muted)]">마감 +</span>
+                                        <Input type="number" className="w-24 h-8" placeholder="분"
+                                            value={st.after_minutes ?? 0}
+                                            onChange={(e) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, after_minutes: Number(e.target.value) } : x) })} />
+                                        <span className="text-xs">분 초과 →</span>
+                                    </>
+                                )}
+                                <Input type="number" step="0.1" className="w-20 h-8" placeholder="점" disabled={!!st.disqualify}
+                                    value={st.disqualify ? "" : st.points}
+                                    onChange={(e) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, points: Number(e.target.value) } : x) })} />
+                                <label className="flex items-center gap-1 text-xs">
+                                    <Checkbox checked={!!st.disqualify}
+                                        onCheckedChange={(v) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, disqualify: !!v } : x) })} />
+                                    실격
+                                </label>
+                                <Button size="sm" variant="ghost" className="h-7 text-rose-500"
+                                    onClick={() => onChange({ steps: steps.filter((_, k) => k !== si) })}>
+                                    <Minus className="w-3.5 h-3.5" />
+                                </Button>
+                            </div>
+                        );
+                    })}
                     <Button size="sm" variant="ghost" className="text-xs"
-                        onClick={() => onChange({ steps: [...steps, { after_minutes: 0, points: 1 }] })}>
+                        onClick={() => onChange({
+                            steps: [...steps, clockMode ? { at: config.deadline ?? "", points: 1 } : { after_minutes: 0, points: 1 }],
+                        })}>
                         <Plus className="w-3.5 h-3.5 mr-1" /> 구간 추가
                     </Button>
                     <p className="text-xs text-[var(--color-text-muted)]">
-                        경과분이 큰 구간부터 적용됩니다. '실격'을 체크하면 그 구간부터 순위에서 제외됩니다.
+                        {clockMode ? "제출시각이 지정한 시각을 넘긴 구간 중 가장 늦은 것이 적용됩니다." : "경과분이 큰 구간부터 적용됩니다."}
+                        {" "}'실격'을 체크하면 그 구간부터 순위에서 제외됩니다.
                     </p>
                 </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-2 text-sm pt-1">
-                <Label className="text-xs">마감 +</Label>
-                <Input type="number" className="w-24 h-8" placeholder="없음"
-                    value={config.disqualify_after_minutes ?? ""}
-                    onChange={(e) => onChange({ disqualify_after_minutes: e.target.value === "" ? null : Number(e.target.value) })} />
-                <span className="text-xs">분 초과 시 실격 (선택)</span>
-            </div>
+            {timeMode === "STEPS" && clockMode ? (
+                <div className="flex flex-wrap items-center gap-2 text-sm pt-1">
+                    <Label className="text-xs">실격 시각</Label>
+                    <Input type="datetime-local" step="1" className="w-64 h-8"
+                        value={config.disqualify_at ?? ""}
+                        onChange={(e) => onChange({ disqualify_at: e.target.value === "" ? null : e.target.value })} />
+                    <span className="text-xs">이후 제출 시 실격 (선택)</span>
+                </div>
+            ) : (
+                <div className="flex flex-wrap items-center gap-2 text-sm pt-1">
+                    <Label className="text-xs">마감 +</Label>
+                    <Input type="number" className="w-24 h-8" placeholder="없음"
+                        value={config.disqualify_after_minutes ?? ""}
+                        onChange={(e) => onChange({ disqualify_after_minutes: e.target.value === "" ? null : Number(e.target.value) })} />
+                    <span className="text-xs">분 초과 시 실격 (선택)</span>
+                </div>
+            )}
         </div>
     );
 }

@@ -13,9 +13,13 @@ import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { useCreateRound, useDeleteRound, useScoringRounds, type RoundListItem } from "@/hooks/useScoring";
+import {
+    useCreateRound, useDeleteRound, useScoringRounds,
+    type ObserverMode, type RoundListItem,
+} from "@/hooks/useScoring";
 
 export const publicScoringUrl = (token: string) => `${window.location.origin}/s/${token}`;
+export const publicFeedbackUrl = (token: string) => `${window.location.origin}/s/${token}/feedback`;
 
 export default function ScoringManagement() {
     const navigate = useNavigate();
@@ -128,7 +132,7 @@ function RoundCard({ round, onOpen, onDelete }: { round: RoundListItem; onOpen: 
                 </p>
             </div>
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                <ShareLinkDialog token={round.public_token} name={round.name} compact />
+                <ShareLinkDialog token={round.public_token} name={round.name} observerMode={round.observer_mode} compact />
                 <Button size="sm" variant="ghost" className="text-rose-500 opacity-0 group-hover:opacity-100" onClick={onDelete}>
                     <Trash2 className="w-4 h-4" />
                 </Button>
@@ -141,14 +145,72 @@ function RoundCard({ round, onOpen, onDelete }: { round: RoundListItem; onOpen: 
 /**
  * 공개 링크 복사 + QR — 참가자에게 배포하는 유일한 경로.
  * compact=true면 아이콘만(목록 카드용), 아니면 라벨 달린 버튼(상세 헤더용).
+ * observerMode가 RANK면 청중 순위/피드백 링크가 따로라 QR·링크를 2개로 나눠 보여준다
+ * (심사위원은 항상 순위 링크와 같은 주소를 씀 — 역할 선택만 다를 뿐 폼은 하나).
  */
 export function ShareLinkDialog({
-    token, name, compact = false,
-}: { token: string; name: string; compact?: boolean }) {
+    token, name, observerMode, compact = false,
+}: { token: string; name: string; observerMode?: ObserverMode; compact?: boolean }) {
     const [open, setOpen] = useState(false);
+    const splitFeedback = observerMode === "RANK";
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                {compact ? (
+                    <Button size="sm" variant="ghost" title="채점 링크">
+                        <Link2 className="w-4 h-4" />
+                    </Button>
+                ) : (
+                    <Button size="sm" variant="outline">
+                        <Link2 className="w-4 h-4 mr-1" />
+                        채점 링크 · QR
+                    </Button>
+                )}
+            </DialogTrigger>
+            <DialogContent className={splitFeedback ? "sm:max-w-lg" : undefined}>
+                <DialogHeader>
+                    <DialogTitle>{name} — 채점 링크</DialogTitle>
+                    <DialogDescription>
+                        이 링크를 받은 사람은 <b>로그인 없이</b> 이름만 입력하고 참여할 수 있습니다.
+                        링크가 <b>열림</b> 상태일 때만 제출됩니다.
+                        {splitFeedback && " 청중은 순위 투표와 팀별 피드백 작성 링크가 서로 다릅니다."}
+                    </DialogDescription>
+                </DialogHeader>
+
+                {splitFeedback ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <QrBlock
+                            title="심사위원 · 청중 순위"
+                            url={publicScoringUrl(token)}
+                            qrLabel={`${name} — 순위 투표`}
+                            filename={`${name}_순위QR.png`}
+                        />
+                        <QrBlock
+                            title="청중 피드백"
+                            url={publicFeedbackUrl(token)}
+                            qrLabel={`${name} — 피드백 작성`}
+                            filename={`${name}_피드백QR.png`}
+                        />
+                    </div>
+                ) : (
+                    <QrBlock
+                        url={publicScoringUrl(token)}
+                        qrLabel={name}
+                        filename={`${name}_채점QR.png`}
+                    />
+                )}
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+/** QR + 링크 복사 + PNG 저장 한 세트. qrLabel은 저장되는 PNG 안에 캡션으로 박힌다(QR끼리 구분용). */
+function QrBlock({
+    title, url, qrLabel, filename,
+}: { title?: string; url: string; qrLabel: string; filename: string }) {
     const [copied, setCopied] = useState(false);
     const qrRef = useRef<HTMLDivElement>(null);
-    const url = publicScoringUrl(token);
 
     /**
      * 링크 복사.
@@ -192,7 +254,8 @@ export function ShareLinkDialog({
     };
 
     /**
-     * 화면의 QR(SVG)을 PNG로 저장. 인쇄물·슬라이드에 붙일 수 있게 넉넉한 해상도로 다시 그린다.
+     * 화면의 QR(SVG)을 PNG로 저장. 인쇄물·슬라이드에 붙일 수 있게 넉넉한 해상도로 다시 그리고,
+     * 아래에 qrLabel 캡션을 넣어 QR 여러 장을 나란히 인쇄해도 뭐가 뭔지 구분되게 한다.
      * SVG를 그대로 캔버스에 그리면 브라우저가 크기를 못 잡는 경우가 있어 width/height를 박아 직렬화한다.
      */
     const downloadQr = async (size = 1024) => {
@@ -216,19 +279,26 @@ export function ShareLinkDialog({
             });
 
             const pad = Math.round(size * 0.06); // 여백 없이 인쇄하면 인식률이 떨어진다
+            const labelH = Math.round(size * 0.13);
             const canvas = document.createElement("canvas");
             canvas.width = size + pad * 2;
-            canvas.height = size + pad * 2;
+            canvas.height = size + pad * 2 + labelH;
             const ctx = canvas.getContext("2d");
             if (!ctx) throw new Error("canvas 컨텍스트 없음");
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, pad, pad, size, size);
 
+            ctx.fillStyle = "#18181b";
+            ctx.font = `700 ${Math.round(size * 0.05)}px "Pretendard", "Apple SD Gothic Neo", -apple-system, sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(qrLabel, canvas.width / 2, size + pad * 2 + labelH / 2, canvas.width - pad * 2);
+
             const png = canvas.toDataURL("image/png");
             const a = document.createElement("a");
             a.href = png;
-            a.download = `${name}_채점QR.png`;
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -241,51 +311,30 @@ export function ShareLinkDialog({
     };
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                {compact ? (
-                    <Button size="sm" variant="ghost" title="채점 링크">
-                        <Link2 className="w-4 h-4" />
-                    </Button>
-                ) : (
-                    <Button size="sm" variant="outline">
-                        <Link2 className="w-4 h-4 mr-1" />
-                        채점 링크 · QR
-                    </Button>
-                )}
-            </DialogTrigger>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>{name} — 채점 링크</DialogTitle>
-                    <DialogDescription>
-                        이 링크를 받은 사람은 <b>로그인 없이</b> 이름만 입력하고 채점할 수 있습니다.
-                        링크가 <b>열림</b> 상태일 때만 제출됩니다.
-                    </DialogDescription>
-                </DialogHeader>
-
-                <div className="flex justify-center py-2">
-                    <div
-                        ref={qrRef}
-                        className="p-3 bg-white rounded-xl border border-[var(--color-border-subtle)]"
-                    >
-                        <QRCodeSVG value={url} size={180} />
-                    </div>
+        <div className="space-y-2">
+            {title && <p className="text-xs font-bold text-center text-[var(--color-text-secondary)]">{title}</p>}
+            <div className="flex justify-center py-1">
+                <div
+                    ref={qrRef}
+                    className="p-3 bg-white rounded-xl border border-[var(--color-border-subtle)]"
+                >
+                    <QRCodeSVG value={url} size={title ? 140 : 180} />
                 </div>
+            </div>
 
-                <div className="flex items-center gap-2">
-                    <Input readOnly value={url} onFocus={(e) => e.currentTarget.select()} className="text-xs" />
-                    <Button size="sm" onClick={copy}>
-                        {copied ? <Check className="w-4 h-4" /> : <QrCode className="w-4 h-4" />}
-                        <span className="ml-1">{copied ? "복사됨" : "복사"}</span>
-                    </Button>
-                </div>
-
-                <Button size="sm" variant="outline" className="w-full" onClick={() => downloadQr()}>
-                    <Download className="w-4 h-4 mr-1" />
-                    QR 이미지 저장 (PNG)
+            <div className="flex items-center gap-2">
+                <Input readOnly value={url} onFocus={(e) => e.currentTarget.select()} className="text-xs" />
+                <Button size="sm" onClick={copy}>
+                    {copied ? <Check className="w-4 h-4" /> : <QrCode className="w-4 h-4" />}
+                    <span className="ml-1">{copied ? "복사됨" : "복사"}</span>
                 </Button>
-            </DialogContent>
-        </Dialog>
+            </div>
+
+            <Button size="sm" variant="outline" className="w-full" onClick={() => downloadQr()}>
+                <Download className="w-4 h-4 mr-1" />
+                QR 이미지 저장 (PNG)
+            </Button>
+        </div>
     );
 }
 

@@ -85,6 +85,8 @@ export interface ScoringRound {
     observer_mode: ObserverMode;
     rank_points: RankPoint[];
     exclude_own_team: boolean;
+    /** 청중(RANK 모드) 전용 — 켜면 팀별 피드백을 모두 채워야 제출된다. 심사위원 총평엔 적용 안 함. */
+    require_feedback: boolean;
     /** 청중 소그룹 라벨 (기수/운영진/청중 …). 분류·표시용 — 집계엔 영향 없음. */
     observer_groups: string[];
     areas: Area[];
@@ -102,6 +104,7 @@ export interface RoundListItem {
     session_label?: string | null;
     public_token: string;
     is_open: boolean;
+    observer_mode: ObserverMode;
     target_count: number;
     submitted_count: number;
     created_at?: string | null;
@@ -117,6 +120,9 @@ export interface Participant {
     is_proxy: boolean;
     proxy_by?: string | null;
     submitted_at?: string | null;
+    /** 청중 순위/피드백 링크가 분리돼 있어(RANK 모드) 둘 중 하나만 냈을 수 있다 */
+    has_ranks: boolean;
+    has_feedback: boolean;
     suggestions: RosterEntry[];
 }
 

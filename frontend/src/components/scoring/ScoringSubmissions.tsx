@@ -24,9 +24,28 @@ import {
 
 const ROLE_KR: Record<string, string> = { JUDGE: "심사위원", OBSERVER: "청중", ANY: "무관" };
 
+/** 순위/피드백처럼 따로 제출되는 항목 하나의 완료 여부 배지. */
+function SubmitBadge({ label, done }: { label: string; done: boolean }) {
+    return (
+        <span
+            className={cn(
+                "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium",
+                done ? "bg-emerald-50 text-emerald-600" : "bg-zinc-100 text-zinc-400",
+            )}
+        >
+            {done ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+            {label}
+        </span>
+    );
+}
+
 export function ScoringSubmissions({ round }: { round: ScoringRound }) {
     const { data, isLoading } = useScoringParticipants(round.id);
-    const [proxyFor, setProxyFor] = useState<{ participant?: Participant; open: boolean }>({ open: false });
+    const [proxyFor, setProxyFor] = useState<{
+        participant?: Participant;
+        rosterHint?: { name: string; role: ScoringRole; group_label?: string | null };
+        open: boolean;
+    }>({ open: false });
     const [roleFilter, setRoleFilter] = useState<"ALL" | ScoringRole>("ALL");
     const [groupFilter, setGroupFilter] = useState<string[]>([]);
 
@@ -59,12 +78,13 @@ export function ScoringSubmissions({ round }: { round: ScoringRound }) {
         ),
     );
 
+    // 심사위원은 항상 상단 고정 — 나머지는 원래 순서 그대로(안정 정렬).
     const visibleRoster = data.roster.filter((r) => {
         if (roleFilter !== "ALL" && r.role !== "ANY" && r.role !== roleFilter) return false;
         if (groupFilter.length === 0) return true;
         const g = rowGroup(r.id, r.group_label);
         return groupFilter.includes(g ?? "미분류");
-    });
+    }).sort((a, b) => (a.role === "JUDGE" ? 0 : 1) - (b.role === "JUDGE" ? 0 : 1));
 
     const visibleSubmitted = visibleRoster.filter((r) => data.roster_submitted[r.id]).length;
 
@@ -200,7 +220,18 @@ export function ScoringSubmissions({ round }: { round: ScoringRound }) {
                                                 size="sm"
                                                 variant="ghost"
                                                 onClick={() =>
-                                                    setProxyFor({ participant: p, open: true })
+                                                    setProxyFor(
+                                                        p
+                                                            ? { participant: p, open: true }
+                                                            : {
+                                                                rosterHint: {
+                                                                    name: r.name,
+                                                                    role: r.role === "ANY" ? "OBSERVER" : r.role,
+                                                                    group_label: r.group_label,
+                                                                },
+                                                                open: true,
+                                                            },
+                                                    )
                                                 }
                                             >
                                                 <PenLine className="w-3.5 h-3.5 mr-1" />
@@ -219,6 +250,7 @@ export function ScoringSubmissions({ round }: { round: ScoringRound }) {
             <ProxySubmitDialog
                 round={round}
                 participant={proxyFor.participant}
+                rosterHint={proxyFor.rosterHint}
                 open={proxyFor.open}
                 onClose={() => setProxyFor({ open: false })}
             />
@@ -294,6 +326,7 @@ function ParticipantTable({
     onEdit: (p: Participant) => void;
 }) {
     const del = useDeleteParticipant(round.id);
+    const splitFeedback = round.observer_mode === "RANK";
 
     return (
         <section className="rounded-xl border border-[var(--color-border-subtle)] bg-white overflow-hidden">
@@ -301,6 +334,7 @@ function ParticipantTable({
                 <h2 className="font-bold text-[var(--color-text-primary)]">제출자 목록</h2>
                 <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
                     실제로 제출한 사람 전부입니다{hasRoster ? " (명단에 없는 사람 포함)" : ""}.
+                    {splitFeedback && " 청중은 순위·피드백 링크가 따로라 둘 중 하나만 냈을 수 있습니다."}
                 </p>
             </div>
             <div className="overflow-auto max-h-[520px]">
@@ -311,6 +345,7 @@ function ParticipantTable({
                             <TableHead>역할</TableHead>
                             <TableHead>그룹</TableHead>
                             {hasRoster && <TableHead>명단 매칭</TableHead>}
+                            {splitFeedback && <TableHead>순위·피드백</TableHead>}
                             <TableHead>제출시각</TableHead>
                             <TableHead className="text-right">작업</TableHead>
                         </TableRow>
@@ -319,7 +354,7 @@ function ParticipantTable({
                         {participants.length === 0 && (
                             <TableRow>
                                 <TableCell
-                                    colSpan={hasRoster ? 6 : 5}
+                                    colSpan={(hasRoster ? 6 : 5) + (splitFeedback ? 1 : 0)}
                                     className="text-center py-8 text-[var(--color-text-muted)]"
                                 >
                                     아직 제출이 없습니다.
@@ -341,6 +376,18 @@ function ParticipantTable({
                                         <span className="text-[var(--color-text-muted)]">—</span>
                                     )}
                                 </TableCell>
+                                {splitFeedback && (
+                                    <TableCell className="text-xs">
+                                        {p.role === "OBSERVER" ? (
+                                            <div className="flex items-center gap-2">
+                                                <SubmitBadge label="순위" done={p.has_ranks} />
+                                                <SubmitBadge label="피드백" done={p.has_feedback} />
+                                            </div>
+                                        ) : (
+                                            <span className="text-[var(--color-text-muted)]">—</span>
+                                        )}
+                                    </TableCell>
+                                )}
                                 {hasRoster && (
                                     <TableCell className="text-xs">
                                         {p.matched_roster_id ? (
@@ -748,10 +795,11 @@ function RosterPicker({ round, unmatched }: { round: ScoringRound; unmatched: Pa
 /** 운영진 입력 — 종이로 받은 점수를 대신 넣거나, 기존 제출을 고친다.
  *  is_proxy는 DB에 남기지만 화면에는 표시하지 않는다(불공정해 보인다는 피드백). */
 function ProxySubmitDialog({
-    round, participant, open, onClose,
+    round, participant, rosterHint, open, onClose,
 }: {
     round: ScoringRound;
     participant?: Participant;
+    rosterHint?: { name: string; role: ScoringRole; group_label?: string | null };
     open: boolean;
     onClose: () => void;
 }) {
@@ -781,9 +829,9 @@ function ProxySubmitDialog({
     }
     if (open && !participant && loadedFor !== 0) {
         setLoadedFor(0);
-        setName("");
-        setRole("JUDGE");
-        setGroup("");
+        setName(rosterHint?.name ?? "");
+        setRole(rosterHint?.role ?? "JUDGE");
+        setGroup(rosterHint?.group_label ?? "");
         setSheet(emptySheet());
         setBlocked([]);
     }

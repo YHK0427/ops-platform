@@ -63,7 +63,7 @@ export default function ScoringRoundDetail() {
                 backTo="/scoring"
                 actions={
                     <>
-                        <ShareLinkDialog token={round.public_token} name={round.name} />
+                        <ShareLinkDialog token={round.public_token} name={round.name} observerMode={round.observer_mode} />
                         <Button
                             size="sm"
                             variant={round.is_open ? "outline" : "default"}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Ban, LayoutList, Square, Trophy } from "lucide-react";
+import { Ban, LayoutList, MessageSquareText, Square, Trophy } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { CommentEntry, ObserverMode, RankEntry, ScoreEntry, ScoringRole } from "@/hooks/useScoring";
@@ -51,7 +51,7 @@ export const emptySheet = (): SheetValue => ({ scores: {}, comments: {}, ranks: 
 
 const csk = (t: number, c: number) => `c:${t}:${c}`;   // 세부항목/미분류 점수
 const ask = (t: number, a: number) => `a:${t}:${a}`;   // 영역 통째 점수
-const ck = (t: number, c: number | null) => `${t}:${c ?? "overall"}`;
+export const ck = (t: number, c: number | null) => `${t}:${c ?? "overall"}`;
 
 export function toSheetValue(
     scores: ScoreEntry[], ranks: RankEntry[], comments: CommentEntry[],
@@ -97,10 +97,15 @@ interface Props {
     blockedTargetIds: number[];
     value: SheetValue;
     onChange: (v: SheetValue) => void;
+    /** 청중(RANK 모드) 전용 — 켜지면 팀별 피드백을 모두 채워야 한다. 심사위원엔 적용 안 함. */
+    requireFeedback?: boolean;
+    /** 청중(RANK 모드) 화면 분할용 — 순위/피드백 중 이 화면에서 보여줄 구간. 기본은 둘 다(운영진 대리입력용). */
+    sections?: ("rank" | "feedback")[];
 }
 
 export function ScoreSheet({
     role, observerMode, rankSlots, areas, criteria, targets, blockedTargetIds, value, onChange,
+    requireFeedback = false, sections = ["rank", "feedback"],
 }: Props) {
     // 청중 + RANK 모드 → 점수 입력 대신 등수 선택
     const rankMode = role === "OBSERVER" && observerMode === "RANK";
@@ -166,51 +171,67 @@ export function ScoreSheet({
         + criteria.reduce((s, c) => s + c.max_score, 0);
 
     if (rankMode) {
+        const showRank = sections.includes("rank");
+        const showFeedback = sections.includes("feedback");
         return (
             <div className="space-y-5">
-                <div className="rounded-xl border border-[var(--color-border-subtle)] bg-white p-5">
-                    <div className="flex items-center gap-2 mb-1">
-                        <Trophy className="w-4 h-4 text-amber-500" />
-                        <h3 className="font-bold text-[var(--color-text-primary)]">
-                            {rankLabel(rankSlots)} 선택
-                        </h3>
+                {showRank && (
+                    <div className="rounded-xl border border-[var(--color-border-subtle)] bg-white p-5">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Trophy className="w-4 h-4 text-amber-500" />
+                            <h3 className="font-bold text-[var(--color-text-primary)]">
+                                {rankLabel(rankSlots)} 선택
+                            </h3>
+                        </div>
+                        <p className="text-xs text-[var(--color-text-muted)] mb-4">
+                            가장 좋았던 팀부터 순서대로 골라주세요. 한 팀은 한 등수에만 선택할 수 있습니다.
+                        </p>
+                        <div className="space-y-3">
+                            {rankSlots.map((rank) => (
+                                <div key={rank} className="flex items-center gap-3">
+                                    <span className="w-12 shrink-0 text-sm font-bold text-[var(--color-text-primary)]">
+                                        {rank}위
+                                    </span>
+                                    <select
+                                        className="flex-1 h-10 px-3 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm"
+                                        value={value.ranks[rank] ?? ""}
+                                        onChange={(e) => setRank(rank, e.target.value ? Number(e.target.value) : null)}
+                                    >
+                                        <option value="">— 선택 —</option>
+                                        {targets.map((t) => (
+                                            <option key={t.id} value={t.id} disabled={blocked.has(t.id)}>
+                                                {t.name}
+                                                {t.members?.length ? ` — ${t.members.join(", ")}` : ""}
+                                                {blocked.has(t.id) ? " (본인 소속팀)" : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                    <p className="text-xs text-[var(--color-text-muted)] mb-4">
-                        가장 좋았던 팀부터 순서대로 골라주세요. 한 팀은 한 등수에만 선택할 수 있습니다.
-                    </p>
-                    <div className="space-y-3">
-                        {rankSlots.map((rank) => (
-                            <div key={rank} className="flex items-center gap-3">
-                                <span className="w-12 shrink-0 text-sm font-bold text-[var(--color-text-primary)]">
-                                    {rank}위
-                                </span>
-                                <select
-                                    className="flex-1 h-10 px-3 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm"
-                                    value={value.ranks[rank] ?? ""}
-                                    onChange={(e) => setRank(rank, e.target.value ? Number(e.target.value) : null)}
-                                >
-                                    <option value="">— 선택 —</option>
-                                    {targets.map((t) => (
-                                        <option key={t.id} value={t.id} disabled={blocked.has(t.id)}>
-                                            {t.name}
-                                            {t.members?.length ? ` — ${t.members.join(", ")}` : ""}
-                                            {blocked.has(t.id) ? " (본인 소속팀)" : ""}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                )}
+                {showFeedback && (
+                    <>
+                        <div className={cn("flex items-center gap-2", showRank && "pt-2")}>
+                            <MessageSquareText className="w-4 h-4 text-[var(--color-accent)]" />
+                            <h3 className="font-bold text-[var(--color-text-primary)]">피드백</h3>
+                            <span className="text-xs text-[var(--color-text-muted)]">
+                                {requireFeedback ? "팀마다 한마디씩 남겨야 제출할 수 있어요" : "팀마다 한마디씩 남겨주세요"}
+                            </span>
+                        </div>
+                        {targets.map((t) => (
+                            <TargetCommentCard
+                                key={t.id}
+                                target={t}
+                                blocked={blocked.has(t.id)}
+                                required={requireFeedback}
+                                value={value.comments[ck(t.id, null)] ?? ""}
+                                onChange={(body) => setComment(t.id, null, body)}
+                            />
                         ))}
-                    </div>
-                </div>
-                {targets.map((t) => (
-                    <TargetCommentCard
-                        key={t.id}
-                        target={t}
-                        blocked={blocked.has(t.id)}
-                        value={value.comments[ck(t.id, null)] ?? ""}
-                        onChange={(body) => setComment(t.id, null, body)}
-                    />
-                ))}
+                    </>
+                )}
             </div>
         );
     }
@@ -376,13 +397,14 @@ function SubRow({
 }
 
 function TargetCommentCard({
-    target, blocked, value, onChange,
-}: { target: SheetTarget; blocked: boolean; value: string; onChange: (v: string) => void }) {
+    target, blocked, required = false, value, onChange,
+}: { target: SheetTarget; blocked: boolean; required?: boolean; value: string; onChange: (v: string) => void }) {
+    const missing = required && !blocked && !value.trim();
     return (
         <div
             className={cn(
                 "rounded-xl border bg-white p-5",
-                blocked ? "border-zinc-200 opacity-60" : "border-[var(--color-border-subtle)]",
+                blocked ? "border-zinc-200 opacity-60" : missing ? "border-rose-200" : "border-[var(--color-border-subtle)]",
             )}
         >
             <h3 className="font-bold text-[var(--color-text-primary)] flex items-center gap-2">
@@ -392,6 +414,9 @@ function TargetCommentCard({
                         <Ban className="w-3 h-3" /> 본인 소속팀
                     </span>
                 )}
+                {missing && (
+                    <span className="text-[11px] font-bold text-rose-500">필수</span>
+                )}
             </h3>
             {!!target.members?.length && (
                 <p className="text-xs text-[var(--color-text-muted)] mt-0.5 mb-2">
@@ -400,8 +425,11 @@ function TargetCommentCard({
             )}
             <textarea
                 disabled={blocked}
-                className="w-full min-h-[72px] px-3 py-2 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm resize-y placeholder:text-[var(--color-text-muted)] disabled:bg-zinc-50"
-                placeholder="이 팀에 대한 피드백 (선택)"
+                className={cn(
+                    "w-full min-h-[72px] px-3 py-2 rounded-lg border bg-white text-sm resize-y placeholder:text-[var(--color-text-muted)] disabled:bg-zinc-50",
+                    missing ? "border-rose-200" : "border-[var(--color-border-subtle)]",
+                )}
+                placeholder={required ? "이 팀에 대한 피드백을 입력해 주세요" : "이 팀에 대한 피드백 (선택)"}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
             />

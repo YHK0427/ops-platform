@@ -325,6 +325,52 @@ def test_deduction_time_steps():
     assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T11:00:00"}) == (0.0, True)
 
 
+def test_deduction_time_steps_clock():
+    """구간을 절대 시각(at)으로 지정 — 마감(deadline) 없이도 동작해야 한다. 초 단위까지."""
+    cfg = {
+        "mode": "STEPS",
+        "steps": [
+            {"at": "2026-07-18T00:00:00", "points": 1.5},
+            {"at": "2026-07-18T02:00:30", "points": 3},
+        ],
+        "disqualify_at": "2026-07-18T10:00:00",
+    }
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-17T23:59:00"}) == (0.0, False)
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T00:30:00"}) == (1.5, False)
+    # 초 단위 경계 — 02:00:30을 넘겨야 다음 구간
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T02:00:30"}) == (1.5, False)
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T02:00:31"}) == (3.0, False)
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T10:00:01"}) == (0.0, True)
+
+
+def test_deduction_time_steps_mixed_legacy_and_clock():
+    """한 규정 안에 구버전(after_minutes) 구간과 신규(at) 구간이 섞여도 올바르게 계산된다."""
+    cfg = {
+        "deadline": "2026-07-18T00:00:00",
+        "mode": "STEPS",
+        "steps": [
+            {"after_minutes": 0, "points": 1.5},   # 구버전 — 마감 기준 상대분
+            {"at": "2026-07-18T02:00:00", "points": 3},  # 신규 — 절대 시각
+        ],
+    }
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T00:30:00"}) == (1.5, False)
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T02:30:00"}) == (3.0, False)
+
+
+def test_deduction_time_steps_legacy_unchanged():
+    """기존(배포된) 라운드의 규정 그대로 — 이 회귀 통과가 이번 변경이 기존 데이터에 영향 없음을 보장한다."""
+    cfg = {
+        "mode": "STEPS",
+        "steps": [{"points": 1.5, "after_minutes": 0}, {"points": 3, "after_minutes": 120}],
+        "deadline": "2026-07-18T00:00:00",
+        "disqualify_after_minutes": 600,
+    }
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T00:00:00"}) == (0.0, False)
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T01:30:00"}) == (1.5, False)
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T02:30:00"}) == (3.0, False)
+    assert compute_deduction("TIME", cfg, {"submitted_at": "2026-07-18T10:50:00"}) == (0.0, True)
+
+
 def test_deduction_time_interval():
     cfg = {"deadline": "2026-07-18T00:00:00", "mode": "INTERVAL",
            "interval_minutes": 30, "interval_points": 1.5, "max_points": 6}

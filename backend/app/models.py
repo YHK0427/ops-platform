@@ -618,6 +618,8 @@ class ScoringRound(Base):
         ),
     )
     exclude_own_team = Column(Boolean, default=False, server_default="false", nullable=False)
+    # 청중(RANK 모드) 전용 — 켜면 팀별 피드백을 모두 채워야 제출된다. 심사위원 총평엔 적용 안 함.
+    require_feedback = Column(Boolean, default=False, server_default="false", nullable=False)
 
     # 청중 소그룹 라벨. 집계에는 영향을 주지 않고 제출현황·결과를 그룹별로 나눠 보기 위한
     # 분류일 뿐이다. 빈 배열이면 그룹을 묻지 않는다. (운영자가 자유롭게 편집 — 아래는 기본값)
@@ -646,7 +648,11 @@ class ScoringRound(Base):
         "ScoringTarget", back_populates="round",
         cascade="all, delete-orphan", order_by="ScoringTarget.order_num",
     )
-    roster = relationship("ScoringRosterEntry", back_populates="round", cascade="all, delete-orphan")
+    # order_by 없으면 추가·삭제할 때마다 조회 순서가 흔들릴 수 있다 — id(생성 순서)로 고정.
+    roster = relationship(
+        "ScoringRosterEntry", back_populates="round", cascade="all, delete-orphan",
+        order_by="ScoringRosterEntry.id",
+    )
     participants = relationship("ScoringParticipant", back_populates="round", cascade="all, delete-orphan")
     deduction_rules = relationship(
         "ScoringDeductionRule", back_populates="round",

@@ -152,6 +152,7 @@ export default function App() {
                   주의: AuthGuard/MemberGuard 바깥, catch-all(*) 앞에 두어야 한다.
                   가드 안에 들어가면 외부 심사위원이 로그인 화면으로 튕긴다. */}
               <Route path="/s/:publicToken" element={<PublicScoringForm />} />
+              <Route path="/s/:publicToken/feedback" element={<PublicScoringForm feedbackOnly />} />
 
               {/* ── 기수 포털 ──────────────────────────── */}
               <Route

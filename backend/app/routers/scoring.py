@@ -157,6 +157,7 @@ class RoundUpdate(BaseModel):
     observer_mode: str | None = Field(None, pattern=r"^(SCORE|RANK)$")
     rank_points: list[RankPoint] | None = None
     exclude_own_team: bool | None = None
+    require_feedback: bool | None = None
     observer_groups: list[str] | None = None
 
 
@@ -173,6 +174,7 @@ class RoundOut(BaseModel):
     observer_mode: str
     rank_points: list[RankPoint]
     exclude_own_team: bool
+    require_feedback: bool
     observer_groups: list[str] = []
     areas: list[AreaOut] = []
     criteria: list[CriterionOut] = []  # 미분류(평면) 기준만
@@ -189,6 +191,7 @@ class RoundListItem(BaseModel):
     session_label: str | None = None
     public_token: str
     is_open: bool
+    observer_mode: str
     target_count: int
     submitted_count: int
     created_at: datetime | None = None
@@ -204,6 +207,9 @@ class ParticipantOut(BaseModel):
     is_proxy: bool
     proxy_by: str | None = None
     submitted_at: datetime | None = None
+    # 청중 순위/피드백 링크가 분리돼 있어(RANK 모드) 둘 중 하나만 냈을 수 있다 — 구분해서 보여준다
+    has_ranks: bool = False
+    has_feedback: bool = False
     # 자동 매칭이 실패했을 때 제시할 후보 (운영진 보정용)
     suggestions: list[RosterOut] = []
 
@@ -248,6 +254,9 @@ class SubmissionIn(BaseModel):
 
 class PublicSubmissionIn(SubmissionIn):
     participant_token: str
+    # 청중 피드백 전용 링크(/s/{token}/feedback)에서 온 제출인지 — require_feedback 검증을
+    # 이 경로에서만 적용한다. 순위 전용 링크엔 피드백 입력칸 자체가 없으므로 강제하면 안 된다.
+    feedback_only: bool = False
 
 
 class IdentifyIn(BaseModel):
@@ -302,6 +311,7 @@ class PublicRound(BaseModel):
     is_open: bool
     observer_mode: str
     rank_slots: list[int]  # RANK 모드에서 선택해야 할 등수 목록 [1,2,3]
+    require_feedback: bool = False  # 청중(RANK) 전용 — 켜지면 팀별 피드백을 모두 채워야 제출된다
     observer_groups: list[str] = []  # 비어 있으면 청중에게 그룹을 묻지 않는다
     areas: list[PublicArea] = []
     criteria: list[PublicCriterion] = []  # 미분류 기준
@@ -514,6 +524,7 @@ async def _round_out(db: AsyncSession, rnd: ScoringRound) -> RoundOut:
         observer_mode=rnd.observer_mode,
         rank_points=[RankPoint(**rp) for rp in (rnd.rank_points or [])],
         exclude_own_team=rnd.exclude_own_team,
+        require_feedback=rnd.require_feedback,
         observer_groups=list(rnd.observer_groups or []),
         areas=[
             AreaOut(
@@ -662,6 +673,7 @@ async def list_rounds(
             session_label=await _session_label(db, r.session_id),
             public_token=r.public_token,
             is_open=r.is_open,
+            observer_mode=r.observer_mode,
             target_count=len(r.targets),
             submitted_count=await _submitted_count(db, r.id),
             created_at=r.created_at,
@@ -1145,6 +1157,18 @@ async def list_participants(
         .order_by(ScoringParticipant.created_at)
     )).scalars().all()
 
+    # 청중 순위/피드백 링크가 분리돼 있어 둘 중 하나만 냈을 수 있다 — 참가자별로 구분해서 본다
+    rank_pids = set((await db.execute(
+        select(ScoringRank.participant_id).distinct()
+        .join(ScoringParticipant, ScoringParticipant.id == ScoringRank.participant_id)
+        .where(ScoringParticipant.round_id == round_id)
+    )).scalars().all())
+    feedback_pids = set((await db.execute(
+        select(ScoringComment.participant_id).distinct()
+        .join(ScoringParticipant, ScoringParticipant.id == ScoringComment.participant_id)
+        .where(ScoringParticipant.round_id == round_id, ScoringComment.criterion_id.is_(None))
+    )).scalars().all())
+
     out: list[ParticipantOut] = []
     roster_submitted: dict[int, int] = {}
     for p in parts:
@@ -1157,6 +1181,7 @@ async def list_participants(
             id=p.id, role=p.role, entered_name=p.entered_name, group_label=p.group_label,
             matched_roster_id=p.matched_roster_id, matched_member_id=p.matched_member_id,
             is_proxy=p.is_proxy, proxy_by=p.proxy_by, submitted_at=p.submitted_at,
+            has_ranks=p.id in rank_pids, has_feedback=p.id in feedback_pids,
             suggestions=[RosterOut.model_validate(s) for s in suggestions],
         ))
 
@@ -1631,6 +1656,7 @@ async def public_get_round(
         is_open=rnd.is_open,
         observer_mode=rnd.observer_mode,
         rank_slots=_rank_slots(rnd),
+        require_feedback=rnd.require_feedback,
         observer_groups=list(rnd.observer_groups or []),
         areas=[
             PublicArea(
@@ -1786,6 +1812,18 @@ async def public_submit(
     )).scalar_one_or_none()
     if p is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "제출 자격을 확인할 수 없습니다. 이름을 다시 입력해 주세요.")
+
+    # 청중(RANK 모드) 피드백 필수 — 심사위원 총평엔 적용 안 함. 본인 소속팀(채점 제외)은 예외.
+    # feedback_only(피드백 전용 링크)에서 온 제출에만 강제한다 — 순위 링크엔 입력칸이 없다.
+    if body.feedback_only and rnd.require_feedback and p.role == "OBSERVER" and rnd.observer_mode == "RANK":
+        commented = {c.target_id for c in body.comments if c.criterion_id is None and c.body.strip()}
+        blocked = set(_blocked_targets(rnd, p.matched_member_id))
+        missing = [t for t in rnd.targets if t.id not in commented and t.id not in blocked]
+        if missing:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"모든 팀에 피드백을 남겨야 제출할 수 있습니다 ({missing[0].name} 등 {len(missing)}팀 미작성)",
+            )
 
     await _save_submission(db, rnd, p, body)
     p.ip = get_real_ip(request)
