@@ -1177,13 +1177,13 @@ function TimeRuleConfig({ config, onChange }: { config: Record<string, any>; onC
 
             {timeMode === "INTERVAL" ? (
                 <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <Input type="number" className="w-20 h-8" placeholder="분"
+                    <Input type="number" className="w-24 h-9 px-2" placeholder="분"
                         value={config.interval_minutes ?? ""} onChange={(e) => onChange({ interval_minutes: Number(e.target.value) })} />
                     <span className="text-xs">분마다</span>
-                    <Input type="number" step="0.1" className="w-20 h-8" placeholder="점"
+                    <Input type="number" step="0.1" className="w-24 h-9 px-2" placeholder="점"
                         value={config.interval_points ?? ""} onChange={(e) => onChange({ interval_points: Number(e.target.value) })} />
                     <span className="text-xs">점 · 상한</span>
-                    <Input type="number" step="0.1" className="w-20 h-8" placeholder="없음"
+                    <Input type="number" step="0.1" className="w-24 h-9 px-2" placeholder="없음"
                         value={config.max_points ?? ""} onChange={(e) => onChange({ max_points: e.target.value === "" ? null : Number(e.target.value) })} />
                     <span className="text-xs">점</span>
                 </div>
@@ -1217,13 +1217,13 @@ function TimeRuleConfig({ config, onChange }: { config: Record<string, any>; onC
                                 ) : (
                                     <>
                                         <span className="text-xs text-[var(--color-text-muted)]">마감 +</span>
-                                        <Input type="number" className="w-24 h-8" placeholder="분"
+                                        <Input type="number" className="w-28 h-9 px-2" placeholder="분"
                                             value={st.after_minutes ?? 0}
                                             onChange={(e) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, after_minutes: Number(e.target.value) } : x) })} />
                                         <span className="text-xs">분 초과 →</span>
                                     </>
                                 )}
-                                <Input type="number" step="0.1" className="w-20 h-8" placeholder="점" disabled={!!st.disqualify}
+                                <Input type="number" step="0.1" className="w-24 h-9 px-2" placeholder="점" disabled={!!st.disqualify}
                                     value={st.disqualify ? "" : st.points}
                                     onChange={(e) => onChange({ steps: steps.map((x, k) => k === si ? { ...x, points: Number(e.target.value) } : x) })} />
                                 <label className="flex items-center gap-1 text-xs">
@@ -1262,7 +1262,7 @@ function TimeRuleConfig({ config, onChange }: { config: Record<string, any>; onC
             ) : (
                 <div className="flex flex-wrap items-center gap-2 text-sm pt-1">
                     <Label className="text-xs">마감 +</Label>
-                    <Input type="number" className="w-24 h-8" placeholder="없음"
+                    <Input type="number" className="w-28 h-9 px-2" placeholder="없음"
                         value={config.disqualify_after_minutes ?? ""}
                         onChange={(e) => onChange({ disqualify_after_minutes: e.target.value === "" ? null : Number(e.target.value) })} />
                     <span className="text-xs">분 초과 시 실격 (선택)</span>
@@ -1282,28 +1282,28 @@ function DurationRuleConfig({ config, onChange }: { config: Record<string, any>;
         <div className="space-y-2 pt-3 text-sm">
             <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs w-16">기준 시간</span>
-                <Input type="number" min={0} className="w-16 h-8" placeholder="분"
+                <Input type="number" min={0} className="w-20 h-9 px-2" placeholder="분"
                     value={targetMin || ""} onChange={(e) => setTarget(Number(e.target.value) || 0, targetSec)} />
                 <span className="text-xs">분</span>
-                <Input type="number" min={0} max={59} className="w-16 h-8" placeholder="초"
+                <Input type="number" min={0} max={59} className="w-20 h-9 px-2" placeholder="초"
                     value={targetSec || ""} onChange={(e) => setTarget(targetMin, Number(e.target.value) || 0)} />
                 <span className="text-xs">초</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs w-16">허용 오차</span>
-                <Input type="number" min={0} className="w-16 h-8" placeholder="0"
+                <Input type="number" min={0} className="w-20 h-9 px-2" placeholder="0"
                     value={config.tolerance_seconds ?? ""} onChange={(e) => onChange({ tolerance_seconds: e.target.value === "" ? 0 : Number(e.target.value) })} />
                 <span className="text-xs">초 이내는 감점 없음</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs w-16">초과·미달</span>
-                <Input type="number" min={1} className="w-16 h-8" placeholder="30"
+                <Input type="number" min={1} className="w-20 h-9 px-2" placeholder="30"
                     value={config.unit_seconds ?? ""} onChange={(e) => onChange({ unit_seconds: Number(e.target.value) })} />
                 <span className="text-xs">초마다</span>
-                <Input type="number" step="0.1" className="w-20 h-8" placeholder="점"
+                <Input type="number" step="0.1" className="w-24 h-9 px-2" placeholder="점"
                     value={config.unit_points ?? ""} onChange={(e) => onChange({ unit_points: Number(e.target.value) })} />
                 <span className="text-xs">점 · 상한</span>
-                <Input type="number" step="0.1" className="w-20 h-8" placeholder="없음"
+                <Input type="number" step="0.1" className="w-24 h-9 px-2" placeholder="없음"
                     value={config.max_points ?? ""} onChange={(e) => onChange({ max_points: e.target.value === "" ? null : Number(e.target.value) })} />
                 <span className="text-xs">점</span>
             </div>

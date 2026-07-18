@@ -914,7 +914,7 @@ function ProxyScoreGrid({
                                 팀
                             </th>
                             {cols.map((c) => (
-                                <th key={`${c.kind}-${c.id}`} className="sticky top-0 z-10 bg-[var(--color-hover)] px-2 py-2 text-center font-medium text-[var(--color-text-secondary)] min-w-[92px]">
+                                <th key={`${c.kind}-${c.id}`} className="sticky top-0 z-10 bg-[var(--color-hover)] px-2 py-2 text-center font-medium text-[var(--color-text-secondary)] min-w-[116px]">
                                     {c.areaLabel && <div className="text-[10px] text-[var(--color-text-muted)]">{c.areaLabel}</div>}
                                     <div className="[word-break:keep-all]">{c.label}</div>
                                     <div className="text-[10px] text-[var(--color-text-muted)]">{c.max}점</div>
@@ -941,7 +941,7 @@ function ProxyScoreGrid({
                                             <td key={key} className="px-1.5 py-1.5">
                                                 <Input
                                                     type="number" min={0} max={c.max} step="0.5" disabled={isBlocked}
-                                                    className="w-20 h-8 text-center mx-auto"
+                                                    className="w-24 h-9 px-2 text-center mx-auto"
                                                     value={value.scores[key] ?? ""}
                                                     onChange={(e) => setScore(key, e.target.value, c.max)}
                                                 />
