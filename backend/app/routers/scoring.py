@@ -23,6 +23,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import AsyncSessionLocal
 from app.deps import (
     check_public_rate, decode_ws_token, get_current_cohort_id, get_db, get_real_ip, require_staff,
@@ -1637,6 +1638,50 @@ async def export_results_excel(
 
 
 # ── 공개(무로그인) ────────────────────────────────────────────────────────────
+
+@public_router.get("/{token}/og", include_in_schema=False)
+async def public_scoring_og(
+    token: str, request: Request, feedback: str = "", db: AsyncSession = Depends(get_db),
+):
+    """카카오톡 등 링크 미리보기 크롤러 전용 — SPA는 JS로 렌더돼 크롤러가 og 태그를
+    못 읽으므로, nginx가 크롤러 User-Agent만 이 라우트로 보내고 나머지는 그대로 SPA를
+    서빙한다(frontend/nginx.conf 참조). 라운드 이름 외 기수·명단 등 내부 정보는 안 싣는다."""
+    from html import escape
+
+    from fastapi.responses import HTMLResponse
+
+    rnd = (await db.execute(
+        select(ScoringRound).where(ScoringRound.public_token == token)
+    )).scalar_one_or_none()
+    if rnd is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "존재하지 않는 링크입니다")
+
+    is_feedback = bool(feedback)
+    kind = "피드백" if is_feedback else "채점"
+    title = f"{rnd.name} · {kind} 폼"
+    desc = f"이름만 입력하면 로그인 없이 바로 {'피드백을 남길' if is_feedback else '채점할'} 수 있어요"
+    # nginx↔backend 구간은 내부 http라 request.url.scheme이 항상 http로 잡힌다.
+    # 배포 환경은 Cloudflare Tunnel이 유일한 진입점이라 외부에서는 늘 https이므로 고정한다.
+    scheme = "https" if settings.ENV == "production" else request.url.scheme
+    host = request.headers.get("host") or request.url.netloc
+    base = f"{scheme}://{host}"
+    url = f"{base}/s/{token}" + ("/feedback" if is_feedback else "")
+    image = f"{base}/icons/icon-512.png"
+
+    html = f"""<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>{escape(title)}</title>
+<meta property="og:title" content="{escape(title)}">
+<meta property="og:description" content="{escape(desc)}">
+<meta property="og:image" content="{escape(image)}">
+<meta property="og:url" content="{escape(url)}">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta http-equiv="refresh" content="0; url={escape(url)}">
+</head><body><a href="{escape(url)}">{escape(title)}</a></body></html>"""
+    return HTMLResponse(html)
+
 
 async def _get_public_round(token: str, db: AsyncSession) -> ScoringRound:
     rnd = (await db.execute(
