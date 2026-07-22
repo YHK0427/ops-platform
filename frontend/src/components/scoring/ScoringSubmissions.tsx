@@ -906,7 +906,7 @@ function ProxyScoreGrid({
                     })}
                 </div>
             )}
-            <div className="overflow-auto border border-[var(--color-border-subtle)] rounded-xl max-h-[55vh]">
+            <div className="overflow-auto border border-[var(--color-border-subtle)] rounded-xl max-h-[55vh] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar]:h-2.5">
                 <table className="border-collapse text-sm">
                     <thead>
                         <tr className="bg-[var(--color-hover)]">
@@ -981,7 +981,7 @@ function ProxyCommentPanel({
         onChange({ ...value, comments: { ...value.comments, [ck(t, c)]: body } });
 
     return (
-        <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+        <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-2.5">
             {targets.map((t) => {
                 const isBlocked = blocked.has(t.id);
                 return (
@@ -1113,8 +1113,8 @@ function ProxySubmitDialog({
     return (
         <Dialog open={open} onOpenChange={(o) => !o && close()}>
             <DialogContent className={cn(
-                "max-h-[88vh] overflow-y-auto",
-                role === "JUDGE" ? "sm:max-w-5xl" : "max-w-3xl",
+                "max-h-[88vh] overflow-y-auto [&::-webkit-scrollbar]:w-2.5",
+                role === "JUDGE" ? "sm:max-w-[95vw] lg:max-w-6xl" : "max-w-3xl",
             )}>
                 <DialogHeader>
                     <DialogTitle>{participant ? "제출 수정" : "점수 입력"}</DialogTitle>

@@ -32,7 +32,9 @@ interface PublicRound {
     observer_groups: string[];
     areas: PubArea[];
     criteria: PubCriterion[];  // 미분류 기준
-    targets: { id: number; name: string; members: string[] }[];
+    targets: { id: number; name: string; part_id?: number | null; members: string[] }[];
+    parts: { id: number; label: string }[];
+    active_part_id?: number | null;
 }
 
 type Stage = "intro" | "sheet" | "done";
@@ -64,6 +66,10 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
     const [sheet, setSheet] = useState<SheetValue>(emptySheet());
     const [submitting, setSubmitting] = useState(false);
     const [identifying, setIdentifying] = useState(false);
+    // 청중 피드백 폼의 부 페이징 — "전체" 탭 없이 부 탭만 둔다. 부가 있는 라운드는 로드 시
+    // active_part_id(없으면 첫 부)로 기본 선택해주고, 그 뒤로는 청중이 탭을 눌러 자유롭게 넘길 수 있다.
+    // 부가 없는 라운드는 null로 남아 전체 팀이 그대로 보인다(하위호환).
+    const [selectedPartId, setSelectedPartId] = useState<number | null>(null);
 
     // 이미 제출한 이름으로 다시 들어왔을 때 띄우는 확인창
     const [editPrompt, setEditPrompt] = useState<Submission | null>(null);
@@ -78,6 +84,8 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
                 const { data } = await publicApi.get<PublicRound>(`/scoring/${publicToken}`);
                 if (!alive) return;
                 setRound(data);
+                // "전체" 없이 부 탭만 두므로, 부가 있으면 항상 특정 부가 선택돼 있어야 한다.
+                setSelectedPartId(data.active_part_id ?? data.parts[0]?.id ?? null);
 
                 const saved = getParticipantToken(storageKey);
                 if (saved) {
@@ -215,8 +223,16 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
         }
     };
 
+    // 부(파트) 페이징 — 청중 피드백 폼에서만, 지금 청중이 고른 부의 팀만 보여준다.
+    // 심사위원 폼·순위 폼은 항상 전체 팀(부와 무관).
+    const partPaging = feedbackOnly && !!round && round.parts.length > 0;
+    const visibleTargets = round && feedbackOnly
+        ? round.targets.filter((t) => selectedPartId == null || t.part_id === selectedPartId)
+        : (round?.targets ?? []);
+
     // 청중(RANK) 피드백 필수 — 피드백 전용 링크에서만 강제한다. 순위 링크엔 피드백 입력칸이
     // 아예 없으므로 여기서 막으면 순위조차 제출 못 하는 사람이 생긴다. 심사위원 총평엔 적용 안 함.
+    // 부는 화면에 뭘 보여줄지만 결정하는 페이징일 뿐이라, 완료 여부는 부와 무관하게 라운드 전체 팀 기준.
     const requireFeedback = feedbackOnly && round?.observer_mode === "RANK" && !!round?.require_feedback;
     const missingFeedback = requireFeedback
         ? (round?.targets ?? []).filter((t) => !blocked.includes(t.id) && !(sheet.comments[ck(t.id, null)] ?? "").trim())
@@ -225,7 +241,12 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
     const submit = async () => {
         if (!participantToken) return;
         if (missingFeedback.length > 0) {
-            toast.error(`모든 팀에 피드백을 남겨야 제출할 수 있어요 (${missingFeedback[0].name} 등 ${missingFeedback.length}팀 미작성)`);
+            const first = missingFeedback[0];
+            // 놓친 팀이 지금 보고 있는 부에 없으면, 그 팀이 있는 부로 자동으로 넘겨서 바로 채울 수 있게 한다.
+            if (partPaging && first.part_id != null && first.part_id !== selectedPartId) {
+                setSelectedPartId(first.part_id);
+            }
+            toast.error(`모든 팀에 피드백을 남겨야 제출할 수 있어요 (${first.name} 등 ${missingFeedback.length}팀 미작성)`);
             return;
         }
         setSubmitting(true);
@@ -491,6 +512,25 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
                             )}
                         </p>
                     )}
+                    {partPaging && (
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                            {round.parts.map((p) => (
+                                <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => setSelectedPartId(p.id)}
+                                    className={cn(
+                                        "shrink-0 px-3 py-1.5 rounded-full border-2 text-sm font-medium transition-colors",
+                                        selectedPartId === p.id
+                                            ? "border-[var(--color-accent)] bg-[var(--color-accent-dim)] text-[var(--color-accent)]"
+                                            : "border-[var(--color-border-subtle)] text-[var(--color-text-secondary)]",
+                                    )}
+                                >
+                                    {p.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </header>
 
@@ -501,7 +541,7 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
                     rankSlots={round.rank_slots}
                     areas={round.areas}
                     criteria={round.criteria}
-                    targets={round.targets}
+                    targets={visibleTargets}
                     blockedTargetIds={blocked}
                     value={sheet}
                     onChange={setSheet}

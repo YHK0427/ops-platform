@@ -53,8 +53,16 @@ export interface Target {
     display_name?: string | null;
     order_num: number;
     team_id?: number | null;
+    /** 이 팀이 속한 부 — 청중 피드백 폼 노출 범위 필터링용. NULL이면 미배정. */
+    part_id?: number | null;
     member_ids: number[];
     member_names: string[];
+}
+
+export interface Part {
+    id: number;
+    label: string;
+    order_num: number;
 }
 
 export interface RosterEntry {
@@ -92,6 +100,9 @@ export interface ScoringRound {
     areas: Area[];
     criteria: Criterion[];  // 미분류(평면) 기준만
     targets: Target[];
+    parts: Part[];
+    /** 지금 청중 피드백 폼에 노출할 부. NULL이면 부 배정과 무관하게 전체 팀이 보인다. */
+    active_part_id?: number | null;
     roster: RosterEntry[];
     deduction_rules: DeductionRule[];
     submitted_count: number;
@@ -398,7 +409,16 @@ export function useSaveCriteria(roundId: number) {
 
 export function useSaveTargets(roundId: number) {
     return useRoundMutation(
-        (id, body: { id?: number; name: string }[]) => api.put(`/scoring/rounds/${id}/targets`, body),
+        (id, body: { id?: number; name: string; part_id?: number | null }[]) =>
+            api.put(`/scoring/rounds/${id}/targets`, body),
+        roundId,
+    );
+}
+
+/** 부 일괄 저장 — id 없는 항목은 신규, 목록에서 빠진 기존 항목은 삭제된다. */
+export function useSaveParts(roundId: number) {
+    return useRoundMutation(
+        (id, body: { id?: number; label: string }[]) => api.put(`/scoring/rounds/${id}/parts`, body),
         roundId,
     );
 }

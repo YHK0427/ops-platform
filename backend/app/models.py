@@ -628,6 +628,10 @@ class ScoringRound(Base):
         server_default=text('\'["기수", "운영진", "참관위원", "일반청중(OB·기타)"]\''),
     )
 
+    # 청중 피드백 폼에 지금 노출할 부 — NULL이면 부 배정과 무관하게 전체 팀이 보인다(기본/구버전 호환).
+    # 부가 삭제되면 DB가 자동으로 NULL로 되돌린다(ondelete=SET NULL).
+    active_part_id = Column(Integer, ForeignKey("scoring_parts.id", ondelete="SET NULL"), nullable=True)
+
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -647,6 +651,10 @@ class ScoringRound(Base):
     targets = relationship(
         "ScoringTarget", back_populates="round",
         cascade="all, delete-orphan", order_by="ScoringTarget.order_num",
+    )
+    parts = relationship(
+        "ScoringPart", back_populates="round", foreign_keys="ScoringPart.round_id",
+        cascade="all, delete-orphan", order_by="ScoringPart.order_num",
     )
     # order_by 없으면 추가·삭제할 때마다 조회 순서가 흔들릴 수 있다 — id(생성 순서)로 고정.
     roster = relationship(
@@ -710,6 +718,25 @@ class ScoringCriterion(Base):
     area = relationship("ScoringArea", back_populates="criteria")
 
 
+class ScoringPart(Base):
+    """심사 라운드의 '부' 나누기 — 팀을 파트별로 묶어 공개 청중 피드백 폼 노출을 제어한다.
+
+    순수 표시/노출 개념이다. 채점·순위·감점·집계 로직에는 절대 영향을 주지 않는다.
+    """
+    __tablename__ = "scoring_parts"
+
+    id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("scoring_rounds.id", ondelete="CASCADE"), nullable=False)
+    label = Column(String(50), nullable=False)
+    order_num = Column(Integer, nullable=False, server_default="0")
+
+    __table_args__ = (
+        Index("ix_scoring_parts_round", "round_id"),
+    )
+
+    round = relationship("ScoringRound", back_populates="parts", foreign_keys="ScoringPart.round_id")
+
+
 class ScoringTarget(Base):
     """심사 대상 = 팀. 세션 연동 시 Team에서 임포트, 독립 모드에선 이름만 직접 입력."""
     __tablename__ = "scoring_targets"
@@ -722,6 +749,8 @@ class ScoringTarget(Base):
     # 세션을 다시 임포트해도 team_id가 같으면 이 값은 보존된다.
     display_name = Column(String(100), nullable=True)
     order_num = Column(Integer, nullable=False, server_default="0")
+    # 이 팀이 속한 부 — NULL(미배정)이면 활성 부가 있어도 청중 피드백 폼엔 안 보인다.
+    part_id = Column(Integer, ForeignKey("scoring_parts.id", ondelete="SET NULL"), nullable=True)
     # 자기팀 제외 판정용 스냅샷 (세션 연동 시 TeamMember에서 복사)
     member_ids = Column(ARRAY(Integer), nullable=False, server_default=text("'{}'"))
     # 팀원 이름 스냅샷 — 채점 폼에서 "어느 팀인지" 알아보게 하는 표시용.

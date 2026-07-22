@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-    AlertCircle, CloudOff, Download, GripVertical, Loader2, Minus, Plus, RotateCcw, Save, Search,
-    Shield, Trash2, UserPlus, X,
+    AlertCircle, ChevronRight, CloudOff, Download, GripVertical, Loader2, Minus, Plus, RotateCcw,
+    Save, Search, Shield, Star, Trash2, UserPlus, X,
 } from "lucide-react";
 import { CircleCheck as CloudCheck } from "lucide-react";
 import { AutosaveProvider, useAutosave, type PanelStatus } from "./autosave";
@@ -14,8 +14,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useSessions } from "@/hooks/useSessions";
 import {
-    useImportMembers, useImportSessionTeams, useImportStaff, useSaveDeductionRules, useSaveRoster,
-    useSaveRubric, useSaveTargets, useUpdateRound,
+    useImportMembers, useImportSessionTeams, useImportStaff, useSaveDeductionRules, useSaveParts,
+    useSaveRoster, useSaveRubric, useSaveTargets, useUpdateRound,
     type DeductionKind, type DeductionRule, type RubricInput,
     type ScoringRound, type ScoringRole,
 } from "@/hooks/useScoring";
@@ -24,7 +24,13 @@ interface TargetDraft {
     id?: number;
     name: string;
     display_name?: string | null;
+    part_id?: number | null;
     member_names?: string[];
+}
+
+interface PartDraft {
+    id?: number;
+    label: string;
 }
 
 interface RosterDraft {
@@ -650,16 +656,23 @@ function RubricPanel({ round }: { round: ScoringRound }) {
 
 function TargetsPanel({ round }: { round: ScoringRound }) {
     const save = useSaveTargets(round.id);
+    const savePartsCall = useSaveParts(round.id);
+    const updateRound = useUpdateRound(round.id);
     const importTeams = useImportSessionTeams(round.id);
     const { data: sessions = [] } = useSessions();
     const [items, setItems] = useState<TargetDraft[]>(round.targets);
     const [sessionId, setSessionId] = useState<string>(round.session_id ? String(round.session_id) : "");
+
+    const [partsOpen, setPartsOpen] = useState(false);
+    const [parts, setParts] = useState<PartDraft[]>(round.parts);
+    const [activePartId, setActivePartId] = useState<number | null>(round.active_part_id ?? null);
 
     const payload = (list: TargetDraft[]) =>
         list.map((t) => ({
             id: t.id,
             name: t.name.trim(),
             display_name: (t.display_name ?? "").trim() || null,
+            part_id: t.part_id ?? null,
         }));
 
     const { isDirty, acceptServer } = useAutosave({
@@ -670,6 +683,24 @@ function TargetsPanel({ round }: { round: ScoringRound }) {
         serverValue: payload(round.targets),
     });
 
+    const partsPayload = (list: PartDraft[]) => list.map((p) => ({ id: p.id, label: p.label.trim() }));
+
+    const { isDirty: partsDirty, acceptServer: acceptPartsServer } = useAutosave({
+        id: "parts",
+        value: partsPayload(parts),
+        canSave: (v) => v.every((p) => p.label.length > 0), // 부 이름이 비면 저장하지 않는다
+        save: (v) => savePartsCall.mutateAsync(v),
+        serverValue: partsPayload(round.parts),
+    });
+
+    const { isDirty: activeDirty, acceptServer: acceptActiveServer } = useAutosave({
+        id: "parts-active",
+        value: { active_part_id: activePartId },
+        canSave: () => true,
+        save: (v) => updateRound.mutateAsync(v),
+        serverValue: { active_part_id: round.active_part_id ?? null },
+    });
+
     useEffect(() => {
         if (isDirty) return;
         setItems(round.targets);
@@ -677,6 +708,21 @@ function TargetsPanel({ round }: { round: ScoringRound }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [round.targets]);
 
+    useEffect(() => {
+        if (partsDirty) return;
+        setParts(round.parts);
+        acceptPartsServer(partsPayload(round.parts));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [round.parts]);
+
+    useEffect(() => {
+        if (activeDirty) return;
+        setActivePartId(round.active_part_id ?? null);
+        acceptActiveServer({ active_part_id: round.active_part_id ?? null });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [round.active_part_id]);
+
+    const savedParts = parts.filter((p) => p.id != null) as (PartDraft & { id: number })[];
     const teamSessions = sessions.filter((s) => s.type === "TEAM");
 
     return (
@@ -725,11 +771,119 @@ function TargetsPanel({ round }: { round: ScoringRound }) {
                 외부 팀·외부 심사위원만으로도 독립 심사가 가능합니다.
             </p>
 
+            <div className="rounded-lg border border-[var(--color-border-subtle)] overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setPartsOpen((v) => !v)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-[var(--color-hover)] transition-colors"
+                >
+                    <ChevronRight
+                        className={cn(
+                            "w-4 h-4 shrink-0 text-[var(--color-text-muted)] transition-transform",
+                            partsOpen && "rotate-90",
+                        )}
+                    />
+                    <span className="font-semibold text-sm text-[var(--color-text-primary)]">부 나누기</span>
+                    {parts.length > 0 && (
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                            {parts.length}개 부{activePartId != null && " · 진행중"}
+                        </span>
+                    )}
+                </button>
+                {partsOpen && (
+                    <div className="p-3 pt-0 space-y-2 border-t border-[var(--color-border-subtle)]">
+                        <p className="text-xs text-[var(--color-text-muted)] pt-3">
+                            청중 피드백 폼에는 부별 탭이 생겨서, 청중이 직접 원하는 부로 넘겨볼 수 있습니다.
+                            여기서 ★로 지정하면 그 부가 폼이 처음 열릴 때 기본으로 선택되어 있을 뿐,
+                            이후엔 청중이 언제든 다른 부로 자유롭게 넘길 수 있습니다.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setActivePartId(null)}
+                                className={cn(
+                                    "px-3 py-1.5 rounded-full border-2 text-sm font-medium transition-colors",
+                                    activePartId == null
+                                        ? "border-[var(--color-accent)] bg-[var(--color-accent-dim)] text-[var(--color-accent)]"
+                                        : "border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:border-[var(--color-accent)]/40",
+                                )}
+                            >
+                                전체보기
+                            </button>
+                            {parts.map((p, i) => {
+                                const isActive = p.id != null && activePartId === p.id;
+                                return (
+                                    <div
+                                        key={p.id ?? `new-part-${i}`}
+                                        className={cn(
+                                            "flex items-center gap-1 pl-1 pr-2 py-1 rounded-full border-2 transition-colors",
+                                            isActive
+                                                ? "border-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                                : "border-[var(--color-border-subtle)]",
+                                        )}
+                                    >
+                                        <button
+                                            type="button"
+                                            title={p.id == null ? "먼저 저장해야 활성화할 수 있어요" : "이 부를 진행중으로"}
+                                            disabled={p.id == null}
+                                            onClick={() => {
+                                                if (p.id == null) return;
+                                                setActivePartId(activePartId === p.id ? null : p.id);
+                                            }}
+                                            className={cn(
+                                                "p-1 rounded-full",
+                                                p.id == null && "opacity-30 cursor-not-allowed",
+                                            )}
+                                        >
+                                            <Star
+                                                className={cn(
+                                                    "w-3.5 h-3.5",
+                                                    isActive
+                                                        ? "fill-[var(--color-accent)] text-[var(--color-accent)]"
+                                                        : "text-[var(--color-text-muted)]",
+                                                )}
+                                            />
+                                        </button>
+                                        <input
+                                            value={p.label}
+                                            onChange={(e) => {
+                                                const next = [...parts];
+                                                next[i] = { ...p, label: e.target.value };
+                                                setParts(next);
+                                            }}
+                                            className="w-16 bg-transparent text-sm font-medium text-[var(--color-text-primary)] focus:outline-none"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (p.id != null && p.id === activePartId) setActivePartId(null);
+                                                setParts(parts.filter((_, j) => j !== i));
+                                            }}
+                                            className="text-[var(--color-text-muted)] hover:text-rose-500"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setParts([...parts, { label: `${parts.length + 1}부` }])}
+                            >
+                                <Plus className="w-3.5 h-3.5 mr-1" /> 부 추가
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </div>
+
             <div className="space-y-2">
                 <div className="flex items-center gap-2 px-1 text-xs text-[var(--color-text-muted)]">
                     <span className="w-6" />
                     <span className="flex-1">원본 팀명</span>
                     <span className="flex-1">평가 폼 표시 이름</span>
+                    {partsOpen && <span className="w-24">부</span>}
                     <span className="w-9" />
                 </div>
                 {items.map((t, i) => (
@@ -756,6 +910,22 @@ function TargetsPanel({ round }: { round: ScoringRound }) {
                                     setItems(next);
                                 }}
                             />
+                            {partsOpen && (
+                                <select
+                                    className="w-24 h-9 px-2 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm"
+                                    value={t.part_id ?? ""}
+                                    onChange={(e) => {
+                                        const next = [...items];
+                                        next[i] = { ...t, part_id: e.target.value ? Number(e.target.value) : null };
+                                        setItems(next);
+                                    }}
+                                >
+                                    <option value="">미배정</option>
+                                    {savedParts.map((p) => (
+                                        <option key={p.id} value={p.id}>{p.label}</option>
+                                    ))}
+                                </select>
+                            )}
                             <Button
                                 size="sm"
                                 variant="ghost"
@@ -1349,23 +1519,37 @@ function GroupSelect({
 // ── 공통 ─────────────────────────────────────────────────────────────────────
 
 function Panel({
-    title, subtitle, action, children,
+    title, subtitle, action, defaultOpen = true, children,
 }: {
     title: string;
     subtitle?: string;
     action?: React.ReactNode;
+    defaultOpen?: boolean;
     children: React.ReactNode;
 }) {
+    const [open, setOpen] = useState(defaultOpen);
     return (
-        <section className="rounded-xl border border-[var(--color-border-subtle)] bg-white p-5 space-y-4">
-            <div className="flex items-start justify-between gap-3">
-                <div>
-                    <h2 className="font-bold text-[var(--color-text-primary)]">{title}</h2>
-                    {subtitle && <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{subtitle}</p>}
-                </div>
+        <section className="rounded-xl border border-[var(--color-border-subtle)] bg-white overflow-hidden">
+            <div className={cn("flex items-center justify-between gap-3 p-5", open ? "pb-0" : "")}>
+                <button
+                    type="button"
+                    onClick={() => setOpen((v) => !v)}
+                    className="flex items-center gap-2 text-left flex-1 min-w-0"
+                >
+                    <ChevronRight
+                        className={cn(
+                            "w-4 h-4 shrink-0 text-[var(--color-text-muted)] transition-transform",
+                            open && "rotate-90",
+                        )}
+                    />
+                    <div className="min-w-0">
+                        <h2 className="font-bold text-[var(--color-text-primary)]">{title}</h2>
+                        {open && subtitle && <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{subtitle}</p>}
+                    </div>
+                </button>
                 {action}
             </div>
-            {children}
+            {open && <div className="p-5 pt-4 space-y-4">{children}</div>}
         </section>
     );
 }

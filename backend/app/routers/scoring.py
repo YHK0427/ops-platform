@@ -29,7 +29,7 @@ from app.deps import (
 )
 from app.models import (
     Member, ScoringArea, ScoringComment, ScoringCriterion, ScoringDeduction,
-    ScoringDeductionRule, ScoringParticipant, ScoringRank,
+    ScoringDeductionRule, ScoringParticipant, ScoringPart, ScoringRank,
     ScoringRosterEntry, ScoringRound, ScoringScore, ScoringTarget,
     Session as SessionModel, Team, TeamMember, User,
 )
@@ -106,6 +106,7 @@ class TargetIn(BaseModel):
     id: int | None = None
     name: str = Field(..., max_length=100)
     display_name: str | None = Field(None, max_length=100)
+    part_id: int | None = None
 
 
 class TargetOut(BaseModel):
@@ -114,8 +115,21 @@ class TargetOut(BaseModel):
     display_name: str | None = None
     order_num: int
     team_id: int | None = None
+    part_id: int | None = None
     member_ids: list[int] = []
     member_names: list[str] = []
+    model_config = {"from_attributes": True}
+
+
+class PartIn(BaseModel):
+    id: int | None = None
+    label: str = Field(..., max_length=50)
+
+
+class PartOut(BaseModel):
+    id: int
+    label: str
+    order_num: int
     model_config = {"from_attributes": True}
 
 
@@ -159,6 +173,7 @@ class RoundUpdate(BaseModel):
     exclude_own_team: bool | None = None
     require_feedback: bool | None = None
     observer_groups: list[str] | None = None
+    active_part_id: int | None = None
 
 
 class RoundOut(BaseModel):
@@ -179,6 +194,8 @@ class RoundOut(BaseModel):
     areas: list[AreaOut] = []
     criteria: list[CriterionOut] = []  # 미분류(평면) 기준만
     targets: list[TargetOut] = []
+    parts: list[PartOut] = []
+    active_part_id: int | None = None
     roster: list[RosterOut] = []
     deduction_rules: list["DeductionRuleOut"] = []
     submitted_count: int = 0
@@ -301,7 +318,13 @@ class PublicArea(BaseModel):
 class PublicTarget(BaseModel):
     id: int
     name: str
+    part_id: int | None = None  # 이 팀이 속한 부 — 청중 피드백 폼 노출 필터링용
     members: list[str] = []  # 팀원 이름 — 심사위원이 어느 팀인지 알아보게
+
+
+class PublicPart(BaseModel):
+    id: int
+    label: str
 
 
 class PublicRound(BaseModel):
@@ -315,7 +338,10 @@ class PublicRound(BaseModel):
     observer_groups: list[str] = []  # 비어 있으면 청중에게 그룹을 묻지 않는다
     areas: list[PublicArea] = []
     criteria: list[PublicCriterion] = []  # 미분류 기준
+    # 항상 전체 목록 그대로 반환 — 부(part) 필터링은 프론트에서 role별로 한다(청중만 필터).
     targets: list[PublicTarget]
+    parts: list[PublicPart] = []  # 청중 피드백 폼의 부 페이저(탭) 렌더링용
+    active_part_id: int | None = None  # 폼이 처음 열릴 때 기본으로 선택할 부 — 이후엔 청중이 직접 페이징 가능
 
 
 class ProxySubmitIn(SubmissionIn):
@@ -436,6 +462,7 @@ async def _get_round_or_404(round_id: int, db: AsyncSession, cohort_id: int) -> 
             selectinload(ScoringRound.areas).selectinload(ScoringArea.criteria),
             selectinload(ScoringRound.criteria),
             selectinload(ScoringRound.targets),
+            selectinload(ScoringRound.parts),
             selectinload(ScoringRound.roster),
             selectinload(ScoringRound.deduction_rules),
         )
@@ -540,6 +567,8 @@ async def _round_out(db: AsyncSession, rnd: ScoringRound) -> RoundOut:
             for c in sorted(rnd.criteria, key=lambda c: c.order_num) if c.area_id is None
         ],
         targets=[TargetOut.model_validate(t) for t in sorted(rnd.targets, key=lambda t: t.order_num)],
+        parts=[PartOut.model_validate(p) for p in sorted(rnd.parts, key=lambda p: p.order_num)],
+        active_part_id=rnd.active_part_id,
         roster=[RosterOut.model_validate(r) for r in rnd.roster],
         deduction_rules=[
             DeductionRuleOut.model_validate(dr)
@@ -768,6 +797,9 @@ async def update_round(
         if s is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "세션을 찾을 수 없습니다")
 
+    if data.get("active_part_id") is not None and data["active_part_id"] not in {p.id for p in rnd.parts}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "존재하지 않는 부입니다")
+
     # 총점은 항상 100 — 심사위원 + 참관위원 비중 합계를 강제한다
     jw = data.get("judge_weight", float(rnd.judge_weight))
     ow = data.get("observer_weight", float(rnd.observer_weight))
@@ -942,6 +974,41 @@ async def put_rubric(
     return await _round_out(db, rnd)
 
 
+@router.put("/rounds/{round_id}/parts", response_model=RoundOut)
+async def put_parts(
+    round_id: int,
+    body: list[PartIn],
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+):
+    """부 일괄 저장 — id가 있으면 이름만 수정, 없으면 신규, 목록에서 빠지면 삭제.
+
+    부를 지우면 그 부에 배정된 팀의 part_id, 그 부가 활성 부였다면 active_part_id가
+    DB의 ON DELETE SET NULL로 자동 해제된다 — 별도 정리 코드가 필요 없다.
+    """
+    rnd = await _get_round_or_404(round_id, db, cohort_id)
+    existing = {p.id: p for p in rnd.parts}
+    keep: set[int] = set()
+
+    for i, item in enumerate(body):
+        if item.id and item.id in existing:
+            p = existing[item.id]
+            p.label, p.order_num = item.label, i
+            keep.add(p.id)
+        else:
+            db.add(ScoringPart(round_id=round_id, label=item.label, order_num=i))
+
+    for pid, p in existing.items():
+        if pid not in keep:
+            await db.delete(p)
+
+    await db.commit()
+    rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await manager.broadcast(round_id, {"type": "config.changed"})
+    return await _round_out(db, rnd)
+
+
 async def _import_session_teams(
     db: AsyncSession, rnd: ScoringRound, session_id: int, cohort_id: int,
 ) -> None:
@@ -962,10 +1029,11 @@ async def _import_session_teams(
     # 주의: rnd.targets 로 접근하면 지연 로딩이 걸린다 — 방금 만든 라운드(selectinload 안 함)에서
     # MissingGreenlet 으로 터지므로, 관계 대신 명시적으로 조회한다.
     prior_rows = (await db.execute(
-        select(ScoringTarget.team_id, ScoringTarget.display_name)
+        select(ScoringTarget.team_id, ScoringTarget.display_name, ScoringTarget.part_id)
         .where(ScoringTarget.round_id == rnd.id, ScoringTarget.team_id.isnot(None))
     )).all()
-    prior_display = {team_id: dn for team_id, dn in prior_rows if dn}
+    prior_display = {team_id: dn for team_id, dn, _ in prior_rows if dn}
+    prior_part = {team_id: pid for team_id, _, pid in prior_rows if pid is not None}
 
     await db.execute(delete(ScoringTarget).where(ScoringTarget.round_id == rnd.id))
     for i, t in enumerate(teams):
@@ -979,6 +1047,7 @@ async def _import_session_teams(
         db.add(ScoringTarget(
             round_id=rnd.id, team_id=t.id, name=t.name, order_num=i,
             display_name=prior_display.get(t.id),
+            part_id=prior_part.get(t.id),
             member_ids=[r[0] for r in rows],
             member_names=[r[1] for r in rows],
         ))
@@ -1012,17 +1081,20 @@ async def put_targets(
     """대상 일괄 저장 (독립 이벤트 모드에서 직접 입력)."""
     rnd = await _get_round_or_404(round_id, db, cohort_id)
     existing = {t.id: t for t in rnd.targets}
+    valid_parts = {p.id for p in rnd.parts}
     keep: set[int] = set()
 
     for i, item in enumerate(body):
+        if item.part_id is not None and item.part_id not in valid_parts:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "존재하지 않는 부입니다")
         if item.id and item.id in existing:
             t = existing[item.id]
-            t.name, t.display_name, t.order_num = item.name, item.display_name, i
+            t.name, t.display_name, t.order_num, t.part_id = item.name, item.display_name, i, item.part_id
             keep.add(t.id)
         else:
             db.add(ScoringTarget(
                 round_id=round_id, name=item.name,
-                display_name=item.display_name, order_num=i,
+                display_name=item.display_name, order_num=i, part_id=item.part_id,
             ))
 
     for tid, t in existing.items():
@@ -1646,6 +1718,7 @@ async def _get_public_round(token: str, db: AsyncSession) -> ScoringRound:
             selectinload(ScoringRound.areas).selectinload(ScoringArea.criteria),
             selectinload(ScoringRound.criteria),
             selectinload(ScoringRound.targets),
+            selectinload(ScoringRound.parts),
             selectinload(ScoringRound.roster),
         )
     )).scalar_one_or_none()
@@ -1687,9 +1760,11 @@ async def public_get_round(
             for c in sorted(rnd.criteria, key=lambda c: c.order_num) if c.area_id is None
         ],
         targets=[
-            PublicTarget(id=t.id, name=_tname(t), members=list(t.member_names or []))
+            PublicTarget(id=t.id, name=_tname(t), part_id=t.part_id, members=list(t.member_names or []))
             for t in sorted(rnd.targets, key=lambda t: t.order_num)
         ],
+        parts=[PublicPart(id=p.id, label=p.label) for p in sorted(rnd.parts, key=lambda p: p.order_num)],
+        active_part_id=rnd.active_part_id,
     )
 
 

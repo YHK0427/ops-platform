@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, MinusCircle } from "lucide-react";
+import { AlertTriangle, ChevronRight, Loader2, MinusCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
@@ -96,6 +96,15 @@ function DeductionsGridBody({
     const setCell = (tid: number, rid: number, input: CellInput) =>
         setGrid((g) => ({ ...g, [`${tid}:${rid}`]: input }));
 
+    // 팀 카드 접기/펼치기 — 기본은 접힌 채로 요약(총 감점)만 보여준다. 팀이 많을 때 스크롤이 길어지는 걸 줄이려는 목적.
+    const [openTeams, setOpenTeams] = useState<Set<number>>(new Set());
+    const toggleTeam = (tid: number) =>
+        setOpenTeams((s) => {
+            const next = new Set(s);
+            if (next.has(tid)) next.delete(tid); else next.add(tid);
+            return next;
+        });
+
     return (
         <div className="space-y-4">
             <SaveBar statuses={statuses} saveAll={saveAll} />
@@ -107,28 +116,43 @@ function DeductionsGridBody({
                 {round.targets.map((t) => {
                     const teamTotal = rules.reduce((s, r) => s + (savedPoints[`${t.id}:${r.id}`]?.points ?? 0), 0);
                     const dq = rules.some((r) => savedPoints[`${t.id}:${r.id}`]?.disqualified);
+                    const open = openTeams.has(t.id);
                     return (
                         <div key={t.id} className={cn(
-                            "rounded-xl border bg-white p-4",
+                            "rounded-xl border bg-white overflow-hidden",
                             dq ? "border-rose-200 bg-rose-50/40" : "border-[var(--color-border-subtle)]",
                         )}>
-                            <div className="flex items-center justify-between mb-3">
-                                <span className="font-bold text-[var(--color-text-primary)]">{tname(t)}</span>
+                            <button
+                                type="button"
+                                onClick={() => toggleTeam(t.id)}
+                                className="w-full flex items-center justify-between gap-3 p-4 text-left"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <ChevronRight
+                                        className={cn(
+                                            "w-4 h-4 shrink-0 text-[var(--color-text-muted)] transition-transform",
+                                            open && "rotate-90",
+                                        )}
+                                    />
+                                    <span className="font-bold text-[var(--color-text-primary)]">{tname(t)}</span>
+                                </span>
                                 <span className={cn("text-sm font-bold", dq ? "text-rose-600" : "text-[var(--color-accent)]")}>
                                     {dq ? "실격" : `− ${teamTotal}점`}
                                 </span>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {rules.map((r) => (
-                                    <RuleCell
-                                        key={r.id}
-                                        rule={r}
-                                        input={grid[`${t.id}:${r.id}`] ?? {}}
-                                        onChange={(inp) => setCell(t.id, r.id, inp)}
-                                        computed={savedPoints[`${t.id}:${r.id}`]}
-                                    />
-                                ))}
-                            </div>
+                            </button>
+                            {open && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 pt-0">
+                                    {rules.map((r) => (
+                                        <RuleCell
+                                            key={r.id}
+                                            rule={r}
+                                            input={grid[`${t.id}:${r.id}`] ?? {}}
+                                            onChange={(inp) => setCell(t.id, r.id, inp)}
+                                            computed={savedPoints[`${t.id}:${r.id}`]}
+                                        />
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     );
                 })}
