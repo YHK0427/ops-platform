@@ -25,7 +25,8 @@ from sqlalchemy.orm import selectinload
 
 from app.database import AsyncSessionLocal
 from app.deps import (
-    check_public_rate, decode_ws_token, get_current_cohort_id, get_db, get_real_ip, require_staff,
+    check_public_rate, decode_ws_token, get_current_cohort_id, get_db, get_real_ip,
+    require_scoring_staff,
 )
 from app.models import (
     Member, ScoringArea, ScoringComment, ScoringCriterion, ScoringDeduction,
@@ -696,7 +697,7 @@ async def _save_submission(
 @router.get("/rounds", response_model=list[RoundListItem])
 async def list_rounds(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rounds = (await db.execute(
@@ -726,7 +727,7 @@ async def list_rounds(
 async def create_round(
     body: RoundCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     if body.session_id is not None:
@@ -762,7 +763,7 @@ async def create_round(
 async def get_round(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -774,7 +775,7 @@ async def update_round(
     round_id: int,
     body: RoundUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -822,7 +823,7 @@ async def update_round(
 async def delete_round(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -834,7 +835,7 @@ async def delete_round(
 async def open_round(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -855,7 +856,7 @@ async def open_round(
 async def close_round(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -874,7 +875,7 @@ async def put_criteria(
     round_id: int,
     body: list[CriterionIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """기준 일괄 저장 — id가 있으면 수정, 없으면 신규, 목록에서 빠지면 삭제(점수도 함께 CASCADE)."""
@@ -908,7 +909,7 @@ async def put_rubric(
     round_id: int,
     body: RubricIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """루브릭 일괄 저장 — 영역(세부항목 포함) + 미분류 기준. 목록에서 빠지면 삭제(점수 CASCADE).
@@ -979,7 +980,7 @@ async def put_parts(
     round_id: int,
     body: list[PartIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """부 일괄 저장 — id가 있으면 이름만 수정, 없으면 신규, 목록에서 빠지면 삭제.
@@ -1058,7 +1059,7 @@ async def import_session_teams(
     round_id: int,
     session_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -1075,7 +1076,7 @@ async def put_targets(
     round_id: int,
     body: list[TargetIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """대상 일괄 저장 (독립 이벤트 모드에서 직접 입력)."""
@@ -1112,7 +1113,7 @@ async def put_roster(
     round_id: int,
     body: list[RosterIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -1146,7 +1147,7 @@ async def import_cohort_members(
     role: str = Query("OBSERVER", pattern=r"^(JUDGE|OBSERVER|ANY)$"),
     group_label: str | None = Query(None, max_length=30),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """기수 멤버를 명단에 추가. group_label로 소그룹을 한 번에 태깅한다.
@@ -1187,7 +1188,7 @@ async def import_staff(
     role: str = Query("OBSERVER", pattern=r"^(JUDGE|OBSERVER|ANY)$"),
     group_label: str | None = Query(None, max_length=30),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """운영진(User)을 명단에 추가. 이미 같은 이름이 있으면 **이번 그룹으로 갱신**한다.
@@ -1231,7 +1232,7 @@ async def import_staff(
 async def list_participants(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -1281,7 +1282,7 @@ async def patch_participant(
     participant_id: int,
     body: ParticipantPatch,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """이름 매칭 수동 보정 — 오타로 들어온 제출을 올바른 명단 항목에 연결."""
@@ -1321,7 +1322,7 @@ async def patch_participant(
 async def delete_participant(
     participant_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     p = await db.get(ScoringParticipant, participant_id)
@@ -1338,7 +1339,7 @@ async def delete_participant(
 async def get_participant_submission(
     participant_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """운영진이 대리 수정하기 전에 기존 제출분을 불러온다."""
@@ -1361,7 +1362,7 @@ async def proxy_submit(
     round_id: int,
     body: ProxySubmitIn,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """운영진 대리 입력 — 심사위원이 종이로 낸 점수를 운영진이 대신 입력하는 경로.
@@ -1414,7 +1415,7 @@ async def put_deduction_rules(
     round_id: int,
     body: list[DeductionRuleIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """감점 규정 일괄 저장. 규정이 바뀌면 관련 팀 감점을 규정 config로 재계산한다."""
@@ -1467,7 +1468,7 @@ async def _recompute_deductions(db: AsyncSession, round_id: int) -> None:
 async def get_deductions(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
@@ -1490,7 +1491,7 @@ async def put_deductions(
     round_id: int,
     body: list[DeductionIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """팀별 감점 입력 일괄 저장 (전체 교체). 서버가 규정 config로 points·disqualified 계산."""
@@ -1521,7 +1522,7 @@ async def get_results(
     role: str = Query("ALL", pattern=r"^(ALL|JUDGE|OBSERVER)$"),
     groups: str | None = Query(None, description="참관위원 소그룹 필터 (콤마 구분). 비우면 전체."),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """집계 결과. role/groups로 부분집합만 골라 **다시 집계**한다.
@@ -1686,7 +1687,7 @@ async def get_results(
 async def export_results_excel(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """심사 결과 Excel 다운로드 — 결과/심사위원별/상세점수/피드백/제출현황 5개 시트."""

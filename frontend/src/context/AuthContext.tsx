@@ -10,7 +10,7 @@ import { unsubscribePush, resyncPushSubscription } from "@/lib/push";
 
 interface AuthUser {
     username: string;
-    role: "admin" | "manager" | "viewer";
+    role: "admin" | "manager" | "viewer" | "scoring_only";
     display_name: string;
     department: string | null;
     cohort_id: number | null;

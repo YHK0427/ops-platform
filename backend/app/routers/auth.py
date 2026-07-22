@@ -68,7 +68,7 @@ class UserCreate(BaseModel):
     username: str = Field(max_length=50)
     password: str = Field(min_length=6, max_length=128)
     display_name: str = Field(max_length=50)
-    role: str = Field(pattern=r"^(admin|manager|viewer)$")
+    role: str = Field(pattern=r"^(admin|manager|viewer|scoring_only)$")
     department: str | None = None
 
 
@@ -97,7 +97,7 @@ class ChangePasswordRequest(BaseModel):
 class UserUpdate(BaseModel):
     username: str | None = Field(None, max_length=50)
     display_name: str | None = None
-    role: str | None = Field(None, pattern=r"^(admin|manager|viewer)$")
+    role: str | None = Field(None, pattern=r"^(admin|manager|viewer|scoring_only)$")
     password: str | None = Field(None, min_length=6, max_length=128)
     is_active: bool | None = None
     department: str | None = Field(None)

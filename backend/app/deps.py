@@ -13,6 +13,18 @@ from sqlalchemy import select
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
+# scoring_only(외부 임시 · 심사 전용) 역할이 예외적으로 접근 가능한 경로.
+# 심사 라우터 본편 + 로그인 유지에 꼭 필요한 자기 자신 관련 셀프서비스 엔드포인트만 허용한다.
+_SCORING_ONLY_ALLOWED_PREFIXES = (
+    "/api/v1/scoring",
+    "/api/v1/auth/refresh",
+    "/api/v1/auth/logout",
+    "/api/v1/auth/change-password",
+    "/api/v1/auth/totp",
+    "/api/v1/members/me",
+    "/api/v1/notifications/ops/subscribe",
+)
+
 # Redis 기반 토큰 블랙리스트 (재시작 후에도 유효)
 _redis_client: aioredis.Redis | None = None
 
@@ -99,7 +111,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)) -> dict:
     """JWT 검증 의존성 — 유효한 토큰이면 {"username": str, "role": str} 반환.
     generation 계정 토큰은 거부한다."""
     credentials_exception = HTTPException(
@@ -126,6 +138,18 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
+
+    # scoring_only(외부 임시 · 심사 전용) — 허용 목록 밖은 전부 차단.
+    # 다른 라우터들은 role을 아예 안 보는 곳(get_current_user만 거는 GET들)이 많아서,
+    # 여기서 한 곳에서 막아야 새 역할이 다른 기능에 새어나가지 않는다.
+    if (role or "viewer") == "scoring_only" and not any(
+        request.url.path.startswith(p) for p in _SCORING_ONLY_ALLOWED_PREFIXES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="심사 탭 전용 계정입니다",
+        )
+
     # cohort_id: 신규 토큰엔 claim 존재(None=슈퍼관리자). 구 토큰엔 없음 → cohort_claim=False로
     # 표시해 get_current_cohort_id 가 DB 폴백하도록 한다.
     return {
@@ -241,6 +265,20 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
 def require_staff(user: dict = Depends(get_current_user)) -> dict:
     """admin 또는 manager(운영진) 역할 필수 — viewer 차단"""
     if user["role"] not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="운영진 이상 권한이 필요합니다",
+        )
+    return user
+
+
+def require_scoring_staff(user: dict = Depends(get_current_user)) -> dict:
+    """admin·manager 또는 scoring_only(외부 임시 · 심사 전용) — 심사 라우터 전용.
+
+    scoring_only는 get_current_user에서 이미 심사 경로 밖은 다 막혀 있으니, 여기서는
+    그 역할을 심사 라우터에 한해 admin/manager와 동등하게 통과시켜주기만 하면 된다.
+    """
+    if user["role"] not in ("admin", "manager", "scoring_only"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="운영진 이상 권한이 필요합니다",

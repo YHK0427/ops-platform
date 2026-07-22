@@ -1076,6 +1076,10 @@ async def feedback_ws(websocket: WebSocket, board_id: int, token: str = Query(..
         if identity is None:
             await websocket.close(code=4401)
             return
+        # scoring_only(외부 임시 · 심사 전용)는 심사 탭 밖의 기능이라 여기 구독을 막는다.
+        if identity.get("user_role") == "scoring_only":
+            await websocket.close(code=4403)
+            return
         board = await db.get(LiveFeedbackBoard, board_id)
         if board is None:
             await websocket.close(code=4404)

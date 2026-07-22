@@ -29,12 +29,14 @@ const ROLE_LABELS: Record<string, string> = {
     admin: "관리자",
     manager: "운영진",
     viewer: "열람자",
+    scoring_only: "외부 임시(심사 전용)",
 };
 
 const ROLE_COLORS: Record<string, string> = {
     admin: "bg-rose-500/15 text-rose-600 border-rose-500/30",
     manager: "bg-blue-500/15 text-blue-600 border-blue-500/30",
     viewer: "bg-zinc-500/15 text-zinc-600 border-zinc-500/30",
+    scoring_only: "bg-amber-500/15 text-amber-600 border-amber-500/30",
 };
 
 const DEPARTMENTS = ["회장단", "인홍부", "학술부", "기획부", "총무부"] as const;
@@ -96,6 +98,7 @@ function CreateUserDialog() {
                                 <SelectItem value="admin">관리자</SelectItem>
                                 <SelectItem value="manager">운영진</SelectItem>
                                 <SelectItem value="viewer">열람자</SelectItem>
+                                <SelectItem value="scoring_only">외부 임시(심사 전용)</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -167,6 +170,7 @@ function EditUserDialog({ user, trigger }: { user: { id: number; username: strin
                                 <SelectItem value="admin">관리자</SelectItem>
                                 <SelectItem value="manager">운영진</SelectItem>
                                 <SelectItem value="viewer">열람자</SelectItem>
+                                <SelectItem value="scoring_only">외부 임시(심사 전용)</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>

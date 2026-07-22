@@ -51,6 +51,38 @@ export function Sidebar() {
         setMobileOpen(false);
     }, [location.pathname]);
 
+    // scoring_only(외부 임시 · 심사 전용) — 다른 링크는 눌러도 서버가 다 막지만,
+    // 애초에 안 보여야 헷갈리지 않는다. 심사/채점 링크 하나만 남긴다.
+    const isScoringOnly = user?.role === "scoring_only";
+
+    const scoringNavLink = (
+        <NavLink
+            to="/scoring"
+            className={({ isActive }) =>
+                cn(
+                    "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                    isActive
+                        ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                        : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
+                )
+            }
+        >
+            {({ isActive }) => (
+                <>
+                    {isActive && (
+                        <motion.div
+                            layoutId="active-indicator"
+                            className="absolute left-0 top-1 bottom-1 w-1 rounded-r-full bg-[var(--color-accent)] shadow-none"
+                            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        />
+                    )}
+                    <Gavel className="w-4 h-4 shrink-0" />
+                    심사/채점
+                </>
+            )}
+        </NavLink>
+    );
+
     const sidebarContent = (
         <>
             {/* 현재 기수 표시 */}
@@ -67,6 +99,8 @@ export function Sidebar() {
 
             {/* Navigation */}
             <nav className="flex-1 px-3 py-4 space-y-1">
+                {isScoringOnly ? scoringNavLink : (
+                <>
                 {NAV_ITEMS.map((item) => (
                     <NavLink
                         key={item.to}
@@ -194,31 +228,9 @@ export function Sidebar() {
                         </>
                     )}
                 </NavLink>
-                <NavLink
-                    to="/scoring"
-                    className={({ isActive }) =>
-                        cn(
-                            "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                            isActive
-                                ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
-                                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
-                        )
-                    }
-                >
-                    {({ isActive }) => (
-                        <>
-                            {isActive && (
-                                <motion.div
-                                    layoutId="active-indicator"
-                                    className="absolute left-0 top-1 bottom-1 w-1 rounded-r-full bg-[var(--color-accent)] shadow-none"
-                                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                                />
-                            )}
-                            <Gavel className="w-4 h-4 shrink-0" />
-                            심사/채점
-                        </>
-                    )}
-                </NavLink>
+                {scoringNavLink}
+                </>
+                )}
             </nav>
 
             {/* Admin */}
