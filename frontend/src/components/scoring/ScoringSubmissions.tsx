@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-    AlertTriangle, Check, Filter, Link2, Loader2, PenLine, Plus, RotateCcw, Trash2, X,
+    AlertTriangle, Check, ChevronRight, Filter, Link2, Loader2, PenLine, Plus, RotateCcw, Trash2, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -649,13 +649,25 @@ function UnmatchedPanel({
 }: { round: ScoringRound; unmatched: Participant[]; rosterCount: number }) {
     const patch = usePatchParticipant(round.id);
     const del = useDeleteParticipant(round.id);
+    // 명단을 대충만 등록해둔 세션(예: 심사위원만 명단, 청중은 자유)에서는 이 목록이 길어져서
+    // 접었다 폈다 할 수 있어야 한다. 기본은 접힌 채로 건수만 보여준다.
+    const [open, setOpen] = useState(false);
 
     return (
-        <section className="rounded-xl border border-amber-200 bg-amber-50/50 p-5 space-y-3">
-            <div className="flex items-center gap-2">
+        <section className="rounded-xl border border-amber-200 bg-amber-50/50 overflow-hidden">
+            <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className="w-full flex items-center gap-2 p-5 text-left"
+            >
+                <ChevronRight
+                    className={cn("w-4 h-4 shrink-0 text-amber-600 transition-transform", open && "rotate-90")}
+                />
                 <AlertTriangle className="w-4 h-4 text-amber-600" />
                 <h2 className="font-bold text-amber-900">명단에 없는 제출 {unmatched.length}건</h2>
-            </div>
+            </button>
+            {open && (
+            <div className="px-5 pb-5 space-y-3">
             <p className="text-xs text-amber-800">
                 점수는 이미 집계에 반영되어 있습니다. 아래에서 명단의 실제 인물과 연결하면 체크리스트가 채워집니다.
                 (이름 오타·동명이인 처리용)
@@ -728,6 +740,8 @@ function UnmatchedPanel({
                 ))}
             </div>
             <RosterPicker round={round} unmatched={unmatched} />
+            </div>
+            )}
         </section>
     );
 }
