@@ -103,6 +103,22 @@ export interface ScoringRound {
     parts: Part[];
     /** 지금 청중 피드백 폼에 노출할 부. NULL이면 부 배정과 무관하게 전체 팀이 보인다. */
     active_part_id?: number | null;
+    /** 순위 투표폼(sheet 화면) 상단 안내문 */
+    rank_form_notice?: string | null;
+    /** 피드백 전용 링크(sheet 화면) 상단 안내문 */
+    feedback_form_notice?: string | null;
+    /** 이 라운드를 열람할 수 없는 부서 목록(운영진 관리 화면 한정) */
+    restricted_departments: string[];
+    /** restricted_departments에 걸려도 예외로 열람 허용할 계정(username) */
+    restricted_exception_usernames: string[];
+    /** 다동아리 연합 이벤트 모드 — observer_groups를 동아리 축으로 재사용한다 */
+    multi_club_mode: boolean;
+    /** observer_groups 중 "외부 청중"으로 분류된 라벨들(복수 가능) */
+    external_group_labels: string[];
+    /** 소그룹 라벨 → 투표 불가 target_id 목록. 그 팀들이 그 소그룹 소속이라는 뜻. */
+    group_blocked_targets: Record<string, number[]>;
+    internal_audience_weight: number;
+    external_audience_weight: number;
     roster: RosterEntry[];
     deduction_rules: DeductionRule[];
     submitted_count: number;
@@ -166,6 +182,12 @@ export interface TargetResult {
     area_avg: Record<number, number>;
     rank_votes: Record<number, number>;
     comments: TargetComment[];
+    // ── 다동아리 모드 전용 (multi_club_mode=false면 전부 null) ──
+    internal_audience_ratio?: number | null;
+    external_audience_ratio?: number | null;
+    audience_award_score?: number | null;
+    audience_award_total?: number | null;
+    audience_award_rank?: number | null;
 }
 
 export interface JudgeDetail {

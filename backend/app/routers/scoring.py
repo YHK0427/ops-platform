@@ -175,6 +175,15 @@ class RoundUpdate(BaseModel):
     require_feedback: bool | None = None
     observer_groups: list[str] | None = None
     active_part_id: int | None = None
+    rank_form_notice: str | None = None
+    feedback_form_notice: str | None = None
+    restricted_departments: list[str] | None = None
+    restricted_exception_usernames: list[str] | None = None
+    multi_club_mode: bool | None = None
+    external_group_labels: list[str] | None = None
+    group_blocked_targets: dict[str, list[int]] | None = None
+    internal_audience_weight: float | None = Field(None, ge=0)
+    external_audience_weight: float | None = Field(None, ge=0)
 
 
 class RoundOut(BaseModel):
@@ -197,6 +206,15 @@ class RoundOut(BaseModel):
     targets: list[TargetOut] = []
     parts: list[PartOut] = []
     active_part_id: int | None = None
+    rank_form_notice: str | None = None
+    feedback_form_notice: str | None = None
+    restricted_departments: list[str] = []
+    restricted_exception_usernames: list[str] = []
+    multi_club_mode: bool = False
+    external_group_labels: list[str] = []
+    group_blocked_targets: dict[str, list[int]] = {}
+    internal_audience_weight: float = 50.0
+    external_audience_weight: float = 50.0
     roster: list[RosterOut] = []
     deduction_rules: list["DeductionRuleOut"] = []
     submitted_count: int = 0
@@ -343,6 +361,8 @@ class PublicRound(BaseModel):
     targets: list[PublicTarget]
     parts: list[PublicPart] = []  # 청중 피드백 폼의 부 페이저(탭) 렌더링용
     active_part_id: int | None = None  # 폼이 처음 열릴 때 기본으로 선택할 부 — 이후엔 청중이 직접 페이징 가능
+    rank_form_notice: str | None = None      # 순위 투표폼(sheet 화면) 상단 안내문
+    feedback_form_notice: str | None = None  # 피드백 전용 링크(sheet 화면) 상단 안내문
 
 
 class ProxySubmitIn(SubmissionIn):
@@ -385,6 +405,12 @@ class TargetResultOut(BaseModel):
     area_avg: dict[int, float] = {}
     rank_votes: dict[int, int]
     comments: list[TargetComment] = []
+    # ── 다동아리 모드 전용 (multi_club_mode=false면 전부 None) ──
+    internal_audience_ratio: float | None = None
+    external_audience_ratio: float | None = None
+    audience_award_score: float | None = None
+    audience_award_total: float | None = None
+    audience_award_rank: int | None = None
 
 
 # ── 감점 스키마 ──
@@ -477,6 +503,20 @@ async def _get_round_or_404(round_id: int, db: AsyncSession, cohort_id: int) -> 
     return rnd
 
 
+async def _check_round_access(rnd: ScoringRound, user: dict, db: AsyncSession) -> None:
+    """열람 제한(restricted_departments) 검사 — 운영진 관리 화면 전용, 공개 링크는 무관.
+
+    admin은 항상 통과. 그 외엔 이 사람의 department가 제한 목록에 있고
+    예외 계정(restricted_exception_usernames)에도 없으면 403.
+    """
+    if not rnd.restricted_departments or user["role"] == "admin":
+        return
+    result = await db.execute(select(User.department).where(User.username == user["username"]))
+    dept = result.scalar_one_or_none()
+    if dept in rnd.restricted_departments and user["username"] not in (rnd.restricted_exception_usernames or []):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "이 라운드는 열람 권한이 없습니다")
+
+
 def _norm(name: str) -> str:
     """이름 매칭용 정규화 — 공백 제거 + 소문자."""
     return "".join(name.split()).lower()
@@ -506,11 +546,18 @@ def _match_roster(name: str, role: str, roster: list[ScoringRosterEntry]) -> tup
     return None, cands
 
 
-def _blocked_targets(rnd: ScoringRound, member_id: int | None) -> list[int]:
-    """자기팀 제외가 켜져 있을 때 이 사람이 채점할 수 없는 팀."""
-    if not rnd.exclude_own_team or member_id is None:
-        return []
-    return [t.id for t in rnd.targets if member_id in (t.member_ids or [])]
+def _blocked_targets(rnd: ScoringRound, member_id: int | None, group_label: str | None = None) -> list[int]:
+    """이 사람이 채점할 수 없는 팀 — 자기 팀(roster 기반) + 다동아리 모드의 자기 동아리.
+
+    다동아리 모드에서 팀의 "동아리" 소속은 별도 필드가 아니라 group_blocked_targets로
+    역으로 표현된다(그 소그룹이 투표 못 하는 팀 = 그 소그룹 소속 팀).
+    """
+    blocked: set[int] = set()
+    if rnd.exclude_own_team and member_id is not None:
+        blocked.update(t.id for t in rnd.targets if member_id in (t.member_ids or []))
+    if rnd.multi_club_mode and group_label:
+        blocked.update((rnd.group_blocked_targets or {}).get(group_label, []))
+    return list(blocked)
 
 
 def _rank_slots(rnd: ScoringRound) -> list[int]:
@@ -570,6 +617,15 @@ async def _round_out(db: AsyncSession, rnd: ScoringRound) -> RoundOut:
         targets=[TargetOut.model_validate(t) for t in sorted(rnd.targets, key=lambda t: t.order_num)],
         parts=[PartOut.model_validate(p) for p in sorted(rnd.parts, key=lambda p: p.order_num)],
         active_part_id=rnd.active_part_id,
+        rank_form_notice=rnd.rank_form_notice,
+        feedback_form_notice=rnd.feedback_form_notice,
+        restricted_departments=list(rnd.restricted_departments or []),
+        restricted_exception_usernames=list(rnd.restricted_exception_usernames or []),
+        multi_club_mode=rnd.multi_club_mode,
+        external_group_labels=list(rnd.external_group_labels or []),
+        group_blocked_targets=dict(rnd.group_blocked_targets or {}),
+        internal_audience_weight=float(rnd.internal_audience_weight),
+        external_audience_weight=float(rnd.external_audience_weight),
         roster=[RosterOut.model_validate(r) for r in rnd.roster],
         deduction_rules=[
             DeductionRuleOut.model_validate(dr)
@@ -616,7 +672,7 @@ async def _save_submission(
     valid_targets = {t.id for t in rnd.targets}
     valid_criteria = {c.id: float(c.max_score) for c in rnd.criteria}
     valid_areas = {a.id: float(a.max_score) for a in rnd.areas}
-    blocked = set(_blocked_targets(rnd, p.matched_member_id))
+    blocked = set(_blocked_targets(rnd, p.matched_member_id, p.group_label))
 
     for s in body.scores:
         if s.target_id not in valid_targets:
@@ -697,7 +753,7 @@ async def _save_submission(
 @router.get("/rounds", response_model=list[RoundListItem])
 async def list_rounds(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rounds = (await db.execute(
@@ -706,6 +762,18 @@ async def list_rounds(
         .options(selectinload(ScoringRound.targets))
         .order_by(ScoringRound.created_at.desc())
     )).scalars().all()
+
+    # 열람 제한 필터링 — 라운드마다 재조회하지 않고 이 사람의 department를 한 번만 조회
+    if user["role"] != "admin":
+        dept = (await db.execute(
+            select(User.department).where(User.username == user["username"])
+        )).scalar_one_or_none()
+        rounds = [
+            r for r in rounds
+            if not r.restricted_departments
+            or dept not in r.restricted_departments
+            or user["username"] in (r.restricted_exception_usernames or [])
+        ]
 
     out = []
     for r in rounds:
@@ -727,7 +795,7 @@ async def list_rounds(
 async def create_round(
     body: RoundCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     if body.session_id is not None:
@@ -763,10 +831,11 @@ async def create_round(
 async def get_round(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     return await _round_out(db, rnd)
 
 
@@ -775,10 +844,11 @@ async def update_round(
     round_id: int,
     body: RoundUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     data = body.model_dump(exclude_unset=True)
 
     if "rank_points" in data and data["rank_points"] is not None:
@@ -823,10 +893,11 @@ async def update_round(
 async def delete_round(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     await db.delete(rnd)
     await db.commit()
 
@@ -835,10 +906,11 @@ async def delete_round(
 async def open_round(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     if not rnd.areas and not rnd.criteria:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "심사 기준을 1개 이상 등록해야 링크를 열 수 있습니다")
     if not rnd.targets:
@@ -856,10 +928,11 @@ async def open_round(
 async def close_round(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     rnd.is_open = False
     rnd.closed_at = datetime.now(timezone.utc)
     await db.commit()
@@ -875,11 +948,12 @@ async def put_criteria(
     round_id: int,
     body: list[CriterionIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """기준 일괄 저장 — id가 있으면 수정, 없으면 신규, 목록에서 빠지면 삭제(점수도 함께 CASCADE)."""
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     existing = {c.id: c for c in rnd.criteria}
     keep: set[int] = set()
 
@@ -909,7 +983,7 @@ async def put_rubric(
     round_id: int,
     body: RubricIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """루브릭 일괄 저장 — 영역(세부항목 포함) + 미분류 기준. 목록에서 빠지면 삭제(점수 CASCADE).
@@ -917,6 +991,7 @@ async def put_rubric(
     영역 만점: 세부항목이 있으면 그 합으로 자동 계산, 없으면 area.max_score(영역 통째 채점).
     """
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     existing_areas = {a.id: a for a in rnd.areas}
     existing_crit = {c.id: c for c in rnd.criteria}
     keep_areas: set[int] = set()
@@ -980,7 +1055,7 @@ async def put_parts(
     round_id: int,
     body: list[PartIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """부 일괄 저장 — id가 있으면 이름만 수정, 없으면 신규, 목록에서 빠지면 삭제.
@@ -989,6 +1064,7 @@ async def put_parts(
     DB의 ON DELETE SET NULL로 자동 해제된다 — 별도 정리 코드가 필요 없다.
     """
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     existing = {p.id: p for p in rnd.parts}
     keep: set[int] = set()
 
@@ -1059,10 +1135,11 @@ async def import_session_teams(
     round_id: int,
     session_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     await _import_session_teams(db, rnd, session_id, cohort_id)
     rnd.session_id = session_id
     await db.commit()
@@ -1076,11 +1153,12 @@ async def put_targets(
     round_id: int,
     body: list[TargetIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """대상 일괄 저장 (독립 이벤트 모드에서 직접 입력)."""
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     existing = {t.id: t for t in rnd.targets}
     valid_parts = {p.id for p in rnd.parts}
     keep: set[int] = set()
@@ -1113,10 +1191,11 @@ async def put_roster(
     round_id: int,
     body: list[RosterIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     existing = {r.id: r for r in rnd.roster}
     keep: set[int] = set()
 
@@ -1147,7 +1226,7 @@ async def import_cohort_members(
     role: str = Query("OBSERVER", pattern=r"^(JUDGE|OBSERVER|ANY)$"),
     group_label: str | None = Query(None, max_length=30),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """기수 멤버를 명단에 추가. group_label로 소그룹을 한 번에 태깅한다.
@@ -1157,6 +1236,7 @@ async def import_cohort_members(
     → 규칙: 나중에 누른 임포트가 이긴다.
     """
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     by_member = {r.member_id: r for r in rnd.roster if r.member_id is not None}
     by_name = {_norm(r.name): r for r in rnd.roster}
 
@@ -1188,7 +1268,7 @@ async def import_staff(
     role: str = Query("OBSERVER", pattern=r"^(JUDGE|OBSERVER|ANY)$"),
     group_label: str | None = Query(None, max_length=30),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """운영진(User)을 명단에 추가. 이미 같은 이름이 있으면 **이번 그룹으로 갱신**한다.
@@ -1198,6 +1278,7 @@ async def import_staff(
     (member_id는 건드리지 않는다. 그 사람이 기수원이면 자기팀 제외 판정은 그대로 유지되어야 하므로.)
     """
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     by_name = {_norm(r.name): r for r in rnd.roster}
 
     staff = (await db.execute(
@@ -1232,10 +1313,11 @@ async def import_staff(
 async def list_participants(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     parts = (await db.execute(
         select(ScoringParticipant)
         .where(ScoringParticipant.round_id == round_id)
@@ -1282,7 +1364,7 @@ async def patch_participant(
     participant_id: int,
     body: ParticipantPatch,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """이름 매칭 수동 보정 — 오타로 들어온 제출을 올바른 명단 항목에 연결."""
@@ -1290,6 +1372,7 @@ async def patch_participant(
     if p is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "제출자를 찾을 수 없습니다")
     rnd = await _get_round_or_404(p.round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
 
     data = body.model_dump(exclude_unset=True)
     if "matched_roster_id" in data:
@@ -1322,13 +1405,14 @@ async def patch_participant(
 async def delete_participant(
     participant_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     p = await db.get(ScoringParticipant, participant_id)
     if p is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "제출자를 찾을 수 없습니다")
-    await _get_round_or_404(p.round_id, db, cohort_id)  # cohort 검증
+    rnd = await _get_round_or_404(p.round_id, db, cohort_id)  # cohort 검증
+    await _check_round_access(rnd, user, db)
     round_id = p.round_id
     await db.delete(p)
     await db.commit()
@@ -1339,7 +1423,7 @@ async def delete_participant(
 async def get_participant_submission(
     participant_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """운영진이 대리 수정하기 전에 기존 제출분을 불러온다."""
@@ -1347,13 +1431,14 @@ async def get_participant_submission(
     if p is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "제출자를 찾을 수 없습니다")
     rnd = await _get_round_or_404(p.round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     scores, ranks, comments = await _load_submission(db, p)
     return MySubmission(
         participant_token=p.token, role=p.role, entered_name=p.entered_name,
         group_label=p.group_label,
         submitted=p.submitted_at is not None,
         scores=scores, ranks=ranks, comments=comments,
-        blocked_target_ids=_blocked_targets(rnd, p.matched_member_id),
+        blocked_target_ids=_blocked_targets(rnd, p.matched_member_id, p.group_label),
     )
 
 
@@ -1370,6 +1455,7 @@ async def proxy_submit(
     닫힌 라운드에서도 허용한다 (마감 후 정리 입력이 실제 운영 흐름).
     """
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
 
     if body.participant_id is not None:
         p = await db.get(ScoringParticipant, body.participant_id)
@@ -1415,11 +1501,12 @@ async def put_deduction_rules(
     round_id: int,
     body: list[DeductionRuleIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """감점 규정 일괄 저장. 규정이 바뀌면 관련 팀 감점을 규정 config로 재계산한다."""
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     existing = {r.id: r for r in rnd.deduction_rules}
     keep: set[int] = set()
 
@@ -1468,10 +1555,11 @@ async def _recompute_deductions(db: AsyncSession, round_id: int) -> None:
 async def get_deductions(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     dedns = (await db.execute(
         select(ScoringDeduction).where(ScoringDeduction.round_id == round_id)
     )).scalars().all()
@@ -1491,11 +1579,12 @@ async def put_deductions(
     round_id: int,
     body: list[DeductionIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """팀별 감점 입력 일괄 저장 (전체 교체). 서버가 규정 config로 points·disqualified 계산."""
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     valid_targets = {t.id for t in rnd.targets}
     rules = {r.id: r for r in rnd.deduction_rules}
 
@@ -1511,7 +1600,7 @@ async def put_deductions(
 
     await db.commit()
     await manager.broadcast(round_id, {"type": "submission.changed"})
-    return await get_deductions(round_id, db, _, cohort_id)
+    return await get_deductions(round_id, db, user, cohort_id)
 
 
 # ── 운영진: 결과 집계 ─────────────────────────────────────────────────────────
@@ -1522,7 +1611,7 @@ async def get_results(
     role: str = Query("ALL", pattern=r"^(ALL|JUDGE|OBSERVER)$"),
     groups: str | None = Query(None, description="참관위원 소그룹 필터 (콤마 구분). 비우면 전체."),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """집계 결과. role/groups로 부분집합만 골라 **다시 집계**한다.
@@ -1531,6 +1620,7 @@ async def get_results(
     이때 심사위원 몫은 0점이 되므로, 총점은 그 그룹의 비중(참관위원 비중) 기준으로 읽어야 한다.
     """
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
 
     parts = (await db.execute(
         select(ScoringParticipant).where(ScoringParticipant.round_id == round_id)
@@ -1596,13 +1686,21 @@ async def get_results(
             for a in areas
         ],
         target_ids=[t.id for t in targets],
-        participants=[ParticipantLite(id=p.id, role=p.role, name=p.entered_name) for p in submitted],
+        participants=[
+            ParticipantLite(id=p.id, role=p.role, name=p.entered_name, group_label=p.group_label)
+            for p in submitted
+        ],
         scores=[ScoreLite(participant_id=s.participant_id, target_id=s.target_id,
                           criterion_id=s.criterion_id, area_id=s.area_id, score=float(s.score))
                 for s in scores],
         ranks=[RankLite(participant_id=r.participant_id, target_id=r.target_id, rank=r.rank) for r in ranks],
         deductions=deduction_by_target,
         disqualified=disqualified,
+        multi_club=rnd.multi_club_mode,
+        group_blocked_targets=rnd.group_blocked_targets or {},
+        external_group_labels=rnd.external_group_labels or [],
+        internal_audience_weight=float(rnd.internal_audience_weight),
+        external_audience_weight=float(rnd.external_audience_weight),
     )
 
     name_by_id = {t.id: _tname(t) for t in targets}
@@ -1635,6 +1733,11 @@ async def get_results(
             area_avg=r.area_avg,
             rank_votes=r.rank_votes,
             comments=comments_by_target.get(r.target_id, []),
+            internal_audience_ratio=r.internal_audience_ratio,
+            external_audience_ratio=r.external_audience_ratio,
+            audience_award_score=r.audience_award_score,
+            audience_award_total=r.audience_award_total,
+            audience_award_rank=r.audience_award_rank if r.audience_award_total is not None else None,
         )
         for r in computed
     ]
@@ -1687,7 +1790,7 @@ async def get_results(
 async def export_results_excel(
     round_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_scoring_staff),
+    user: dict = Depends(require_scoring_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """심사 결과 Excel 다운로드 — 결과/심사위원별/상세점수/피드백/제출현황 5개 시트."""
@@ -1698,6 +1801,7 @@ async def export_results_excel(
     from app.services.scoring_excel import generate_scoring_excel
 
     rnd = await _get_round_or_404(round_id, db, cohort_id)
+    await _check_round_access(rnd, user, db)
     buf = await generate_scoring_excel(db, rnd)
 
     filename = f"심사결과_{rnd.name}.xlsx"
@@ -1766,6 +1870,8 @@ async def public_get_round(
         ],
         parts=[PublicPart(id=p.id, label=p.label) for p in sorted(rnd.parts, key=lambda p: p.order_num)],
         active_part_id=rnd.active_part_id,
+        rank_form_notice=rnd.rank_form_notice,
+        feedback_form_notice=rnd.feedback_form_notice,
     )
 
 
@@ -1836,7 +1942,7 @@ async def public_identify(
             group_label=existing.group_label,
             submitted=existing.submitted_at is not None,
             scores=scores, ranks=ranks, comments=comments,
-            blocked_target_ids=_blocked_targets(rnd, existing.matched_member_id),
+            blocked_target_ids=_blocked_targets(rnd, existing.matched_member_id, existing.group_label),
         )
 
     entry = entry_for_name
@@ -1861,7 +1967,7 @@ async def public_identify(
         entered_name=p.entered_name,
         group_label=p.group_label,
         submitted=False,
-        blocked_target_ids=_blocked_targets(rnd, p.matched_member_id),
+        blocked_target_ids=_blocked_targets(rnd, p.matched_member_id, p.group_label),
     )
 
 
@@ -1891,7 +1997,7 @@ async def public_get_me(
         group_label=p.group_label,
         submitted=p.submitted_at is not None,
         scores=scores, ranks=ranks, comments=comments,
-        blocked_target_ids=_blocked_targets(rnd, p.matched_member_id),
+        blocked_target_ids=_blocked_targets(rnd, p.matched_member_id, p.group_label),
     )
 
 
@@ -1952,7 +2058,7 @@ async def public_submit(
     # feedback_only(피드백 전용 링크)에서 온 제출에만 강제한다 — 순위 링크엔 입력칸이 없다.
     if body.feedback_only and rnd.require_feedback and p.role == "OBSERVER" and rnd.observer_mode == "RANK":
         commented = {c.target_id for c in body.comments if c.criterion_id is None and c.body.strip()}
-        blocked = set(_blocked_targets(rnd, p.matched_member_id))
+        blocked = set(_blocked_targets(rnd, p.matched_member_id, p.group_label))
         missing = [t for t in rnd.targets if t.id not in commented and t.id not in blocked]
         if missing:
             raise HTTPException(

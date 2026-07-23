@@ -104,6 +104,7 @@ export function ScoringResults({ round, connected }: { round: ScoringRound; conn
             ) : (
                 <>
                     <RankTable data={data} round={round} />
+                    {round.multi_club_mode && <AudienceAwardTable data={data} />}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                         <TotalChart data={data} />
                         <CriteriaRadar data={data} round={round} />
@@ -308,6 +309,59 @@ function RankTable({ data, round }: { data: Results; round: ScoringRound }) {
                                         {c.get(r)}
                                     </TableCell>
                                 ))}
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </div>
+        </section>
+    );
+}
+
+/**
+ * 청중상 순위 — 심사위원 점수 없이 내부(동아리별 정규화)+외부 청중만으로 다시 낸 별도 순위.
+ * 종합 순위(RankTable)와 독립적이므로 1위 팀이 서로 다를 수 있다.
+ */
+function AudienceAwardTable({ data }: { data: Results }) {
+    const rows = [...data.results]
+        .filter((r) => r.audience_award_total != null)
+        .sort((a, b) => (a.audience_award_rank ?? 0) - (b.audience_award_rank ?? 0));
+    if (rows.length === 0) return null;
+    return (
+        <section className="rounded-xl border border-[var(--color-border-subtle)] bg-white overflow-hidden">
+            <div className="px-5 py-3 border-b border-[var(--color-border-subtle)]">
+                <h2 className="font-bold text-[var(--color-text-primary)]">청중상 순위</h2>
+                <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                    심사위원 점수 없이 내부 청중(동아리별 정규화) + 외부 청중만으로 별도 집계 — 위 종합 순위와 무관합니다.
+                </p>
+            </div>
+            <div className="overflow-x-auto">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-14">순위</TableHead>
+                            <TableHead>팀</TableHead>
+                            <TableHead className="text-right">내부 청중</TableHead>
+                            <TableHead className="text-right">외부 청중</TableHead>
+                            <TableHead className="text-right">청중상 점수</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {rows.map((r) => (
+                            <TableRow key={r.target_id} className={cn(r.audience_award_rank === 1 ? "bg-amber-50/60" : undefined)}>
+                                <TableCell className="font-bold">
+                                    {r.audience_award_rank === 1 ? "🥇" : r.audience_award_rank === 2 ? "🥈" : r.audience_award_rank === 3 ? "🥉" : r.audience_award_rank}
+                                </TableCell>
+                                <TableCell className="font-semibold">{r.name}</TableCell>
+                                <TableCell className="text-right text-[var(--color-text-secondary)]">
+                                    {r.internal_audience_ratio != null ? `${Math.round(r.internal_audience_ratio * 100)}%` : "-"}
+                                </TableCell>
+                                <TableCell className="text-right text-[var(--color-text-secondary)]">
+                                    {r.external_audience_ratio != null ? `${Math.round(r.external_audience_ratio * 100)}%` : "-"}
+                                </TableCell>
+                                <TableCell className="text-right font-bold text-[var(--color-accent)]">
+                                    {r.audience_award_total}
+                                </TableCell>
                             </TableRow>
                         ))}
                     </TableBody>

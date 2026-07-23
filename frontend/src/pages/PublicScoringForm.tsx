@@ -35,6 +35,8 @@ interface PublicRound {
     targets: { id: number; name: string; part_id?: number | null; members: string[] }[];
     parts: { id: number; label: string }[];
     active_part_id?: number | null;
+    rank_form_notice?: string | null;
+    feedback_form_notice?: string | null;
 }
 
 type Stage = "intro" | "sheet" | "done";
@@ -533,6 +535,24 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
                     )}
                 </div>
             </header>
+
+            {role === "OBSERVER" && (() => {
+                const notice = feedbackOnly ? round.feedback_form_notice : (round.observer_mode === "RANK" ? round.rank_form_notice : null);
+                if (!notice) return null;
+                return (
+                    <div className="max-w-2xl mx-auto px-4 pt-4">
+                        <div className="p-4 rounded-lg bg-[var(--color-hover)] text-left">
+                            <div className="flex items-center gap-1.5 mb-2 text-[var(--color-text-secondary)]">
+                                <Info className="w-3.5 h-3.5" />
+                                <span className="text-xs font-bold">안내</span>
+                            </div>
+                            <p className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap leading-relaxed">
+                                {notice}
+                            </p>
+                        </div>
+                    </div>
+                );
+            })()}
 
             <main className="max-w-2xl mx-auto px-4 py-5">
                 <ScoreSheet

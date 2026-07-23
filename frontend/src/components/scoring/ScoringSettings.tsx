@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
     AlertCircle, ChevronRight, CloudOff, Download, GripVertical, Loader2, Minus, Plus, RotateCcw,
     Save, Search, Shield, Star, Trash2, UserPlus, X,
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import api from "@/lib/api";
 import { useSessions } from "@/hooks/useSessions";
 import {
     useImportMembers, useImportSessionTeams, useImportStaff, useSaveDeductionRules, useSaveParts,
@@ -53,6 +55,7 @@ export function ScoringSettings({ round }: { round: ScoringRound }) {
                     <TargetsPanel round={round} />
                     <RosterPanel round={round} />
                     <DeductionRulesPanel round={round} />
+                    <AccessPanel round={round} />
                 </div>
             )}
         </AutosaveProvider>
@@ -152,8 +155,17 @@ function WeightPanel({ round }: { round: ScoringRound }) {
     const [excludeOwn, setExcludeOwn] = useState(round.exclude_own_team);
     const [requireFeedback, setRequireFeedback] = useState(round.require_feedback);
     const [intro, setIntro] = useState(round.intro ?? "");
+    const [rankNotice, setRankNotice] = useState(round.rank_form_notice ?? "");
+    const [feedbackNotice, setFeedbackNotice] = useState(round.feedback_form_notice ?? "");
     const [groups, setGroups] = useState<string[]>(round.observer_groups ?? []);
     const [newGroup, setNewGroup] = useState("");
+    const [multiClub, setMultiClub] = useState(round.multi_club_mode);
+    const [extLabels, setExtLabels] = useState<string[]>(round.external_group_labels ?? []);
+    const [blockedByGroup, setBlockedByGroup] = useState<Record<string, number[]>>(
+        round.group_blocked_targets ?? {},
+    );
+    const [internalW, setInternalW] = useState(String(round.internal_audience_weight));
+    const [externalW, setExternalW] = useState(String(round.external_audience_weight));
 
     const draft = {
         judge_weight: Number(judge),
@@ -164,6 +176,13 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         require_feedback: requireFeedback,
         observer_groups: groups,
         intro,
+        rank_form_notice: rankNotice,
+        feedback_form_notice: feedbackNotice,
+        multi_club_mode: multiClub,
+        external_group_labels: extLabels,
+        group_blocked_targets: blockedByGroup,
+        internal_audience_weight: Number(internalW),
+        external_audience_weight: Number(externalW),
     };
     const serverDraft = {
         judge_weight: Number(round.judge_weight),
@@ -174,6 +193,13 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         require_feedback: round.require_feedback,
         observer_groups: round.observer_groups ?? [],
         intro: round.intro ?? "",
+        rank_form_notice: round.rank_form_notice ?? "",
+        feedback_form_notice: round.feedback_form_notice ?? "",
+        multi_club_mode: round.multi_club_mode,
+        external_group_labels: round.external_group_labels ?? [],
+        group_blocked_targets: round.group_blocked_targets ?? {},
+        internal_audience_weight: Number(round.internal_audience_weight),
+        external_audience_weight: Number(round.external_audience_weight),
     };
 
     const weightSum = Number(judge) + Number(observer);
@@ -198,7 +224,14 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         setExcludeOwn(round.exclude_own_team);
         setRequireFeedback(round.require_feedback);
         setIntro(round.intro ?? "");
+        setRankNotice(round.rank_form_notice ?? "");
+        setFeedbackNotice(round.feedback_form_notice ?? "");
         setGroups(round.observer_groups ?? []);
+        setMultiClub(round.multi_club_mode);
+        setExtLabels(round.external_group_labels ?? []);
+        setBlockedByGroup(round.group_blocked_targets ?? {});
+        setInternalW(String(round.internal_audience_weight));
+        setExternalW(String(round.external_audience_weight));
         acceptServer(serverDraft);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [round]);
@@ -208,6 +241,23 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         if (!g || groups.includes(g)) return;
         setGroups([...groups, g]);
         setNewGroup("");
+    };
+
+    const removeGroup = (g: string) => {
+        setGroups(groups.filter((x) => x !== g));
+        setExtLabels(extLabels.filter((x) => x !== g));
+        const { [g]: _removed, ...rest } = blockedByGroup;
+        setBlockedByGroup(rest);
+    };
+
+    const toggleExternal = (g: string) => {
+        setExtLabels(extLabels.includes(g) ? extLabels.filter((x) => x !== g) : [...extLabels, g]);
+    };
+
+    const toggleBlockedTarget = (g: string, targetId: number) => {
+        const cur = blockedByGroup[g] ?? [];
+        const next = cur.includes(targetId) ? cur.filter((x) => x !== targetId) : [...cur, targetId];
+        setBlockedByGroup({ ...blockedByGroup, [g]: next });
     };
 
     // 총점은 항상 100 — 한쪽을 바꾸면 다른 쪽이 자동으로 보정된다.
@@ -391,7 +441,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                             <button
                                 type="button"
                                 className="p-0.5 rounded-full hover:bg-rose-50 text-[var(--color-text-muted)] hover:text-rose-500"
-                                onClick={() => setGroups(groups.filter((x) => x !== g))}
+                                onClick={() => removeGroup(g)}
                             >
                                 <X className="w-3 h-3" />
                             </button>
@@ -420,6 +470,88 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                         <Plus className="w-4 h-4 mr-1" /> 추가
                     </Button>
                 </div>
+
+                <label className="flex items-center gap-2 cursor-pointer pt-3 border-t border-[var(--color-border-subtle)]">
+                    <Checkbox checked={multiClub} onCheckedChange={(v) => setMultiClub(!!v)} />
+                    <span className="text-sm text-[var(--color-text-primary)]">다동아리 모드</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">
+                        (여러 동아리가 함께 참가하는 연합 이벤트용 — 소그룹별로 "외부 여부"·"투표 불가 팀"을 지정합니다)
+                    </span>
+                </label>
+
+                {multiClub && (
+                    <div className="space-y-3 pt-1">
+                        {groups.length === 0 ? (
+                            <p className="text-xs text-amber-700">
+                                먼저 위에서 동아리 이름 + "외부"를 소그룹으로 추가하세요.
+                            </p>
+                        ) : (
+                            groups.map((g) => {
+                                const isExt = extLabels.includes(g);
+                                const blocked = blockedByGroup[g] ?? [];
+                                return (
+                                    <div key={g} className="p-3 rounded-lg bg-white border border-[var(--color-border-subtle)] space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-bold">{g}</span>
+                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                                <Checkbox checked={isExt} onCheckedChange={() => toggleExternal(g)} />
+                                                <span className="text-xs text-[var(--color-text-secondary)]">외부 청중</span>
+                                            </label>
+                                        </div>
+                                        {!isExt && (
+                                            <div className="space-y-1">
+                                                <p className="text-xs text-[var(--color-text-muted)]">
+                                                    이 소그룹이 투표할 수 없는 팀 (= 이 동아리 소속 팀)
+                                                </p>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {round.targets.map((t) => {
+                                                        const checked = blocked.includes(t.id);
+                                                        return (
+                                                            <button
+                                                                key={t.id}
+                                                                type="button"
+                                                                onClick={() => toggleBlockedTarget(g, t.id)}
+                                                                className={cn(
+                                                                    "px-2 py-1 rounded-full text-xs border",
+                                                                    checked
+                                                                        ? "bg-rose-50 border-rose-300 text-rose-700"
+                                                                        : "bg-white border-[var(--color-border-subtle)] text-[var(--color-text-secondary)]",
+                                                                )}
+                                                            >
+                                                                {t.display_name || t.name}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                            <div className="space-y-1">
+                                <Label className="text-xs text-[var(--color-text-secondary)]">청중상 — 내부 비중</Label>
+                                <Input
+                                    type="number" min={0} max={100} value={internalW}
+                                    onChange={(e) => setInternalW(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-xs text-[var(--color-text-secondary)]">청중상 — 외부 비중</Label>
+                                <Input
+                                    type="number" min={0} max={100} value={externalW}
+                                    onChange={(e) => setExternalW(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                            대상/최우수/우수상 = 심사위원 {judge}% + 내부 청중 {observer}%(동아리별 정규화).
+                            청중상은 심사위원 없이 내부 청중 {internalW}% + 외부 청중 {externalW}%로 별도 집계합니다.
+                        </p>
+                    </div>
+                )}
             </div>
 
             <label className="flex items-center gap-2 cursor-pointer">
@@ -449,6 +581,30 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                 />
                 <p className="text-xs text-[var(--color-text-muted)]">
                     공개 폼 첫 화면에 그대로 보입니다. 수정 방법 안내가 기본으로 들어 있습니다.
+                </p>
+            </div>
+
+            <div className="space-y-2">
+                <Label>순위 투표폼 안내문</Label>
+                <textarea
+                    className="w-full min-h-[100px] px-3 py-2 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm resize-y"
+                    value={rankNotice}
+                    onChange={(e) => setRankNotice(e.target.value)}
+                />
+                <p className="text-xs text-[var(--color-text-muted)]">
+                    청중이 순위를 투표하는 화면 상단에 그대로 보입니다.
+                </p>
+            </div>
+
+            <div className="space-y-2">
+                <Label>피드백 투표폼 안내문</Label>
+                <textarea
+                    className="w-full min-h-[100px] px-3 py-2 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm resize-y"
+                    value={feedbackNotice}
+                    onChange={(e) => setFeedbackNotice(e.target.value)}
+                />
+                <p className="text-xs text-[var(--color-text-muted)]">
+                    청중 피드백 전용 링크 화면 상단에 그대로 보입니다.
                 </p>
             </div>
         </Panel>
@@ -1513,6 +1669,105 @@ function GroupSelect({
                 </option>
             ))}
         </select>
+    );
+}
+
+// ── 열람 제한 ────────────────────────────────────────────────────────────────
+
+const RESTRICT_DEPARTMENTS = ["회장단", "인홍부", "학술부", "기획부", "총무부"] as const;
+
+function AccessPanel({ round }: { round: ScoringRound }) {
+    const update = useUpdateRound(round.id);
+    const [depts, setDepts] = useState<string[]>(round.restricted_departments ?? []);
+    const [exceptions, setExceptions] = useState<string[]>(round.restricted_exception_usernames ?? []);
+
+    const { data: staff = [] } = useQuery({
+        queryKey: ["staff-list"],
+        queryFn: async () => {
+            const { data } = await api.get<{ id: number; username: string; display_name: string; department: string | null }[]>(
+                "/auth/staff-list",
+            );
+            return data;
+        },
+    });
+
+    const draft = { restricted_departments: depts, restricted_exception_usernames: exceptions };
+    const serverDraft = {
+        restricted_departments: round.restricted_departments ?? [],
+        restricted_exception_usernames: round.restricted_exception_usernames ?? [],
+    };
+
+    const { isDirty, acceptServer } = useAutosave({
+        id: "access",
+        value: draft,
+        canSave: () => true,
+        save: (v) => update.mutateAsync(v),
+        serverValue: serverDraft,
+    });
+
+    useEffect(() => {
+        if (isDirty) return;
+        setDepts(round.restricted_departments ?? []);
+        setExceptions(round.restricted_exception_usernames ?? []);
+        acceptServer(serverDraft);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [round]);
+
+    const toggleDept = (d: string) => {
+        setDepts(depts.includes(d) ? depts.filter((x) => x !== d) : [...depts, d]);
+    };
+    const toggleException = (username: string) => {
+        setExceptions(exceptions.includes(username) ? exceptions.filter((x) => x !== username) : [...exceptions, username]);
+    };
+
+    return (
+        <Panel title="열람 제한" subtitle="특정 부서 운영진이 이 라운드의 심사/채점 페이지를 볼 수 없게 합니다. 공개 링크(심사위원·청중)는 영향 없습니다.">
+            <div className="space-y-2">
+                <Label>열람 불가 부서</Label>
+                <div className="flex flex-wrap gap-2">
+                    {RESTRICT_DEPARTMENTS.map((d) => (
+                        <label
+                            key={d}
+                            className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 rounded-full border cursor-pointer text-sm",
+                                depts.includes(d)
+                                    ? "bg-rose-50 border-rose-300 text-rose-700"
+                                    : "bg-white border-[var(--color-border-subtle)]",
+                            )}
+                        >
+                            <Checkbox checked={depts.includes(d)} onCheckedChange={() => toggleDept(d)} />
+                            {d}
+                        </label>
+                    ))}
+                </div>
+            </div>
+
+            {depts.length > 0 && (
+                <div className="space-y-2">
+                    <Label>예외 계정 (제한 부서 소속이어도 열람 허용)</Label>
+                    <div className="flex flex-wrap gap-2">
+                        {staff.map((u) => (
+                            <label
+                                key={u.id}
+                                className={cn(
+                                    "flex items-center gap-1.5 px-3 py-1.5 rounded-full border cursor-pointer text-sm",
+                                    exceptions.includes(u.username)
+                                        ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+                                        : "bg-white border-[var(--color-border-subtle)]",
+                                )}
+                            >
+                                <Checkbox
+                                    checked={exceptions.includes(u.username)}
+                                    onCheckedChange={() => toggleException(u.username)}
+                                />
+                                {u.display_name}
+                                {u.department && <span className="text-xs text-[var(--color-text-muted)]">({u.department})</span>}
+                            </label>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </Panel>
     );
 }
 

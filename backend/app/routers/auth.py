@@ -524,7 +524,7 @@ async def list_staff(
         select(User).where(User.is_active == True, User.cohort_id == cohort_id).order_by(User.id)
     )
     return [
-        {"id": u.id, "display_name": u.display_name, "department": u.department}
+        {"id": u.id, "username": u.username, "display_name": u.display_name, "department": u.department}
         for u in result.scalars().all()
     ]
 

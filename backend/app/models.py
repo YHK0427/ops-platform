@@ -632,6 +632,28 @@ class ScoringRound(Base):
     # 부가 삭제되면 DB가 자동으로 NULL로 되돌린다(ondelete=SET NULL).
     active_part_id = Column(Integer, ForeignKey("scoring_parts.id", ondelete="SET NULL"), nullable=True)
 
+    # 순위/피드백 투표폼(sheet 화면) 상단에 보여줄 안내문. intro와 달리 역할 선택 뒤에도 계속 보인다.
+    rank_form_notice = Column(Text, nullable=True)
+    feedback_form_notice = Column(Text, nullable=True)
+
+    # 이 라운드를 열람할 수 없는 부서 목록(운영진 관리 화면 한정, 공개 링크는 무관). 예: ["회장단"]
+    restricted_departments = Column(JSONB, nullable=True)
+    # restricted_departments에 걸려도 예외로 열람 허용할 계정(username) 목록
+    restricted_exception_usernames = Column(JSONB, nullable=True)
+
+    # 다동아리 연합 이벤트 전용 — 청중 소그룹(observer_groups)을 그대로 "동아리" 축으로 재사용한다.
+    # "부"(ScoringPart)와는 무관 — 그건 순수 타임라인 페이징이고 이 필드들은 절대 건드리지 않는다.
+    multi_club_mode = Column(Boolean, nullable=False, server_default="false")
+    # observer_groups 중 "외부 청중"으로 분류된 라벨들(복수 가능, 계산 시 전부 합쳐 단일 풀로 취급).
+    # 여기 없는 라벨은 전부 "내부"로 취급.
+    external_group_labels = Column(JSONB, nullable=True)
+    # 소그룹 라벨 → 그 소그룹이 투표할 수 없는 target_id 목록. 예: {"유니브피티": [13,14,15]}
+    # = 그 팀들이 유니브피티 소속이라는 뜻을 데이터로 표현하는 것 — 팀에 별도 "동아리" 필드는 없다.
+    group_blocked_targets = Column(JSONB, nullable=True)
+    # 청중상(내부+외부 청중 100%) 산정 시 내부/외부 비중 — 합 100 기준(권장, 강제 아님)
+    internal_audience_weight = Column(Numeric(6, 2), nullable=False, server_default="50")
+    external_audience_weight = Column(Numeric(6, 2), nullable=False, server_default="50")
+
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
