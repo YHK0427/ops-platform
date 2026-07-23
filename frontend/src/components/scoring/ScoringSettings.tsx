@@ -166,6 +166,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
     );
     const [internalW, setInternalW] = useState(String(round.internal_audience_weight));
     const [externalW, setExternalW] = useState(String(round.external_audience_weight));
+    const [showCalcInfo, setShowCalcInfo] = useState(false);
 
     const draft = {
         judge_weight: Number(judge),
@@ -550,6 +551,64 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                             대상/최우수/우수상 = 심사위원 {judge}% + 내부 청중 {observer}%(동아리별 정규화).
                             청중상은 심사위원 없이 내부 청중 {internalW}% + 외부 청중 {externalW}%로 별도 집계합니다.
                         </p>
+
+                        <button
+                            type="button"
+                            onClick={() => setShowCalcInfo((v) => !v)}
+                            className="flex items-center gap-1 text-xs font-medium text-[var(--color-accent)]"
+                        >
+                            <ChevronRight className={cn("w-3.5 h-3.5 transition-transform", showCalcInfo && "rotate-90")} />
+                            계산 방식 자세히 보기
+                        </button>
+
+                        {showCalcInfo && (
+                            <div className="p-4 rounded-lg bg-white border border-[var(--color-border-subtle)] space-y-3 text-xs text-[var(--color-text-secondary)] leading-relaxed">
+                                <p>
+                                    동아리마다 내부 청중 인원수가 달라도(예: 5명/4명/6명) 공평하게 반영되도록,
+                                    "몇 명이 투표했는지"가 아니라 <b>"그 동아리 안에서 얼마나 높게 평가받았는지"</b>를 봅니다.
+                                </p>
+                                <div>
+                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">1단계 — 순위 투표를 점수로 환산</p>
+                                    <p>
+                                        청중이 고른 등수를 위 "등수 가중치" 점수표로 바꿉니다(예: 1위 {rankPts.find((p) => p.rank === 1)?.points ?? 0}점,
+                                        2위 {rankPts.find((p) => p.rank === 2)?.points ?? 0}점…). 투표 안 한 팀은 0점입니다.
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">2단계 — 동아리 안에서 비율로 환산</p>
+                                    <p>
+                                        한 동아리 청중 전원이 그 팀에 준 점수 합계를, "전원이 1위를 줬을 경우의 최고점(인원수 × 1위 점수)"으로
+                                        나눕니다. 인원수가 몇 명이든 항상 0~100%로 맞춰집니다.
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">3단계 — 내부 청중 비율 = 다른 동아리들 평균</p>
+                                    <p>
+                                        한 팀은 자기 동아리 청중에게는 투표를 못 받으므로(자기 동아리 투표 자체가 막힘), 나머지 내부
+                                        동아리들의 그룹 비율만 남고, 이걸 <b>동아리 개수로 단순 평균</b>냅니다 — 동아리 인원이 몇 명이든
+                                        평균에서는 "동아리 1개 = 1표"로 동일하게 취급됩니다.
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">4단계 — 외부 청중 비율 = 단일 풀</p>
+                                    <p>
+                                        외부 청중은 동아리 구분 없이 전체를 하나로 합쳐서 2단계와 같은 방식으로 비율을 한 번만 냅니다.
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">5단계 — 두 가지 상에 다르게 반영</p>
+                                    <p className="font-mono text-[11px] bg-[var(--color-hover)] rounded p-2 mt-1">
+                                        종합 순위(대상/최우수/우수상) = 심사위원 점수 + 내부 청중 비율 × 청중 비중 − 감점<br />
+                                        청중상(별도 순위) = 내부 청중 비율 × 내부 비중 + 외부 청중 비율 × 외부 비중 − 감점
+                                    </p>
+                                    <p className="mt-1">
+                                        같은 "내부 청중 비율"을 재사용하지만, 종합 순위는 심사위원 점수와 합쳐지고 외부 청중은 반영되지
+                                        않는 반면, 청중상은 심사위원 없이 내부+외부 청중만으로 완전히 별도로 계산됩니다 — 그래서 두 순위의
+                                        1위 팀이 서로 다를 수 있습니다.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
