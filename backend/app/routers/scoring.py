@@ -2054,12 +2054,12 @@ async def public_submit(
     if p is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "제출 자격을 확인할 수 없습니다. 이름을 다시 입력해 주세요.")
 
-    # 청중(RANK 모드) 피드백 필수 — 심사위원 총평엔 적용 안 함. 본인 소속팀(채점 제외)은 예외.
+    # 청중(RANK 모드) 피드백 필수 — 심사위원 총평엔 적용 안 함.
+    # 자기 팀/자기 동아리는 "투표"만 제한이고 피드백은 항상 열려 있으므로, 예외 없이 전체 팀에 적용.
     # feedback_only(피드백 전용 링크)에서 온 제출에만 강제한다 — 순위 링크엔 입력칸이 없다.
     if body.feedback_only and rnd.require_feedback and p.role == "OBSERVER" and rnd.observer_mode == "RANK":
         commented = {c.target_id for c in body.comments if c.criterion_id is None and c.body.strip()}
-        blocked = set(_blocked_targets(rnd, p.matched_member_id, p.group_label))
-        missing = [t for t in rnd.targets if t.id not in commented and t.id not in blocked]
+        missing = [t for t in rnd.targets if t.id not in commented]
         if missing:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,

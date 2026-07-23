@@ -235,9 +235,10 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
     // 청중(RANK) 피드백 필수 — 피드백 전용 링크에서만 강제한다. 순위 링크엔 피드백 입력칸이
     // 아예 없으므로 여기서 막으면 순위조차 제출 못 하는 사람이 생긴다. 심사위원 총평엔 적용 안 함.
     // 부는 화면에 뭘 보여줄지만 결정하는 페이징일 뿐이라, 완료 여부는 부와 무관하게 라운드 전체 팀 기준.
+    // 자기 팀/자기 동아리는 "투표"만 제한이고 피드백은 항상 열려 있으므로 예외 없이 전체 팀에 적용.
     const requireFeedback = feedbackOnly && round?.observer_mode === "RANK" && !!round?.require_feedback;
     const missingFeedback = requireFeedback
-        ? (round?.targets ?? []).filter((t) => !blocked.includes(t.id) && !(sheet.comments[ck(t.id, null)] ?? "").trim())
+        ? (round?.targets ?? []).filter((t) => !(sheet.comments[ck(t.id, null)] ?? "").trim())
         : [];
 
     const submit = async () => {

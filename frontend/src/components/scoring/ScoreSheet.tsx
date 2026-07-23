@@ -224,7 +224,8 @@ export function ScoreSheet({
                             <TargetCommentCard
                                 key={t.id}
                                 target={t}
-                                blocked={blocked.has(t.id)}
+                                // 투표(순위)만 자기 팀/자기 동아리 제한 대상이고, 피드백은 항상 열려 있다.
+                                blocked={false}
                                 required={requireFeedback}
                                 value={value.comments[ck(t.id, null)] ?? ""}
                                 onChange={(body) => setComment(t.id, null, body)}
