@@ -304,8 +304,9 @@ def compute_results(
         r.deduction = round(deductions.get(r.target_id, 0.0), ROUND_TO)
         r.disqualified = r.target_id in disqualified
         r.total = round(r.pre_deduction - r.deduction, ROUND_TO)
+        # 청중상은 감점(시간 초과 등 운영 규정 위반) 없이 청중 투표만으로 집계한다 — 실격만 반영.
         if r.audience_award_score is not None:
-            r.audience_award_total = round(r.audience_award_score - r.deduction, ROUND_TO)
+            r.audience_award_total = r.audience_award_score
 
     live = [r for r in results.values() if not r.disqualified]
     dq = [r for r in results.values() if r.disqualified]

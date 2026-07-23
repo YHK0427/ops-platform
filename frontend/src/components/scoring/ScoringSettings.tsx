@@ -599,7 +599,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                                     <p className="font-bold text-[var(--color-text-primary)] mb-1">5단계 — 두 가지 상에 다르게 반영</p>
                                     <p className="font-mono text-[11px] bg-[var(--color-hover)] rounded p-2 mt-1">
                                         종합 순위(대상/최우수/우수상) = 심사위원 점수 + 내부 청중 비율 × 청중 비중 − 감점<br />
-                                        청중상(별도 순위) = 내부 청중 비율 × 내부 비중 + 외부 청중 비율 × 외부 비중 − 감점
+                                        청중상(별도 순위) = 내부 청중 비율 × 내부 비중 + 외부 청중 비율 × 외부 비중 (감점 미반영, 실격만 제외)
                                     </p>
                                     <p className="mt-1">
                                         같은 "내부 청중 비율"을 재사용하지만, 종합 순위는 심사위원 점수와 합쳐지고 외부 청중은 반영되지
