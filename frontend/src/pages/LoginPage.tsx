@@ -6,6 +6,11 @@ import { setMemberToken } from "@/lib/memberApi";
 import { motion } from "framer-motion";
 import { LogIn, ArrowLeft, Shield } from "lucide-react";
 
+interface CohortChoice {
+    id: number;
+    name: string;
+}
+
 export default function LoginPage() {
     const { login, verifyTotp, totpPending, cancelTotp } = useAuth();
     const navigate = useNavigate();
@@ -15,37 +20,73 @@ export default function LoginPage() {
     const [remember, setRemember] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    // 같은 아이디가 여러 기수에 있을 때 보여줄 후보. 고르면 같은 흐름을 cohortId만 채워 재시도한다
+    // (재시도는 기수원/운영진 판단을 처음부터 다시 하므로 어느 쪽이었는지 따로 기억할 필요 없음).
+    const [cohortChoices, setCohortChoices] = useState<CohortChoice[] | null>(null);
+
+    const attemptLogin = async (cohortId?: number) => {
+        // 1) 기수(member) 로그인 먼저 시도 — 인터셉터 우회 위해 raw axios
+        try {
+            const { data } = await axios.post<{
+                access_token: string | null;
+                requires_cohort: boolean;
+                cohort_choices: CohortChoice[] | null;
+            }>(
+                "/api/v1/auth/member-login",
+                { username, password, cohort_id: cohortId ?? null },
+            );
+            if (data.requires_cohort) {
+                setCohortChoices(data.cohort_choices ?? []);
+                return;
+            }
+            setMemberToken(data.access_token!, remember);
+            // 전체 네비게이션 → MemberAuthProvider가 토큰을 읽어 마운트
+            window.location.href = "/member";
+            return;
+        } catch {
+            // 기수 계정이 아니거나 비번 불일치 → 운영진 로그인 시도
+        }
+
+        // 2) 운영진(ops) 로그인 (TOTP 흐름 그대로 재사용)
+        const result = await login(username, password, remember, cohortId);
+        if (result.cohortChoices) {
+            setCohortChoices(result.cohortChoices);
+            return;
+        }
+        if (!result.needsTotp) {
+            navigate("/dashboard", { replace: true });
+        }
+        // needsTotp이면 AuthContext가 totpPending 설정 → TOTP 단계로 전환
+    };
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
         setLoading(true);
         try {
-            // 1) 기수(member) 로그인 먼저 시도 — 인터셉터 우회 위해 raw axios
-            try {
-                const { data } = await axios.post<{ access_token: string }>(
-                    "/api/v1/auth/member-login",
-                    { username, password },
-                );
-                setMemberToken(data.access_token, remember);
-                // 전체 네비게이션 → MemberAuthProvider가 토큰을 읽어 마운트
-                window.location.href = "/member";
-                return;
-            } catch {
-                // 기수 계정이 아니거나 비번 불일치 → 운영진 로그인 시도
-            }
-
-            // 2) 운영진(ops) 로그인 (TOTP 흐름 그대로 재사용)
-            const needsTotp = await login(username, password, remember);
-            if (!needsTotp) {
-                navigate("/dashboard", { replace: true });
-            }
-            // needsTotp이면 AuthContext가 totpPending 설정 → TOTP 단계로 전환
+            await attemptLogin();
         } catch {
             setError("아이디 또는 비밀번호가 올바르지 않습니다.");
         } finally {
             setLoading(false);
         }
+    };
+
+    const handlePickCohort = async (cohortId: number) => {
+        setError(null);
+        setLoading(true);
+        try {
+            await attemptLogin(cohortId);
+        } catch {
+            setError("아이디 또는 비밀번호가 올바르지 않습니다.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCancelCohort = () => {
+        setCohortChoices(null);
+        setError(null);
     };
 
     const handleTotp = async (e: React.FormEvent) => {
@@ -89,7 +130,38 @@ export default function LoginPage() {
                             </h1>
                         </div>
 
-                        {totpPending ? (
+                        {cohortChoices ? (
+                            /* 같은 아이디가 여러 기수에 있음 — 고르면 바로 로그인(추가 확인 버튼 없음) */
+                            <div className="space-y-3">
+                                <p className="text-sm text-[var(--color-text-secondary)] text-center">
+                                    같은 아이디가 여러 기수에 있어요.<br />어느 기수인가요?
+                                </p>
+                                <div className="space-y-2">
+                                    {cohortChoices.map((c) => (
+                                        <button
+                                            key={c.id}
+                                            type="button"
+                                            disabled={loading}
+                                            onClick={() => handlePickCohort(c.id)}
+                                            className="w-full px-4 py-3 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-text-primary)] text-sm font-semibold hover:border-[var(--color-accent)] hover:bg-[var(--color-accent)]/5 transition-all disabled:opacity-50"
+                                        >
+                                            {c.name}
+                                        </button>
+                                    ))}
+                                </div>
+                                {error && (
+                                    <p className="text-xs text-rose-500 text-center">{error}</p>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={handleCancelCohort}
+                                    className="w-full flex items-center justify-center gap-2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors py-2"
+                                >
+                                    <ArrowLeft className="w-3 h-3" />
+                                    돌아가기
+                                </button>
+                            </div>
+                        ) : totpPending ? (
                             /* TOTP Step */
                             <form onSubmit={handleTotp} className="space-y-4">
                                 <div className="flex items-center justify-center gap-2 py-2">

@@ -24,11 +24,21 @@ interface TotpPending {
     token: string;
 }
 
+interface CohortChoice {
+    id: number;
+    name: string;
+}
+
+interface LoginResult {
+    needsTotp: boolean;
+    cohortChoices: CohortChoice[] | null; // 있으면 같은 아이디가 여러 기수에 존재 — 기수 선택 후 재로그인 필요
+}
+
 interface AuthContextValue {
     user: AuthUser | null;
     isLoading: boolean;
     totpPending: TotpPending | null;
-    login: (username: string, password: string, remember?: boolean) => Promise<boolean>; // returns true if TOTP needed
+    login: (username: string, password: string, remember?: boolean, cohortId?: number) => Promise<LoginResult>;
     verifyTotp: (code: string) => Promise<void>;
     cancelTotp: () => void;
     logout: () => void;
@@ -59,12 +69,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .finally(() => setIsLoading(false));
     }, []);
 
-    const login = useCallback(async (username: string, password: string, remember?: boolean): Promise<boolean> => {
+    const login = useCallback(async (username: string, password: string, remember?: boolean, cohortId?: number): Promise<LoginResult> => {
         const { data } = await api.post<{
             access_token: string | null;
             requires_totp: boolean;
             totp_pending_token: string | null;
-        }>("/auth/login", { username, password, remember: !!remember });
+            requires_cohort: boolean;
+            cohort_choices: CohortChoice[] | null;
+        }>("/auth/login", { username, password, remember: !!remember, cohort_id: cohortId ?? null });
+
+        if (data.requires_cohort) {
+            return { needsTotp: false, cohortChoices: data.cohort_choices ?? [] };
+        }
 
         if (data.requires_totp && data.totp_pending_token) {
             // remember 값을 미리 저장해두어 TOTP 완료 후 사용
@@ -72,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 localStorage.setItem("ops_remember", remember ? "1" : "0");
             }
             setTotpPending({ token: data.totp_pending_token });
-            return true; // TOTP needed
+            return { needsTotp: true, cohortChoices: null };
         }
 
         if (data.access_token) {
@@ -80,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const { data: me } = await api.get<AuthUser>("/members/me");
             setUser(me);
         }
-        return false; // no TOTP needed, logged in
+        return { needsTotp: false, cohortChoices: null };
     }, []);
 
     const verifyTotp = useCallback(async (code: string) => {

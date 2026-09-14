@@ -17,10 +17,16 @@ export interface MemberUser {
     cohort_slogan?: string | null;
 }
 
+export interface CohortChoice {
+    id: number;
+    name: string;
+}
+
 interface MemberAuthContextValue {
     member: MemberUser | null;
     isLoading: boolean;
-    login: (username: string, password: string, remember?: boolean) => Promise<void>;
+    // 같은 아이디가 여러 기수에 있으면 cohortChoices를 반환 — 로그인은 안 됨, 재호출 시 cohortId 필요.
+    login: (username: string, password: string, remember?: boolean, cohortId?: number) => Promise<CohortChoice[] | null>;
     logout: () => void;
 }
 
@@ -49,15 +55,24 @@ export function MemberAuthProvider({ children }: { children: React.ReactNode }) 
             .finally(() => setIsLoading(false));
     }, []);
 
-    const login = useCallback(async (username: string, password: string, remember = true) => {
-        const { data } = await memberApi.post<{ access_token: string }>(
+    const login = useCallback(async (username: string, password: string, remember = true, cohortId?: number) => {
+        const { data } = await memberApi.post<{
+            access_token: string | null;
+            requires_cohort: boolean;
+            cohort_choices: CohortChoice[] | null;
+        }>(
             "/auth/member-login",
-            { username, password },
+            { username, password, cohort_id: cohortId ?? null },
         );
 
-        setMemberToken(data.access_token, remember);
+        if (data.requires_cohort) {
+            return data.cohort_choices ?? [];
+        }
+
+        setMemberToken(data.access_token!, remember);
         const { data: me } = await memberApi.get<MemberUser>("/auth/member-me");
         setMember(me);
+        return null;
     }, []);
 
     const logout = useCallback(async () => {

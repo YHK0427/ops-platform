@@ -30,7 +30,8 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     # NULL = 슈퍼관리자(전 기수 총괄). 그 외 운영진은 소속 기수로 스코프.
     cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=True)
-    username = Column(String(50), unique=True, nullable=False)
+    # 기수별 스코프 unique(아래 __table_args__) — 전역 unique 아님. 다른 기수끼리는 동일 아이디 허용.
+    username = Column(String(50), nullable=False)
     password_hash = Column(String(200), nullable=False)
     display_name = Column(String(50), nullable=False)
     role = Column(String(20), nullable=False, server_default="viewer")
@@ -44,6 +45,7 @@ class User(Base):
             "role IN ('admin','manager','viewer','scoring_only')",
             name="ck_users_role",
         ),
+        UniqueConstraint("cohort_id", "username", name="uq_users_cohort_username"),
     )
 
 
@@ -53,10 +55,16 @@ class GenerationAccount(Base):
 
     id = Column(Integer, primary_key=True)
     member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
-    username = Column(String(50), unique=True, nullable=False)
+    # members.cohort_id 비정규화 — 기수별 unique(아래 __table_args__) 걸려면 이 테이블에 컬럼이 있어야 함.
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=False)
+    username = Column(String(50), nullable=False)
     password_hash = Column(String(200), nullable=False)
     is_active = Column(Boolean, default=True, server_default="true", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("cohort_id", "username", name="uq_generation_accounts_cohort_username"),
+    )
 
     member = relationship("Member", backref="generation_account")
 

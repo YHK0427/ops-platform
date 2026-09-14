@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 from app.database import AsyncSessionLocal
 from app.deps import (
     decode_ws_token, get_current_cohort_id, get_current_member, get_db,
-    get_member_cohort_id, require_staff,
+    get_member_cohort_id, require_staff, resolve_current_user_row,
 )
 from app.models import (
     Attendance,
@@ -563,7 +563,8 @@ async def list_posts_admin(
     db: AsyncSession = Depends(get_db),
 ):
     await _get_board_or_404(db, board_id, cohort_id)
-    viewer_uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
+    _urow = await resolve_current_user_row(db, user)
+    viewer_uid = _urow.id if _urow else None
     alias_q = await db.execute(
         select(LiveFeedbackAnonAlias.member_id, LiveFeedbackAnonAlias.user_id, LiveFeedbackAnonAlias.alias)
         .where(LiveFeedbackAnonAlias.board_id == board_id)
@@ -859,7 +860,9 @@ async def staff_create_post(
     if body.presenter_member_id not in {c["presenter_member_id"] for c in presenters}:
         raise HTTPException(status_code=400, detail="피드백할 수 없는 대상입니다")
 
-    uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
+    _urow = await resolve_current_user_row(db, user)
+
+    uid = _urow.id if _urow else None
     if uid is None:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
     post = LiveFeedbackPost(
@@ -1010,7 +1013,8 @@ async def staff_add_reaction(
     if not post:
         raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
     await _get_board_or_404(db, post.board_id, cohort_id)
-    uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
+    _urow = await resolve_current_user_row(db, user)
+    uid = _urow.id if _urow else None
     if uid is None:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
     dup = await db.execute(
@@ -1039,7 +1043,8 @@ async def staff_remove_reaction(
     if not post:
         raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
     await _get_board_or_404(db, post.board_id, cohort_id)
-    uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
+    _urow = await resolve_current_user_row(db, user)
+    uid = _urow.id if _urow else None
     existing = await db.execute(
         select(LiveFeedbackReaction).where(
             LiveFeedbackReaction.post_id == post_id,

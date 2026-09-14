@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMemberAuth } from "@/context/MemberAuthContext";
+import { useMemberAuth, type CohortChoice } from "@/context/MemberAuthContext";
 import { motion } from "framer-motion";
-import { LogIn } from "lucide-react";
+import { LogIn, ArrowLeft } from "lucide-react";
 
 export default function MemberLoginPage() {
     const { login } = useMemberAuth();
@@ -11,19 +11,29 @@ export default function MemberLoginPage() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [cohortChoices, setCohortChoices] = useState<CohortChoice[] | null>(null);
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const doLogin = async (cohortId?: number) => {
         setError(null);
         setLoading(true);
         try {
-            await login(username, password);
+            const choices = await login(username, password, true, cohortId);
+            if (choices) {
+                // 같은 아이디가 여러 기수에 있음 — 어느 기수인지 고르면 바로 로그인.
+                setCohortChoices(choices);
+                return;
+            }
             navigate("/member", { replace: true });
         } catch {
             setError("이름 또는 비밀번호가 올바르지 않습니다.");
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await doLogin();
     };
 
     return (
@@ -44,6 +54,38 @@ export default function MemberLoginPage() {
                         </h1>
                     </div>
 
+                    {cohortChoices ? (
+                        /* 같은 아이디가 여러 기수에 있음 — 고르면 바로 로그인(추가 확인 버튼 없음) */
+                        <div className="space-y-3">
+                            <p className="text-sm text-gray-600 text-center">
+                                같은 아이디가 여러 기수에 있어요.<br />어느 기수인가요?
+                            </p>
+                            <div className="space-y-2">
+                                {cohortChoices.map((c) => (
+                                    <button
+                                        key={c.id}
+                                        type="button"
+                                        disabled={loading}
+                                        onClick={() => doLogin(c.id)}
+                                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm font-semibold hover:border-rose-400 hover:bg-rose-50 transition-all disabled:opacity-50"
+                                    >
+                                        {c.name}
+                                    </button>
+                                ))}
+                            </div>
+                            {error && (
+                                <p className="text-xs text-rose-500 text-center">{error}</p>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => { setCohortChoices(null); setError(null); }}
+                                className="w-full flex items-center justify-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors py-2"
+                            >
+                                <ArrowLeft className="w-3 h-3" />
+                                돌아가기
+                            </button>
+                        </div>
+                    ) : (
                     <form onSubmit={handleLogin} className="space-y-4">
                         <div className="space-y-1">
                             <label className="block text-xs font-medium text-gray-500">
@@ -92,6 +134,7 @@ export default function MemberLoginPage() {
                             {loading ? "로그인 중..." : "로그인"}
                         </motion.button>
                     </form>
+                    )}
                 </div>
             </motion.div>
         </div>

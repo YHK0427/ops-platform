@@ -26,6 +26,7 @@ from app.deps import (
     get_member_cohort_id,
     require_admin_or_chairman,
     require_staff,
+    resolve_current_user_row,
 )
 from app.models import (
     Attendance,
@@ -246,14 +247,6 @@ async def _assert_compare_round_cohort(
     cmp = await db.get(EvalRound, compare_id)
     if not cmp or cmp.cohort_id != cohort_id:
         raise HTTPException(status_code=400, detail="비교 대상 라운드를 찾을 수 없습니다 (다른 기수)")
-
-
-async def _get_user_by_username(db: AsyncSession, username: str) -> User:
-    result = await db.execute(select(User).where(User.username == username))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
-    return user
 
 
 async def _build_member_result(
@@ -1060,7 +1053,9 @@ async def my_assignments(
     await _get_round_or_404(db, round_id, cohort_id)
 
     # username → User.id
-    db_user = await _get_user_by_username(db, user["username"])
+    db_user = await resolve_current_user_row(db, user)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
 
     q = await db.execute(
         select(EvalAssignment)
@@ -1106,7 +1101,9 @@ async def audience_submit(
 
     _validate_scores(body.scores)
 
-    db_user = await _get_user_by_username(db, user["username"])
+    db_user = await resolve_current_user_row(db, user)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
 
     # 배정 확인
     assign_q = await db.execute(

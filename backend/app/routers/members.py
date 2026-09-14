@@ -5,7 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_current_cohort_id, get_current_member, get_current_user, get_db, require_staff
+from app.deps import (
+    get_current_cohort_id, get_current_member, get_current_user, get_db,
+    require_staff, resolve_current_user_row,
+)
 from app.models import Attendance, Cohort, Ledger, Member, Session as SessionModel, User
 from app.schemas.member import MemberCreate, MemberResponse, MemberUpdate
 
@@ -32,10 +35,7 @@ async def get_me(
     db: AsyncSession = Depends(get_db),
 ):
     """현재 로그인 사용자 정보 (+ 소속 기수 / 슈퍼관리자 여부)"""
-    result = await db.execute(
-        select(User).where(User.username == current_user["username"])
-    )
-    user = result.scalar_one_or_none()
+    user = await resolve_current_user_row(db, current_user)
     if not user:
         return {
             "username": current_user["username"], "role": current_user["role"],

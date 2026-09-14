@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.deps import (
     get_current_cohort_id, get_current_member, get_current_user, get_db,
-    get_member_cohort_id, require_staff,
+    get_member_cohort_id, require_staff, resolve_current_user_row,
 )
 from app.models import Announcement, AnnouncementComment, AnnouncementReaction, Member, PushSubscription, User
 from app.services.push import resolve_subscription_ids
@@ -158,9 +158,13 @@ async def _notify_author(request: Request, db: AsyncSession, ann: Announcement, 
     author = getattr(ann, "author_username", None)
     if not author:
         return
+    # author_username은 기수 간 중복 가능한 표시용 문자열 — 이 공지의 기수로 반드시 좁혀야
+    # 동명이인(다른 기수)에게 잘못 발송되지 않는다.
     sub_ids = [r[0] for r in (await db.execute(
         select(PushSubscription.id).where(
-            PushSubscription.user_id.in_(select(User.id).where(User.username == author))
+            PushSubscription.user_id.in_(
+                select(User.id).where(User.username == author, User.cohort_id == ann.cohort_id)
+            )
         )
     )).all()]
     if sub_ids:
@@ -244,7 +248,7 @@ async def subscribe_ops(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    u = (await db.execute(select(User).where(User.username == current_user["username"]))).scalar_one_or_none()
+    u = await resolve_current_user_row(db, current_user)
     if not u:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
     await _upsert_subscription(db, body, user_id=u.id, cohort_id=u.cohort_id)
@@ -370,11 +374,10 @@ async def staff_toggle_reaction(
     ann = await db.get(Announcement, ann_id)
     if not ann or ann.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
-    uid = (await db.execute(
-        select(User.id).where(User.username == user["username"])
-    )).scalar_one_or_none()
-    if uid is None:
+    urow = await resolve_current_user_row(db, user)
+    if urow is None:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    uid = urow.id
     added = await _toggle_reaction(db, ann_id, body.emoji, user_id=uid)
     await db.refresh(ann)
     if added and user["username"] != ann.author_username:
@@ -483,8 +486,8 @@ async def staff_list_comments(
     ann = await db.get(Announcement, ann_id)
     if not ann or ann.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
-    uid = (await db.execute(select(User.id).where(User.username == _["username"]))).scalar_one_or_none()
-    return await _load_comments(db, ann_id, viewer_user_id=uid)
+    urow = await resolve_current_user_row(db, _)
+    return await _load_comments(db, ann_id, viewer_user_id=urow.id if urow else None)
 
 
 @router.post("/manage/announcements/{ann_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
@@ -500,12 +503,10 @@ async def staff_add_comment(
     ann = await db.get(Announcement, ann_id)
     if not ann or ann.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
-    urow = (await db.execute(
-        select(User.id, User.display_name).where(User.username == user["username"])
-    )).first()
+    urow = await resolve_current_user_row(db, user)
     if not urow:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
-    uid, uname = urow
+    uid, uname = urow.id, urow.display_name
     content = body.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="댓글을 입력하세요")
@@ -551,8 +552,8 @@ async def list_announcements(
         select(Announcement).where(Announcement.cohort_id == cohort_id).order_by(Announcement.created_at.desc())
     )
     anns = list(rows.scalars().all())
-    uid = (await db.execute(select(User.id).where(User.username == user["username"]))).scalar_one_or_none()
-    await _attach_reactions(db, anns, viewer_user_id=uid)
+    urow = await resolve_current_user_row(db, user)
+    await _attach_reactions(db, anns, viewer_user_id=urow.id if urow else None)
     return anns
 
 
@@ -572,9 +573,7 @@ async def create_announcement(
         if not valid:
             raise HTTPException(status_code=400, detail="대상 멤버를 선택하세요 (현재 기수)")
     # 작성자 표기 = 이름 · 부서 (username 대신)
-    u = (await db.execute(
-        select(User.display_name, User.department).where(User.username == user["username"])
-    )).first()
+    u = await resolve_current_user_row(db, user)
     author = (u.display_name + (f" · {u.department}" if u and u.department else "")) if u else user["username"]
     ann = Announcement(
         cohort_id=cohort_id, title=body.title, content=body.content,

@@ -24,6 +24,7 @@ from app.deps import (
     require_admin,
     require_admin_or_chairman,
     require_staff,
+    resolve_current_user_row,
     verify_password,
 )
 from app.models import (
@@ -45,6 +46,7 @@ class LoginRequest(BaseModel):
     password: str = Field(max_length=128)
     totp_code: str | None = None
     remember: bool = False
+    cohort_id: int | None = None
 
 
 class TokenResponse(BaseModel):
@@ -52,6 +54,9 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     requires_totp: bool = False
     totp_pending_token: str | None = None
+    # 기수 분리로 같은 아이디가 여러 기수에 존재할 수 있음 — 후보가 여럿이면 골라달라고 요청.
+    requires_cohort: bool = False
+    cohort_choices: list[dict] | None = None
 
 
 class VerifyTotpRequest(BaseModel):
@@ -75,10 +80,13 @@ class UserCreate(BaseModel):
 class MemberLoginRequest(BaseModel):
     username: str = Field(max_length=50)
     password: str = Field(max_length=128)
+    cohort_id: int | None = None
 
 
 class MemberTokenResponse(BaseModel):
-    access_token: str
+    access_token: str | None = None
+    requires_cohort: bool = False
+    cohort_choices: list[dict] | None = None
 
 
 class MemberMeResponse(BaseModel):
@@ -136,27 +144,29 @@ _DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
 
 
 def _create_access_token(
-    username: str, role: str, cohort_id: int | None, remember: bool = False
+    user_id: int, username: str, role: str, cohort_id: int | None, remember: bool = False
 ) -> str:
     minutes = settings.JWT_REMEMBER_EXPIRE_MINUTES if remember else settings.JWT_EXPIRE_MINUTES
     expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     # cohort_id 는 항상 claim에 포함(None=슈퍼관리자)해 구 토큰과 구분되게 한다.
-    payload = {"sub": username, "role": role, "cohort_id": cohort_id, "exp": expire}
+    # uid = User.id — username은 기수마다 중복 가능(#기수분리)하므로 신원 식별은 uid로.
+    payload = {"sub": username, "uid": user_id, "role": role, "cohort_id": cohort_id, "exp": expire}
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-async def _create_totp_pending(username: str) -> str:
-    """Redis에 TOTP pending 토큰 저장, 5분 TTL"""
+async def _create_totp_pending(user_id: int) -> str:
+    """Redis에 TOTP pending 토큰 저장, 5분 TTL. user_id로 저장(username은 기수 간 중복 가능)."""
     redis = _get_redis_client()
     token = secrets.token_urlsafe(32)
-    await redis.setex(f"totp_pending:{token}", TOTP_PENDING_TTL, username)
+    await redis.setex(f"totp_pending:{token}", TOTP_PENDING_TTL, str(user_id))
     return token
 
 
-async def _get_totp_pending_username(token: str) -> str | None:
-    """TOTP pending 토큰에서 username 추출 (삭제하지 않음 — 실패 시 재시도 허용)"""
+async def _get_totp_pending_user_id(token: str) -> int | None:
+    """TOTP pending 토큰에서 user_id 추출 (삭제하지 않음 — 실패 시 재시도 허용)"""
     redis = _get_redis_client()
-    return await redis.get(f"totp_pending:{token}")
+    val = await redis.get(f"totp_pending:{token}")
+    return int(val) if val is not None else None
 
 
 async def _delete_totp_pending(token: str) -> None:
@@ -190,18 +200,34 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
 
     await check_login_rate(ip, body.username)
 
-    result = await db.execute(
+    candidates = (await db.execute(
         select(User).where(User.username == body.username, User.is_active == True)
-    )
-    user = result.scalar_one_or_none()
+    )).scalars().all()
+
+    if body.cohort_id is not None:
+        candidates = [u for u in candidates if u.cohort_id == body.cohort_id]
+
+    # 기수 분리로 같은 아이디가 여러 기수에 존재할 수 있음 — 대부분은 기수마다 비번도 다르므로
+    # 비번으로 먼저 좁혀서 유일하게 맞으면 기수를 안 물어봐도 되게 한다. 비번까지 같은 경우에만
+    # (여러 후보의 비번이 똑같이 맞음) 진짜로 물어볼 수밖에 없다.
+    matched = [u for u in candidates if verify_password(body.password, u.password_hash)]
+    if not matched:
+        verify_password(body.password, _DUMMY_HASH)  # timing-attack 방어용 더미 비교
+
+    if len(matched) > 1:
+        cohorts = (await db.execute(
+            select(Cohort).where(Cohort.id.in_([u.cohort_id for u in matched if u.cohort_id is not None]))
+        )).scalars().all()
+        logger.info("login_ambiguous user=%s ip=%s candidates=%d", body.username, ip, len(matched))
+        return TokenResponse(
+            requires_cohort=True,
+            cohort_choices=[{"id": c.id, "name": c.name} for c in cohorts],
+        )
+
+    user = matched[0] if matched else None
 
     if user is None:
-        verify_password(body.password, _DUMMY_HASH)
-        logger.warning("login_failed user=%s ip=%s reason=not_found", body.username, ip)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
-
-    if not verify_password(body.password, user.password_hash):
-        logger.warning("login_failed user=%s ip=%s reason=wrong_password", body.username, ip)
+        logger.warning("login_failed user=%s ip=%s reason=not_found_or_wrong_password", body.username, ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
 
     # 보관(비활성)된 기수 운영진이면 로그인 차단 (슈퍼관리자 cohort_id=NULL은 항상 허용)
@@ -221,12 +247,12 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP 코드가 올바르지 않습니다")
         else:
             # OTP 코드 없이 비밀번호만 → pending 토큰 발급
-            pending_token = await _create_totp_pending(user.username)
+            pending_token = await _create_totp_pending(user.id)
             logger.info("totp_pending user=%s ip=%s", user.username, ip)
             return TokenResponse(requires_totp=True, totp_pending_token=pending_token)
 
     logger.audit(f"🔑 로그인 성공 — {user.username} ({user.role}) from {ip}")
-    token = _create_access_token(user.username, user.role, user.cohort_id, remember=body.remember)
+    token = _create_access_token(user.id, user.username, user.role, user.cohort_id, remember=body.remember)
     return TokenResponse(access_token=token)
 
 
@@ -237,25 +263,24 @@ async def verify_totp(body: VerifyTotpRequest, request: Request, db: AsyncSessio
 
     await _check_totp_rate(body.token)
 
-    username = await _get_totp_pending_username(body.token)
-    if not username:
+    user_id = await _get_totp_pending_user_id(body.token)
+    if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="토큰이 만료되었거나 유효하지 않습니다")
 
-    result = await db.execute(
-        select(User).where(User.username == username, User.is_active == True)
-    )
-    user = result.scalar_one_or_none()
-    if not user or not user.totp_secret:
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
+    if not user.totp_secret:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
 
     totp = pyotp.TOTP(user.totp_secret)
     if not totp.verify(body.totp_code, valid_window=1):
-        logger.warning("totp_verify_failed user=%s ip=%s", username, ip)
+        logger.warning("totp_verify_failed user=%s ip=%s", user.username, ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP 코드가 올바르지 않습니다")
 
     await _delete_totp_pending(body.token)
     logger.audit(f"🔑 로그인 성공 (2FA) — {user.username} ({user.role}) from {ip}")
-    token = _create_access_token(user.username, user.role, user.cohort_id, remember=body.remember)
+    token = _create_access_token(user.id, user.username, user.role, user.cohort_id, remember=body.remember)
     return TokenResponse(access_token=token)
 
 
@@ -265,13 +290,10 @@ async def refresh(
     db: AsyncSession = Depends(get_db),
 ):
     """토큰 갱신 — cohort_id는 DB에서 재조회(권위)."""
-    result = await db.execute(
-        select(User).where(User.username == current_user["username"], User.is_active == True)
-    )
-    user = result.scalar_one_or_none()
-    if user is None:
+    user = await resolve_current_user_row(db, current_user)
+    if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
-    token = _create_access_token(user.username, user.role, user.cohort_id)
+    token = _create_access_token(user.id, user.username, user.role, user.cohort_id)
     return TokenResponse(access_token=token)
 
 
@@ -300,25 +322,36 @@ async def member_login(
 
     # NOTE: 멤버 로그인은 레이트 리밋 해제 (동시 다수 접속 허용)
 
-    result = await db.execute(
+    candidates = (await db.execute(
         select(GenerationAccount).where(
             GenerationAccount.username == body.username,
             GenerationAccount.is_active == True,
         )
-    )
-    account = result.scalar_one_or_none()
+    )).scalars().all()
 
-    if account is None:
-        # timing-attack 방어: 항상 bcrypt 비교 수행
-        verify_password(body.password, _DUMMY_HASH)
-        logger.warning("member_login_failed user=%s ip=%s reason=not_found", body.username, ip)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="아이디 또는 비밀번호가 올바르지 않습니다",
+    if body.cohort_id is not None:
+        candidates = [a for a in candidates if a.cohort_id == body.cohort_id]
+
+    # 기수별 기본 비번이 이미 다르므로(univpt{기수번호}) 비번으로 먼저 좁힌다 —
+    # 대부분은 이 한 번으로 유일하게 특정되어 기수를 안 물어봐도 된다.
+    matched = [a for a in candidates if verify_password(body.password, a.password_hash)]
+    if not matched:
+        verify_password(body.password, _DUMMY_HASH)  # timing-attack 방어
+
+    if len(matched) > 1:
+        cohorts = (await db.execute(
+            select(Cohort).where(Cohort.id.in_([a.cohort_id for a in matched]))
+        )).scalars().all()
+        logger.info("member_login_ambiguous user=%s ip=%s candidates=%d", body.username, ip, len(matched))
+        return MemberTokenResponse(
+            requires_cohort=True,
+            cohort_choices=[{"id": c.id, "name": c.name} for c in cohorts],
         )
 
-    if not verify_password(body.password, account.password_hash):
-        logger.warning("member_login_failed user=%s ip=%s reason=wrong_password", body.username, ip)
+    account = matched[0] if matched else None
+
+    if account is None:
+        logger.warning("member_login_failed user=%s ip=%s reason=not_found_or_wrong_password", body.username, ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="아이디 또는 비밀번호가 올바르지 않습니다",
@@ -402,8 +435,7 @@ async def change_password(
     db: AsyncSession = Depends(get_db),
 ):
     """운영진 본인 비밀번호 변경 (현재 비밀번호 확인 후)."""
-    result = await db.execute(select(User).where(User.username == current_user["username"]))
-    user = result.scalar_one_or_none()
+    user = await resolve_current_user_row(db, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
     if not verify_password(body.current_password, user.password_hash):
@@ -468,10 +500,7 @@ async def totp_confirm(
     if not totp.verify(totp_code, valid_window=1):
         raise HTTPException(400, "OTP 코드가 올바르지 않습니다")
 
-    result = await db.execute(
-        select(User).where(User.username == current_user["username"])
-    )
-    user = result.scalar_one_or_none()
+    user = await resolve_current_user_row(db, current_user)
     if not user:
         raise HTTPException(404, "사용자를 찾을 수 없습니다")
 
@@ -487,10 +516,7 @@ async def totp_disable(
     db: AsyncSession = Depends(get_db),
 ):
     """TOTP 비활성화"""
-    result = await db.execute(
-        select(User).where(User.username == current_user["username"])
-    )
-    user = result.scalar_one_or_none()
+    user = await resolve_current_user_row(db, current_user)
     if not user:
         raise HTTPException(404, "사용자를 찾을 수 없습니다")
 
@@ -506,10 +532,7 @@ async def totp_status(
     db: AsyncSession = Depends(get_db),
 ):
     """현재 사용자의 TOTP 설정 상태"""
-    result = await db.execute(
-        select(User).where(User.username == current_user["username"])
-    )
-    user = result.scalar_one_or_none()
+    user = await resolve_current_user_row(db, current_user)
     return {"enabled": bool(user and user.totp_secret)}
 
 
@@ -539,10 +562,10 @@ async def list_users(
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """사용자 목록 (admin 또는 회장단). 현재 기수 운영진 + 본인 계정(슈퍼관리자 자기 관리용)."""
+    """사용자 목록 (admin 또는 회장단). 현재 기수 운영진 + 슈퍼관리자 전원(서로 보임)."""
     result = await db.execute(
         select(User)
-        .where(or_(User.cohort_id == cohort_id, User.username == current_user["username"]))
+        .where(or_(User.cohort_id == cohort_id, User.cohort_id.is_(None)))
         .order_by(User.id)
     )
     return [UserResponse.from_user(u) for u in result.scalars().all()]
@@ -561,9 +584,11 @@ async def create_user(
             status_code=400,
             detail="기수 운영진은 admin 역할을 가질 수 없습니다 (admin은 전체 관리자 전용)",
         )
-    exists = await db.execute(select(User).where(User.username == body.username))
+    exists = await db.execute(
+        select(User).where(User.cohort_id == cohort_id, User.username == body.username)
+    )
     if exists.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="이미 존재하는 사용자명입니다")
+        raise HTTPException(status_code=409, detail="이미 존재하는 사용자명입니다 (같은 기수 내)")
 
     hashed = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     user = User(
@@ -591,7 +616,10 @@ async def update_user(
 ):
     """사용자 수정 (admin 전용) — 현재 기수 운영진 또는 본인 계정(슈퍼관리자 자기 관리)."""
     user = await db.get(User, user_id)
-    is_self = bool(user and user.username == current_user["username"])
+    if current_user.get("id") is not None:
+        is_self = bool(user and user.id == current_user["id"])
+    else:
+        is_self = bool(user and user.username == current_user["username"])  # 구 토큰 폴백
     if not user or (user.cohort_id != cohort_id and not is_self):
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
     # admin 역할은 슈퍼관리자 본인에게만 허용 (기수 운영진엔 부여 불가)
@@ -608,10 +636,14 @@ async def update_user(
         raise HTTPException(status_code=400, detail="슈퍼관리자는 본인 역할을 변경할 수 없습니다")
 
     if body.username is not None:
-        # Check uniqueness
-        existing = await db.execute(select(User).where(User.username == body.username, User.id != user_id))
+        # Check uniqueness — 대상 계정과 같은 기수(슈퍼관리자면 cohort_id IS NULL) 범위 내에서만.
+        existing = await db.execute(
+            select(User).where(
+                User.cohort_id == user.cohort_id, User.username == body.username, User.id != user_id,
+            )
+        )
         if existing.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
+            raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다 (같은 기수 내)")
         user.username = body.username
     if body.display_name is not None:
         user.display_name = body.display_name

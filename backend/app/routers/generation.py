@@ -109,14 +109,17 @@ async def create_account(
 
     username = (body.username or "").strip() or _seed_username(member.name, cohort.number)
     taken = (await db.execute(
-        select(GenerationAccount).where(GenerationAccount.username == username)
+        select(GenerationAccount).where(
+            GenerationAccount.cohort_id == cohort_id, GenerationAccount.username == username,
+        )
     )).scalar_one_or_none()
     if taken:
-        raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
+        raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다 (같은 기수 내)")
 
     password = body.password or f"univpt{cohort.number}"
     account = GenerationAccount(
         member_id=member.id,
+        cohort_id=cohort_id,
         username=username,
         password_hash=bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
         is_active=True,
@@ -160,6 +163,7 @@ async def bulk_create_accounts(
         password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         db.add(GenerationAccount(
             member_id=member.id,
+            cohort_id=cohort_id,
             username=_seed_username(member.name, cohort.number),
             password_hash=password_hash,
             is_active=True,
@@ -223,10 +227,14 @@ async def update_account(
 
     if body.username is not None:
         existing = await db.execute(
-            select(GenerationAccount).where(GenerationAccount.username == body.username, GenerationAccount.id != account_id)
+            select(GenerationAccount).where(
+                GenerationAccount.cohort_id == cohort_id,
+                GenerationAccount.username == body.username,
+                GenerationAccount.id != account_id,
+            )
         )
         if existing.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
+            raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다 (같은 기수 내)")
         account.username = body.username
     if body.password is not None:
         account.password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()

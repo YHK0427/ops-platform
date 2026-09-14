@@ -154,10 +154,31 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
     # 표시해 get_current_cohort_id 가 DB 폴백하도록 한다.
     return {
         "username": username,
+        # uid: User.id — 기수 분리로 username이 기수 간 중복될 수 있어 신원 식별엔 이걸 우선 사용.
+        # 구 토큰(발급 당시 uid claim 없음)은 None → 호출부가 username(+cohort_id)로 폴백.
+        "id": payload.get("uid"),
         "role": role or "viewer",
         "cohort_id": payload.get("cohort_id"),
         "cohort_claim": "cohort_id" in payload,
     }
+
+
+async def resolve_current_user_row(db: AsyncSession, current_user: dict):
+    """current_user(JWT 클레임 dict)에 대응하는 User row 조회.
+    uid claim 있으면 그걸로 정확히 조회(기수 간 username 중복에도 안전).
+    구 토큰(uid 없음)은 username(+cohort_claim 있으면 cohort_id까지)으로 폴백 조회 —
+    폴백 중 동명이인이 여러 기수에 있으면 가장 오래된(id 최소) 계정을 고른다."""
+    from app.models import User
+
+    uid = current_user.get("id")
+    if uid is not None:
+        return await db.get(User, uid)
+
+    q = select(User).where(User.username == current_user["username"])
+    if current_user.get("cohort_claim"):
+        q = q.where(User.cohort_id == current_user.get("cohort_id"))
+    result = await db.execute(q.order_by(User.id))
+    return result.scalars().first()
 
 
 async def get_current_member(
@@ -221,6 +242,7 @@ async def decode_ws_token(token: str, db: AsyncSession) -> dict | None:
         return None
 
     username: str | None = payload.get("sub")
+    uid: int | None = payload.get("uid")
     if username is None:
         return None
     account_type: str | None = payload.get("account_type")
@@ -247,7 +269,9 @@ async def decode_ws_token(token: str, db: AsyncSession) -> dict | None:
     cohort_id = payload.get("cohort_id")
     if "cohort_id" not in payload:
         from app.models import User
-        result = await db.execute(select(User.cohort_id).where(User.username == username))
+        q = select(User.cohort_id)
+        q = q.where(User.id == uid) if uid is not None else q.where(User.username == username)
+        result = await db.execute(q)
         cohort_id = result.scalar_one_or_none()
     return {"role": "admin", "username": username, "user_role": role, "cohort_id": cohort_id}
 
@@ -293,9 +317,7 @@ async def require_admin_or_chairman(
     """admin 역할 또는 회장단(department) — 평가 라운드 관리 권한"""
     if user["role"] == "admin":
         return user
-    from app.models import User
-    result = await db.execute(select(User).where(User.username == user["username"]))
-    u = result.scalar_one_or_none()
+    u = await resolve_current_user_row(db, user)
     if u and u.department == "회장단":
         return user
     raise HTTPException(
@@ -319,9 +341,10 @@ async def get_current_cohort_id(
     if not user.get("cohort_claim"):
         # 구 토큰 — DB에서 소속 기수 조회 (권위)
         from app.models import User
-        result = await db.execute(
-            select(User.cohort_id).where(User.username == user["username"])
-        )
+        q = select(User.cohort_id)
+        uid = user.get("id")
+        q = q.where(User.id == uid) if uid is not None else q.where(User.username == user["username"])
+        result = await db.execute(q)
         cohort_id = result.scalar_one_or_none()
 
     if cohort_id is not None:

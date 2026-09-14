@@ -26,7 +26,7 @@ from sqlalchemy.orm import selectinload
 from app.database import AsyncSessionLocal
 from app.deps import (
     check_public_rate, decode_ws_token, get_current_cohort_id, get_db, get_real_ip,
-    require_scoring_staff,
+    require_scoring_staff, resolve_current_user_row,
 )
 from app.models import (
     Member, ScoringArea, ScoringComment, ScoringCriterion, ScoringDeduction,
@@ -511,8 +511,8 @@ async def _check_round_access(rnd: ScoringRound, user: dict, db: AsyncSession) -
     """
     if not rnd.restricted_departments or user["role"] == "admin":
         return
-    result = await db.execute(select(User.department).where(User.username == user["username"]))
-    dept = result.scalar_one_or_none()
+    urow = await resolve_current_user_row(db, user)
+    dept = urow.department if urow else None
     if dept in rnd.restricted_departments and user["username"] not in (rnd.restricted_exception_usernames or []):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "이 라운드는 열람 권한이 없습니다")
 
@@ -765,9 +765,8 @@ async def list_rounds(
 
     # 열람 제한 필터링 — 라운드마다 재조회하지 않고 이 사람의 department를 한 번만 조회
     if user["role"] != "admin":
-        dept = (await db.execute(
-            select(User.department).where(User.username == user["username"])
-        )).scalar_one_or_none()
+        urow = await resolve_current_user_row(db, user)
+        dept = urow.department if urow else None
         rounds = [
             r for r in rounds
             if not r.restricted_departments
