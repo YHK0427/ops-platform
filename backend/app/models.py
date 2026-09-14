@@ -54,7 +54,7 @@ class GenerationAccount(Base):
     __tablename__ = "generation_accounts"
 
     id = Column(Integer, primary_key=True)
-    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False, index=True)
     # members.cohort_id 비정규화 — 기수별 unique(아래 __table_args__) 걸려면 이 테이블에 컬럼이 있어야 함.
     cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=False)
     username = Column(String(50), nullable=False)
@@ -169,7 +169,7 @@ class TeamMember(Base):
 
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"))
-    member_id = Column(Integer, ForeignKey("members.id"))
+    member_id = Column(Integer, ForeignKey("members.id"), index=True)
 
     __table_args__ = (
         UniqueConstraint("team_id", "member_id", name="uq_team_members"),
@@ -215,7 +215,7 @@ class Assignment(Base):
 
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"))
-    member_id = Column(Integer, ForeignKey("members.id"))
+    member_id = Column(Integer, ForeignKey("members.id"), index=True)
     team_id = Column(Integer, ForeignKey("teams.id"))  # TEAM 세션 PPT용, 나머지 NULL
     type = Column(String(20), nullable=False)
     target_count = Column(Integer, default=1)
@@ -249,7 +249,7 @@ class Attendance(Base):
 
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"))
-    member_id = Column(Integer, ForeignKey("members.id"))
+    member_id = Column(Integer, ForeignKey("members.id"), index=True)
     status = Column(String(20), server_default="PENDING")
     excuse_type = Column(String(10))
     excuse_text = Column(Text)
@@ -329,7 +329,7 @@ class CafePost(Base):
     board_type = Column(String(20), nullable=False)
     title = Column(String(500))
     author_nick = Column(String(100))
-    member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
+    member_id = Column(Integer, ForeignKey("members.id"), nullable=True, index=True)
     week_num = Column(Integer, nullable=True)
     posted_at = Column(TIMESTAMP(timezone=True), nullable=True)
     is_deleted = Column(Boolean, default=False)
@@ -381,7 +381,7 @@ class EvalAssignment(Base):
 
     id = Column(Integer, primary_key=True)
     round_id = Column(Integer, ForeignKey("eval_rounds.id", ondelete="CASCADE"), nullable=False)
-    evaluator_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    evaluator_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     presenter_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
     eval_type = Column(String(20), nullable=False)
     submitted_at = Column(TIMESTAMP(timezone=True), nullable=True)
