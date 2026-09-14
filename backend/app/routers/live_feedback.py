@@ -27,6 +27,7 @@ from app.models import (
     Attendance,
     LiveFeedbackAnonAlias,
     LiveFeedbackBoard,
+    LiveFeedbackComment,
     LiveFeedbackPost,
     LiveFeedbackReaction,
     Member,
@@ -42,6 +43,7 @@ router = APIRouter(prefix="/live-feedback", tags=["live-feedback"])
 
 ALLOWED_EMOJIS = ("👍", "❤️", "👏", "🔥", "🎉", "😮", "😂", "🥹", "🥺", "😍", "🤩", "💯", "🙌", "💪", "🙏", "✨", "⭐", "🤔", "👀", "🫶")
 MAX_CONTENT_LEN = 1000
+MAX_COMMENT_LEN = 500
 
 # 카테고리 색 팔레트 (프론트 정적 Tailwind 매핑과 일치해야 함)
 ALLOWED_COLORS = {"emerald", "amber", "sky", "violet", "rose", "indigo", "teal", "slate"}
@@ -136,6 +138,11 @@ class PostUpdateRequest(BaseModel):
 
 class ReactionRequest(BaseModel):
     emoji: str
+
+
+class CommentCreateRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=MAX_COMMENT_LEN)
+    is_anonymous: bool = True
 
 
 class PostHideRequest(BaseModel):
@@ -266,6 +273,59 @@ async def _get_or_create_alias(
     return alias
 
 
+async def _board_alias_map(db: AsyncSession, board_id: int) -> dict[str, str]:
+    """보드 내 전체 익명 별칭 맵 — 댓글 작성자가 글 작성자와 다를 수 있어 전체가 필요."""
+    alias_q = await db.execute(
+        select(LiveFeedbackAnonAlias.member_id, LiveFeedbackAnonAlias.user_id, LiveFeedbackAnonAlias.alias)
+        .where(LiveFeedbackAnonAlias.board_id == board_id)
+    )
+    return {(f"m{mid}" if mid is not None else f"u{uid}"): alias for mid, uid, alias in alias_q.all()}
+
+
+def _comment_admin_dict(c: LiveFeedbackComment, alias_map: dict[str, str]) -> dict:
+    is_staff = c.author_user_id is not None
+    author_name = (c.author_user.display_name if c.author_user else None) if is_staff \
+        else (c.author.name if c.author else None)
+    author_key = f"u{c.author_user_id}" if is_staff else f"m{c.author_member_id}"
+    anon_alias = alias_map.get(author_key) if c.is_anonymous else None
+    return {
+        "id": c.id,
+        "post_id": c.post_id,
+        "content": c.content,
+        "is_anonymous": c.is_anonymous,
+        "author_member_id": c.author_member_id,
+        "author_name": author_name,
+        "author_is_staff": is_staff,
+        "anon_alias": anon_alias,
+        "created_at": _iso(c.created_at),
+    }
+
+
+def _comment_member_dict(c: LiveFeedbackComment, alias_map: dict[str, str], viewer_member_id: int | None = None) -> dict:
+    """멤버용 — 익명이면 alias만, 실명/author_member_id 절대 미포함(post와 동일 방화벽)."""
+    is_staff = c.author_user_id is not None
+    author_key = f"u{c.author_user_id}" if is_staff else f"m{c.author_member_id}"
+    if c.is_anonymous:
+        display_name = alias_map.get(author_key) or "익명"
+        show_staff = False
+    else:
+        display_name = (c.author_user.display_name if is_staff and c.author_user else None) if is_staff \
+            else (c.author.name if c.author else None)
+        show_staff = is_staff
+    d = {
+        "id": c.id,
+        "post_id": c.post_id,
+        "content": c.content,
+        "is_anonymous": c.is_anonymous,
+        "author_name": display_name,
+        "is_staff": show_staff,
+        "created_at": _iso(c.created_at),
+    }
+    if viewer_member_id is not None:
+        d["is_mine"] = (not is_staff) and c.author_member_id == viewer_member_id
+    return d
+
+
 def _reaction_summary(post: LiveFeedbackPost, viewer_member_id: int | None = None, viewer_user_id: int | None = None):
     counts: dict[str, int] = {}
     mine: list[str] = []
@@ -306,6 +366,7 @@ def _post_admin_dict(post: LiveFeedbackPost, alias_map: dict[str, str] | None = 
         "anon_alias": anon_alias,
         "reactions": counts,
         "my_reactions": mine,
+        "comments": [_comment_admin_dict(c, alias_map or {}) for c in post.comments],
         "created_at": _iso(post.created_at),
     }
 
@@ -340,6 +401,7 @@ def _post_member_dict(
         "author_name": display_name,
         "is_staff": show_staff,
         "reactions": counts,
+        "comments": [_comment_member_dict(c, alias_map, viewer_member_id) for c in post.comments],
         "created_at": _iso(post.created_at),
     }
     if author_id is not None:
@@ -359,6 +421,8 @@ async def _load_post_full(db: AsyncSession, post_id: int) -> LiveFeedbackPost | 
             selectinload(LiveFeedbackPost.author),
             selectinload(LiveFeedbackPost.author_user),
             selectinload(LiveFeedbackPost.presenter),
+            selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author),
+            selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author_user),
         )
         .where(LiveFeedbackPost.id == post_id)
     )
@@ -577,6 +641,8 @@ async def list_posts_admin(
             selectinload(LiveFeedbackPost.author),
             selectinload(LiveFeedbackPost.author_user),
             selectinload(LiveFeedbackPost.presenter),
+            selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author),
+            selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author_user),
         )
         .where(LiveFeedbackPost.board_id == board_id)
         .order_by(LiveFeedbackPost.created_at)
@@ -755,6 +821,8 @@ async def member_list_posts(
             selectinload(LiveFeedbackPost.author),
             selectinload(LiveFeedbackPost.author_user),
             selectinload(LiveFeedbackPost.presenter),
+            selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author),
+            selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author_user),
         )
         .where(LiveFeedbackPost.board_id == board_id, LiveFeedbackPost.is_hidden == False)  # noqa: E712
         .order_by(LiveFeedbackPost.created_at)
@@ -1069,6 +1137,125 @@ async def _broadcast_reaction(db: AsyncSession, post_id: int, board_id: int) -> 
     counts = {emoji: c for emoji, c in counts_q.all()}
     evt = {"type": "reaction.changed", "data": {"post_id": post_id, "reactions": counts}}
     await manager.broadcast(board_id, evt, evt)
+
+
+# ── 댓글 (패들렛 스타일) ─────────────────────────────────────────────────────────
+
+async def _broadcast_post_update(db: AsyncSession, post_id: int, board_id: int) -> None:
+    """댓글 추가/삭제 후 글 전체를 다시 브로드캐스트 — 프론트는 기존 'post.updated'
+    핸들러(수정 시 이미 사용 중)를 그대로 재사용하므로 클라이언트 쪽 새 이벤트 처리 불필요."""
+    full = await _load_post_full(db, post_id)
+    alias_map = await _board_alias_map(db, board_id)
+    admin_evt = {"type": "post.updated", "data": _post_admin_dict(full, alias_map)}
+    member_evt = {"type": "post.updated", "data": _post_member_dict(full, alias_map)}
+    await manager.broadcast(board_id, admin_evt, member_evt)
+
+
+@router.post("/member/posts/{post_id}/comments", status_code=201)
+async def member_create_comment(
+    post_id: int,
+    body: CommentCreateRequest,
+    member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """기수원 — 같은 분반 발표자 글에만 댓글 가능(글 목록 스코프와 동일 규칙)."""
+    post = await db.get(LiveFeedbackPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
+    board = await _get_board_or_404(db, post.board_id, member_cohort_id)
+    if not board.is_open:
+        raise HTTPException(status_code=400, detail="피드백이 마감되었습니다")
+
+    my_group = await _member_group(db, board.session_id, member["member_id"])
+    scoped = await _presenter_columns(
+        db, board.session_id, reveal_order=False,
+        restrict_group=my_group, early_leave_ids=set(board.early_leave_member_ids or []),
+    )
+    if post.presenter_member_id not in {c["presenter_member_id"] for c in scoped}:
+        raise HTTPException(status_code=400, detail="댓글을 달 수 없는 글입니다")
+
+    author_id = member["member_id"]
+    comment = LiveFeedbackComment(
+        post_id=post_id, author_member_id=author_id,
+        content=body.content.strip(), is_anonymous=body.is_anonymous,
+    )
+    db.add(comment)
+    if body.is_anonymous:
+        await _get_or_create_alias(db, board.id, member_id=author_id)
+    await db.commit()
+
+    await _broadcast_post_update(db, post_id, board.id)
+    return {"status": "ok"}
+
+
+@router.delete("/member/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def member_delete_comment(
+    comment_id: int,
+    member: dict = Depends(get_current_member),
+    member_cohort_id: int = Depends(get_member_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """본인이 쓴 댓글만 삭제 가능."""
+    comment = await db.get(LiveFeedbackComment, comment_id)
+    if not comment or comment.author_member_id != member["member_id"]:
+        raise HTTPException(status_code=404, detail="댓글을 찾을 수 없습니다")
+    post = await db.get(LiveFeedbackPost, comment.post_id)
+    board = await _get_board_or_404(db, post.board_id, member_cohort_id)
+    await db.delete(comment)
+    await db.commit()
+    await _broadcast_post_update(db, post.id, board.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/posts/{post_id}/comments/staff", status_code=201)
+async def staff_create_comment(
+    post_id: int,
+    body: CommentCreateRequest,
+    user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """운영진 — 아무 글에나 댓글 가능(모더레이션/응원용)."""
+    post = await db.get(LiveFeedbackPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="피드백을 찾을 수 없습니다")
+    board = await _get_board_or_404(db, post.board_id, cohort_id)
+    _urow = await resolve_current_user_row(db, user)
+    uid = _urow.id if _urow else None
+    if uid is None:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+
+    comment = LiveFeedbackComment(
+        post_id=post_id, author_user_id=uid,
+        content=body.content.strip(), is_anonymous=body.is_anonymous,
+    )
+    db.add(comment)
+    if body.is_anonymous:
+        await _get_or_create_alias(db, board.id, user_id=uid)
+    await db.commit()
+
+    await _broadcast_post_update(db, post_id, board.id)
+    return {"status": "ok"}
+
+
+@router.delete("/comments/{comment_id}/staff", status_code=status.HTTP_204_NO_CONTENT)
+async def staff_delete_comment(
+    comment_id: int,
+    _: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """운영진은 모더레이션 목적으로 아무 댓글이나 삭제 가능."""
+    comment = await db.get(LiveFeedbackComment, comment_id)
+    if not comment:
+        raise HTTPException(status_code=404, detail="댓글을 찾을 수 없습니다")
+    post = await db.get(LiveFeedbackPost, comment.post_id)
+    board = await _get_board_or_404(db, post.board_id, cohort_id)
+    await db.delete(comment)
+    await db.commit()
+    await _broadcast_post_update(db, post.id, board.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ── WebSocket ──────────────────────────────────────────────────────────────────

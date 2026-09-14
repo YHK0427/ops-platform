@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useMemberAuth } from "@/context/MemberAuthContext";
-import { ArrowLeft, Send, Wifi, WifiOff, Lock, Loader2, MessageSquareHeart, Pencil, X, Check } from "lucide-react";
+import { ArrowLeft, Send, Wifi, WifiOff, Lock, Loader2, MessageSquareHeart, Pencil, X, Check, MessageCircle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     useMemberBoard, useMemberPosts, useCreatePost, useToggleReaction, useUpdatePost,
+    useCreateComment, useDeleteComment,
     type FeedbackPost, type FeedbackCategory,
 } from "@/hooks/useLiveFeedback";
 import { useLiveFeedbackSocket } from "@/hooks/useLiveFeedbackSocket";
@@ -32,6 +33,8 @@ export default function MemberFeedbackBoard() {
     const createPost = useCreatePost(boardId);
     const updatePost = useUpdatePost(boardId);
     const toggleReaction = useToggleReaction(boardId);
+    const createComment = useCreateComment();
+    const deleteComment = useDeleteComment();
 
     const [presenterId, setPresenterId] = useState<number | null>(null);
     const [draft, setDraft] = useState<Record<string, string>>({}); // 카테고리별 입력
@@ -251,6 +254,9 @@ export default function MemberFeedbackBoard() {
                                                 saving={updatePost.isPending}
                                                 onReact={(emoji, active) => toggleReaction.mutate({ postId: post.id, emoji, active })}
                                                 onSave={(contents) => updatePost.mutateAsync({ postId: post.id, contents, is_anonymous: post.is_anonymous })}
+                                                canComment={isOpen}
+                                                onAddComment={(content, anon) => createComment.mutateAsync({ postId: post.id, content, is_anonymous: anon })}
+                                                onDeleteComment={(commentId) => deleteComment.mutate(commentId)}
                                             />
                                         ))}
                                     </div>
@@ -284,7 +290,7 @@ function PresenterChip({ name, isOwn, active, count, onClick }: {
     );
 }
 
-function PostCard({ post, categories, canReact, canEdit, saving, onReact, onSave }: {
+function PostCard({ post, categories, canReact, canEdit, saving, onReact, onSave, canComment, onAddComment, onDeleteComment }: {
     post: FeedbackPost;
     categories: FeedbackCategory[];
     canReact: boolean;
@@ -292,6 +298,9 @@ function PostCard({ post, categories, canReact, canEdit, saving, onReact, onSave
     saving?: boolean;
     onReact: (emoji: string, active: boolean) => void;
     onSave?: (contents: Record<string, string>) => Promise<unknown>;
+    canComment: boolean;
+    onAddComment: (content: string, isAnonymous: boolean) => Promise<unknown>;
+    onDeleteComment: (commentId: number) => void;
 }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<Record<string, string>>({});
@@ -387,6 +396,100 @@ function PostCard({ post, categories, canReact, canEdit, saving, onReact, onSave
                     onToggle={onReact}
                 />
             </div>
+
+            <CommentThread
+                comments={post.comments}
+                canComment={canComment}
+                onAdd={onAddComment}
+                onDelete={onDeleteComment}
+            />
         </motion.div>
+    );
+}
+
+function CommentThread({ comments, canComment, onAdd, onDelete }: {
+    comments: FeedbackPost["comments"];
+    canComment: boolean;
+    onAdd: (content: string, isAnonymous: boolean) => Promise<unknown>;
+    onDelete: (commentId: number) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [text, setText] = useState("");
+    const [anon, setAnon] = useState(true);
+    const [sending, setSending] = useState(false);
+
+    const submit = async () => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        setSending(true);
+        try {
+            await onAdd(trimmed, anon);
+            setText("");
+        } finally {
+            setSending(false);
+        }
+    };
+
+    return (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+            <button
+                onClick={() => setOpen((v) => !v)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-gray-600"
+            >
+                <MessageCircle className="w-3.5 h-3.5" />
+                댓글 {comments.length > 0 ? comments.length : ""}
+            </button>
+
+            {open && (
+                <div className="mt-2 space-y-2">
+                    {comments.map((c) => (
+                        <div key={c.id} className="flex items-start justify-between gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5">
+                            <div className="min-w-0">
+                                <span className="text-[11px] font-semibold text-gray-500">{c.author_name ?? "익명"}</span>
+                                {c.is_staff && (
+                                    <span className="ml-1 px-1 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-500">운영진</span>
+                                )}
+                                <p className="text-sm text-gray-800 whitespace-pre-wrap [word-break:keep-all]">{c.content}</p>
+                            </div>
+                            {c.is_mine && (
+                                <button onClick={() => onDelete(c.id)} className="shrink-0 text-gray-300 hover:text-rose-500 p-0.5">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+                    ))}
+
+                    {canComment && (
+                        <div className="flex items-center gap-1.5">
+                            <input
+                                value={text}
+                                onChange={(e) => setText(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter" && !sending) submit(); }}
+                                placeholder="댓글 달기..."
+                                maxLength={500}
+                                className="flex-1 min-w-0 rounded-full border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"
+                            />
+                            <button
+                                onClick={() => setAnon((v) => !v)}
+                                title="익명 여부"
+                                className={cn(
+                                    "shrink-0 px-2 py-1 rounded-full text-[10px] font-bold border",
+                                    anon ? "bg-rose-50 text-rose-500 border-rose-200" : "bg-white text-gray-400 border-gray-200",
+                                )}
+                            >
+                                익명
+                            </button>
+                            <button
+                                onClick={submit}
+                                disabled={sending || !text.trim()}
+                                className="shrink-0 p-1.5 rounded-full bg-rose-500 text-white disabled:opacity-40"
+                            >
+                                {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }

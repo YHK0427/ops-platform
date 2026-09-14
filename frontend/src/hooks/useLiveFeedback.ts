@@ -54,6 +54,20 @@ export interface FeedbackBoardDetail {
     presenters: PresenterColumn[];
 }
 
+export interface FeedbackComment {
+    id: number;
+    post_id: number;
+    content: string;
+    is_anonymous: boolean;
+    author_member_id?: number; // 운영진뷰만
+    author_name: string | null;
+    is_staff?: boolean; // 멤버뷰: 비익명 운영진 댓글이면 true
+    author_is_staff?: boolean; // 운영진뷰
+    anon_alias?: string | null; // 운영진뷰
+    is_mine?: boolean; // 멤버뷰 — 본인 댓글(삭제 버튼용)
+    created_at: string | null;
+}
+
 export interface FeedbackPost {
     id: number;
     board_id: number;
@@ -70,6 +84,7 @@ export interface FeedbackPost {
     is_staff?: boolean; // 멤버뷰: 비익명 운영진 글이면 true(운영진 배지)
     author_is_staff?: boolean; // 운영진뷰: 운영진이 쓴 글
     anon_alias?: string | null; // 운영진뷰: 익명 글의 닉네임(발표화면 '익명 적용' 시 실명 대신 표시)
+    comments: FeedbackComment[];
     created_at: string | null;
     client_nonce?: string | null;
 }
@@ -410,6 +425,57 @@ export function useStaffToggleReaction(boardId: number) {
         },
         onError: (e: any) => {
             toast.error(e?.response?.data?.detail ?? "반응 실패");
+        },
+    });
+}
+
+// ── 댓글 (패들렛 스타일) ─────────────────────────────────────────────────────────
+// 생성/삭제 응답은 최소 정보만 옴 — 실제 카드 반영은 WS "post.updated" 브로드캐스트로 처리(reaction과 동일 방식).
+
+export function useCreateComment() {
+    return useMutation({
+        mutationFn: async ({ postId, content, is_anonymous }: {
+            postId: number; content: string; is_anonymous: boolean;
+        }) => {
+            await memberApi.post(`/live-feedback/member/posts/${postId}/comments`, { content, is_anonymous });
+        },
+        onError: (e: any) => {
+            toast.error(e?.response?.data?.detail ?? "댓글 등록 실패");
+        },
+    });
+}
+
+export function useDeleteComment() {
+    return useMutation({
+        mutationFn: async (commentId: number) => {
+            await memberApi.delete(`/live-feedback/member/comments/${commentId}`);
+        },
+        onError: () => {
+            toast.error("댓글 삭제 실패");
+        },
+    });
+}
+
+export function useStaffCreateComment() {
+    return useMutation({
+        mutationFn: async ({ postId, content, is_anonymous }: {
+            postId: number; content: string; is_anonymous: boolean;
+        }) => {
+            await api.post(`/live-feedback/posts/${postId}/comments/staff`, { content, is_anonymous });
+        },
+        onError: (e: any) => {
+            toast.error(e?.response?.data?.detail ?? "댓글 등록 실패");
+        },
+    });
+}
+
+export function useStaffDeleteComment() {
+    return useMutation({
+        mutationFn: async (commentId: number) => {
+            await api.delete(`/live-feedback/comments/${commentId}/staff`);
+        },
+        onError: () => {
+            toast.error("댓글 삭제 실패");
         },
     });
 }

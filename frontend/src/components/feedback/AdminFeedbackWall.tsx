@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2, ChevronDown } from "lucide-react";
+import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2, ChevronDown, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     useAdminBoard,
@@ -8,6 +8,8 @@ import {
     useHidePost,
     useStaffCreatePost,
     useStaffToggleReaction,
+    useStaffCreateComment,
+    useStaffDeleteComment,
     type FeedbackPost,
     type FeedbackCategory,
     type PresenterColumn,
@@ -30,6 +32,16 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
     const del = useDeletePost();
     const hide = useHidePost();
     const react = useStaffToggleReaction(boardId);
+    const addComment = useStaffCreateComment();
+    const delComment = useStaffDeleteComment();
+    const [commentOpen, setCommentOpen] = useState(false);
+    const [commentText, setCommentText] = useState("");
+    const submitComment = async () => {
+        const trimmed = commentText.trim();
+        if (!trimmed) return;
+        await addComment.mutateAsync({ postId: post.id, content: trimmed, is_anonymous: false });
+        setCommentText("");
+    };
     return (
         <div
             className={cn(
@@ -93,6 +105,57 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
                     canReact={!post.is_hidden}
                     onToggle={(emoji, active) => react.mutate({ postId: post.id, emoji, active })}
                 />
+            </div>
+
+            <div className="mt-2 pt-2 border-t border-gray-100">
+                <button
+                    onClick={() => setCommentOpen((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-gray-600"
+                >
+                    <MessageCircle className="w-3 h-3" />
+                    댓글 {post.comments.length > 0 ? post.comments.length : ""}
+                </button>
+                {commentOpen && (
+                    <div className="mt-1.5 space-y-1.5">
+                        {post.comments.map((c) => (
+                            <div key={c.id} className="flex items-start justify-between gap-2 bg-gray-50 rounded-lg px-2 py-1">
+                                <div className="min-w-0">
+                                    <span className="text-[10px] font-semibold text-gray-500">{c.author_name}</span>
+                                    {c.is_anonymous && (
+                                        <span className="ml-1 px-1 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-medium">
+                                            익명{c.anon_alias ? `(${c.anon_alias})` : ""}
+                                        </span>
+                                    )}
+                                    <p className="text-xs text-gray-700 whitespace-pre-wrap [word-break:keep-all]">{c.content}</p>
+                                </div>
+                                <button
+                                    onClick={() => delComment.mutate(c.id)}
+                                    className="shrink-0 text-gray-300 hover:text-rose-500 p-0.5"
+                                    title="삭제(모더레이션)"
+                                >
+                                    <Trash2 className="w-3 h-3" />
+                                </button>
+                            </div>
+                        ))}
+                        <div className="flex items-center gap-1.5">
+                            <input
+                                value={commentText}
+                                onChange={(e) => setCommentText(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter" && !addComment.isPending) submitComment(); }}
+                                placeholder="운영진 댓글..."
+                                maxLength={500}
+                                className="flex-1 min-w-0 rounded-full border border-gray-200 px-2.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                            />
+                            <button
+                                onClick={submitComment}
+                                disabled={addComment.isPending || !commentText.trim()}
+                                className="shrink-0 p-1 rounded-full bg-[var(--color-accent)] text-white disabled:opacity-40"
+                            >
+                                {addComment.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

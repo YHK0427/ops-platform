@@ -474,6 +474,10 @@ class LiveFeedbackPost(Base):
     author_user = relationship("User", foreign_keys=[author_user_id])
     presenter = relationship("Member", foreign_keys=[presenter_member_id])
     reactions = relationship("LiveFeedbackReaction", back_populates="post", cascade="all, delete-orphan")
+    comments = relationship(
+        "LiveFeedbackComment", back_populates="post", cascade="all, delete-orphan",
+        order_by="LiveFeedbackComment.created_at",
+    )
 
 
 class LiveFeedbackReaction(Base):
@@ -496,6 +500,24 @@ class LiveFeedbackReaction(Base):
     )
 
     post = relationship("LiveFeedbackPost", back_populates="reactions")
+
+
+class LiveFeedbackComment(Base):
+    """피드백 글에 대한 댓글 (패들렛 스타일). 익명 방화벽은 post와 동일 규칙."""
+    __tablename__ = "live_feedback_comments"
+
+    id = Column(Integer, primary_key=True)
+    post_id = Column(Integer, ForeignKey("live_feedback_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    # 작성자: 기수원(author_member_id) 또는 운영진(author_user_id) 중 하나
+    author_member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
+    author_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    content = Column(Text, nullable=False)
+    is_anonymous = Column(Boolean, default=True, server_default="true", nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    post = relationship("LiveFeedbackPost", back_populates="comments")
+    author = relationship("Member", foreign_keys=[author_member_id])
+    author_user = relationship("User", foreign_keys=[author_user_id])
 
 
 class LiveFeedbackAnonAlias(Base):
