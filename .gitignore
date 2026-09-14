@@ -67,3 +67,5 @@ frontend/@/
 
 # DB 백업 파일
 *.sql
+misc/
+graphify-out/
