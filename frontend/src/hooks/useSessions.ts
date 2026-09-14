@@ -75,7 +75,8 @@ export function useSession(id: number) {
             return data;
         },
         enabled: !!id,
-        refetchInterval: 5_000,
+        // FINALIZED 세션은 더 이상 안 바뀌므로 폴링 중단 (탭 열어둔 채 방치되는 경우 많음)
+        refetchInterval: (query) => (query.state.data?.status === "FINALIZED" ? false : 5_000),
     });
 }
 
