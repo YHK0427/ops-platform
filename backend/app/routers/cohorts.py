@@ -6,14 +6,13 @@
 import logging
 from datetime import datetime, timezone
 
-import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import record_audit
-from app.deps import get_db, require_superadmin
+from app.deps import get_db, hash_password, require_superadmin
 from app.models import Cohort, User
 
 logger = logging.getLogger("cohorts")
@@ -170,7 +169,7 @@ async def seed_staff(
         db.add(User(
             cohort_id=cohort_id,
             username=s.username,
-            password_hash=bcrypt.hashpw(s.password.encode(), bcrypt.gensalt()).decode(),
+            password_hash=await hash_password(s.password),
             display_name=s.display_name,
             role=s.role,
             department=s.department,

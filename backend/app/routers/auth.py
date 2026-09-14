@@ -20,6 +20,7 @@ from app.deps import (
     get_current_user,
     get_db,
     get_real_ip,
+    hash_password,
     oauth2_scheme,
     require_admin,
     require_admin_or_chairman,
@@ -421,7 +422,7 @@ async def member_change_password(
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
     if not await verify_password(body.current_password, account.password_hash):
         raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다")
-    account.password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
+    account.password_hash = await hash_password(body.new_password)
     await db.commit()
     member = await db.get(Member, current_member["member_id"])
     logger.audit(f"🔑 기수 비밀번호 변경 — {member.name if member else account.username} (@{account.username})")  # type: ignore[attr-defined]
@@ -440,7 +441,7 @@ async def change_password(
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
     if not await verify_password(body.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다")
-    user.password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
+    user.password_hash = await hash_password(body.new_password)
     await db.commit()
     logger.audit(f"change_password user={user.username}")  # type: ignore[attr-defined]
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -590,7 +591,7 @@ async def create_user(
     if exists.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="이미 존재하는 사용자명입니다 (같은 기수 내)")
 
-    hashed = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+    hashed = await hash_password(body.password)
     user = User(
         cohort_id=cohort_id,
         username=body.username,
@@ -652,7 +653,7 @@ async def update_user(
     if body.department is not None:
         user.department = body.department if body.department else None
     if body.password is not None:
-        user.password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+        user.password_hash = await hash_password(body.password)
     if body.is_active is not None:
         user.is_active = body.is_active
 

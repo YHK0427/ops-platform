@@ -405,3 +405,12 @@ async def verify_password(plain: str, hashed: str) -> bool:
     특히 로그인 시 후보 여러 명을 순차 검증할 때(기수 간 아이디 중복) 동시
     로그인이 몰리면 서버 전체가 멈추는 걸 막는다."""
     return await asyncio.to_thread(bcrypt.checkpw, plain.encode(), hashed.encode())
+
+
+async def hash_password(plain: str) -> str:
+    """verify_password와 동일 이유로 스레드 위임. 특히 계정 일괄 생성/비번 일괄
+    초기화(최대 활성 멤버 수만큼 루프)에서 감싸지 않으면 그 기수 작업 하나가
+    수 초간 이벤트 루프를 완전히 막아 다른 기수의 실시간 트래픽까지 멈춘다."""
+    def _hash() -> str:
+        return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+    return await asyncio.to_thread(_hash)

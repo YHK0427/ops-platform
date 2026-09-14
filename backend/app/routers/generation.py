@@ -1,12 +1,11 @@
 import logging
 
-import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_current_cohort_id, get_db, require_admin
+from app.deps import get_current_cohort_id, get_db, hash_password, require_admin
 from app.models import Cohort, GenerationAccount, Member
 from app.audit import record_audit
 
@@ -121,7 +120,7 @@ async def create_account(
         member_id=member.id,
         cohort_id=cohort_id,
         username=username,
-        password_hash=bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
+        password_hash=await hash_password(password),
         is_active=True,
     )
     db.add(account)
@@ -160,7 +159,7 @@ async def bulk_create_accounts(
     for member in members:
         if member.id in existing:
             continue
-        password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        password_hash = await hash_password(password)
         db.add(GenerationAccount(
             member_id=member.id,
             cohort_id=cohort_id,
@@ -209,7 +208,7 @@ async def bulk_reset_password(
         .where(Member.cohort_id == cohort_id)
     )).scalars().all()
     for account in accounts:
-        account.password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        account.password_hash = await hash_password(password)
     await db.commit()
     record_audit(user, "기수 계정 비밀번호 일괄 초기화", f"기수id={cohort_id} 대상={len(accounts)}")
     return {"updated": len(accounts)}
@@ -237,7 +236,7 @@ async def update_account(
             raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다 (같은 기수 내)")
         account.username = body.username
     if body.password is not None:
-        account.password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+        account.password_hash = await hash_password(body.password)
     if body.is_active is not None:
         account.is_active = body.is_active
 
@@ -257,7 +256,7 @@ async def reset_password(
 ):
     account = await _get_account_in_cohort(account_id, cohort_id, db)
     password = await _cohort_default_password(db, cohort_id)
-    account.password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    account.password_hash = await hash_password(password)
     await db.commit()
     record_audit(user, "기수 계정 비밀번호 초기화", f"id={account_id} username={account.username}")
     return {"status": "ok"}
