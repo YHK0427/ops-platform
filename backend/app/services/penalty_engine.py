@@ -85,7 +85,7 @@ class PenaltyEngine:
     async def calculate_all(self) -> list[PenaltyItem]:
         """세션의 모든 멤버에 대해 페널티 계산"""
         penalties = []
-        
+
         # 활성 멤버 조회 — 세션이 속한 기수의 멤버만 (타 기수 멤버 정산 방지)
         stmt = select(Member).where(
             Member.is_active == True,
@@ -94,14 +94,27 @@ class PenaltyEngine:
         result = await self.db.execute(stmt)
         members = result.scalars().all()
 
+        # 멤버마다 개별 조회하면 세션당 최대 (멤버 수 × 2)쿼리가 나가므로
+        # (정산 프리뷰·확정 양쪽에서 호출되는 핫패스) 세션 전체 출결/과제를 한 번씩만 조회해
+        # member_id로 그룹핑해둔다. 아래 TEAM PPT_EMAIL 블록에서도 이 attendance_by_member를
+        # 재사용(원래는 팀원마다 또 조회했음).
+        att_all_stmt = select(Attendance).where(Attendance.session_id == self.session.id)
+        att_all_res = await self.db.execute(att_all_stmt)
+        attendance_by_member: dict[int, Attendance] = {
+            a.member_id: a for a in att_all_res.scalars().all()
+        }
+
+        assign_all_stmt = select(Assignment).where(
+            Assignment.session_id == self.session.id,
+            Assignment.member_id.is_not(None),
+        )
+        assign_all_res = await self.db.execute(assign_all_stmt)
+        assignments_by_member: dict[int, dict[str, Assignment]] = {}
+        for a in assign_all_res.scalars().all():
+            assignments_by_member.setdefault(a.member_id, {})[a.type] = a
+
         for member in members:
-            # 1. 출석 정보 조회
-            att_stmt = select(Attendance).where(
-                Attendance.session_id == self.session.id,
-                Attendance.member_id == member.id
-            )
-            att_res = await self.db.execute(att_stmt)
-            att = att_res.scalar_one_or_none()
+            att = attendance_by_member.get(member.id)
 
             att_status = att.status if att else "ABSENT"  # 출석 없으면 결석 처리? (보통 기본값 PRESENT나 입력 필요)
             # 여기서는 출석 없으면 일단 PRESENT로 가정? 아니면 입력 안됨?
@@ -117,14 +130,8 @@ class PenaltyEngine:
                 att_status = att.status
                 excuse_type = att.excuse_type
 
-            # 2. 과제 정보 조회 (PPT, REVIEW, HOMEWORK, FEEDBACK)
-            assign_stmt = select(Assignment).where(
-                Assignment.session_id == self.session.id,
-                Assignment.member_id == member.id
-            )
-            assign_res = await self.db.execute(assign_stmt)
-            assignments = {a.type: a for a in assign_res.scalars().all()}
-            
+            assignments = assignments_by_member.get(member.id, {})
+
             ppt = assignments.get("PPT")
             review = assignments.get("REVIEW")
             hw = assignments.get("HOMEWORK")
@@ -238,13 +245,8 @@ class PenaltyEngine:
                     member_obj = next((m for m in members if m.id == mid), None)
                     if not member_obj:
                         continue
-                    # EXCUSED 멤버는 면제
-                    att_stmt2 = select(Attendance).where(
-                        Attendance.session_id == self.session.id,
-                        Attendance.member_id == mid,
-                    )
-                    att_res2 = await self.db.execute(att_stmt2)
-                    att2 = att_res2.scalar_one_or_none()
+                    # EXCUSED 멤버는 면제 (위에서 이미 조회해둔 attendance_by_member 재사용)
+                    att2 = attendance_by_member.get(mid)
                     if att2 and att2.status == "EXCUSED":
                         continue
                     penalties.append(PenaltyItem(
