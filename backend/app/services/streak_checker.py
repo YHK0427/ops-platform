@@ -61,10 +61,13 @@ async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
     for a in result.scalars().all():
         att_map.setdefault(a.member_id, {})[a.session_id] = a.status
 
-    # 4. 멤버별 스트릭 상점 부여 기록 전체 조회 (prefix match)
+    # 4. 멤버별 스트릭 상점 부여 기록 조회 (prefix match) — 같은 기수 멤버로 한정
+    #    (기수 필터 없으면 전체 Ledger를 LIKE로 풀스캔하게 됨)
     stmt_grants = (
         select(Ledger.member_id, Ledger.session_id, Ledger.description)
+        .join(Member, Member.id == Ledger.member_id)
         .where(
+            Member.cohort_id == cohort_id,
             Ledger.type == "MERIT",
             Ledger.description.startswith(STREAK_REASON_PREFIX),
         )
