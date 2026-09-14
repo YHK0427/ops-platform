@@ -80,15 +80,16 @@ async def give_merit(
     """
     created_entries = []
 
+    result = await db.execute(select(Member).where(Member.id.in_(req.member_ids)))
+    members_by_id = {m.id: m for m in result.scalars().all()}
     members_to_update = []
-
     for mid in req.member_ids:
-        member = await db.get(Member, mid)
+        member = members_by_id.get(mid)
         # 크로스기수 부여 차단: 현재 기수 멤버가 아니면 404
         if not member or member.cohort_id != cohort_id:
             raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
         members_to_update.append(member)
-        
+
     from app.services.ledger_utils import recalculate_deposit_after
 
     for member in members_to_update:
@@ -119,12 +120,8 @@ async def give_merit(
     for entry in created_entries:
         await db.refresh(entry)
 
-    # 멤버명 조회해서 읽기 좋게
-    from app.models import Member as _M
-    names = {}
-    for entry in created_entries:
-        m = await db.get(_M, entry.member_id)
-        names[entry.member_id] = m.name if m else f"#{entry.member_id}"
+    # 멤버명 조회해서 읽기 좋게 — 이미 위에서 로드한 members_by_id 재사용
+    names = {mid: m.name for mid, m in members_by_id.items()}
     for entry in created_entries:
         logger.audit(f"🏆 상점 부여 — {names.get(entry.member_id)} (+{req.score_delta}점, {req.reason})")
 
