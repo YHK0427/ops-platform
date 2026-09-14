@@ -25,9 +25,11 @@
 
 | # | 위치 | 문제 | 비고 |
 |---|------|------|------|
-| 2 | `backend/app/services/penalty_engine.py:97-126` | `calculate_all()`이 활성 멤버 전원을 순회하며 멤버당 Attendance/Assignment 개별 쿼리. | session_id 기준 1회 조회 후 member_id 그룹핑으로 리팩터 필요. |
 | 3 | `backend/app/services/ledger_utils.py:9-36` (`recalculate_deposit_after`) | 호출마다 해당 멤버 전체 이력 재계산 O(누적 건수). | **의도적 보류** — 백데이트 항목 정합성 리스크 때문에 증분화 대신 인덱스만 추가해둔 상태. 건드리려면 백데이트 시나리오 먼저 정리 필요. |
 | 11 | `backend/app/services/crawler_cafe.py` `sync_board_to_db` | 아이템마다 존재확인 쿼리 — 확인 결과 이 함수 자체가 호출부 없는 죽은 코드. 실제 사용 경로(crawler_homework/crawler_excuse)는 각자 자체 upsert 로직 사용, 별도 확인 필요시 그쪽 우선. | 낮은 우선순위. |
+| — | `backend/app/services/penalty_engine.py` TEAM PPT_EMAIL 블록 | 비-PASS 팀 PPT_EMAIL 과제마다 TeamMember 개별 조회. | 팀 수(5-15개) 자체가 작고 그중 미제출 팀만 대상이라 영향 미미, 낮은 우선순위. |
+
+**#2 (penalty_engine.py 멤버별 N+1)는 이전 세션에서 이미 수정 완료** (`27113a9`) — 문서 갱신 누락이었을 뿐 실제로는 처리됨.
 
 ## 확인됨 — 문제 없음 / 우선순위 낮음 (재조사 불필요)
 
