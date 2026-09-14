@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle, UserMinus, Users, Loader2, StopCircle } from "lucide-react";
 import { useSessionVideos, useDeleteSessionVideo, useUploadVideos } from "@/hooks";
 import type { SessionVideo } from "@/hooks";
-import { getToken } from "@/lib/api";
+import { getToken, getActiveCohort } from "@/lib/api";
 import { reportUploadDiag } from "@/lib/uploadDiag";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -212,6 +212,9 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
 
         const token = getToken();
         if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        // r2Upload와 동일 이유 — raw XHR는 api 인스턴스 인터셉터를 안 타서 직접 첨부.
+        const activeCohort = getActiveCohort();
+        if (activeCohort != null) xhr.setRequestHeader("X-Cohort-Id", String(activeCohort));
 
         const sizeMb = Math.round((file.size / 1024 / 1024) * 10) / 10;
         const t0 = Date.now();
@@ -265,7 +268,14 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     // 서버 presign → 클라 PUT to R2 → 서버 finalize(ARQ pull 트리거)
     const r2Upload = async (memberId: number, file: File, onDone: () => void) => {
         const token = getToken();
-        const authHeader: Record<string, string> = token ? { "Authorization": `Bearer ${token}` } : {};
+        // presign/finalize는 우리 백엔드로 가는 요청이라 슈퍼관리자가 다른 기수를 보는 중이면
+        // X-Cohort-Id가 없으면 400(get_current_cohort_id) — 공용 api 인스턴스가 아니라 raw
+        // fetch라 인터셉터를 안 타서 직접 넣어줘야 함. (R2 PUT 자체는 presigned URL이라 무관)
+        const activeCohort = getActiveCohort();
+        const authHeader: Record<string, string> = {
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+            ...(activeCohort != null ? { "X-Cohort-Id": String(activeCohort) } : {}),
+        };
 
         let aborted = false;
         xhrRefs.current[memberId] = {
