@@ -9,7 +9,7 @@ from app.deps import (
     get_current_cohort_id, get_current_member, get_current_user, get_db,
     require_staff, resolve_current_user_row,
 )
-from app.models import Attendance, Cohort, Ledger, Member, Session as SessionModel, User
+from app.models import Attendance, Cohort, GenerationAccount, Ledger, Member, Session as SessionModel, User
 from app.schemas.member import MemberCreate, MemberResponse, MemberUpdate
 
 import logging
@@ -25,6 +25,19 @@ async def _get_member_or_404(member_id: int, db: AsyncSession, cohort_id: int | 
     if not result or (cohort_id is not None and result.cohort_id != cohort_id):
         raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다")
     return result
+
+
+async def _set_generation_account_active(db: AsyncSession, member_id: int, is_active: bool) -> None:
+    """이탈/수료 시 연결된 기수 계정도 비활성화(반대로 재활성화 시 되돌림) —
+    get_current_member가 Member.is_active를 확인하므로 로그인 자체는 이미 막히지만,
+    계정 목록에 '활성'으로 잘못 표시되거나 재활성화 후에도 로그인이 막힌 채로
+    남는 것(계정만 영구 비활성으로 방치되는 것)을 방지."""
+    result = await db.execute(
+        select(GenerationAccount).where(GenerationAccount.member_id == member_id)
+    )
+    account = result.scalar_one_or_none()
+    if account:
+        account.is_active = is_active
 
 
 # ── 엔드포인트 ────────────────────────────────────────────────────────────────
@@ -206,10 +219,12 @@ async def update_member(
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(member, field, value)
-    # 재활성화 시 deactivated_at/사유 초기화
+    # 재활성화 시 deactivated_at/사유 초기화 + 기수 계정도 재활성화(이탈/수료 처리 시
+    # 잠갔던 것 원복 — 안 하면 재활성화된 멤버가 예전 계정으로 계속 로그인 못 함)
     if update_data.get("is_active") is True:
         member.deactivated_at = None
         member.deactivation_reason = None
+        await _set_generation_account_active(db, member.id, True)
     await db.commit()
     await db.refresh(member)
     logger.audit(f"✏️ 멤버 수정 — {member.name} ({', '.join(update_data.keys())})")
@@ -249,6 +264,7 @@ async def delete_member(
         db.add(ledger)
 
     member.current_deposit = 0
+    await _set_generation_account_active(db, member.id, False)
     await db.commit()
     logger.audit(f"🚪 멤버 이탈 — {member.name} (디파짓 몰수 {forfeit_amount:,}원)")
 
@@ -286,6 +302,7 @@ async def graduate_member(
         db.add(ledger)
 
     member.current_deposit = 0
+    await _set_generation_account_active(db, member.id, False)
     await db.commit()
     logger.audit(f"🎓 멤버 수료 — {member.name} (환급 {refund_amount:,}원)")
     return {"id": member.id, "name": member.name, "refund_amount": refund_amount}

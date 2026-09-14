@@ -213,12 +213,15 @@ async def get_current_member(
     # DB에서 계정 활성 상태 + 소속 기수 확인 (cohort_id는 DB 권위 — 구 토큰도 안전)
     from app.models import GenerationAccount, Member
     result = await db.execute(
-        select(GenerationAccount.is_active, Member.cohort_id)
+        select(GenerationAccount.is_active, Member.cohort_id, Member.is_active)
         .join(Member, Member.id == GenerationAccount.member_id)
         .where(GenerationAccount.member_id == member_id)
     )
     row = result.first()
-    if not row or not row[0]:
+    if not row or not row[0] or not row[2]:
+        # row[0]=계정 활성, row[2]=멤버 활성 — 이탈/수료 멤버는 계정이 남아있어도
+        # 이미 발급된 토큰으로도 더 이상 접근 못 하게 여기서 막는다(로그인 시점뿐 아니라
+        # 매 요청마다 확인 — 멤버 토큰은 만료가 사실상 무제한이라 더 중요함).
         raise credentials_exception
 
     return {"member_id": member_id, "username": username, "cohort_id": row[1]}
@@ -254,12 +257,12 @@ async def decode_ws_token(token: str, db: AsyncSession) -> dict | None:
             return None
         from app.models import GenerationAccount, Member
         result = await db.execute(
-            select(GenerationAccount.is_active, Member.cohort_id)
+            select(GenerationAccount.is_active, Member.cohort_id, Member.is_active)
             .join(Member, Member.id == GenerationAccount.member_id)
             .where(GenerationAccount.member_id == member_id)
         )
         row = result.first()
-        if not row or not row[0]:
+        if not row or not row[0] or not row[2]:
             return None
         return {"role": "member", "member_id": member_id, "username": username, "cohort_id": row[1]}
 

@@ -359,6 +359,10 @@ async def member_login(
         )
 
     member = await db.get(Member, account.member_id)
+    # 이탈/수료(비활성) 멤버는 계정이 남아있어도 로그인 차단
+    if member and not member.is_active:
+        logger.warning("member_login_failed user=%s ip=%s reason=member_inactive", body.username, ip)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="비활성화된 멤버입니다. 운영진에게 문의하세요.")
     # 보관(비활성)된 기수면 로그인 차단
     cohort = await db.get(Cohort, member.cohort_id) if member else None
     if cohort and not cohort.is_active:
