@@ -11,22 +11,24 @@ import { getToken } from "@/lib/api";
 import { getMemberToken } from "@/lib/memberApi";
 
 import LoginPage from "@/pages/LoginPage";
-import SessionList from "@/pages/SessionList";
-import Dashboard from "@/pages/Dashboard";
-import Members from "@/pages/Members";
-import MemberDetail from "@/pages/MemberDetail";
-import Ledger from "@/pages/Ledger";
-import SessionWizard from "@/pages/SessionWizard";
-import SessionLayout from "@/pages/session/SessionLayout";
-import PrepTab from "@/pages/session/PrepTab";
-import OpsTab from "@/pages/session/OpsTab";
-import { PostTab } from "@/pages/session/PostTab";
-import SettlementTab from "@/pages/session/SettlementTab";
-import TeamEditPage from "@/pages/session/TeamEditPage";
-import GroupEditPage from "@/pages/session/GroupEditPage";
-import AdminUsers from "@/pages/AdminUsers";
-import AdminCohorts from "@/pages/AdminCohorts";
-import Treasury from "@/pages/Treasury";
+
+// ── Lazy-loaded ops pages (로그인 직후 대시보드 외엔 첫 진입 시 안 씀) ──────
+const SessionList = lazy(() => import("@/pages/SessionList"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const Members = lazy(() => import("@/pages/Members"));
+const MemberDetail = lazy(() => import("@/pages/MemberDetail"));
+const Ledger = lazy(() => import("@/pages/Ledger"));
+const SessionWizard = lazy(() => import("@/pages/SessionWizard"));
+const SessionLayout = lazy(() => import("@/pages/session/SessionLayout"));
+const PrepTab = lazy(() => import("@/pages/session/PrepTab"));
+const OpsTab = lazy(() => import("@/pages/session/OpsTab"));
+const PostTab = lazy(() => import("@/pages/session/PostTab").then((m) => ({ default: m.PostTab })));
+const SettlementTab = lazy(() => import("@/pages/session/SettlementTab"));
+const TeamEditPage = lazy(() => import("@/pages/session/TeamEditPage"));
+const GroupEditPage = lazy(() => import("@/pages/session/GroupEditPage"));
+const AdminUsers = lazy(() => import("@/pages/AdminUsers"));
+const AdminCohorts = lazy(() => import("@/pages/AdminCohorts"));
+const Treasury = lazy(() => import("@/pages/Treasury"));
 
 // ── Lazy-loaded evaluation pages (ops) ─────────────────────────────────
 const TeamBuilding = lazy(() => import("@/pages/TeamBuilding"));
