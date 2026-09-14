@@ -21,6 +21,10 @@
 @font-face { font-family: "GmarketSans"; src: url("/fonts/GmarketSans-Bold.woff2") format("woff2"); font-weight: 700 900; font-display: optional; }
 
 @import "tailwindcss";
+/* shadcn 컴포넌트(dialog/alert-dialog/sheet 등)의 animate-in/fade-in-0/zoom-in-95/
+   slide-in-from-* 클래스가 실제로는 tailwindcss-animate 플러그인이 없어서 계속
+   빈 클래스였음(애니메이션 0, 즉시 팝인/팝아웃) — Tailwind v4용 CSS-only 포트로 교체. */
+@import "tw-animate-css";
 
 /* ── Theme tokens (Light — Growth Report style) ── */
 @theme {
