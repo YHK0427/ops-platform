@@ -274,8 +274,8 @@ class Ledger(Base):
     __tablename__ = "ledger"
 
     id = Column(Integer, primary_key=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"))  # NULL 허용 (세션 외 수동 처리)
-    member_id = Column(Integer, ForeignKey("members.id"))
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True)  # NULL 허용 (세션 외 수동 처리)
+    member_id = Column(Integer, ForeignKey("members.id"), index=True)
     type = Column(String(30), nullable=False)
     amount_krw = Column(Integer, default=0)   # 양수=입금, 음수=차감
     score_delta = Column(Integer, default=0)  # 양수=상점, 음수=벌점
