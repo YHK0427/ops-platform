@@ -5,3 +5,4 @@ export * from "./useCrawler";
 export * from "./useAdminUsers";
 export * from "./useEvaluation";
 export * from "./useMemberEvaluation";
+export * from "./useDevFeedback";

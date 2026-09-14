@@ -55,6 +55,7 @@ const MemberFeedbackBoard = lazy(() => import("@/pages/member/MemberFeedbackBoar
 const MemberFeedbackList = lazy(() => import("@/pages/member/MemberFeedbackList"));
 const MemberAnnouncements = lazy(() => import("@/pages/member/MemberAnnouncements"));
 const MemberAnnouncementDetail = lazy(() => import("@/pages/member/MemberAnnouncementDetail"));
+const DevFeedback = lazy(() => import("@/pages/DevFeedback"));
 
 // ── Loading fallback ───────────────────────────────────────────────────
 function LoadingFallback() {
@@ -204,6 +205,7 @@ export default function App() {
                   <Route path="/treasury" element={<Treasury />} />
                   <Route path="/admin/users" element={<AdminUsers />} />
                   <Route path="/admin/cohorts" element={<AdminCohorts />} />
+                  <Route path="/dev-feedback" element={<DevFeedback />} />
                   <Route path="/team-building" element={<TeamBuilding />} />
                   <Route path="/team-building/:boardId" element={<TeamBuildingBoard />} />
                   <Route path="/eval" element={<EvalManagement />} />

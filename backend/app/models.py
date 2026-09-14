@@ -991,3 +991,15 @@ class ScoringDeduction(Base):
 
     round = relationship("ScoringRound", back_populates="deductions")
     rule = relationship("ScoringDeductionRule")
+
+
+class DevFeedback(Base):
+    """개발자 소통창구 — 운영진이 개발자에게 보내는 버그/건의사항. Telegram 알림 병행."""
+    __tablename__ = "dev_feedback"
+
+    id = Column(Integer, primary_key=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="RESTRICT"), nullable=True, index=True)
+    reporter_username = Column(String(50), nullable=False)
+    reporter_display_name = Column(String(50), nullable=False)
+    message = Column(Text, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

@@ -19,6 +19,7 @@ import {
     Users2,
     Megaphone,
     Gavel,
+    Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -274,6 +275,31 @@ export function Sidebar() {
                             기수 공간 관리
                         </NavLink>
                     )}
+                </div>
+            )}
+
+            {/* 개발자 소통창구 — 운영자(manager) 이상. scoring_only/viewer는 접근 불가 라우터라 숨김. */}
+            {(user?.role === "manager" || user?.role === "admin") && (
+                <div className="px-3">
+                    <div className="pt-4 pb-1">
+                        <p className="px-3 text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+                            소통
+                        </p>
+                    </div>
+                    <NavLink
+                        to="/dev-feedback"
+                        className={({ isActive }) =>
+                            cn(
+                                "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                                isActive
+                                    ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
+                            )
+                        }
+                    >
+                        <Wrench className="w-4 h-4" />
+                        개발자 호출
+                    </NavLink>
                 </div>
             )}
 
