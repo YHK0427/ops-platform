@@ -38,7 +38,7 @@ const BlockquoteVariant = Extension.create({
 
 export const FONT_FAMILIES = [
     { label: "기본", value: "" },
-    { label: "Paperlogy", value: '"Paperlogy", sans-serif' },
+    { label: "GmarketSans", value: '"GmarketSans", sans-serif' },
     { label: "명조", value: '"Noto Serif KR", serif' },
     { label: "고정폭", value: 'ui-monospace, monospace' },
 ];

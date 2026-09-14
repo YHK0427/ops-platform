@@ -1,19 +1,16 @@
-/* ── Fonts ────────────────────────────────────── */
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css");
-@import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300..700&display=swap");
-/* Noto Sans KR — 희귀 한글 폴백 (윺, 뷁 등) */
-@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap");
+/* ── Fonts ────────────────────────────────────────────────────────────
+   Pretendard/Geist Mono/Noto Sans KR는 index.html <link>로 이동(병렬 로드 —
+   CSS @import 3개 체인은 순차 왕복이라 초기 렌더를 늦추고 폰트가 단계적으로
+   바뀌어 보이는 원인이었음).
+   Paperlogy → GmarketSans 로 기본 폰트 교체: Paperlogy는 11,172 완성형 한글 중
+   8,392자가 빈 글리프(획 없음)라 "윺" 같은 희귀 음절이 아예 안 보였음.
+   GmarketSans는 Paperlogy 한글부의 원본 소스 폰트라 톤앤매너가 가장 가까우면서
+   완성형 한글 전체를 지원 — 별도 폴백 계층 없이 통째로 대체. woff2 변환 +
+   font-display: optional로 깜빡임 없게. */
 
-@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-4Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-5Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
-@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-6SemiBold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
-@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-7Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
-@font-face { font-family: "Paperlogy"; src: url("/fonts/Paperlogy-8ExtraBold.ttf") format("truetype"); font-weight: 800; font-display: swap; }
-
-/* 희귀 한글(윺 등) 전용 폴백 — SafeText 컴포넌트가 해당 문자를 이 클래스로 감싸 렌더 */
-.hangul-fallback {
-  font-family: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", "Nanum Gothic", sans-serif;
-}
+@font-face { font-family: "GmarketSans"; src: url("/fonts/GmarketSans-Light.woff2") format("woff2"); font-weight: 300 400; font-display: optional; }
+@font-face { font-family: "GmarketSans"; src: url("/fonts/GmarketSans-Medium.woff2") format("woff2"); font-weight: 500 600; font-display: optional; }
+@font-face { font-family: "GmarketSans"; src: url("/fonts/GmarketSans-Bold.woff2") format("woff2"); font-weight: 700 900; font-display: optional; }
 
 @import "tailwindcss";
 
@@ -63,7 +60,7 @@
   --color-ring: #F43F5E;
 
   /* Font families */
-  --font-sans: "Paperlogy", "Pretendard Variable", "Noto Sans KR", system-ui, sans-serif;
+  --font-sans: "GmarketSans", "Pretendard Variable", "Noto Sans KR", system-ui, sans-serif;
   --font-mono: "Geist Mono", "SF Mono", monospace;
 
   /* Radius */

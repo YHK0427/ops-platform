@@ -1,10 +1,11 @@
 import { Fragment, type ReactNode } from "react";
 
 /**
- * Paperlogy/Pretendard에 없는 희귀 한글 집합.
- * 필요 시 여기에 문자만 추가하면 됨 (예: "윺", "뷁", ...).
+ * (레거시) GmarketSans 전환 이후로는 완성형 한글을 전부 지원해 더 이상
+ * 필요하지 않음 — hangul-fallback 클래스도 제거되어 아래 span은 이제
+ * 순수 no-op 래퍼. 혹시 모를 신규 미지원 문자 대비용으로만 남겨둠.
  */
-const RARE_HANGUL = new Set<string>(["윺"]);
+const RARE_HANGUL = new Set<string>([]);
 
 /**
  * 문자열에서 희귀 한글만 찾아 <span class="hangul-fallback">로 감싸 렌더.
