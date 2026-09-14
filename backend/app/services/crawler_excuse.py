@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from datetime import date as date_type, datetime, time, timedelta, timezone
@@ -120,7 +121,7 @@ async def scan_excuses(
     articles = []
     for page in range(1, 16):
         try:
-            data = fetch_board_articles(req_session, menu_id, page=page)
+            data = await asyncio.to_thread(fetch_board_articles, req_session, menu_id, page=page)
         except Exception as e:
             logger.error(f"Failed to fetch excuse board page {page}: {e}")
             break
@@ -165,7 +166,7 @@ async def scan_excuses(
         excuse_text = ""
         if article_id:
             try:
-                detail = fetch_article_detail(req_session, int(article_id))
+                detail = await asyncio.to_thread(fetch_article_detail, req_session, int(article_id))
                 content_html = (
                     detail.get("result", {})
                           .get("article", {})

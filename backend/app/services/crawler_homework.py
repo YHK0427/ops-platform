@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone, timedelta
@@ -75,7 +76,7 @@ async def scan_homework_all(
         # 여기서는 1페이지(20개) ~ 2페이지 정도 조회
         articles = []
         for page in range(1, 14):  # 임시: 13페이지 (260개)
-            data = fetch_board_articles(req_session, menu_id, page=page)
+            data = await asyncio.to_thread(fetch_board_articles, req_session, menu_id, page=page)
             try:
                 items = data.get("result", {}).get("articleList", [])
                 if not items:
@@ -223,7 +224,7 @@ async def scan_feedback_comments(
     # 1. 영상 게시판에서 해당 주차 게시글 수집
     video_articles = []
     for page in range(1, 11):  # 최대 10페이지 (200개)
-        data = fetch_board_articles(req_session, settings.NAVER_CAFE_MENU_VIDEO, page=page)
+        data = await asyncio.to_thread(fetch_board_articles, req_session, settings.NAVER_CAFE_MENU_VIDEO, page=page)
         items = data.get("result", {}).get("articleList", [])
         if not items:
             break
@@ -287,7 +288,7 @@ async def scan_feedback_comments(
 
         # 댓글 작성자 수집 (텍스트 포함)
         try:
-            detail = fetch_article_detail(req_session, article_id)
+            detail = await asyncio.to_thread(fetch_article_detail, req_session, article_id)
             comments = (
                 detail.get("result", {})
                       .get("comments", {})

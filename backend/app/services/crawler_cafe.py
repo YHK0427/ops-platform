@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import urllib.parse
@@ -172,7 +173,7 @@ async def sync_board_to_db(
 
     for page in range(1, 11):  # 최대 10페이지 (200개)
         try:
-            data = fetch_board_articles(req_session, menu_id, page=page)
+            data = await asyncio.to_thread(fetch_board_articles, req_session, menu_id, page=page)
         except Exception as e:
             logger.error(f"sync_board_to_db: fetch failed page={page}: {e}")
             break
