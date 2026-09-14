@@ -676,7 +676,11 @@ async def delete_user(
 ):
     """사용자 삭제 (admin 전용) — 현재 기수 운영진만. 본인 계정은 삭제 불가."""
     user = await db.get(User, user_id)
-    if user and user.username == current_user["username"]:
+    if current_user.get("id") is not None:
+        is_self = bool(user and user.id == current_user["id"])
+    else:
+        is_self = bool(user and user.username == current_user["username"])  # 구 토큰 폴백
+    if is_self:
         raise HTTPException(status_code=400, detail="본인 계정은 삭제할 수 없습니다")
     if not user or user.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
