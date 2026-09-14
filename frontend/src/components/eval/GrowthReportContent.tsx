@@ -38,6 +38,8 @@ export interface GrowthReportContentProps {
     showQuestionDetail?: boolean;
     /** 상단 우측 라벨 (기본 "초기 분석지"). 후기 단일 폴백 시 "후기 분석지" 전달용. */
     roundLabel?: string;
+    /** 표지 상단 라벨 — 예: "UnivPT 33기". 없으면 "UnivPT"만 표시 */
+    cohortLabel?: string;
 }
 
 // ── Constants ───────────────────────────────────────────────────────────
@@ -295,6 +297,7 @@ export default function GrowthReportContent({
     showTitle = true,
     showQuestionDetail = false,
     roundLabel = "초기 분석지",
+    cohortLabel,
 }: GrowthReportContentProps) {
     const combinedScores = useMemo(() => {
         if (!data?.combined_scores_by_domain) return { PLANNING: 0, DESIGN: 0, SPEECH: 0 };
@@ -349,7 +352,7 @@ export default function GrowthReportContent({
 
                     <div className="relative">
                         <p className="text-[11px] font-semibold text-rose-200 tracking-widest mb-2">
-                            UnivPT 33기
+                            {cohortLabel ?? "UnivPT"}
                         </p>
                         <h2 className="text-xl font-extrabold leading-tight">
                             {data.member_name}님의 발표 성장 리포트

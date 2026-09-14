@@ -27,6 +27,7 @@ class CohortResponse(BaseModel):
     id: int
     number: int
     name: str
+    slogan: str | None = None
     is_current: bool
     is_active: bool
     created_at: datetime
@@ -42,6 +43,7 @@ class CohortCreate(BaseModel):
 
 class CohortUpdate(BaseModel):
     name: str | None = Field(None, max_length=50)
+    slogan: str | None = Field(None, max_length=200)
     is_active: bool | None = None
     is_current: bool | None = None  # 활성 기수 토글 (여러 기수 동시 활성 허용)
     archived: bool | None = None  # True면 archived_at 설정 + 비활성
@@ -125,6 +127,8 @@ async def update_cohort(
         raise HTTPException(status_code=404, detail="기수를 찾을 수 없습니다")
     if body.name is not None:
         cohort.name = body.name
+    if body.slogan is not None:
+        cohort.slogan = body.slogan or None
     if body.archived is not None:
         if body.archived:
             cohort.archived_at = datetime.now(timezone.utc)

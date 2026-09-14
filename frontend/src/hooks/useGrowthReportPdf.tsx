@@ -7,6 +7,10 @@ export interface GrowthReportPdfData {
     final: RoundScores;
     initial: RoundScores;
     growthReflection?: string | null;
+    /** 표지 상단 라벨 — 예: "UnivPT 33기" */
+    cohortLabel?: string;
+    /** 기수별 슬로건 */
+    slogan?: string;
 }
 
 /**
@@ -69,6 +73,8 @@ export function useGrowthReportPdf() {
                 final={data.final}
                 initial={data.initial}
                 growthReflection={data.growthReflection}
+                cohortLabel={data.cohortLabel}
+                slogan={data.slogan}
                 coverRef={coverRef}
                 page1Ref={page1Ref}
                 page2Ref={page2Ref}

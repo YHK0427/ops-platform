@@ -1,6 +1,8 @@
 /** 발표 성장 리포트 표지 멘트 — PDF 표지와 화면 결과보기 인트로에서 공유 */
 
-export const COVER_TITLE = "당신의 가능성을 꽃피우기 위해";
+/** 슬로건 기본값 — 기수에 슬로건이 설정 안 돼 있으면(cohort.slogan=null) 이 값으로 대체.
+ * 이모지도 슬로건 문구 자체에 포함된다(별도 프리픽스로 붙이지 않음). */
+export const DEFAULT_SLOGAN = "🌸 당신의 가능성을 꽃피우기 위해";
 
 export interface CoverParagraph {
     text: string;
@@ -17,6 +19,9 @@ export const COVER_PARAGRAPHS: CoverParagraph[] = [
     { text: "앞으로의 발표와 도전 속에서 여러분만의 강점과 가능성을 계속해서 꽃피워 나가길 바랍니다.", emphasis: true },
 ];
 
-export const COVER_CLOSING = "당신의 가능성을 꽃피우기 위해, 발표성장리포트 TF팀은 여러분의 성장을 늘 응원하겠습니다. 🌸";
+/** 슬로건을 앞에 붙인 맺음말 — 기수별 slogan을 그대로 넘기면 된다 */
+export function coverClosing(slogan: string): string {
+    return `${slogan}, 발표성장리포트 TF팀은 여러분의 성장을 늘 응원하겠습니다. 🌸`;
+}
 
 export const COVER_SIGNATURE = "발표성장리포트 TF 일동 (장영진, 이현아, 김태형, 김영헌)";

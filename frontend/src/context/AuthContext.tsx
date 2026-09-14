@@ -16,6 +16,7 @@ interface AuthUser {
     cohort_id: number | null;
     cohort_number: number | null;
     cohort_name: string | null;
+    cohort_slogan: string | null;
     is_superadmin: boolean;
 }
 

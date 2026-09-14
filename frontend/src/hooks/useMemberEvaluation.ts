@@ -40,6 +40,8 @@ export interface MemberResultDetail {
     type: string | null;
     growth_reflection: string | null;
     round_type?: "INITIAL" | "FINAL" | "COMBINED" | null;
+    cohort_name?: string | null;
+    cohort_slogan?: string | null;
     initial?: MemberResultDetail | null;
 }
 

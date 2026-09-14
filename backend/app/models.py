@@ -16,6 +16,8 @@ class Cohort(Base):
     id = Column(Integer, primary_key=True)
     number = Column(Integer, unique=True, nullable=False)  # 33, 34
     name = Column(String(50), nullable=False)              # "33기"
+    # 발표 성장 리포트 표지 슬로건(기수별). NULL이면 프론트 기본 문구("당신의 가능성을 꽃피우기 위해")로 대체.
+    slogan = Column(String(200), nullable=True)
     is_current = Column(Boolean, server_default="false", nullable=False)  # 신규 계정 시딩·기본값 기준
     is_active = Column(Boolean, server_default="true", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

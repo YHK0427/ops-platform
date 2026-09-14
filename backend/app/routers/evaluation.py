@@ -29,6 +29,7 @@ from app.deps import (
 )
 from app.models import (
     Attendance,
+    Cohort,
     EvalAssignment,
     EvalResponse,
     EvalRound,
@@ -165,6 +166,10 @@ class MemberResultDetail(BaseModel):
     type: str | None = None
     growth_reflection: str | None = None
     round_type: str | None = None
+    # 조회 대상 멤버의 소속 기수 — 화면 표시용(예: "UnivPT 33기"). 슈퍼관리자가 다른 기수를
+    # 열람 중이어도 항상 이 멤버의 실제 소속 기수를 반영한다(뷰어의 활성 기수가 아니라).
+    cohort_name: str | None = None
+    cohort_slogan: str | None = None
     # 후기(FINAL) + compare_to 설정 시에만 채워지는 초기 결과(재귀 1단계, growth_reflection 제외)
     initial: "MemberResultDetail | None" = None
 
@@ -265,6 +270,7 @@ async def _build_member_result(
     """
     round_ = await db.get(EvalRound, round_id)
     round_type = round_.round_type if round_ else None
+    cohort = await db.get(Cohort, round_.cohort_id) if round_ and round_.cohort_id else None
 
     # 자기평가 배정 (성장 회고 서술형 포함)
     self_assign_q = await db.execute(
@@ -359,6 +365,8 @@ async def _build_member_result(
         type=ptype,
         growth_reflection=growth_reflection,
         round_type=round_type,
+        cohort_name=cohort.name if cohort else None,
+        cohort_slogan=cohort.slogan if cohort else None,
         initial=initial,
     )
 

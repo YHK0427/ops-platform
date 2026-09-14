@@ -47,6 +47,8 @@ export interface FinalGrowthReportProps {
     showTitle?: boolean;
     /** 맨 끝 "내가 발견한 성장"(성장 회고) 섹션 표시 여부 */
     showReflection?: boolean;
+    /** 표지 상단 라벨 — 예: "UnivPT 33기". 없으면 "UnivPT"만 표시 */
+    cohortLabel?: string;
 }
 
 const PERCEPTION_BADGE: Record<string, string> = {
@@ -72,6 +74,7 @@ export default function FinalGrowthReport({
     growthReflection,
     showTitle = true,
     showReflection = true,
+    cohortLabel,
 }: FinalGrowthReportProps) {
     const finalCombined = useMemo(() => toTriple(final.combined_scores_by_domain), [final]);
     const initialCombined = useMemo(() => toTriple(initial.combined_scores_by_domain), [initial]);
@@ -133,7 +136,7 @@ export default function FinalGrowthReport({
                         </span>
                     </div>
                     <div className="relative">
-                        <p className="text-[11px] font-semibold text-rose-200 tracking-widest mb-2">UnivPT 33기</p>
+                        <p className="text-[11px] font-semibold text-rose-200 tracking-widest mb-2">{cohortLabel ?? "UnivPT"}</p>
                         <h2 className="text-xl font-extrabold leading-tight">{memberName}님의 발표 성장 리포트</h2>
                         <p className="text-xs text-rose-100 mt-2 leading-[1.8]">
                             처음의 나와 지금의 나를 비교하며, 그동안의 성장을 확인해 보세요.

@@ -87,6 +87,7 @@ class MemberMeResponse(BaseModel):
     cohort_id: int | None = None
     cohort_number: int | None = None
     cohort_name: str | None = None
+    cohort_slogan: str | None = None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -365,6 +366,7 @@ async def member_me(
         cohort_id=member.cohort_id,
         cohort_number=cohort.number if cohort else None,
         cohort_name=cohort.name if cohort else None,
+        cohort_slogan=cohort.slogan if cohort else None,
     )
 
 

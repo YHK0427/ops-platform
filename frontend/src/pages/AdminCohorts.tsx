@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Check, Eye, UserPlus, Archive, ArchiveRestore, Loader2, Layers } from "lucide-react";
+import { Plus, Check, Eye, UserPlus, Archive, ArchiveRestore, Loader2, Layers, Save } from "lucide-react";
 import api, { getActiveCohort, setActiveCohort } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/PageHeader";
@@ -20,6 +20,7 @@ interface Cohort {
     id: number;
     number: number;
     name: string;
+    slogan: string | null;
     is_current: boolean;
     is_active: boolean;
     archived_at: string | null;
@@ -64,6 +65,16 @@ export default function AdminCohorts() {
             qc.invalidateQueries({ queryKey: ["cohorts"] });
             toast.success(v.archived ? "기수를 보관했습니다 (로그인 차단)" : "보관을 해제했습니다 (로그인 재허용)");
         },
+    });
+
+    const sloganMut = useMutation({
+        mutationFn: async ({ id, slogan }: { id: number; slogan: string }) =>
+            (await api.patch(`/cohorts/${id}`, { slogan })).data,
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ["cohorts"] });
+            toast.success("슬로건을 저장했습니다");
+        },
+        onError: () => toast.error("저장 실패"),
     });
 
     function viewCohort(c: Cohort) {
@@ -118,6 +129,11 @@ export default function AdminCohorts() {
                                         {c.archived_at && <Badge className="bg-zinc-500/15 text-zinc-600 border-zinc-500/30">보관됨</Badge>}
                                     </div>
                                     <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{c.number}기</p>
+                                    <SloganEditor
+                                        cohort={c}
+                                        onSave={(slogan) => sloganMut.mutate({ id: c.id, slogan })}
+                                        pending={sloganMut.isPending}
+                                    />
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                     <Button size="sm" variant={c.id === active ? "default" : "outline"} onClick={() => viewCohort(c)}>
@@ -149,6 +165,29 @@ export default function AdminCohorts() {
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+/** 발표 성장 리포트 표지 슬로건 인라인 편집 — 기수별로 다른 문구를 쓸 수 있다. */
+function SloganEditor({
+    cohort, onSave, pending,
+}: { cohort: Cohort; onSave: (slogan: string) => void; pending: boolean }) {
+    const [value, setValue] = useState(cohort.slogan ?? "");
+    const dirty = value !== (cohort.slogan ?? "");
+    return (
+        <div className="flex items-center gap-1.5 mt-1.5">
+            <Input
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="발표 성장 리포트 슬로건 (비우면 기본 문구)"
+                className="h-7 text-xs"
+            />
+            {dirty && (
+                <Button size="sm" variant="outline" className="h-7 px-2 shrink-0" disabled={pending} onClick={() => onSave(value)}>
+                    {pending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                </Button>
+            )}
         </div>
     );
 }

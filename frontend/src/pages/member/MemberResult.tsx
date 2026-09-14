@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Lock, Download } from "lucide-react";
 import FinalGrowthReport from "@/components/eval/FinalGrowthReport";
 import { useGrowthReportPdf } from "@/hooks/useGrowthReportPdf";
-import { COVER_TITLE, COVER_PARAGRAPHS, COVER_CLOSING, COVER_SIGNATURE } from "@/constants/growthReportCover";
+import { COVER_PARAGRAPHS, COVER_SIGNATURE, DEFAULT_SLOGAN, coverClosing } from "@/constants/growthReportCover";
 import GrowthReportContent, {
     DOMAINS,
     DOMAIN_LABELS,
@@ -47,6 +47,9 @@ export default function MemberResult() {
     const [showPdf, setShowPdf] = useState(false);
     const [step, setStep] = useState<"cover" | "report">("cover");  // 후기 비교 결과: 멘트 인트로 → 리포트
 
+    const cohortLabel = data?.cohort_name ? `UnivPT ${data.cohort_name}` : "UnivPT";
+    const slogan = data?.cohort_slogan || DEFAULT_SLOGAN;
+
     const handleDownloadPdf = useCallback(async () => {
         if (!data) return;
         // 후기 비교 리포트 → 공용 훅(표지 포함 3페이지)
@@ -56,6 +59,8 @@ export default function MemberResult() {
                 final: data,
                 initial: data.initial,
                 growthReflection: data.growth_reflection,
+                cohortLabel,
+                slogan,
             });
             return;
         }
@@ -93,7 +98,7 @@ export default function MemberResult() {
             setShowPdf(false);
             setPdfLoading(false);
         }
-    }, [data, reportPdf]);
+    }, [data, reportPdf, cohortLabel, slogan]);
 
     const combinedScores = useMemo(() => {
         if (!data?.combined_scores_by_domain) return { PLANNING: 0, DESIGN: 0, SPEECH: 0 };
@@ -191,13 +196,13 @@ export default function MemberResult() {
                     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 text-white p-7 mb-6">
                         <svg className="absolute top-4 right-8 w-6 h-6 text-white/40" viewBox="0 0 20 20" style={{ animation: "petal-drift-c1 4s ease-in-out infinite" }}><ellipse cx="10" cy="8" rx="5" ry="8" fill="currentColor" transform="rotate(-15 10 8)" /></svg>
                         <svg className="absolute top-10 right-20 w-4 h-4 text-white/30" viewBox="0 0 20 20" style={{ animation: "petal-drift-c2 5s ease-in-out infinite .5s" }}><ellipse cx="10" cy="8" rx="5" ry="8" fill="currentColor" transform="rotate(20 10 8)" /></svg>
-                        <p className="text-[11px] font-semibold text-rose-100 tracking-widest">UnivPT 33기</p>
+                        <p className="text-[11px] font-semibold text-rose-100 tracking-widest">{cohortLabel}</p>
                         <h2 className="text-xl font-extrabold mt-1.5">{data.member_name}님의 발표 성장 리포트</h2>
-                        <p className="text-sm font-bold mt-3">🌸 {COVER_TITLE}</p>
+                        <p className="text-sm font-bold mt-3">{slogan}</p>
                     </div>
                     <div className="rounded-2xl bg-white border border-gray-200 p-6 shadow-sm text-sm text-gray-600 leading-[2.0] space-y-4 [word-break:keep-all] text-pretty">
                         {COVER_PARAGRAPHS.map((p, i) => <p key={i} className={p.emphasis ? "font-bold text-gray-800" : ""}>{p.text}</p>)}
-                        <p className="font-bold text-rose-600">{COVER_CLOSING}</p>
+                        <p className="font-bold text-rose-600">{coverClosing(slogan)}</p>
                         <p className="text-xs text-gray-400 pt-2 border-t border-gray-100 text-right">{COVER_SIGNATURE}</p>
                     </div>
                 </motion.main>
@@ -268,12 +273,14 @@ export default function MemberResult() {
                         initial={data.initial}
                         growthReflection={data.growth_reflection}
                         showTitle
+                        cohortLabel={cohortLabel}
                     />
                 ) : (
                     <GrowthReportContent
                         data={data}
                         showTitle
                         roundLabel={data.round_type === "FINAL" ? "후기 분석지" : "초기 분석지"}
+                        cohortLabel={cohortLabel}
                     />
                 )}
             </motion.main>
@@ -293,7 +300,7 @@ export default function MemberResult() {
                         {/* ── 제목 카드 ── */}
                         <div style={{ background: "linear-gradient(135deg, #f43f5e, #ec4899)", borderRadius: 12, padding: "18px 22px", color: "#fff", marginBottom: 14, position: "relative" }}>
                             <span style={{ position: "absolute", top: 14, right: 16, fontSize: 10, background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: 10, fontWeight: 600 }}>{data.round_type === "FINAL" ? "후기 분석지" : "초기 분석지"}</span>
-                            <div style={{ fontSize: 11, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>UnivPT 33기</div>
+                            <div style={{ fontSize: 11, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>{cohortLabel}</div>
                             <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>{data.member_name}님의 발표 성장 리포트</div>
                             <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>{data.member_name}님의 현재 발표 역량을 확인하고, 다음 성장을 위한 방향을 살펴보세요.</div>
                             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
@@ -496,7 +503,7 @@ export default function MemberResult() {
                         {/* 헤더 */}
                         <div style={{ background: "linear-gradient(135deg, #f43f5e, #ec4899)", borderRadius: 12, padding: "14px 22px", color: "#fff", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative", zIndex: 1 }}>
                             <div>
-                                <div style={{ fontSize: 10, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>UnivPT 33기</div>
+                                <div style={{ fontSize: 10, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>{cohortLabel}</div>
                                 <div style={{ fontSize: 16, fontWeight: 800, marginTop: 2 }}>{data.member_name}님의 성장 가이드</div>
                             </div>
                             <span style={{ fontSize: 10, background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: 10, fontWeight: 600 }}>2 / 2</span>

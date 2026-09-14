@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Session
+from app.models import Cohort, Session
 from app.services.naver_session import get_valid_requests_session
 from app.services.naver_session import _build_requests_session
 # _build_requests_session은 Session 객체가 없으므로
@@ -196,6 +196,8 @@ async def upload_all_videos(
     session = await db.get(Session, session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
+    cohort = await db.get(Cohort, session.cohort_id)
+    cohort_label = cohort.name if cohort else "기수 미상"
 
     storage = await _get_naver_storage_state(db)
 
@@ -287,7 +289,7 @@ async def upload_all_videos(
                     order_suffix = f"({group}분반 {order}번째)" if order != 9999 else f"({group}분반)"
                 else:
                     order_suffix = f"({order}번째)" if order != 9999 else ""
-                cafe_title = f"연합UP 33기 {session.week_num}주차 발표-[{session.title}]-{presenter}{order_suffix}"
+                cafe_title = f"연합UP {cohort_label} {session.week_num}주차 발표-[{session.title}]-{presenter}{order_suffix}"
 
             # 중단 체크
             if abort_event.is_set():

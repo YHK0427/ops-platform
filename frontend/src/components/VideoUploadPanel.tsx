@@ -7,6 +7,7 @@ import { useSessionVideos, useDeleteSessionVideo, useUploadVideos } from "@/hook
 import type { SessionVideo } from "@/hooks";
 import { getToken } from "@/lib/api";
 import { reportUploadDiag } from "@/lib/uploadDiag";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 interface PresenterSlot {
@@ -60,6 +61,7 @@ const MAX_CONCURRENT_UPLOADS = 3;
 const R2_THRESHOLD = 50 * 1024 * 1024;
 
 export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult, onCancelNaverUpload, isCancellingNaver }: VideoUploadPanelProps) {
+    const { user } = useAuth();
     const { data: uploadedVideos, refetch } = useSessionVideos(sessionId);
     const { mutate: deleteVideo, isPending: isDeleting } = useDeleteSessionVideo();
     const { mutate: startNaverUpload, isPending: isStartingNaver } = useUploadVideos();
@@ -101,7 +103,7 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     const [selectedForNaver, setSelectedForNaver] = useState<Set<number>>(new Set());
 
     // 카페 제목 접두어
-    const defaultPrefix = `연합UP 33기 ${weekNum}주차 발표-[${sessionTitle}]-`;
+    const defaultPrefix = `연합UP ${user?.cohort_name ?? ""} ${weekNum}주차 발표-[${sessionTitle}]-`;
     const [titlePrefix, setTitlePrefix] = useState(defaultPrefix);
 
     // member_id → uploaded video

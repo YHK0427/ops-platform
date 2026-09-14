@@ -8,6 +8,7 @@ import GrowthReportContent, {
 } from "@/components/eval/GrowthReportContent";
 import FinalGrowthReport from "@/components/eval/FinalGrowthReport";
 import { useGrowthReportPdf } from "@/hooks/useGrowthReportPdf";
+import { DEFAULT_SLOGAN } from "@/constants/growthReportCover";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,8 @@ interface DetailData {
     audience_scores_by_question: Record<string, number | null>;
     growth_reflection?: string | null;
     round_type?: "INITIAL" | "FINAL" | "COMBINED" | null;
+    cohort_name?: string | null;
+    cohort_slogan?: string | null;
     initial?: DetailData | null;
 }
 
@@ -69,6 +72,8 @@ export default function EvalResultCard({
     onToggle,
 }: EvalResultCardProps) {
     const reportPdf = useGrowthReportPdf();
+    const cohortLabel = detail?.cohort_name ? `UnivPT ${detail.cohort_name}` : "UnivPT";
+    const slogan = detail?.cohort_slogan || DEFAULT_SLOGAN;
 
     const growthData = useMemo(() => {
         if (!detail) return null;
@@ -179,6 +184,8 @@ export default function EvalResultCard({
                                                 final: detail,
                                                 initial: detail.initial!,
                                                 growthReflection: detail.growth_reflection,
+                                                cohortLabel,
+                                                slogan,
                                             })}
                                             disabled={reportPdf.generating}
                                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500 text-white hover:bg-rose-600 transition-colors disabled:opacity-50"

@@ -40,7 +40,8 @@ async def get_me(
         return {
             "username": current_user["username"], "role": current_user["role"],
             "display_name": current_user["username"], "department": None,
-            "cohort_id": None, "cohort_number": None, "cohort_name": None, "is_superadmin": False,
+            "cohort_id": None, "cohort_number": None, "cohort_name": None,
+            "cohort_slogan": None, "is_superadmin": False,
         }
     cohort = await db.get(Cohort, user.cohort_id) if user.cohort_id else None
     return {
@@ -51,6 +52,7 @@ async def get_me(
         "cohort_id": user.cohort_id,
         "cohort_number": cohort.number if cohort else None,
         "cohort_name": cohort.name if cohort else None,
+        "cohort_slogan": cohort.slogan if cohort else None,
         # 슈퍼관리자 = cohort_id 없는 admin (전 기수 총괄)
         "is_superadmin": user.cohort_id is None and user.role == "admin",
     }

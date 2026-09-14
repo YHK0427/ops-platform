@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/context/AuthContext";
 import LikertScale from "@/components/eval/LikertScale";
 import {
     useMyAssignments,
@@ -122,6 +123,9 @@ const GROUPED_QUESTIONS = [
 // ══════════════════════════════════════════════════════════════════════════════
 
 export default function EvalAudienceForm() {
+    const { user } = useAuth();
+    const cohortLabel = user?.cohort_name ? `UnivPT ${user.cohort_name}` : "UnivPT";
+    const cohortName = user?.cohort_name ?? "";
     const { roundId } = useParams<{ roundId: string }>();
     const navigate = useNavigate();
     const numRoundId = Number(roundId);
@@ -262,7 +266,7 @@ export default function EvalAudienceForm() {
                     <div className="relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-base)] to-[var(--color-hover)] p-6 sm:p-8">
                         <div className="absolute top-3 right-6 w-20 h-20 rounded-full bg-[var(--color-accent)]/5 blur-2xl" />
                         <span className="inline-block px-2.5 py-1 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] text-[11px] font-semibold tracking-wide mb-3">
-                            UnivPT 33기
+                            {cohortLabel}
                         </span>
                         <h2 className="text-xl sm:text-2xl font-extrabold text-[var(--color-text-primary)] mb-1.5">
                             청중 평가
@@ -277,7 +281,7 @@ export default function EvalAudienceForm() {
                         {round?.round_type === "FINAL" ? (
                             <div className="text-sm text-[var(--color-text-secondary)] leading-[2.0] space-y-5 [word-break:keep-all]">
                                 <p>
-                                    유니브피티 33기 운영진 여러분 안녕하세요.
+                                    유니브피티 {cohortName} 운영진 여러분 안녕하세요.
                                 </p>
                                 <p>
                                     본 평가는 개인 발표를 마무리하며 유니브피티 교육과정 전후의 변화를 함께 확인하기 위한 <strong className="text-[var(--color-text-primary)]">후기 평가</strong>입니다.
@@ -307,7 +311,7 @@ export default function EvalAudienceForm() {
                         ) : (
                             <div className="text-sm text-[var(--color-text-secondary)] leading-[2.0] space-y-5 [word-break:keep-all]">
                                 <p>
-                                    유니브피티 33기 운영진 여러분 안녕하세요.
+                                    유니브피티 {cohortName} 운영진 여러분 안녕하세요.
                                 </p>
                                 <p>
                                     본 평가는 유니브피티 교육과정 전후의 변화를 함께 확인하기 위한 <strong className="text-[var(--color-text-primary)]">성장 기록</strong>의 한 과정입니다.
@@ -392,10 +396,10 @@ export default function EvalAudienceForm() {
                                 본 결과는 기수들에게 개인별 성장 리포트로 정리되어 제공될 예정입니다.
                             </p>
                             <p className="text-sm text-[var(--color-text-muted)] mb-2 [word-break:keep-all]">
-                                여러분의 소중한 평가가 33기 기수들의 성장 기록에 의미 있는 기준으로 남게 됩니다.
+                                여러분의 소중한 평가가 {cohortName} 기수들의 성장 기록에 의미 있는 기준으로 남게 됩니다.
                             </p>
                             <p className="text-sm text-[var(--color-text-secondary)] font-medium mb-6 [word-break:keep-all]">
-                                33기 기수들의 성장에 함께해 주신 운영진 여러분께 진심으로 감사드립니다 🌼💗
+                                {cohortName} 기수들의 성장에 함께해 주신 운영진 여러분께 진심으로 감사드립니다 🌼💗
                             </p>
                             <Button
                                 onClick={() => setShowCompleteModal(false)}
@@ -473,8 +477,8 @@ export default function EvalAudienceForm() {
                                 <p className="text-sm font-bold text-emerald-700">모든 평가가 완료되었습니다!</p>
                                 <p className="text-xs text-emerald-600">평가에 참여해 주셔서 감사합니다.</p>
                                 <p className="text-xs text-emerald-600">본 결과는 기수들에게 개인별 성장 리포트로 정리되어 제공될 예정입니다.</p>
-                                <p className="text-xs text-emerald-600">여러분의 소중한 평가가 33기 기수들의 성장 기록에 의미 있는 기준으로 남게 됩니다.</p>
-                                <p className="text-xs text-emerald-600">33기 기수들의 성장에 함께해 주신 운영진 여러분께 진심으로 감사드립니다 🌼💗</p>
+                                <p className="text-xs text-emerald-600">여러분의 소중한 평가가 {cohortName} 기수들의 성장 기록에 의미 있는 기준으로 남게 됩니다.</p>
+                                <p className="text-xs text-emerald-600">{cohortName} 기수들의 성장에 함께해 주신 운영진 여러분께 진심으로 감사드립니다 🌼💗</p>
                             </div>
                         )}
                     </div>

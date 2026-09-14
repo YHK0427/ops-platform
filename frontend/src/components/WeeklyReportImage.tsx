@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { translateDescription } from "@/hooks";
+import { useAuth } from "@/context/AuthContext";
 
 // --- Types ---
 interface ReportEntry {
@@ -155,10 +156,10 @@ function getAttLabels(t: Theme): Record<string, { short: string; color: string }
     };
 }
 
-function reportHeader(title: string, sub: string, dateStr: string, t: Theme) {
+function reportHeader(title: string, sub: string, dateStr: string, t: Theme, cohortLabel: string) {
     return (
         <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, letterSpacing: "0.1em", marginBottom: 6 }}>UNIVPT 33기</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, letterSpacing: "0.1em", marginBottom: 6 }}>{cohortLabel}</div>
             <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.03em" }}>{title}</div>
             <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>{dateStr} 기준{sub && ` · ${sub}`}</div>
         </div>
@@ -242,12 +243,12 @@ function MemberCard({ member, t }: { member: ReportMember; t: Theme }) {
     );
 }
 
-function OverviewImage({ data, t }: { data: ReportData; t: Theme }) {
+function OverviewImage({ data, t, cohortLabel }: { data: ReportData; t: Theme; cohortLabel: string }) {
     const sorted = [...data.members].sort((a, b) => a.name.localeCompare(b.name, "ko"));
     return (
         <div style={{ width: 920, fontFamily: font, color: t.text, background: t.bg, padding: "32px 32px 24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
-                {reportHeader("주간 현황판", "", getReportDateStr(data), t)}
+                {reportHeader("주간 현황판", "", getReportDateStr(data), t, cohortLabel)}
                 <div style={{ display: "flex", gap: 16, fontSize: 11, color: t.textMuted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         <div style={{ width: 8, height: 8, borderRadius: 2, background: t.green }} />상점
@@ -272,7 +273,7 @@ function OverviewImage({ data, t }: { data: ReportData; t: Theme }) {
 // IMAGE 2: 출석부 (Attendance grid)
 // ═══════════════════════════════════════════════════
 
-function AttendanceImage({ data, t }: { data: ReportData; t: Theme }) {
+function AttendanceImage({ data, t, cohortLabel }: { data: ReportData; t: Theme; cohortLabel: string }) {
     const { sessions, members } = data;
     const sorted = [...members].sort((a, b) => a.name.localeCompare(b.name, "ko"));
     const sessionsWithAtt = sessions.filter(s =>
@@ -285,7 +286,7 @@ function AttendanceImage({ data, t }: { data: ReportData; t: Theme }) {
 
     return (
         <div style={{ width: Math.max(920, totalW), fontFamily: font, color: t.text, background: t.bg, padding: "32px 32px 24px" }}>
-            {reportHeader("출석부", "", getReportDateStr(data), t)}
+            {reportHeader("출석부", "", getReportDateStr(data), t, cohortLabel)}
 
             {/* Legend */}
             <div style={{ display: "flex", gap: 14, fontSize: 11, color: t.textMuted, marginBottom: 14 }}>
@@ -460,7 +461,7 @@ function EntryRow({ item, color, isNew, dateStr, t }: { item: { session: string;
     );
 }
 
-function DetailImage({ data, t }: { data: ReportData; t: Theme }) {
+function DetailImage({ data, t, cohortLabel }: { data: ReportData; t: Theme; cohortLabel: string }) {
     const { members, sessions } = data;
     const sorted = [...members].sort((a, b) => b.net_score - a.net_score);
     const sessionMap = new Map(sessions.map(s => [String(s.id), s]));
@@ -477,7 +478,7 @@ function DetailImage({ data, t }: { data: ReportData; t: Theme }) {
     return (
         <div style={{ width: 920, fontFamily: font, color: t.text, background: t.bg, padding: "32px 32px 24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
-                {reportHeader("상세 내역", "최신순", getReportDateStr(data), t)}
+                {reportHeader("상세 내역", "최신순", getReportDateStr(data), t, cohortLabel)}
                 <div style={{ display: "flex", gap: 16, fontSize: 11, color: t.textMuted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.red }} />벌점
@@ -522,6 +523,8 @@ const TAB_META: { key: ImageTab; label: string; suffix: string }[] = [
 ];
 
 export function WeeklyReportButton() {
+    const { user } = useAuth();
+    const cohortLabel = user?.cohort_name ? `UNIVPT ${user.cohort_name}` : "UNIVPT";
     const [open, setOpen] = useState(false);
     const [generating, setGenerating] = useState(false);
     const [activeTab, setActiveTab] = useState<ImageTab>("overview");
@@ -676,9 +679,9 @@ export function WeeklyReportButton() {
     const renderImage = (tab: ImageTab) => {
         if (!filteredData) return null;
         switch (tab) {
-            case "overview": return <OverviewImage data={filteredData} t={theme} />;
-            case "attendance": return <AttendanceImage data={filteredData} t={theme} />;
-            case "detail": return <DetailImage data={filteredData} t={theme} />;
+            case "overview": return <OverviewImage data={filteredData} t={theme} cohortLabel={cohortLabel} />;
+            case "attendance": return <AttendanceImage data={filteredData} t={theme} cohortLabel={cohortLabel} />;
+            case "detail": return <DetailImage data={filteredData} t={theme} cohortLabel={cohortLabel} />;
         }
     };
 

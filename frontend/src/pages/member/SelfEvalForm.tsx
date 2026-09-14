@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSelfEvalForm, useSubmitSelfEval } from "@/hooks/useMemberEvaluation";
+import { useMemberAuth } from "@/context/MemberAuthContext";
 import { LikertScale } from "@/components/eval/LikertScale";
 import { motion } from "framer-motion";
 import { ArrowLeft, Send, CheckCircle2, ClipboardList, Sparkles, MessageSquareHeart } from "lucide-react";
@@ -22,6 +23,9 @@ const SCALE_LABELS: Record<number, string> = {
 type Step = "intro" | "reflection" | "questions";
 
 export default function SelfEvalForm() {
+    const { member } = useMemberAuth();
+    const cohortLabel = member?.cohort_name ? `UnivPT ${member.cohort_name}` : "UnivPT";
+    const cohortName = member?.cohort_name ?? "";
     const { roundId } = useParams<{ roundId: string }>();
     const navigate = useNavigate();
     const { data, isLoading } = useSelfEvalForm(roundId!);
@@ -150,7 +154,7 @@ export default function SelfEvalForm() {
                             transition={{ delay: 0.1, duration: 0.4 }}
                         >
                             <span className="inline-block px-2.5 py-1 rounded-full bg-rose-100 text-rose-600 text-[11px] font-semibold tracking-wide mb-3">
-                                UnivPT 33기
+                                {cohortLabel}
                             </span>
                             <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900 mb-1.5">
                                 {isFinal ? "발표 성장 리포트 · 후기 평가" : "나의 발표 성장 기록"}
@@ -173,7 +177,7 @@ export default function SelfEvalForm() {
                         {isFinal ? (
                             <div className="text-sm text-gray-600 leading-[2.0] space-y-5 [word-break:keep-all]">
                                 <p>
-                                    유니브피티 33기 기수 여러분 안녕하세요.
+                                    유니브피티 {cohortName} 기수 여러분 안녕하세요.
                                 </p>
                                 <p>
                                     본 평가는 유니브피티 개인 발표를 마무리하며, <strong className="text-gray-800">처음의 나와 지금의 나를 비교</strong>해 보는 마지막 성장 기록입니다.
@@ -202,7 +206,7 @@ export default function SelfEvalForm() {
                         ) : (
                             <div className="text-sm text-gray-600 leading-[2.0] space-y-5 [word-break:keep-all]">
                                 <p>
-                                    유니브피티 33기 기수 여러분 안녕하세요.
+                                    유니브피티 {cohortName} 기수 여러분 안녕하세요.
                                 </p>
                                 <p>
                                     본 평가는 유니브피티 교육 과정의 시작과 끝에서 <strong className="text-gray-800">나의 변화를 직접 확인</strong>해 보기 위한 성장 기록입니다.

@@ -23,7 +23,7 @@ import {
     getLowestQuestionInDomain,
 } from "@/constants/evalQuestions";
 import type { RoundScores } from "@/components/eval/FinalGrowthReport";
-import { COVER_PARAGRAPHS, COVER_CLOSING, COVER_SIGNATURE } from "@/constants/growthReportCover";
+import { COVER_PARAGRAPHS, COVER_SIGNATURE, DEFAULT_SLOGAN, coverClosing } from "@/constants/growthReportCover";
 
 interface Props {
     memberName: string;
@@ -33,6 +33,10 @@ interface Props {
     coverRef: RefObject<HTMLDivElement | null>;
     page1Ref: RefObject<HTMLDivElement | null>;
     page2Ref: RefObject<HTMLDivElement | null>;
+    /** 표지 상단 라벨 — 예: "UnivPT 33기". 없으면 "UnivPT"만 표시 */
+    cohortLabel?: string;
+    /** 기수별 슬로건. 없으면 기본 문구 사용 */
+    slogan?: string;
 }
 
 // 고정 높이 없이 콘텐츠 높이로 — PDF에서 페이지를 콘텐츠 크기에 맞춰 생성(빈 공간 제거)
@@ -56,7 +60,9 @@ function mean(s: Record<string, number>) {
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
 }
 
-export default function FinalReportPdf({ memberName, final, initial, growthReflection, coverRef, page1Ref, page2Ref }: Props) {
+export default function FinalReportPdf({ memberName, final, initial, growthReflection, coverRef, page1Ref, page2Ref, cohortLabel, slogan }: Props) {
+    const cohortText = cohortLabel ?? "UnivPT";
+    const sloganText = slogan ?? DEFAULT_SLOGAN;
     const finC = triple(final.combined_scores_by_domain);
     const iniC = triple(initial.combined_scores_by_domain);
     const overallI = mean(iniC);
@@ -83,7 +89,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                     <svg style={{ position: "absolute", top: 28, right: 60, width: 26, height: 26, opacity: 0.5 }} viewBox="0 0 20 20"><ellipse cx="10" cy="8" rx="5" ry="8" fill="#fff" transform="rotate(-15 10 8)" /></svg>
                     <svg style={{ position: "absolute", top: 70, right: 120, width: 18, height: 18, opacity: 0.4 }} viewBox="0 0 20 20"><ellipse cx="10" cy="8" rx="5" ry="8" fill="#fff" transform="rotate(20 10 8)" /></svg>
                     <svg style={{ position: "absolute", bottom: 24, left: 56, width: 16, height: 16, opacity: 0.35 }} viewBox="0 0 20 20"><ellipse cx="10" cy="8" rx="5" ry="8" fill="#fff" transform="rotate(45 10 8)" /></svg>
-                    <div style={{ fontSize: 14, opacity: 0.85, letterSpacing: 3, fontWeight: 600 }}>UnivPT 33기 · 후기 분석지</div>
+                    <div style={{ fontSize: 14, opacity: 0.85, letterSpacing: 3, fontWeight: 600 }}>{cohortText} · 후기 분석지</div>
                     <div style={{ fontSize: 34, fontWeight: 800, marginTop: 10, letterSpacing: -0.5 }}>{memberName}님의 발표 성장 리포트</div>
                     <div style={{ fontSize: 13, opacity: 0.9, marginTop: 8 }}>처음의 나와 지금의 나를 비교하며, 그동안의 성장을 확인해 보세요.</div>
                     {/* 도메인 단계 배지 + 유형 */}
@@ -95,7 +101,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                         ))}
                         {final.type && <span style={{ background: "#fff", color: "#e11d48", fontSize: 12, fontWeight: 800, padding: "5px 12px", borderRadius: 12 }}>{final.type}</span>}
                     </div>
-                    <div style={{ fontSize: 20, fontWeight: 800, marginTop: 22 }}>🌸 당신의 가능성을 꽃피우기 위해</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, marginTop: 22 }}>{sloganText}</div>
                 </div>
 
                 {/* 성장 요약 — 웹 hero 스타일 (표지로 이동) */}
@@ -134,12 +140,12 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 {/* 표지 멘트 (공용 상수) */}
                 <div style={{ padding: "24px 56px 0", fontSize: 14, color: "#374151", lineHeight: 2.0, display: "flex", flexDirection: "column", gap: 16 }}>
                     {COVER_PARAGRAPHS.map((p, i) => <p key={i} style={{ margin: 0, ...(p.emphasis ? { fontWeight: 700, color: "#9f1239" } : {}) }}>{p.text}</p>)}
-                    <p style={{ margin: "8px 0 0", fontWeight: 700, color: "#e11d48" }}>{COVER_CLOSING}</p>
+                    <p style={{ margin: "8px 0 0", fontWeight: 700, color: "#e11d48" }}>{coverClosing(sloganText)}</p>
                     <p style={{ margin: 0, fontSize: 12, color: "#9ca3af", textAlign: "right" }}>{COVER_SIGNATURE}</p>
                 </div>
 
                 <div style={{ marginTop: "auto", textAlign: "center", padding: "16px 0 24px" }}>
-                    <span style={{ fontSize: 13, color: "#f472b6", fontWeight: 500 }}>Bloom UP — 당신의 가능성을 꽃피우기 위해</span>
+                    <span style={{ fontSize: 13, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {sloganText}</span>
                     <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>1 / 3 · UnivPT</span>
                 </div>
             </div>
@@ -152,7 +158,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 {/* 슬림 헤더 (표지에 제목 카드가 있으므로 결과 페이지는 간략히) */}
                 <div style={{ background: "linear-gradient(135deg, #f43f5e, #ec4899)", borderRadius: 12, padding: "12px 20px", color: "#fff", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative" }}>
                     <div>
-                        <div style={{ fontSize: 10, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>UnivPT 33기</div>
+                        <div style={{ fontSize: 10, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>{cohortText}</div>
                         <div style={{ fontSize: 16, fontWeight: 800, marginTop: 2 }}>{memberName}님의 발표 성장 리포트</div>
                     </div>
                     <span style={{ fontSize: 10, background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: 10, fontWeight: 600 }}>후기 분석지 · 2 / 3</span>
@@ -319,7 +325,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 </div>
 
                 <div style={{ textAlign: "center", marginTop: 8 }}>
-                    <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — 당신의 가능성을 꽃피우기 위해</span>
+                    <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {sloganText}</span>
                     <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>2 / 3 · UnivPT</span>
                 </div>
             </div>
@@ -331,7 +337,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
 
                 <div style={{ background: "linear-gradient(135deg, #f43f5e, #ec4899)", borderRadius: 12, padding: "14px 22px", color: "#fff", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative", zIndex: 1 }}>
                     <div>
-                        <div style={{ fontSize: 10, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>UnivPT 33기</div>
+                        <div style={{ fontSize: 10, opacity: 0.7, letterSpacing: 2, fontWeight: 600 }}>{cohortText}</div>
                         <div style={{ fontSize: 16, fontWeight: 800, marginTop: 2 }}>{memberName}님의 성장 이야기</div>
                     </div>
                     <span style={{ fontSize: 10, background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: 10, fontWeight: 600 }}>3 / 3</span>
@@ -405,7 +411,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 )}
 
                 <div style={{ textAlign: "center", paddingTop: 12 }}>
-                    <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — 당신의 가능성을 꽃피우기 위해</span>
+                    <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {sloganText}</span>
                     <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>3 / 3 · UnivPT</span>
                 </div>
             </div>
