@@ -126,27 +126,27 @@ export function BulkPenaltyDialog({ trigger }: BulkPenaltyDialogProps) {
         setProcessing(true);
         try {
             if (mode === "preset") {
-                for (const memberId of selectedMembers) {
-                    await givePenalty({
+                await Promise.all(selectedMembers.map((memberId) =>
+                    givePenalty({
                         member_id: memberId,
                         score_delta: -score,
                         deposit_delta: deposit > 0 ? -deposit : 0,
                         description: reason,
                         session_id: sessionId,
-                    });
-                }
+                    })
+                ));
             } else {
                 const isDeduct = MANUAL_TYPES.find(t => t.value === manualType)?.deduct ?? false;
-                for (const memberId of selectedMembers) {
-                    await createTransaction({
+                await Promise.all(selectedMembers.map((memberId) =>
+                    createTransaction({
                         member_id: memberId,
                         type: manualType,
                         amount_krw: isDeduct ? -Math.abs(manualAmount) : Math.abs(manualAmount),
                         score_delta: manualScore,
                         description: reason,
                         session_id: sessionId,
-                    });
-                }
+                    })
+                ));
             }
             setOpen(false);
             resetForm();
