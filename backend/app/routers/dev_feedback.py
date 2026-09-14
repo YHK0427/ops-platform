@@ -1,7 +1,8 @@
 import logging
+from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,9 +15,17 @@ logger = logging.getLogger("dev_feedback")
 
 router = APIRouter(prefix="/dev-feedback", tags=["dev-feedback"])
 
+# 실제 개발자 계정 — 이 사람만 답변을 남길 수 있다. 이 기능 전용으로 딱 한 명이라
+# 별도 역할 체계 없이 username으로 직접 체크한다.
+DEVELOPER_USERNAME = "adminyhk"
+
 
 class DevFeedbackCreate(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
+
+
+class DevFeedbackReply(BaseModel):
+    reply: str = Field(min_length=1, max_length=2000)
 
 
 class DevFeedbackResponse(BaseModel):
@@ -24,6 +33,8 @@ class DevFeedbackResponse(BaseModel):
     reporter_display_name: str
     message: str
     created_at: object
+    reply: str | None = None
+    replied_at: object | None = None
 
     model_config = {"from_attributes": True}
 
@@ -78,15 +89,36 @@ async def create_dev_feedback(
 
 @router.get("", response_model=list[DevFeedbackResponse])
 async def list_dev_feedback(
-    _: dict = Depends(require_staff),
+    user: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """최근 요청 내역 (같은 기수 운영진끼리 공유 — 중복 신고 방지용)."""
-    result = await db.execute(
-        select(DevFeedback)
-        .where(DevFeedback.cohort_id == cohort_id)
-        .order_by(DevFeedback.created_at.desc())
-        .limit(50)
-    )
+    """최근 요청 내역. 개발자 본인은 전 기수를 보고, 나머지는 같은 기수 운영진끼리만 공유(중복 신고 방지용)."""
+    query = select(DevFeedback).order_by(DevFeedback.created_at.desc()).limit(100)
+    if user["username"] != DEVELOPER_USERNAME:
+        query = query.where(DevFeedback.cohort_id == cohort_id).limit(50)
+    result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.patch("/{feedback_id}/reply", response_model=DevFeedbackResponse)
+async def reply_dev_feedback(
+    feedback_id: int,
+    body: DevFeedbackReply,
+    user: dict = Depends(require_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    """개발자 본인만 답변 작성 가능."""
+    if user["username"] != DEVELOPER_USERNAME:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="개발자만 답변할 수 있습니다")
+
+    entry = await db.get(DevFeedback, feedback_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다")
+
+    entry.reply = body.reply.strip()
+    entry.replied_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(entry)
+    logger.audit(f"🛠️ 개발자 답변 — #{feedback_id}: {entry.reply[:80]}")
+    return entry

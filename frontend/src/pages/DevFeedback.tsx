@@ -2,9 +2,42 @@ import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Wrench, Send, Loader2, MessageSquareWarning } from "lucide-react";
-import { useDevFeedbackList, useSendDevFeedback } from "@/hooks";
+import { Wrench, Send, Loader2, MessageSquareWarning, CornerDownRight } from "lucide-react";
+import { useDevFeedbackList, useSendDevFeedback, useReplyDevFeedback, type DevFeedbackEntry } from "@/hooks";
 import { renderSafeHangul } from "@/components/SafeText";
+import { useAuth } from "@/context/AuthContext";
+
+const DEVELOPER_USERNAME = "adminyhk";
+
+function ReplyBox({ entry }: { entry: DevFeedbackEntry }) {
+    const [text, setText] = useState("");
+    const { mutate: reply, isPending } = useReplyDevFeedback();
+
+    const submit = () => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        reply({ id: entry.id, reply: trimmed }, { onSuccess: () => setText("") });
+    };
+
+    return (
+        <div className="mt-2 pl-4 border-l-2 border-[var(--color-border)] space-y-2">
+            <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="답변 남기기..."
+                rows={2}
+                maxLength={2000}
+                className="w-full px-2.5 py-1.5 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-text-primary)] text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+            />
+            <div className="flex justify-end">
+                <Button size="sm" onClick={submit} disabled={isPending || !text.trim()}>
+                    {isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                    답변 등록
+                </Button>
+            </div>
+        </div>
+    );
+}
 
 function relTime(iso: string) {
     const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -16,6 +49,8 @@ function relTime(iso: string) {
 
 export default function DevFeedback() {
     const [message, setMessage] = useState("");
+    const { user } = useAuth();
+    const isDeveloper = user?.username === DEVELOPER_USERNAME;
     const { data: entries, isLoading } = useDevFeedbackList();
     const { mutate: send, isPending } = useSendDevFeedback();
 
@@ -40,7 +75,7 @@ export default function DevFeedback() {
                             수정 요청 / 건의사항
                         </CardTitle>
                         <CardDescription>
-                            대충 던져도 됩니다. 진지하게 안 써도 됩니다.
+                            그냥 대충 요청해도 됩니다.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -52,7 +87,7 @@ export default function DevFeedback() {
                                 rows={4}
                                 maxLength={2000}
                                 required
-                                className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+                                className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-text-primary)] text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
                             />
                             <div className="flex justify-end">
                                 <Button type="submit" disabled={isPending || !message.trim()}>
@@ -61,7 +96,7 @@ export default function DevFeedback() {
                                     ) : (
                                         <Send className="w-4 h-4 mr-2" />
                                     )}
-                                    {isPending ? "던지는 중..." : "일단 던지기"}
+                                    {isPending ? "요청하는 중..." : "요청하기"}
                                 </Button>
                             </div>
                         </form>
@@ -72,7 +107,7 @@ export default function DevFeedback() {
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
                             <MessageSquareWarning className="w-4 h-4 text-[var(--color-text-muted)]" />
-                            최근 요청 (우리 기수만)
+                            최근 요청 {isDeveloper ? "(전체 기수)" : "(우리 기수만)"}
                         </CardTitle>
                         <CardDescription>같은 걸 또 보내기 전에 한 번 확인해보세요.</CardDescription>
                     </CardHeader>
@@ -91,6 +126,15 @@ export default function DevFeedback() {
                                     <p className="text-sm text-[var(--color-text-primary)] whitespace-pre-wrap [word-break:keep-all]">
                                         {renderSafeHangul(e.message)}
                                     </p>
+                                    {e.reply && (
+                                        <div className="mt-2 pl-4 border-l-2 border-[var(--color-accent)]/40 flex items-start gap-1.5">
+                                            <CornerDownRight className="w-3.5 h-3.5 text-[var(--color-accent)] shrink-0 mt-0.5" />
+                                            <p className="text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap [word-break:keep-all]">
+                                                {renderSafeHangul(e.reply)}
+                                            </p>
+                                        </div>
+                                    )}
+                                    {isDeveloper && !e.reply && <ReplyBox entry={e} />}
                                 </div>
                             ))
                         )}

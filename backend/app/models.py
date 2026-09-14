@@ -1003,3 +1003,6 @@ class DevFeedback(Base):
     reporter_display_name = Column(String(50), nullable=False)
     message = Column(Text, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    # 답변 — adminyhk(실제 개발자 계정)만 작성 가능.
+    reply = Column(Text, nullable=True)
+    replied_at = Column(TIMESTAMP(timezone=True), nullable=True)

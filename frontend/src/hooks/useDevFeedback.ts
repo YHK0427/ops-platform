@@ -7,6 +7,8 @@ export interface DevFeedbackEntry {
     reporter_display_name: string;
     message: string;
     created_at: string;
+    reply?: string | null;
+    replied_at?: string | null;
 }
 
 export const devFeedbackKeys = {
@@ -33,10 +35,27 @@ export function useSendDevFeedback() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: devFeedbackKeys.lists() });
-            toast.success("일단 던졌습니다. 되면 됩니다.");
+            toast.success("요청했습니다. 되면 됩니다.");
         },
         onError: () => {
             toast.error("전송 실패 — 잠시 후 다시 시도해주세요.");
+        },
+    });
+}
+
+export function useReplyDevFeedback() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, reply }: { id: number; reply: string }) => {
+            const { data } = await api.patch<DevFeedbackEntry>(`/dev-feedback/${id}/reply`, { reply });
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: devFeedbackKeys.lists() });
+            toast.success("답변 등록했습니다.");
+        },
+        onError: () => {
+            toast.error("답변 등록 실패");
         },
     });
 }
