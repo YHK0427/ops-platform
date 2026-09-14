@@ -210,9 +210,9 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     # 기수 분리로 같은 아이디가 여러 기수에 존재할 수 있음 — 대부분은 기수마다 비번도 다르므로
     # 비번으로 먼저 좁혀서 유일하게 맞으면 기수를 안 물어봐도 되게 한다. 비번까지 같은 경우에만
     # (여러 후보의 비번이 똑같이 맞음) 진짜로 물어볼 수밖에 없다.
-    matched = [u for u in candidates if verify_password(body.password, u.password_hash)]
+    matched = [u for u in candidates if await verify_password(body.password, u.password_hash)]
     if not matched:
-        verify_password(body.password, _DUMMY_HASH)  # timing-attack 방어용 더미 비교
+        await verify_password(body.password, _DUMMY_HASH)  # timing-attack 방어용 더미 비교
 
     if len(matched) > 1:
         cohorts = (await db.execute(
@@ -334,9 +334,9 @@ async def member_login(
 
     # 기수별 기본 비번이 이미 다르므로(univpt{기수번호}) 비번으로 먼저 좁힌다 —
     # 대부분은 이 한 번으로 유일하게 특정되어 기수를 안 물어봐도 된다.
-    matched = [a for a in candidates if verify_password(body.password, a.password_hash)]
+    matched = [a for a in candidates if await verify_password(body.password, a.password_hash)]
     if not matched:
-        verify_password(body.password, _DUMMY_HASH)  # timing-attack 방어
+        await verify_password(body.password, _DUMMY_HASH)  # timing-attack 방어
 
     if len(matched) > 1:
         cohorts = (await db.execute(
@@ -419,7 +419,7 @@ async def member_change_password(
     account = result.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
-    if not verify_password(body.current_password, account.password_hash):
+    if not await verify_password(body.current_password, account.password_hash):
         raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다")
     account.password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
     await db.commit()
@@ -438,7 +438,7 @@ async def change_password(
     user = await resolve_current_user_row(db, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
-    if not verify_password(body.current_password, user.password_hash):
+    if not await verify_password(body.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다")
     user.password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
     await db.commit()

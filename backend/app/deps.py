@@ -1,3 +1,4 @@
+import asyncio
 from typing import AsyncGenerator
 
 import bcrypt
@@ -399,5 +400,8 @@ def require_superadmin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
+async def verify_password(plain: str, hashed: str) -> bool:
+    """bcrypt는 CPU-bound라 이벤트 루프를 직접 블로킹함(수백ms) — 스레드로 위임.
+    특히 로그인 시 후보 여러 명을 순차 검증할 때(기수 간 아이디 중복) 동시
+    로그인이 몰리면 서버 전체가 멈추는 걸 막는다."""
+    return await asyncio.to_thread(bcrypt.checkpw, plain.encode(), hashed.encode())
