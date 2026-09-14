@@ -17,7 +17,15 @@ router = APIRouter(prefix="/dev-feedback", tags=["dev-feedback"])
 
 # 실제 개발자 계정 — 이 사람만 답변을 남길 수 있다. 이 기능 전용으로 딱 한 명이라
 # 별도 역할 체계 없이 username으로 직접 체크한다.
+# 주의: 기수 분리로 username이 기수마다 중복될 수 있으므로, 반드시 DB 조회한 User row의
+# cohort_id IS NULL(슈퍼관리자만 가능)까지 같이 확인해야 한다 — username만 보면 어떤
+# 기수 매니저가 우연히 같은 아이디를 쓰면 개발자 권한을 그대로 얻어간다.
 DEVELOPER_USERNAME = "adminyhk"
+
+
+async def _is_developer(db: AsyncSession, user: dict) -> bool:
+    row = await resolve_current_user_row(db, user)
+    return bool(row and row.cohort_id is None and row.username == DEVELOPER_USERNAME)
 
 
 class DevFeedbackCreate(BaseModel):
@@ -95,7 +103,7 @@ async def list_dev_feedback(
 ):
     """최근 요청 내역. 개발자 본인은 전 기수를 보고, 나머지는 같은 기수 운영진끼리만 공유(중복 신고 방지용)."""
     query = select(DevFeedback).order_by(DevFeedback.created_at.desc()).limit(100)
-    if user["username"] != DEVELOPER_USERNAME:
+    if not await _is_developer(db, user):
         query = query.where(DevFeedback.cohort_id == cohort_id).limit(50)
     result = await db.execute(query)
     return result.scalars().all()
@@ -109,7 +117,7 @@ async def reply_dev_feedback(
     db: AsyncSession = Depends(get_db),
 ):
     """개발자 본인만 답변 작성 가능."""
-    if user["username"] != DEVELOPER_USERNAME:
+    if not await _is_developer(db, user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="개발자만 답변할 수 있습니다")
 
     entry = await db.get(DevFeedback, feedback_id)
