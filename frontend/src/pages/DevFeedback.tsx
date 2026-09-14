@@ -30,7 +30,7 @@ export default function DevFeedback() {
         <div className="flex flex-col h-full">
             <PageHeader
                 title="개발자 호출"
-                subtitle="버그 발견? 이런 기능 있었으면 좋겠다? 여기다 적으면 개발자한테 바로 날아갑니다 (진지하게 받아들여집니다, 아마도)."
+                subtitle="버그든 뭐든 대충 적어두면 개발자가 기분 내키면 고쳐줌."
             />
             <div className="flex-1 overflow-auto p-4 md:p-6 space-y-4 max-w-2xl">
                 <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
@@ -40,7 +40,7 @@ export default function DevFeedback() {
                             수정 요청 / 건의사항
                         </CardTitle>
                         <CardDescription>
-                            보내는 즉시 개발자 텔레그램으로 알림이 갑니다. 장난식으로 편하게 적어도 됩니다.
+                            대충 던져도 됩니다. 진지하게 안 써도 됩니다.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -61,7 +61,7 @@ export default function DevFeedback() {
                                     ) : (
                                         <Send className="w-4 h-4 mr-2" />
                                     )}
-                                    {isPending ? "전송 중..." : "개발자한테 이르기"}
+                                    {isPending ? "던지는 중..." : "일단 던지기"}
                                 </Button>
                             </div>
                         </form>

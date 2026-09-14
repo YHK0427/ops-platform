@@ -33,7 +33,7 @@ export function useSendDevFeedback() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: devFeedbackKeys.lists() });
-            toast.success("개발자에게 전달했습니다. 곧 연락 올 거예요 (아마도).");
+            toast.success("일단 던졌습니다. 되면 됩니다.");
         },
         onError: () => {
             toast.error("전송 실패 — 잠시 후 다시 시도해주세요.");
