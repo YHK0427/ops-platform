@@ -247,8 +247,13 @@ async def delete_session(
     ledger_result = await db.execute(
         select(Ledger).where(Ledger.session_id == session_id)
     )
-    for entry in ledger_result.scalars().all():
-        member = await db.get(Member, entry.member_id)
+    ledger_entries = ledger_result.scalars().all()
+    members_result = await db.execute(
+        select(Member).where(Member.id.in_({e.member_id for e in ledger_entries}))
+    )
+    members_by_id = {m.id: m for m in members_result.scalars().all()}
+    for entry in ledger_entries:
+        member = members_by_id.get(entry.member_id)
         if member:
             if entry.amount_krw != 0:
                 member.current_deposit -= entry.amount_krw
