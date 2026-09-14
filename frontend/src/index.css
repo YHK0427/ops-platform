@@ -25,7 +25,6 @@
 /* ── Theme tokens (Light — Growth Report style) ── */
 @theme {
   /* Background */
-  --color-base: #F5F5F7;
   --color-surface: rgba(255, 255, 255, 0.8);
   --color-elevated: rgba(255, 255, 255, 0.95);
   --color-hover: rgba(0, 0, 0, 0.04);
@@ -76,6 +75,15 @@
   --radius: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+}
+
+/* --color-base는 일부러 @theme 밖에 둔다: 안에 두면 Tailwind가 이름이 겹치는
+   내장 유틸(text-base = font-size:1rem)에까지 이 색을 섞어 넣어서, 폰트크기만
+   쓰려던 모든 text-base가 배경색(F5F5F7)에 가까운 색으로 칠해져 흰 배경에서
+   글자가 안 보이는 버그가 났었음. var(--color-base)로 직접 쓰는 곳(13곳)은
+   여기 있어도 그대로 동작하고, bg-base/text-base 자동생성 유틸만 안 만들어짐. */
+:root {
+  --color-base: #F5F5F7;
 }
 
 /* ── Base styles ──────────────────────────────── */
