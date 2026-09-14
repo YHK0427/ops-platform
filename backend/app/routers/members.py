@@ -206,9 +206,10 @@ async def update_member(
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(member, field, value)
-    # 재활성화 시 deactivated_at 초기화
+    # 재활성화 시 deactivated_at/사유 초기화
     if update_data.get("is_active") is True:
         member.deactivated_at = None
+        member.deactivation_reason = None
     await db.commit()
     await db.refresh(member)
     logger.audit(f"✏️ 멤버 수정 — {member.name} ({', '.join(update_data.keys())})")
@@ -232,6 +233,7 @@ async def delete_member(
     # Soft delete
     member.is_active = False
     member.deactivated_at = datetime.now(timezone.utc)
+    member.deactivation_reason = "WITHDRAWN"
 
     # 잔여 디포짓 → 금고 몰수
     if forfeit_amount > 0:
@@ -268,6 +270,7 @@ async def graduate_member(
     # 비활성화
     member.is_active = False
     member.deactivated_at = datetime.now(timezone.utc)
+    member.deactivation_reason = "GRADUATED"
 
     # 디포짓 환급
     if refund_amount > 0:

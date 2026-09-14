@@ -155,7 +155,7 @@ export default function Members() {
                                             <div className="flex flex-col">
                                                 <span className="font-medium text-[var(--color-text-primary)] flex items-center gap-2">
                                                     {member.name}
-                                                    {!member.is_active && <StatusBadge status="ABSENT" className="px-1.5 py-0 text-[10px]" />}
+                                                    {!member.is_active && <StatusBadge status={member.deactivation_reason ?? "ABSENT"} className="px-1.5 py-0 text-[10px]" />}
                                                 </span>
                                                 <span className="text-xs text-[var(--color-text-muted)]">{member.email}</span>
                                             </div>
@@ -258,7 +258,7 @@ export default function Members() {
                                                         벌금임박
                                                     </span>
                                                 )}
-                                                {!member.is_active && <StatusBadge status="ABSENT" className="px-1.5 py-0 text-[10px]" />}
+                                                {!member.is_active && <StatusBadge status={member.deactivation_reason ?? "ABSENT"} className="px-1.5 py-0 text-[10px]" />}
                                             </div>
                                             {member.email && (
                                                 <div className="text-[11px] text-[var(--color-text-muted)] truncate">{member.email}</div>

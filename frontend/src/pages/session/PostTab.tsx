@@ -12,6 +12,7 @@ import { useScanHomework } from "@/hooks/useCrawler";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import type { Session } from "@/hooks/useSessions";
 import { useMembers } from "@/hooks/useMembers";
+import { StatusBadge } from "@/components/StatusBadge";
 
 const CAFE_ID = "21496489";
 
@@ -44,15 +45,20 @@ export function PostTab() {
     const queryClient = useQueryClient();
     const scanHomeworkMutation = useScanHomework();
     const { setTaskId, taskStatus } = useSessionTask(session.id, "homework-scan");
-    const { data: members } = useMembers();
+    // 이탈/수료한 멤버도 과거 세션엔 남아있으므로 활성 멤버만 조회하면 이름이 안 잡혀
+    // "ID:42" 같은 식으로 표시됨 — 비활성 포함으로 조회.
+    const { data: members } = useMembers(false);
 
     const isPolling = taskStatus?.status === "queued" || taskStatus?.status === "in_progress";
 
     // Build row list: TEAM uses teams.members, INDIVIDUAL uses attendances
-    const rows: { id: number; name: string; teamName: string; teamId: number | null }[] =
+    const rows: { id: number; name: string; teamName: string; teamId: number | null; deactivationReason?: string | null }[] =
         session.type === "TEAM"
             ? (session.teams || []).flatMap((t) =>
-                  t.members.map((m) => ({ id: m.id, name: m.name, teamName: t.name, teamId: t.id }))
+                  t.members.map((m) => ({
+                      id: m.id, name: m.name, teamName: t.name, teamId: t.id,
+                      deactivationReason: members?.find((mm) => mm.id === m.id)?.deactivation_reason,
+                  }))
               )
             : (session.attendances || []).map((a) => {
                   const member = members?.find((m) => m.id === a.member_id);
@@ -61,6 +67,7 @@ export function PostTab() {
                       name: member?.name ?? `ID:${a.member_id}`,
                       teamName: "Individual",
                       teamId: null,
+                      deactivationReason: member?.deactivation_reason,
                   };
               });
 
@@ -158,6 +165,9 @@ export function PostTab() {
                                     <TableRow key={m.id} className="hover:bg-gray-50 transition-colors">
                                         <TableCell className="font-medium text-[var(--color-text-secondary)]">
                                             {m.name}
+                                            {m.deactivationReason && (
+                                                <StatusBadge status={m.deactivationReason} className="ml-1.5 align-middle" />
+                                            )}
                                             {session.type === "TEAM" && (
                                                 <span className="text-xs text-gray-600 ml-1">({m.teamName})</span>
                                             )}
@@ -272,6 +282,9 @@ export function PostTab() {
                             <div key={m.id} className="rounded-lg border border-[var(--color-border)] bg-white overflow-hidden">
                                 <div className="px-3 py-2 bg-gray-50 border-b border-[var(--color-border)] flex items-center gap-2">
                                     <span className="font-medium text-sm text-[var(--color-text-primary)]">{m.name}</span>
+                                    {m.deactivationReason && (
+                                        <StatusBadge status={m.deactivationReason} className="text-[9px] px-1 py-0" />
+                                    )}
                                     {session.type === "TEAM" && (
                                         <span className="text-[10px] text-gray-600">({m.teamName})</span>
                                     )}

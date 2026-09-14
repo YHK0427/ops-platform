@@ -585,7 +585,7 @@ function LedgerRow({
                     )}
                 </div>
             </TableCell>
-            <TableCell className={`text-right text-sm ${entry.amount_krw > 0 ? "text-green-600" : entry.amount_krw < 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
+            <TableCell className={`text-right text-sm ${ledgerAmountClass(entry)}`}>
                 {entry.amount_krw !== 0 ? `${entry.amount_krw > 0 ? "+" : ""}${entry.amount_krw.toLocaleString()}` : "-"}
             </TableCell>
             <TableCell className={`text-right text-sm ${entry.score_delta > 0 ? "text-green-600" : entry.score_delta < 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
@@ -717,7 +717,7 @@ function LedgerCardMobile({
                     )}
                 </div>
                 <div className="text-right flex-shrink-0">
-                    <div className={`text-sm font-bold ${entry.amount_krw > 0 ? "text-green-600" : entry.amount_krw < 0 ? "text-rose-500" : "text-[var(--color-text-muted)]"}`}>
+                    <div className={`text-sm font-bold ${ledgerAmountClass(entry)}`}>
                         {entry.amount_krw !== 0 ? `${entry.amount_krw > 0 ? "+" : ""}${entry.amount_krw.toLocaleString()}` : "-"}
                     </div>
                     {entry.score_delta !== 0 && (
@@ -802,6 +802,17 @@ function LedgerCardMobile({
             </div>
         </div>
     );
+}
+
+// DEPOSIT_REFUND/DEPOSIT_FORFEIT은 amount_krw가 음수(내부 잔액을 0으로 정리)라서
+// 일반 빨강(-)/초록(+) 부호 색을 그대로 쓰면 "환급"인데 빨간 마이너스로 보여
+// 마치 돈을 잃은 것처럼 오해하기 쉽다 — 이 두 타입은 중립색(뱃지와 동일 계열)으로.
+function ledgerAmountClass(entry: { type: string; amount_krw: number }): string {
+    if (entry.type === "DEPOSIT_REFUND") return "text-purple-600";
+    if (entry.type === "DEPOSIT_FORFEIT") return "text-yellow-600";
+    if (entry.amount_krw > 0) return "text-green-600";
+    if (entry.amount_krw < 0) return "text-rose-500";
+    return "text-[var(--color-text-muted)]";
 }
 
 function LedgerTypeBadge({ type }: { type: LedgerEntry["type"] }) {

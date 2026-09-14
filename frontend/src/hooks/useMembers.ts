@@ -11,6 +11,7 @@ export interface Member {
     is_active: boolean;
     created_at: string;
     deactivated_at?: string | null;
+    deactivation_reason?: "WITHDRAWN" | "GRADUATED" | null;
     total_plus_score: number;
     total_minus_score: number;
     net_score: number;

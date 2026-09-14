@@ -35,6 +35,7 @@ class MemberResponse(BaseModel):
     is_active: bool
     created_at: datetime
     deactivated_at: Optional[datetime]
+    deactivation_reason: Optional[str] = None  # WITHDRAWN(이탈) / GRADUATED(수료)
     # 점수 3분리
     total_plus_score: int
     total_minus_score: int

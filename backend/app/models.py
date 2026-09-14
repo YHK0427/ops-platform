@@ -85,6 +85,15 @@ class Member(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     deactivated_at = Column(TIMESTAMP(timezone=True))
+    # 비활성 사유 — WITHDRAWN(이탈)/GRADUATED(수료). 과거 세션 열람 시 이름 옆에 표시용.
+    deactivation_reason = Column(String(20), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "deactivation_reason IN ('WITHDRAWN','GRADUATED') OR deactivation_reason IS NULL",
+            name="ck_members_deactivation_reason",
+        ),
+    )
 
     # Relationships
     attendances = relationship("Attendance", back_populates="member")

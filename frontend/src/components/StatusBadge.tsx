@@ -34,6 +34,8 @@ const STATUS_LABEL: Record<string, string> = {
     OPS:        "과제 준비",
     POST:       "과제 검사",
     SETTLEMENT: "정산중",
+    WITHDRAWN:  "이탈",
+    GRADUATED:  "수료",
 };
 
 const BADGE_STYLE: Record<string, string> = {
@@ -53,6 +55,8 @@ const BADGE_STYLE: Record<string, string> = {
     OPS:        "bg-green-500/10 text-green-600 border-green-500/20 shadow-sm animate-pulse",
     POST:       "bg-purple-500/10 text-purple-600 border-purple-500/20",
     SETTLEMENT: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+    WITHDRAWN:  "bg-rose-500/10 text-rose-500 border-rose-500/20",
+    GRADUATED:  "bg-sky-500/10 text-sky-600 border-sky-500/20",
 };
 
 interface StatusBadgeProps {

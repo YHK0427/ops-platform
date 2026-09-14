@@ -22,7 +22,8 @@ export default function OpsTab() {
     const { mutate: setFeedbackTargets, isPending: isSettingTarget } = useSetFeedbackTargets();
     const { mutate: randomAssign, isPending: isRandomAssigning } = useRandomAssignFeedback();
     const { mutate: updateConfig } = useUpdateSessionConfig();
-    const { data: allMembers } = useMembers();
+    // 이탈/수료한 멤버도 과거 세션엔 남아있으므로 활성 멤버만 조회하면 이름이 "ID:42"로 표시됨.
+    const { data: allMembers } = useMembers(false);
     const { data: activeTask } = useActiveUploadTask(session.id);
     const { mutate: cancelUpload, isPending: isCancelling } = useCancelUpload();
     const { refetch: refetchResult } = useUploadResult(session.id);
