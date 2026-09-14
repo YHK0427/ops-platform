@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from fastapi import (
     APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -143,6 +143,15 @@ class ReactionRequest(BaseModel):
 class CommentCreateRequest(BaseModel):
     content: str = Field(min_length=1, max_length=MAX_COMMENT_LEN)
     is_anonymous: bool = True
+
+    @field_validator("content")
+    @classmethod
+    def _content_not_blank(cls, v: str) -> str:
+        # min_length는 strip 이전 값으로 검사돼서 공백만 있는 문자열이 통과했었음
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("내용을 입력해주세요")
+        return stripped
 
 
 class PostHideRequest(BaseModel):
