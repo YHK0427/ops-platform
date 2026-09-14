@@ -1,9 +1,10 @@
 import { Fragment, type ReactNode } from "react";
 
 /**
- * (레거시) GmarketSans 전환 이후로는 완성형 한글을 전부 지원해 더 이상
- * 필요하지 않음 — hangul-fallback 클래스도 제거되어 아래 span은 이제
- * 순수 no-op 래퍼. 혹시 모를 신규 미지원 문자 대비용으로만 남겨둠.
+ * (레거시) Paperlogy 폰트 파일의 빈 글리프(획 없음) cmap 매핑을 지워서
+ * 미지원 문자는 이제 CSS 폰트 스택으로 자동 폴백(GmarketSans 등)됨 —
+ * 더 이상 수동으로 감쌀 필요 없음. hangul-fallback 클래스도 제거되어
+ * 아래 span은 순수 no-op 래퍼. 혹시 모를 신규 미지원 문자 대비용으로만 남겨둠.
  */
 const RARE_HANGUL = new Set<string>([]);
 

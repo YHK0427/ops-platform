@@ -33,8 +33,29 @@ if ("serviceWorker" in navigator) {
     });
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-);
+// 폰트 로딩 완료 전에 첫 페인트가 일어나면 컴포넌트마다 마운트 시점이 달라
+// 어떤 글자는 폴백 폰트로 고정되고 어떤 글자는 나중에 Paperlogy로 그려져
+// "폰트가 바뀌는" 게 눈에 띈다. 마운트 자체를 폰트 준비(또는 짧은 타임아웃)
+// 까지 살짝 늦춰서 첫 페인트부터 최종 폰트로 통일되게 한다.
+async function waitForCriticalFonts(timeoutMs = 400): Promise<void> {
+    if (!("fonts" in document)) return;
+    try {
+        await Promise.race([
+            Promise.all([
+                document.fonts.load('400 1em "Paperlogy"'),
+                document.fonts.load('700 1em "Paperlogy"'),
+            ]),
+            new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+        ]);
+    } catch {
+        // 폰트 로드 실패해도 렌더는 진행 — 폴백 폰트로 표시됨
+    }
+}
+
+waitForCriticalFonts().then(() => {
+    createRoot(document.getElementById("root")!).render(
+        <StrictMode>
+            <App />
+        </StrictMode>
+    );
+});
