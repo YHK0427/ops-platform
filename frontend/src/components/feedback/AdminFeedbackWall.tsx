@@ -32,8 +32,8 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
     const del = useDeletePost();
     const hide = useHidePost();
     const react = useStaffToggleReaction(boardId);
-    const addComment = useStaffCreateComment();
-    const delComment = useStaffDeleteComment();
+    const addComment = useStaffCreateComment(boardId);
+    const delComment = useStaffDeleteComment(boardId);
     const [commentOpen, setCommentOpen] = useState(false);
     const [commentText, setCommentText] = useState("");
     const submitComment = async () => {

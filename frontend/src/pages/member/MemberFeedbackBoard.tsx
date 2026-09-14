@@ -33,8 +33,8 @@ export default function MemberFeedbackBoard() {
     const createPost = useCreatePost(boardId);
     const updatePost = useUpdatePost(boardId);
     const toggleReaction = useToggleReaction(boardId);
-    const createComment = useCreateComment();
-    const deleteComment = useDeleteComment();
+    const createComment = useCreateComment(boardId);
+    const deleteComment = useDeleteComment(boardId);
 
     const [presenterId, setPresenterId] = useState<number | null>(null);
     const [draft, setDraft] = useState<Record<string, string>>({}); // 카테고리별 입력

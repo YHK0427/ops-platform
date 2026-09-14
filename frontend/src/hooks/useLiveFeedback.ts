@@ -430,51 +430,110 @@ export function useStaffToggleReaction(boardId: number) {
 }
 
 // ── 댓글 (패들렛 스타일) ─────────────────────────────────────────────────────────
-// 생성/삭제 응답은 최소 정보만 옴 — 실제 카드 반영은 WS "post.updated" 브로드캐스트로 처리(reaction과 동일 방식).
+// 생성/삭제 응답은 최소 정보만 옴 — 확정 반영은 WS "post.updated" 브로드캐스트로 처리.
+// 그 전까지는 낙관적 갱신으로 즉시 보여주고(등록자 본인 체감 지연 제거), WS 도착 시
+// 서버 진실로 자연스럽게 교체됨(같은 post의 comments 배열을 통째로 덮어씀).
 
-export function useCreateComment() {
+function optimisticAddComment(
+    qc: ReturnType<typeof useQueryClient>,
+    boardId: number,
+    postId: number,
+    content: string,
+    is_anonymous: boolean,
+): number {
+    const tempId = -Date.now();
+    const optimistic: FeedbackComment = {
+        id: tempId,
+        post_id: postId,
+        content,
+        is_anonymous,
+        author_name: is_anonymous ? "익명" : "나",
+        is_mine: true,
+        created_at: new Date().toISOString(),
+    };
+    qc.setQueryData<FeedbackPost[]>(lfKeys.posts(boardId), (prev) =>
+        (prev ?? []).map((p) => (p.id === postId ? { ...p, comments: [...p.comments, optimistic] } : p)),
+    );
+    return tempId;
+}
+
+function rollbackComment(qc: ReturnType<typeof useQueryClient>, boardId: number, tempId: number) {
+    qc.setQueryData<FeedbackPost[]>(lfKeys.posts(boardId), (prev) =>
+        (prev ?? []).map((p) => ({ ...p, comments: p.comments.filter((c) => c.id !== tempId) })),
+    );
+}
+
+export function useCreateComment(boardId: number) {
+    const qc = useQueryClient();
     return useMutation({
         mutationFn: async ({ postId, content, is_anonymous }: {
             postId: number; content: string; is_anonymous: boolean;
         }) => {
             await memberApi.post(`/live-feedback/member/posts/${postId}/comments`, { content, is_anonymous });
         },
-        onError: (e: any) => {
+        onMutate: ({ postId, content, is_anonymous }) => ({
+            tempId: optimisticAddComment(qc, boardId, postId, content, is_anonymous),
+        }),
+        onError: (e: any, _vars, ctx) => {
+            if (ctx) rollbackComment(qc, boardId, ctx.tempId);
             toast.error(e?.response?.data?.detail ?? "댓글 등록 실패");
         },
     });
 }
 
-export function useDeleteComment() {
+export function useDeleteComment(boardId: number) {
+    const qc = useQueryClient();
     return useMutation({
         mutationFn: async (commentId: number) => {
             await memberApi.delete(`/live-feedback/member/comments/${commentId}`);
         },
-        onError: () => {
+        onMutate: (commentId) => {
+            const prev = qc.getQueryData<FeedbackPost[]>(lfKeys.posts(boardId));
+            qc.setQueryData<FeedbackPost[]>(lfKeys.posts(boardId), (posts) =>
+                (posts ?? []).map((p) => ({ ...p, comments: p.comments.filter((c) => c.id !== commentId) })),
+            );
+            return { prev };
+        },
+        onError: (_e, _commentId, ctx) => {
+            if (ctx?.prev) qc.setQueryData(lfKeys.posts(boardId), ctx.prev);
             toast.error("댓글 삭제 실패");
         },
     });
 }
 
-export function useStaffCreateComment() {
+export function useStaffCreateComment(boardId: number) {
+    const qc = useQueryClient();
     return useMutation({
         mutationFn: async ({ postId, content, is_anonymous }: {
             postId: number; content: string; is_anonymous: boolean;
         }) => {
             await api.post(`/live-feedback/posts/${postId}/comments/staff`, { content, is_anonymous });
         },
-        onError: (e: any) => {
+        onMutate: ({ postId, content, is_anonymous }) => ({
+            tempId: optimisticAddComment(qc, boardId, postId, content, is_anonymous),
+        }),
+        onError: (e: any, _vars, ctx) => {
+            if (ctx) rollbackComment(qc, boardId, ctx.tempId);
             toast.error(e?.response?.data?.detail ?? "댓글 등록 실패");
         },
     });
 }
 
-export function useStaffDeleteComment() {
+export function useStaffDeleteComment(boardId: number) {
+    const qc = useQueryClient();
     return useMutation({
         mutationFn: async (commentId: number) => {
             await api.delete(`/live-feedback/comments/${commentId}/staff`);
         },
-        onError: () => {
+        onMutate: (commentId) => {
+            const prev = qc.getQueryData<FeedbackPost[]>(lfKeys.posts(boardId));
+            qc.setQueryData<FeedbackPost[]>(lfKeys.posts(boardId), (posts) =>
+                (posts ?? []).map((p) => ({ ...p, comments: p.comments.filter((c) => c.id !== commentId) })),
+            );
+            return { prev };
+        },
+        onError: (_e, _commentId, ctx) => {
+            if (ctx?.prev) qc.setQueryData(lfKeys.posts(boardId), ctx.prev);
             toast.error("댓글 삭제 실패");
         },
     });
