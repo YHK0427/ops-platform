@@ -1162,33 +1162,27 @@ async def get_round_results(
     )
     member_rows = members_q.all()
 
+    # 멤버마다 SELF/AUDIENCE 응답을 개별 쿼리하면 세션당 최대 (멤버 수 × 2)쿼리가
+    # 나가므로(결과 열람 페이지라 반복 접근 가능성 높음) 라운드 전체를 한 번에
+    # 조회해 presenter_member_id·eval_type으로 그룹핑한다.
+    resp_q = await db.execute(
+        select(EvalAssignment.presenter_member_id, EvalAssignment.eval_type, EvalResponse)
+        .join(EvalResponse, EvalResponse.assignment_id == EvalAssignment.id)
+        .where(
+            EvalAssignment.round_id == round_id,
+            EvalAssignment.eval_type.in_(("SELF", "AUDIENCE")),
+            EvalAssignment.submitted_at.isnot(None),
+        )
+    )
+    responses_by_member: dict[int, dict[str, list]] = {}
+    for mid, etype, resp in resp_q.all():
+        responses_by_member.setdefault(mid, {"SELF": [], "AUDIENCE": []})[etype].append(resp)
+
     results = []
     for mid, mname in member_rows:
-        # 자기평가 응답
-        self_q = await db.execute(
-            select(EvalResponse)
-            .join(EvalAssignment)
-            .where(
-                EvalAssignment.round_id == round_id,
-                EvalAssignment.presenter_member_id == mid,
-                EvalAssignment.eval_type == "SELF",
-                EvalAssignment.submitted_at.isnot(None),
-            )
-        )
-        self_responses = self_q.scalars().all()
-
-        # 청중평가 응답
-        aud_q = await db.execute(
-            select(EvalResponse)
-            .join(EvalAssignment)
-            .where(
-                EvalAssignment.round_id == round_id,
-                EvalAssignment.presenter_member_id == mid,
-                EvalAssignment.eval_type == "AUDIENCE",
-                EvalAssignment.submitted_at.isnot(None),
-            )
-        )
-        aud_responses = aud_q.scalars().all()
+        bucket = responses_by_member.get(mid, {"SELF": [], "AUDIENCE": []})
+        self_responses = bucket["SELF"]
+        aud_responses = bucket["AUDIENCE"]
 
         self_domain = compute_domain_scores(self_responses) if self_responses else {d: None for d in DOMAINS}
         aud_domain = compute_domain_scores(aud_responses) if aud_responses else {d: None for d in DOMAINS}
