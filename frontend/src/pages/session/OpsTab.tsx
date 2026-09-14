@@ -11,12 +11,17 @@ import type { Session } from "@/hooks/useSessions";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { VideoUploadPanel } from "@/components/VideoUploadPanel";
+import { PresenterOrderPanel } from "@/components/PresenterOrderPanel";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
 export default function OpsTab() {
     const { session } = useOutletContext<{ session: Session }>();
+    // 영상 업로드 중 발표순서가 틀린 걸 알아채도 PrepTab까지 갔다 와야 했던 문제 —
+    // 여기서 바로 고칠 수 있게. PresenterOrderPanel이 저장 시 session detail 쿼리를
+    // 무효화하므로 아래 VideoUploadPanel의 "(N번째)" 표기도 즉시 같이 갱신된다.
+    const [showOrderPanel, setShowOrderPanel] = useState(false);
 
     const { taskId: uploadTaskId, setTaskId: setUploadTaskId, taskStatus } = useSessionTask(session.id, "video-upload");
     const { mutate: setFeedbackTargets, isPending: isSettingTarget } = useSetFeedbackTargets();
@@ -244,21 +249,60 @@ export default function OpsTab() {
                             }))
                         : [];
 
+                    const hasGroups = !isTeamSession && !!session.config?.has_groups;
+
+                    // PresenterOrderPanel용 데이터 — AttendanceGrid의 "발표 순서" 뷰와 동일 형태.
+                    const presenterOrderItems = individualPresenters.map((p) => ({
+                        id: p.member_id, name: p.member_name,
+                        group_num: p.group_num, presenter_order: p.presenter_order,
+                    }));
+                    const absentOrderItems = absentForIndividual.map((a) => ({
+                        id: a.member_id, name: a.member_name, status: a.status,
+                    }));
+                    const teamOrderItems = isTeamSession
+                        ? teamPresenters.map((t) => ({
+                              id: t.member_id, name: t.member_name,
+                              presenter_order: t.presenter_order, memberNames: t.member_names,
+                          }))
+                        : undefined;
+
                     return (
-                        <VideoUploadPanel
-                            sessionId={session.id}
-                            sessionTitle={session.title}
-                            weekNum={session.week_num}
-                            presenters={isTeamSession ? teamPresenters : individualPresenters}
-                            absentMembers={absentForIndividual}
-                            hasGroups={!isTeamSession && !!session.config?.has_groups}
-                            onNaverUploadStarted={(taskId) => setUploadTaskId(taskId)}
-                            naverProgress={taskStatus?.progress ?? null}
-                            naverStatus={taskStatus?.status ?? null}
-                            naverResult={Array.isArray(taskStatus?.result) ? taskStatus.result : null}
-                            onCancelNaverUpload={handleCancelUpload}
-                            isCancellingNaver={isCancelling}
-                        />
+                        <>
+                            <div className="flex items-center justify-end mb-3">
+                                <button
+                                    onClick={() => setShowOrderPanel((v) => !v)}
+                                    className="text-xs font-medium text-[var(--color-accent)] hover:underline"
+                                >
+                                    {showOrderPanel ? "발표 순서 편집 닫기" : "발표 순서 변경"}
+                                </button>
+                            </div>
+                            {showOrderPanel && (
+                                <div className="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+                                    <PresenterOrderPanel
+                                        sessionId={session.id}
+                                        items={presenterOrderItems}
+                                        absentItems={absentOrderItems}
+                                        hasGroups={hasGroups}
+                                        isTeamSession={isTeamSession}
+                                        teamItems={teamOrderItems}
+                                    />
+                                </div>
+                            )}
+                            <VideoUploadPanel
+                                sessionId={session.id}
+                                sessionTitle={session.title}
+                                weekNum={session.week_num}
+                                presenters={isTeamSession ? teamPresenters : individualPresenters}
+                                absentMembers={absentForIndividual}
+                                hasGroups={hasGroups}
+                                onNaverUploadStarted={(taskId) => setUploadTaskId(taskId)}
+                                naverProgress={taskStatus?.progress ?? null}
+                                naverStatus={taskStatus?.status ?? null}
+                                naverResult={Array.isArray(taskStatus?.result) ? taskStatus.result : null}
+                                onCancelNaverUpload={handleCancelUpload}
+                                isCancellingNaver={isCancelling}
+                            />
+                        </>
                     );
                 })()}
             </div>
