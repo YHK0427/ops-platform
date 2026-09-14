@@ -98,7 +98,10 @@ export function Sidebar() {
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 px-3 py-4 space-y-1">
+            {/* min-h-0 필수 — flex-1 자식은 기본 min-height:auto라 내용이 많으면
+                (특히 모바일 좁은 화면) 부모 밖으로 넘쳐서 스크롤도 안 되고 로그아웃
+                버튼(Footer)이 화면 밖으로 밀려남. overflow-y-auto로 이 nav만 스크롤. */}
+            <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1">
                 {isScoringOnly ? scoringNavLink : (
                 <>
                 {NAV_ITEMS.map((item) => (
