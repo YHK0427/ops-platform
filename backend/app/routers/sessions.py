@@ -10,7 +10,7 @@ from datetime import datetime, time, timedelta, timezone
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile, status
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import func, select, update
+from sqlalchemy import bindparam, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1507,11 +1507,15 @@ async def update_presenter_order(
     """발표 순서 일괄 저장 — [{member_id, presenter_order}]"""
     # 세션이 현재 기수 소속인지 검증 (자식 Attendance를 session_id로 수정하므로)
     await _get_session_or_404(session_id, db, cohort_id)
-    for item in body:
+    if body:
+        stmt = (
+            update(Attendance.__table__)
+            .where(Attendance.session_id == session_id, Attendance.member_id == bindparam("_member_id"))
+            .values(presenter_order=bindparam("_presenter_order"))
+        )
         await db.execute(
-            update(Attendance)
-            .where(Attendance.session_id == session_id, Attendance.member_id == item["member_id"])
-            .values(presenter_order=item["presenter_order"])
+            stmt,
+            [{"_member_id": item["member_id"], "_presenter_order": item["presenter_order"]} for item in body],
         )
     await db.commit()
     return {"status": "ok", "updated": len(body)}
@@ -1528,11 +1532,15 @@ async def update_team_order(
     """팀 발표 순서 일괄 저장 — [{team_id, presenter_order}]"""
     # 세션이 현재 기수 소속인지 검증 (자식 Team을 session_id로 수정하므로)
     await _get_session_or_404(session_id, db, cohort_id)
-    for item in body:
+    if body:
+        stmt = (
+            update(Team.__table__)
+            .where(Team.session_id == session_id, Team.id == bindparam("_team_id"))
+            .values(presenter_order=bindparam("_presenter_order"))
+        )
         await db.execute(
-            update(Team)
-            .where(Team.session_id == session_id, Team.id == item["team_id"])
-            .values(presenter_order=item["presenter_order"])
+            stmt,
+            [{"_team_id": item["team_id"], "_presenter_order": item["presenter_order"]} for item in body],
         )
     await db.commit()
     return {"status": "ok", "updated": len(body)}
