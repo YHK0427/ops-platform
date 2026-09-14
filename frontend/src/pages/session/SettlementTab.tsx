@@ -367,7 +367,7 @@ export default function SettlementTab() {
                                                 </span>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="font-medium text-[var(--color-text-secondary)]">{penalty.member_name}</TableCell>
+                                        <TableCell className="font-medium text-[var(--color-text-secondary)] whitespace-nowrap">{penalty.member_name}</TableCell>
                                         <TableCell className="text-[var(--color-text-secondary)] text-sm max-w-[300px] truncate" title={penalty.description}>
                                             {penalty.description}
                                         </TableCell>
@@ -532,7 +532,7 @@ function StagedMeritPanel({
                                             상점
                                         </span>
                                     </TableCell>
-                                    <TableCell className="font-medium text-[var(--color-text-secondary)]">{merit.member_name}</TableCell>
+                                    <TableCell className="font-medium text-[var(--color-text-secondary)] whitespace-nowrap">{merit.member_name}</TableCell>
                                     <TableCell className="text-sm text-[var(--color-text-secondary)] max-w-[300px] truncate" title={merit.description}>
                                         {merit.description}
                                     </TableCell>

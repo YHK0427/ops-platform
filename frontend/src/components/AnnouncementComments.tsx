@@ -95,7 +95,7 @@ export default function AnnouncementComments({ announcementId }: { announcementI
                     onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
                     placeholder="댓글 달기…"
                     maxLength={1000}
-                    className="flex-1 px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400"
+                    className="flex-1 min-w-0 px-3.5 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400"
                 />
                 <button onClick={submit} disabled={busy || !input.trim()}
                     className="p-2.5 rounded-xl bg-rose-500 text-white disabled:opacity-40 active:scale-95">

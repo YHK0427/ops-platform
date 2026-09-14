@@ -571,7 +571,7 @@ function GenerationTab() {
                         ) : (
                             memberAccountStatus.map((m) => (
                                 <TableRow key={m.id} className="group/row border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
-                                    <TableCell>{m.name}</TableCell>
+                                    <TableCell className="whitespace-nowrap">{m.name}</TableCell>
                                     <TableCell className="font-mono text-sm text-[var(--color-text-secondary)]">
                                         {m.account?.username ?? "-"}
                                     </TableCell>
@@ -811,8 +811,8 @@ export default function AdminUsers() {
                                 ) : (
                                     users.map((u) => (
                                         <TableRow key={u.id} className="group/row border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
-                                            <TableCell className="font-mono text-sm">{u.username}</TableCell>
-                                            <TableCell>{u.display_name}</TableCell>
+                                            <TableCell className="font-mono text-sm whitespace-nowrap">{u.username}</TableCell>
+                                            <TableCell className="whitespace-nowrap">{u.display_name}</TableCell>
                                             <TableCell>
                                                 <Badge variant="outline" className={ROLE_COLORS[u.role] ?? ""}>
                                                     {ROLE_LABELS[u.role] ?? u.role}

@@ -298,7 +298,7 @@ export default function Ledger() {
                                         <TableCell className="text-[var(--color-text-muted)] text-xs whitespace-nowrap">
                                             {new Date(entry.created_at).toLocaleDateString()}
                                         </TableCell>
-                                        <TableCell className="font-medium">
+                                        <TableCell className="font-medium whitespace-nowrap">
                                             {memberMap.get(entry.member_id) || entry.member_id}
                                         </TableCell>
                                         <TableCell className="text-xs text-[var(--color-text-muted)]">
