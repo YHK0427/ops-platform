@@ -250,11 +250,6 @@ SETUP → PREP → OPS → POST → SETTLEMENT → FINALIZED
          └─ 출결 관리, PPT이메일 확인, 사유서 스캔, 분반 배정
 ```
 
-## 사용 가이드
-
-상세한 사용 가이드(스크린샷 포함)는 Notion에서 확인할 수 있다:
-- [Ops Platform 사용 가이드](https://www.notion.so/317b4343591681099d4dc2b7da731839)
-
 ## 라이선스
 
 Private — UnivPT 내부 사용 전용
