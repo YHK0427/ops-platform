@@ -326,7 +326,7 @@ function PostCard({ post, categories, canReact, canEdit, saving, onReact, onSave
         <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm flex flex-col"
+            className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm flex flex-col min-w-0"
         >
             <div className="flex items-center justify-between gap-1.5 mb-2">
                 <span className="text-xs font-semibold text-gray-500 truncate">{post.author_name ?? "익명"}</span>
