@@ -813,12 +813,12 @@ export default function AdminUsers() {
                                         <TableRow key={u.id} className="group/row border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-hover)]">
                                             <TableCell className="font-mono text-sm whitespace-nowrap">{u.username}</TableCell>
                                             <TableCell className="whitespace-nowrap">{u.display_name}</TableCell>
-                                            <TableCell>
+                                            <TableCell className="whitespace-nowrap">
                                                 <Badge variant="outline" className={ROLE_COLORS[u.role] ?? ""}>
                                                     {ROLE_LABELS[u.role] ?? u.role}
                                                 </Badge>
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell className="whitespace-nowrap">
                                                 {u.department ? (
                                                     <Badge variant="outline" className={DEPT_COLORS[u.department] ?? "bg-zinc-500/10 text-zinc-600 border-zinc-500/20"}>
                                                         {u.department}
@@ -834,14 +834,14 @@ export default function AdminUsers() {
                                                     <span className="text-[var(--color-text-muted)]">-</span>
                                                 )}
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell className="whitespace-nowrap">
                                                 {u.is_active ? (
                                                     <span className="text-green-600 text-xs">활성</span>
                                                 ) : (
                                                     <span className="text-[var(--color-text-muted)] text-xs">비활성</span>
                                                 )}
                                             </TableCell>
-                                            <TableCell className="text-[var(--color-text-muted)] text-xs">
+                                            <TableCell className="text-[var(--color-text-muted)] text-xs whitespace-nowrap">
                                                 {new Date(u.created_at).toLocaleDateString("ko-KR")}
                                             </TableCell>
                                             <TableCell className="text-right">
