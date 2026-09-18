@@ -116,17 +116,18 @@ export default function AdminCohorts() {
                         {cohorts.map((c) => (
                             <div
                                 key={c.id}
-                                className="flex items-center gap-3 p-4 rounded-xl border border-[var(--color-border-subtle)] bg-white shadow-sm"
+                                className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-[var(--color-border-subtle)] bg-white shadow-sm"
                             >
+                              <div className="flex items-center gap-3 min-w-0">
                                 <div className="w-11 h-11 shrink-0 rounded-lg bg-[var(--color-accent-dim)] flex items-center justify-center">
                                     <Layers className="w-5 h-5 text-[var(--color-accent)]" />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="font-bold text-[var(--color-text-primary)]">{c.name}</span>
-                                        {c.is_current && <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30">활성 기수</Badge>}
-                                        {c.id === active && <Badge className="bg-blue-500/15 text-blue-600 border-blue-500/30">보는 중</Badge>}
-                                        {c.archived_at && <Badge className="bg-zinc-500/15 text-zinc-600 border-zinc-500/30">보관됨</Badge>}
+                                        <span className="font-bold text-[var(--color-text-primary)] whitespace-nowrap">{c.name}</span>
+                                        {c.is_current && <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 whitespace-nowrap">활성 기수</Badge>}
+                                        {c.id === active && <Badge className="bg-blue-500/15 text-blue-600 border-blue-500/30 whitespace-nowrap">보는 중</Badge>}
+                                        {c.archived_at && <Badge className="bg-zinc-500/15 text-zinc-600 border-zinc-500/30 whitespace-nowrap">보관됨</Badge>}
                                     </div>
                                     <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{c.number}기</p>
                                     <SloganEditor
@@ -135,7 +136,8 @@ export default function AdminCohorts() {
                                         pending={sloganMut.isPending}
                                     />
                                 </div>
-                                <div className="flex items-center gap-1.5 shrink-0">
+                              </div>
+                                <div className="flex items-center gap-1.5 flex-wrap sm:shrink-0">
                                     <Button size="sm" variant={c.id === active ? "default" : "outline"} onClick={() => viewCohort(c)}>
                                         <Eye className="w-4 h-4 mr-1" /> 보기
                                     </Button>
