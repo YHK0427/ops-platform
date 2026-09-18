@@ -52,12 +52,23 @@ export default function AnnouncementReactions({
         <div className={`flex flex-wrap items-center gap-1.5 ${className ?? ""}`}>
             {active.map((e) => {
                 const isMine = mine.has(e);
+                const pillClass = `inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium transition-colors disabled:cursor-default ${isMine ? "bg-rose-50 border-rose-300 text-rose-600" : "bg-gray-50 border-gray-200 text-gray-600"} ${!readOnly ? "hover:border-gray-300 active:scale-95" : ""}`;
+                // readOnly는 목록 미리보기에서 클릭 가능한 <button>(공지 열기) 안에 쓰이므로
+                // <button> 중첩(잘못된 HTML, hydration 에러)을 피하려 <span>으로 렌더링.
+                if (readOnly) {
+                    return (
+                        <span key={e} className={pillClass}>
+                            <span className="text-sm leading-none">{e}</span>
+                            <span className="tabular-nums leading-none">{counts[e]}</span>
+                        </span>
+                    );
+                }
                 return (
                     <button
                         key={e}
-                        disabled={readOnly || busy}
-                        onClick={() => !readOnly && toggle(e)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium transition-colors disabled:cursor-default ${isMine ? "bg-rose-50 border-rose-300 text-rose-600" : "bg-gray-50 border-gray-200 text-gray-600"} ${!readOnly ? "hover:border-gray-300 active:scale-95" : ""}`}
+                        disabled={busy}
+                        onClick={() => toggle(e)}
+                        className={pillClass}
                     >
                         <span className="text-sm leading-none">{e}</span>
                         <span className="tabular-nums leading-none">{counts[e]}</span>
