@@ -12,7 +12,7 @@ import type { Session } from "@/hooks/useSessions";
 export default function PrepTab() {
     const { session } = useOutletContext<{ session: Session }>();
     const navigate = useNavigate();
-    const { data: members } = useMembers();
+    const { data: members } = useMembers(false);
 
     const { mutate: scanExcuses, isPending: isScanningExcuses } = useScanExcuses();
 
