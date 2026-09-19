@@ -1,6 +1,6 @@
 import { useOutletContext } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Users, Shuffle, RotateCcw, ClipboardCopy, X, Plus, ChevronsUpDown, Check } from "lucide-react";
+import { AlertTriangle, Users, Shuffle, RotateCcw, ClipboardCopy, X, Plus, ChevronsUpDown, Check, ArrowUpDown } from "lucide-react";
 import { WarningBanner } from "@/components/WarningBanner";
 import { toast } from "sonner";
 import { useSetFeedbackTargets, useRandomAssignFeedback, useActiveUploadTask, useUpdateSessionConfig, useCancelUpload, useUploadResult } from "@/hooks";
@@ -268,16 +268,23 @@ export default function OpsTab() {
 
                     return (
                         <>
-                            <div className="flex items-center justify-end mb-3">
-                                <button
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-bold text-[var(--color-text-secondary)]">발표 순서</span>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
                                     onClick={() => setShowOrderPanel((v) => !v)}
-                                    className="text-xs font-medium text-[var(--color-accent)] hover:underline"
+                                    aria-expanded={showOrderPanel}
+                                    aria-controls="presenter-order-panel"
+                                    className="h-8 px-3 text-xs gap-1.5 border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10"
                                 >
+                                    <ArrowUpDown className="w-3.5 h-3.5" />
                                     {showOrderPanel ? "발표 순서 편집 닫기" : "발표 순서 변경"}
-                                </button>
+                                </Button>
                             </div>
                             {showOrderPanel && (
-                                <div className="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+                                <div id="presenter-order-panel" className="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
                                     <PresenterOrderPanel
                                         sessionId={session.id}
                                         items={presenterOrderItems}
