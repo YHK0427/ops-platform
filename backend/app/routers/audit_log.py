@@ -50,6 +50,7 @@ async def list_audit_logs(
     table_name: str | None = Query(None, description="테이블명으로 필터"),
     operation: str | None = Query(None, description="INSERT/UPDATE/DELETE로 필터"),
     cohort_id: int | None = Query(None, description="기수로 필터"),
+    member_id: int | None = Query(None, description="영향받은 멤버로 필터(누구의 출석/장부 등이 바뀌었는지)"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -67,6 +68,9 @@ async def list_audit_logs(
     if cohort_id is not None:
         q = q.where(AuditLog.cohort_id == cohort_id)
         count_q = count_q.where(AuditLog.cohort_id == cohort_id)
+    if member_id is not None:
+        q = q.where(AuditLog.owner_member_id == member_id)
+        count_q = count_q.where(AuditLog.owner_member_id == member_id)
 
     total = (await db.execute(count_q)).scalar_one()
     rows = (await db.execute(q.order_by(desc(AuditLog.id)).limit(limit).offset(offset))).scalars().all()
@@ -107,10 +111,13 @@ async def daily_activity_counts(
     table_name: str | None = Query(None),
     operation: str | None = Query(None),
     cohort_id: int | None = Query(None),
+    member_id: int | None = Query(None),
     days: int = Query(14, ge=1, le=90),
 ):
-    """활동 로그 탭 그래프용 — 현재 필터 조건으로 최근 N일간 일별 건수."""
-    day_col = cast(AuditLog.created_at, Date)
+    """활동 로그 탭 그래프용 — 현재 필터 조건으로 최근 N일간 일별 건수.
+    DB TimeZone은 UTC라 그냥 date로 캐스팅하면 하루 경계가 KST 09:00에 걸려
+    자정~오전9시 활동이 전날 막대로 새는 문제가 생긴다 — KST로 변환 후 자른다."""
+    day_col = cast(func.timezone("Asia/Seoul", AuditLog.created_at), Date)
     q = select(day_col.label("day"), func.count()).group_by(day_col).order_by(day_col)
     if actor_username:
         q = q.where(AuditLog.actor_username == actor_username)
@@ -120,6 +127,8 @@ async def daily_activity_counts(
         q = q.where(AuditLog.operation == operation.upper())
     if cohort_id is not None:
         q = q.where(AuditLog.cohort_id == cohort_id)
+    if member_id is not None:
+        q = q.where(AuditLog.owner_member_id == member_id)
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     q = q.where(AuditLog.created_at >= cutoff)
 

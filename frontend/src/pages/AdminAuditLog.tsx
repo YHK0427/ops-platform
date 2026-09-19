@@ -3,7 +3,7 @@ import { History, ChevronLeft, ChevronRight, Cpu, HardDrive, MemoryStick, Databa
 import {
     ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar,
 } from "recharts";
-import { useAuditLogs, useAuditLogTables, useAuditDailyCounts, useInfraStatus } from "@/hooks";
+import { useAuditLogs, useAuditLogTables, useAuditDailyCounts, useInfraStatus, useMembers } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -62,13 +62,16 @@ function ActivityLogTab() {
     const [tableName, setTableName] = useState<string>("");
     const [operation, setOperation] = useState<string>("");
     const [actorUsername, setActorUsername] = useState("");
+    const [memberId, setMemberId] = useState<string>("");
     const [page, setPage] = useState(0);
 
     const { data: tables } = useAuditLogTables();
+    const { data: members } = useMembers(false); // 이탈·수료 멤버도 과거 기록 조회 가능해야 하므로 false
     const activeFilters = {
         table_name: tableName || undefined,
         operation: operation || undefined,
         actor_username: actorUsername || undefined,
+        member_id: memberId ? Number(memberId) : undefined,
     };
     const { data, isLoading } = useAuditLogs({ ...activeFilters, limit: PAGE_SIZE, offset: page * PAGE_SIZE });
     const { data: dailyCounts } = useAuditDailyCounts(activeFilters);
@@ -123,6 +126,17 @@ function ActivityLogTab() {
                         <SelectItem value="LOGIN_FAILED">로그인 실패</SelectItem>
                         <SelectItem value="LOGOUT">로그아웃</SelectItem>
                         <SelectItem value="PWA_INSTALL">PWA 설치</SelectItem>
+                    </SelectContent>
+                </Select>
+                <Select value={memberId || "__all__"} onValueChange={(v) => { setMemberId(v === "__all__" ? "" : v); setPage(0); }}>
+                    <SelectTrigger className="w-40 h-9">
+                        <SelectValue placeholder="전체 멤버" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="__all__">전체 멤버</SelectItem>
+                        {(members ?? []).map((m) => (
+                            <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
+                        ))}
                     </SelectContent>
                 </Select>
                 {data && (

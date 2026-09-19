@@ -26,6 +26,7 @@ export interface AuditLogFilters {
     table_name?: string;
     operation?: string;
     cohort_id?: number;
+    member_id?: number;
     limit?: number;
     offset?: number;
 }
