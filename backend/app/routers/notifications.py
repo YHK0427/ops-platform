@@ -20,7 +20,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select, delete, func, or_
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -235,7 +235,11 @@ async def unsubscribe_member(
     _: dict = Depends(get_current_member),
     db: AsyncSession = Depends(get_db),
 ):
-    await db.execute(delete(PushSubscription).where(PushSubscription.endpoint == body.endpoint))
+    # Core delete()는 ORM 세션을 안 거쳐서 감사 로그 훅에 안 잡힘 — 구독(add)과 대칭이 되게
+    # ORM delete로 바꿔서 "누가 알림을 껐는지"도 자동 기록되게 한다.
+    sub = (await db.execute(select(PushSubscription).where(PushSubscription.endpoint == body.endpoint))).scalar_one_or_none()
+    if sub:
+        await db.delete(sub)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -261,7 +265,9 @@ async def unsubscribe_ops(
     _: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await db.execute(delete(PushSubscription).where(PushSubscription.endpoint == body.endpoint))
+    sub = (await db.execute(select(PushSubscription).where(PushSubscription.endpoint == body.endpoint))).scalar_one_or_none()
+    if sub:
+        await db.delete(sub)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

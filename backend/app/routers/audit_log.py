@@ -1,10 +1,10 @@
 """감사 로그 조회 — 전체 관리자(admin) 전용. app/audit_hook.py가 자동 기록한
 audit_logs 테이블을 필터·페이지네이션해서 보여준다."""
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, cast, Date
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, require_admin
@@ -92,6 +92,39 @@ async def list_audit_logs(
             entity_label=label, changes=r.changes, request_path=r.request_path,
         ))
     return {"items": items, "total": total}
+
+
+class DailyCount(BaseModel):
+    date: date
+    count: int
+
+
+@router.get("/daily-counts", response_model=list[DailyCount])
+async def daily_activity_counts(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+    actor_username: str | None = Query(None),
+    table_name: str | None = Query(None),
+    operation: str | None = Query(None),
+    cohort_id: int | None = Query(None),
+    days: int = Query(14, ge=1, le=90),
+):
+    """활동 로그 탭 그래프용 — 현재 필터 조건으로 최근 N일간 일별 건수."""
+    day_col = cast(AuditLog.created_at, Date)
+    q = select(day_col.label("day"), func.count()).group_by(day_col).order_by(day_col)
+    if actor_username:
+        q = q.where(AuditLog.actor_username == actor_username)
+    if table_name:
+        q = q.where(AuditLog.table_name == table_name)
+    if operation:
+        q = q.where(AuditLog.operation == operation.upper())
+    if cohort_id is not None:
+        q = q.where(AuditLog.cohort_id == cohort_id)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    q = q.where(AuditLog.created_at >= cutoff)
+
+    rows = (await db.execute(q)).all()
+    return [{"date": d, "count": c} for d, c in rows]
 
 
 @router.get("/tables", response_model=list[TableOption])

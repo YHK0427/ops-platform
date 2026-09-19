@@ -51,6 +51,24 @@ async def record_auth_event(
     ))
     await db.commit()
 
+
+async def record_manual_event(
+    db, operation: str, table_name: str, entity_label: str,
+    row_id: str | None = None, owner_member_id: int | None = None,
+    changes: dict | None = None, request_path: str | None = None,
+) -> None:
+    """Core insert()/update()/delete() 문(예: 대량 삭제)은 ORM 세션을 거치지 않아
+    after_flush 훅에 안 잡힌다 — 그런 자리에서 직접 호출한다. 커밋은 호출부에서
+    (보통 뒤이은 로직과 한 트랜잭션으로 묶여야 해서) 별도로 한다."""
+    from app.models import AuditLog
+    await db.execute(insert(AuditLog.__table__).values(
+        actor_label=get_actor_label(), actor_username=get_actor_username(),
+        actor_role=get_actor_role(), cohort_id=get_actor_cohort_id(),
+        operation=operation, table_name=table_name, row_id=row_id,
+        owner_member_id=owner_member_id, entity_label=entity_label,
+        changes=changes, request_path=request_path or current_request_path.get(),
+    ))
+
 # 우선순위대로 훑어서 첫 번째로 값이 있는 필드를 사람이 읽을 이름으로 쓴다.
 # (테이블마다 따로 매핑 안 만들어도 되게 — 실제 40개 테이블 컬럼 전수 조사 결과 이 순서면 전부 커버됨)
 _LABEL_FIELD_PRIORITY = ["display_name", "name", "title", "label", "entered_name", "alias", "description", "reporter_display_name", "username"]

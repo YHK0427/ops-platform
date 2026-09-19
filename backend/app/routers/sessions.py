@@ -815,9 +815,10 @@ async def confirm_teams(
 
     # 주의: 출결 레코드는 삭제하지 않음
     from sqlalchemy import delete, select as sa_select
+    from app.audit_hook import record_manual_event
     if is_reconfirm:
         # PREP 재편집: PPT 과제(팀 단위)만 삭제, 개인 과제는 유지
-        await db.execute(
+        result = await db.execute(
             delete(Assignment).where(
                 Assignment.session_id == session_id,
                 Assignment.team_id.isnot(None),
@@ -825,10 +826,14 @@ async def confirm_teams(
         )
     else:
         # SETUP 최초 확정: 모든 과제 삭제
-        await db.execute(delete(Assignment).where(Assignment.session_id == session_id))
+        result = await db.execute(delete(Assignment).where(Assignment.session_id == session_id))
+    if result.rowcount:
+        await record_manual_event(db, "DELETE", "assignments", f"{result.rowcount}건 삭제(과제배정 · 팀 재확정)", row_id=str(session_id))
 
     # 기존 팀 삭제 (cascade로 team_members도 삭제됨)
-    await db.execute(delete(Team).where(Team.session_id == session_id))
+    result = await db.execute(delete(Team).where(Team.session_id == session_id))
+    if result.rowcount:
+        await record_manual_event(db, "DELETE", "teams", f"{result.rowcount}건 삭제(팀 · 재확정)", row_id=str(session_id))
     
     # 3. 새 팀 생성
     for team_data in body.teams:

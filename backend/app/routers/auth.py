@@ -32,7 +32,7 @@ from app.models import (
     User, Member, GenerationAccount, Session, Team, TeamMember, TeamHistory,
     Assignment, Attendance, Ledger, CafePost, TreasuryExpense, Cohort,
 )
-from app.audit_hook import record_auth_event
+from app.audit_hook import record_auth_event, record_manual_event
 
 logger = logging.getLogger("auth")
 
@@ -363,7 +363,12 @@ async def member_login(
 
     if account is None:
         logger.warning("member_login_failed user=%s ip=%s reason=not_found_or_wrong_password", body.username, ip)
-        await record_auth_event(db, "LOGIN_FAILED", body.username, "기수원", None, f"{body.username} 기수원 로그인 실패(아이디/비밀번호 불일치)", request.url.path, ip)
+        # 로그인 폼이 기수 로그인을 먼저 시도하고 실패하면 운영진 로그인으로 넘어가는 구조라,
+        # 운영진이 로그인할 때마다 여기서 매번 "실패"가 찍힌다 — candidates가 애초에 없으면
+        # (그 아이디로 된 기수 계정 자체가 없음) 그 정상적인 흐름이니 기록하지 않는다.
+        # candidates는 있는데 비번만 틀렸으면 진짜 기수 계정 침입 시도이므로 기록한다.
+        if candidates:
+            await record_auth_event(db, "LOGIN_FAILED", body.username, "기수원", None, f"{body.username} 기수원 로그인 실패(아이디/비밀번호 불일치)", request.url.path, ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="아이디 또는 비밀번호가 올바르지 않습니다",
@@ -708,6 +713,7 @@ async def delete_user(
 
 @router.post("/reset-semester", status_code=status.HTTP_200_OK)
 async def reset_semester(
+    request: Request,
     _: dict = Depends(require_admin),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
@@ -725,16 +731,26 @@ async def reset_semester(
     cohort_member_ids = select(Member.id).where(Member.cohort_id == cohort_id).scalar_subquery()
     cohort_team_ids = select(Team.id).where(Team.session_id.in_(cohort_session_ids)).scalar_subquery()
 
+    # 대량 삭제라 Core delete() 사용(ORM delete는 전체 행을 메모리에 로드해야 해서 느림) —
+    # 그만큼 after_flush 훅에 안 잡히므로 테이블별로 지운 건수를 감사 로그에 직접 남긴다.
+    async def _delete_and_record(stmt, table_name: str, kind_ko: str):
+        result = await db.execute(stmt)
+        if result.rowcount:
+            await record_manual_event(
+                db, "DELETE", table_name, f"{result.rowcount}건 삭제({kind_ko} · 기수 초기화)",
+                request_path=request.url.path,
+            )
+
     # 순서 중요: FK 의존성 역순으로 삭제 (전부 현재 기수만)
-    await db.execute(delete(Ledger).where(Ledger.member_id.in_(cohort_member_ids)))
-    await db.execute(delete(Assignment).where(Assignment.session_id.in_(cohort_session_ids)))
-    await db.execute(delete(Attendance).where(Attendance.session_id.in_(cohort_session_ids)))
-    await db.execute(delete(TeamHistory).where(TeamHistory.session_id.in_(cohort_session_ids)))
-    await db.execute(delete(TeamMember).where(TeamMember.team_id.in_(cohort_team_ids)))
-    await db.execute(delete(Team).where(Team.session_id.in_(cohort_session_ids)))
-    await db.execute(delete(Session).where(Session.cohort_id == cohort_id))
-    await db.execute(delete(CafePost).where(CafePost.cohort_id == cohort_id))
-    await db.execute(delete(TreasuryExpense).where(TreasuryExpense.cohort_id == cohort_id))
+    await _delete_and_record(delete(Ledger).where(Ledger.member_id.in_(cohort_member_ids)), "ledger", "장부")
+    await _delete_and_record(delete(Assignment).where(Assignment.session_id.in_(cohort_session_ids)), "assignments", "과제배정")
+    await _delete_and_record(delete(Attendance).where(Attendance.session_id.in_(cohort_session_ids)), "attendance", "출석")
+    await _delete_and_record(delete(TeamHistory).where(TeamHistory.session_id.in_(cohort_session_ids)), "team_history", "팀이력")
+    await _delete_and_record(delete(TeamMember).where(TeamMember.team_id.in_(cohort_team_ids)), "team_members", "팀원배정")
+    await _delete_and_record(delete(Team).where(Team.session_id.in_(cohort_session_ids)), "teams", "팀")
+    await _delete_and_record(delete(Session).where(Session.cohort_id == cohort_id), "sessions", "세션")
+    await _delete_and_record(delete(CafePost).where(CafePost.cohort_id == cohort_id), "cafe_posts", "카페게시글")
+    await _delete_and_record(delete(TreasuryExpense).where(TreasuryExpense.cohort_id == cohort_id), "treasury_expenses", "금고지출")
 
     # 현재 기수 멤버 디포짓/점수 초기화
     members_result = await db.execute(select(Member).where(Member.cohort_id == cohort_id))

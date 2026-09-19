@@ -42,6 +42,23 @@ export function useAuditLogs(filters: AuditLogFilters) {
     });
 }
 
+export interface DailyCount {
+    date: string;
+    count: number;
+}
+
+export function useAuditDailyCounts(filters: Omit<AuditLogFilters, "limit" | "offset">) {
+    return useQuery({
+        queryKey: ["audit-logs", "daily-counts", filters],
+        queryFn: async () => {
+            const { data } = await api.get<DailyCount[]>("/audit-logs/daily-counts", {
+                params: filters,
+            });
+            return data;
+        },
+    });
+}
+
 export function useAuditLogTables() {
     return useQuery({
         queryKey: ["audit-logs", "tables"],

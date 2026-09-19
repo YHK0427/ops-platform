@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { History, ChevronLeft, ChevronRight, Cpu, HardDrive, MemoryStick, Database, Server, Activity } from "lucide-react";
 import {
-    ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
+    ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar,
 } from "recharts";
-import { useAuditLogs, useAuditLogTables, useInfraStatus } from "@/hooks";
+import { useAuditLogs, useAuditLogTables, useAuditDailyCounts, useInfraStatus } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -63,18 +63,33 @@ function ActivityLogTab() {
     const [page, setPage] = useState(0);
 
     const { data: tables } = useAuditLogTables();
-    const { data, isLoading } = useAuditLogs({
+    const activeFilters = {
         table_name: tableName || undefined,
         operation: operation || undefined,
         actor_username: actorUsername || undefined,
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-    });
+    };
+    const { data, isLoading } = useAuditLogs({ ...activeFilters, limit: PAGE_SIZE, offset: page * PAGE_SIZE });
+    const { data: dailyCounts } = useAuditDailyCounts(activeFilters);
 
     const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 
     return (
         <div className="space-y-4">
+            {dailyCounts && dailyCounts.length >= 2 && (
+                <div className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                    <p className="text-xs text-[var(--color-text-muted)] mb-2">최근 14일 일별 활동 건수</p>
+                    <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={dailyCounts} margin={{ left: -20, right: 10, top: 5, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                            <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(d) => d.slice(5)} />
+                            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                            <Tooltip />
+                            <Bar dataKey="count" name="활동 건수" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-2 bg-[var(--color-surface)] p-3 rounded-xl border border-[var(--color-border)]">
                 <Input
                     placeholder="아이디로 검색..."
