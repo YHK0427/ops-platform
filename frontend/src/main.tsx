@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
+import { getToken } from "@/lib/api";
+import { getMemberToken } from "@/lib/memberApi";
 
 // 배포로 청크 해시가 바뀌면 열려있던 옛 탭이 옛 청크를 못 받아 404가 난다.
 // 동적 import(코드분할) 로드 실패 시 한 번만 새로고침해 최신 번들을 받는다.
@@ -32,6 +34,23 @@ if ("serviceWorker" in navigator) {
             .catch((err) => console.warn("[SW] register failed", err));
     });
 }
+
+// PWA 홈화면 설치 감지 — appinstalled는 브라우저(주로 크로미움 계열)당 한 번만 발생.
+// iOS는 표준상 이 이벤트가 없어 집계에서 빠진다(알려진 한계, 집계는 하한값으로 취급).
+window.addEventListener("appinstalled", () => {
+    if (localStorage.getItem("pwa_install_logged")) return;
+    localStorage.setItem("pwa_install_logged", "1");
+    const memberToken = getMemberToken();
+    const staffToken = getToken();
+    const [path, token] = memberToken
+        ? ["/api/v1/notifications/pwa-installed", memberToken]
+        : staffToken
+            ? ["/api/v1/notifications/ops/pwa-installed", staffToken]
+            : [null, null];
+    if (path && token) {
+        fetch(path, { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    }
+});
 
 // 폰트 로딩 완료 전에 첫 페인트가 일어나면 컴포넌트마다 마운트 시점이 달라
 // 어떤 글자는 폴백 폰트로 고정되고 어떤 글자는 나중에 Paperlogy로 그려져

@@ -26,11 +26,13 @@ const OP_COLORS: Record<string, string> = {
     LOGIN: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
     LOGIN_FAILED: "bg-rose-500/15 text-rose-600 border-rose-500/30",
     LOGOUT: "bg-zinc-500/15 text-zinc-600 border-zinc-500/30",
+    PWA_INSTALL: "bg-violet-500/15 text-violet-600 border-violet-500/30",
 };
 
 const OP_LABELS: Record<string, string> = {
     INSERT: "생성", UPDATE: "수정", DELETE: "삭제",
     LOGIN: "로그인", LOGIN_FAILED: "로그인 실패", LOGOUT: "로그아웃",
+    PWA_INSTALL: "PWA 설치",
 };
 
 const PAGE_SIZE = 50;
@@ -120,6 +122,7 @@ function ActivityLogTab() {
                         <SelectItem value="LOGIN">로그인</SelectItem>
                         <SelectItem value="LOGIN_FAILED">로그인 실패</SelectItem>
                         <SelectItem value="LOGOUT">로그아웃</SelectItem>
+                        <SelectItem value="PWA_INSTALL">PWA 설치</SelectItem>
                     </SelectContent>
                 </Select>
                 {data && (

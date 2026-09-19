@@ -30,6 +30,7 @@ from app.deps import (
 )
 from app.models import Announcement, AnnouncementComment, AnnouncementReaction, Member, PushSubscription, User
 from app.services.push import resolve_subscription_ids
+from app.audit_hook import record_manual_event
 
 logger = logging.getLogger("notifications")
 
@@ -268,6 +269,33 @@ async def unsubscribe_ops(
     sub = (await db.execute(select(PushSubscription).where(PushSubscription.endpoint == body.endpoint))).scalar_one_or_none()
     if sub:
         await db.delete(sub)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── PWA 설치 감지 ─────────────────────────────────────────────────────────────
+# 브라우저의 appinstalled 이벤트(주로 크로미움 계열, iOS는 표준상 미지원 — 알려진 한계)를
+# 프런트에서 감지해 호출. 감사 로그에서 "누가 PWA 설치했는지" 확인용.
+
+@router.post("/pwa-installed", status_code=status.HTTP_204_NO_CONTENT)
+async def pwa_installed_member(
+    request: Request,
+    member: dict = Depends(get_current_member),
+    db: AsyncSession = Depends(get_db),
+):
+    await record_manual_event(db, "PWA_INSTALL", "client_events", "PWA 설치",
+                               owner_member_id=member["member_id"], request_path=request.url.path)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/ops/pwa-installed", status_code=status.HTTP_204_NO_CONTENT)
+async def pwa_installed_ops(
+    request: Request,
+    _: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await record_manual_event(db, "PWA_INSTALL", "client_events", "PWA 설치", request_path=request.url.path)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

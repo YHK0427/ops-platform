@@ -33,6 +33,7 @@ _TABLE_LABELS_KO = {
     "scoring_comments": "심사총평", "scoring_deduction_rules": "감점규정", "scoring_deductions": "감점적용",
     "dev_feedback": "개발자요청",
     "auth_events": "로그인기록",
+    "client_events": "클라이언트이벤트",
 }
 
 
