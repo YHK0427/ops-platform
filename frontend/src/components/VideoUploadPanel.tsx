@@ -1,8 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle, UserMinus, Users, Loader2, StopCircle } from "lucide-react";
+import { Upload, CheckCircle2, Trash2, Film, UploadCloud, XCircle, AlertTriangle, UserMinus, Users, Loader2, StopCircle, ArrowUpDown } from "lucide-react";
 import { useSessionVideos, useDeleteSessionVideo, useUploadVideos } from "@/hooks";
 import type { SessionVideo } from "@/hooks";
 import { getToken, getActiveCohort } from "@/lib/api";
@@ -45,6 +45,9 @@ interface VideoUploadPanelProps {
     naverResult?: NaverResultItem[] | null;
     onCancelNaverUpload?: () => void;
     isCancellingNaver?: boolean;
+    showOrderPanel?: boolean;
+    onToggleOrderPanel?: () => void;
+    orderPanel?: ReactNode;
 }
 
 interface UploadState {
@@ -60,7 +63,7 @@ const MAX_CONCURRENT_UPLOADS = 3;
 // 초과면 R2 direct upload 시도 (구성된 경우). 실패 시 서버 chunked fallback
 const R2_THRESHOLD = 50 * 1024 * 1024;
 
-export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult, onCancelNaverUpload, isCancellingNaver }: VideoUploadPanelProps) {
+export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult, onCancelNaverUpload, isCancellingNaver, showOrderPanel, onToggleOrderPanel, orderPanel }: VideoUploadPanelProps) {
     const { user } = useAuth();
     const { data: uploadedVideos, refetch } = useSessionVideos(sessionId);
     const { mutate: deleteVideo, isPending: isDeleting } = useDeleteSessionVideo();
@@ -584,23 +587,45 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
                         {uploadingCount > 0 && ` · ${uploadingCount}개 업로드 중`}
                     </span>
                 </div>
-                <Button
-                    onClick={handleNaverUpload}
-                    disabled={naverDisabled}
-                    className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
-                    size="sm"
-                    title={selectedBlocked > 0 ? "서버 처리/압축 중인 영상이 있습니다. 잠시 기다려주세요." : undefined}
-                >
-                    <UploadCloud className="w-4 h-4 mr-1" />
-                    {isStartingNaver
-                        ? "시작 중..."
-                        : selectedPendingPull.length > 0
-                            ? `서버 처리 중 (${selectedPendingPull.length}개)`
-                            : selectedCompressing.length > 0
-                                ? `압축 중 (${selectedCompressing.length}개)`
-                                : `네이버 업로드 (${selectedCount}개)`}
-                </Button>
+                <div className="flex items-center gap-2">
+                    {onToggleOrderPanel && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={onToggleOrderPanel}
+                            aria-expanded={showOrderPanel}
+                            aria-controls="presenter-order-panel"
+                            className="h-8 px-3 text-xs gap-1.5 border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10"
+                        >
+                            <ArrowUpDown className="w-3.5 h-3.5" />
+                            {showOrderPanel ? "발표 순서 편집 닫기" : "발표 순서 변경"}
+                        </Button>
+                    )}
+                    <Button
+                        onClick={handleNaverUpload}
+                        disabled={naverDisabled}
+                        className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
+                        size="sm"
+                        title={selectedBlocked > 0 ? "서버 처리/압축 중인 영상이 있습니다. 잠시 기다려주세요." : undefined}
+                    >
+                        <UploadCloud className="w-4 h-4 mr-1" />
+                        {isStartingNaver
+                            ? "시작 중..."
+                            : selectedPendingPull.length > 0
+                                ? `서버 처리 중 (${selectedPendingPull.length}개)`
+                                : selectedCompressing.length > 0
+                                    ? `압축 중 (${selectedCompressing.length}개)`
+                                    : `네이버 업로드 (${selectedCount}개)`}
+                    </Button>
+                </div>
             </div>
+
+            {showOrderPanel && orderPanel && (
+                <div id="presenter-order-panel" className="rounded-lg border border-[var(--color-border)] overflow-hidden">
+                    {orderPanel}
+                </div>
+            )}
 
             {/* 안내 */}
             <p className="text-xs text-[var(--color-text-muted)]">
