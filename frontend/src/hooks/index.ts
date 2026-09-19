@@ -6,3 +6,5 @@ export * from "./useAdminUsers";
 export * from "./useEvaluation";
 export * from "./useMemberEvaluation";
 export * from "./useDevFeedback";
+export * from "./useAuditLog";
+export * from "./useInfraStatus";

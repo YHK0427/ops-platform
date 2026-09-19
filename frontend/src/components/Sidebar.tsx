@@ -20,6 +20,7 @@ import {
     Megaphone,
     Gavel,
     Wrench,
+    History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -258,6 +259,20 @@ export function Sidebar() {
                     >
                         <Shield className="w-4 h-4" />
                         사용자 관리
+                    </NavLink>
+                    <NavLink
+                        to="/admin/audit-log"
+                        className={({ isActive }) =>
+                            cn(
+                                "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                                isActive
+                                    ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
+                            )
+                        }
+                    >
+                        <History className="w-4 h-4" />
+                        모니터링
                     </NavLink>
                     {user?.is_superadmin && (
                         <NavLink

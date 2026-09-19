@@ -28,6 +28,7 @@ const TeamEditPage = lazy(() => import("@/pages/session/TeamEditPage"));
 const GroupEditPage = lazy(() => import("@/pages/session/GroupEditPage"));
 const AdminUsers = lazy(() => import("@/pages/AdminUsers"));
 const AdminCohorts = lazy(() => import("@/pages/AdminCohorts"));
+const AdminAuditLog = lazy(() => import("@/pages/AdminAuditLog"));
 const Treasury = lazy(() => import("@/pages/Treasury"));
 
 // ── Lazy-loaded evaluation pages (ops) ─────────────────────────────────
@@ -207,6 +208,7 @@ export default function App() {
                   <Route path="/treasury" element={<Treasury />} />
                   <Route path="/admin/users" element={<AdminUsers />} />
                   <Route path="/admin/cohorts" element={<AdminCohorts />} />
+                  <Route path="/admin/audit-log" element={<AdminAuditLog />} />
                   <Route path="/dev-feedback" element={<DevFeedback />} />
                   <Route path="/team-building" element={<TeamBuilding />} />
                   <Route path="/team-building/:boardId" element={<TeamBuildingBoard />} />

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.audit_context import set_actor
 from sqlalchemy import select
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -153,7 +154,7 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
 
     # cohort_id: 신규 토큰엔 claim 존재(None=슈퍼관리자). 구 토큰엔 없음 → cohort_claim=False로
     # 표시해 get_current_cohort_id 가 DB 폴백하도록 한다.
-    return {
+    actor = {
         "username": username,
         # uid: User.id — 기수 분리로 username이 기수 간 중복될 수 있어 신원 식별엔 이걸 우선 사용.
         # 구 토큰(발급 당시 uid claim 없음)은 None → 호출부가 username(+cohort_id)로 폴백.
@@ -162,6 +163,8 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         "cohort_id": payload.get("cohort_id"),
         "cohort_claim": "cohort_id" in payload,
     }
+    set_actor(actor, request.url.path)
+    return actor
 
 
 async def resolve_current_user_row(db: AsyncSession, current_user: dict):
@@ -183,6 +186,7 @@ async def resolve_current_user_row(db: AsyncSession, current_user: dict):
 
 
 async def get_current_member(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -224,7 +228,9 @@ async def get_current_member(
         # 매 요청마다 확인 — 멤버 토큰은 만료가 사실상 무제한이라 더 중요함).
         raise credentials_exception
 
-    return {"member_id": member_id, "username": username, "cohort_id": row[1]}
+    actor = {"member_id": member_id, "username": username, "cohort_id": row[1]}
+    set_actor(actor, request.url.path)
+    return actor
 
 
 async def decode_ws_token(token: str, db: AsyncSession) -> dict | None:

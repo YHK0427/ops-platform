@@ -32,6 +32,7 @@ from app.models import (
     User, Member, GenerationAccount, Session, Team, TeamMember, TeamHistory,
     Assignment, Attendance, Ledger, CafePost, TreasuryExpense, Cohort,
 )
+from app.audit_hook import record_auth_event
 
 logger = logging.getLogger("auth")
 
@@ -229,6 +230,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
 
     if user is None:
         logger.warning("login_failed user=%s ip=%s reason=not_found_or_wrong_password", body.username, ip)
+        await record_auth_event(db, "LOGIN_FAILED", body.username, None, None, f"{body.username} 로그인 실패(아이디/비밀번호 불일치)", request.url.path, ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
 
     # 보관(비활성)된 기수 운영진이면 로그인 차단 (슈퍼관리자 cohort_id=NULL은 항상 허용)
@@ -236,6 +238,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
         cohort = await db.get(Cohort, user.cohort_id)
         if cohort and not cohort.is_active:
             logger.warning("login_failed user=%s ip=%s reason=cohort_inactive", body.username, ip)
+            await record_auth_event(db, "LOGIN_FAILED", user.username, user.role, user.cohort_id, f"{user.username} 로그인 실패(보관된 기수)", request.url.path, ip)
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="보관된 기수입니다.")
 
     # TOTP 확인
@@ -245,6 +248,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             totp = pyotp.TOTP(user.totp_secret)
             if not totp.verify(body.totp_code, valid_window=1):
                 logger.warning("login_failed user=%s ip=%s reason=invalid_totp", user.username, ip)
+                await record_auth_event(db, "LOGIN_FAILED", user.username, user.role, user.cohort_id, f"{user.username} 로그인 실패(OTP 불일치)", request.url.path, ip)
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP 코드가 올바르지 않습니다")
         else:
             # OTP 코드 없이 비밀번호만 → pending 토큰 발급
@@ -253,6 +257,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             return TokenResponse(requires_totp=True, totp_pending_token=pending_token)
 
     logger.audit(f"🔑 로그인 성공 — {user.username} ({user.role}) from {ip}")
+    await record_auth_event(db, "LOGIN", user.username, user.role, user.cohort_id, f"{user.username} 로그인 성공", request.url.path, ip)
     token = _create_access_token(user.id, user.username, user.role, user.cohort_id, remember=body.remember)
     return TokenResponse(access_token=token)
 
@@ -277,10 +282,12 @@ async def verify_totp(body: VerifyTotpRequest, request: Request, db: AsyncSessio
     totp = pyotp.TOTP(user.totp_secret)
     if not totp.verify(body.totp_code, valid_window=1):
         logger.warning("totp_verify_failed user=%s ip=%s", user.username, ip)
+        await record_auth_event(db, "LOGIN_FAILED", user.username, user.role, user.cohort_id, f"{user.username} 로그인 실패(OTP 불일치)", request.url.path, ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP 코드가 올바르지 않습니다")
 
     await _delete_totp_pending(body.token)
     logger.audit(f"🔑 로그인 성공 (2FA) — {user.username} ({user.role}) from {ip}")
+    await record_auth_event(db, "LOGIN", user.username, user.role, user.cohort_id, f"{user.username} 로그인 성공 (2FA)", request.url.path, ip)
     token = _create_access_token(user.id, user.username, user.role, user.cohort_id, remember=body.remember)
     return TokenResponse(access_token=token)
 
@@ -300,8 +307,10 @@ async def refresh(
 
 @router.delete("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
     current_user: dict = Depends(get_current_user),
     token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
 ):
     """로그아웃 (Redis 블랙리스트에 토큰 추가)"""
     payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
@@ -309,6 +318,7 @@ async def logout(
     ttl = max(1, exp - int(datetime.now(timezone.utc).timestamp()))
     await blacklist_token(token, ttl)
     logger.audit("logout user=%s", current_user["username"])
+    await record_auth_event(db, "LOGOUT", current_user["username"], current_user.get("role"), current_user.get("cohort_id"), f"{current_user['username']} 로그아웃", request.url.path)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -353,6 +363,7 @@ async def member_login(
 
     if account is None:
         logger.warning("member_login_failed user=%s ip=%s reason=not_found_or_wrong_password", body.username, ip)
+        await record_auth_event(db, "LOGIN_FAILED", body.username, "기수원", None, f"{body.username} 기수원 로그인 실패(아이디/비밀번호 불일치)", request.url.path, ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="아이디 또는 비밀번호가 올바르지 않습니다",
@@ -362,11 +373,13 @@ async def member_login(
     # 이탈/수료(비활성) 멤버는 계정이 남아있어도 로그인 차단
     if member and not member.is_active:
         logger.warning("member_login_failed user=%s ip=%s reason=member_inactive", body.username, ip)
+        await record_auth_event(db, "LOGIN_FAILED", body.username, "기수원", member.cohort_id, f"{member.name} 기수원 로그인 실패(비활성 멤버)", request.url.path, ip)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="비활성화된 멤버입니다. 운영진에게 문의하세요.")
     # 보관(비활성)된 기수면 로그인 차단
     cohort = await db.get(Cohort, member.cohort_id) if member else None
     if cohort and not cohort.is_active:
         logger.warning("member_login_failed user=%s ip=%s reason=cohort_inactive", body.username, ip)
+        await record_auth_event(db, "LOGIN_FAILED", body.username, "기수원", member.cohort_id if member else None, f"{body.username} 기수원 로그인 실패(보관된 기수)", request.url.path, ip)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="보관된 기수입니다. 운영진에게 문의하세요.")
 
     # 멤버는 개인폰 PWA로 푸시를 받고 알림 탭으로 며칠 뒤 들어오기도 해서
@@ -382,6 +395,7 @@ async def member_login(
     token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     mname = member.name if member else account.username
     logger.audit(f"🔓 기수 로그인 — {mname} (@{account.username}) from {ip}")  # type: ignore[attr-defined]
+    await record_auth_event(db, "LOGIN", account.username, "기수원", member.cohort_id if member else None, f"{mname} 기수원 로그인 성공", request.url.path, ip)
     return MemberTokenResponse(access_token=token)
 
 
@@ -452,7 +466,7 @@ async def change_password(
 
 
 @router.post("/member-logout")
-async def member_logout(token: str = Depends(oauth2_scheme)):
+async def member_logout(request: Request, token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
     """멤버 토큰 폐기 (블랙리스트 등록)"""
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
@@ -460,6 +474,8 @@ async def member_logout(token: str = Depends(oauth2_scheme)):
         ttl = max(int(exp - datetime.now(timezone.utc).timestamp()), 0)
         if ttl > 0:
             await blacklist_token(token, ttl)
+        username = payload.get("sub", "?")
+        await record_auth_event(db, "LOGOUT", username, "기수원", payload.get("cohort_id"), f"{username} 기수원 로그아웃", request.url.path)
     except JWTError:
         pass
     return {"status": "ok"}

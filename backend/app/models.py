@@ -1028,3 +1028,28 @@ class DevFeedback(Base):
     # 답변 — adminyhk(실제 개발자 계정)만 작성 가능.
     reply = Column(Text, nullable=True)
     replied_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class AuditLog(Base):
+    """전체 모델 변경 이력 — SQLAlchemy after_flush 훅(app/audit_hook.py)이 자동 기록.
+    누가(actor) 언제 어느 테이블의 어느 행을 insert/update/delete 했는지 + 변경 전후 값.
+    이 테이블 자체는 훅 대상에서 제외(자기 자신을 감사하지 않음)."""
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+    actor_label = Column(String(120), nullable=False)   # 예: "admin(admin)", "manager33(manager)", "system"
+    actor_username = Column(String(50), nullable=True, index=True)
+    actor_role = Column(String(20), nullable=True)
+    cohort_id = Column(Integer, nullable=True, index=True)
+    operation = Column(String(20), nullable=False)       # INSERT / UPDATE / DELETE / LOGIN / LOGIN_FAILED / LOGOUT
+    table_name = Column(String(100), nullable=False, index=True)
+    row_id = Column(String(50), nullable=True)           # 문자열로 저장(복합키/비정수 PK 대비)
+    owner_member_id = Column(Integer, nullable=True, index=True)  # 이 행이 "누구(멤버)"에 대한 것인지 — attendance/ledger처럼 이름 필드가 없는 테이블용. 조회 시점에 이름으로 풀어서 보여준다.
+    entity_label = Column(String(200), nullable=True)     # 사람이 읽을 이름 — 예: "홍길동(멤버)", "5주차 정기세션(세션)"
+    changes = Column(JSONB, nullable=True)                # UPDATE: {"col": [old, new], ...} / INSERT,DELETE: 전체 행 스냅샷
+    request_path = Column(String(200), nullable=True)
+
+    __table_args__ = (
+        Index("ix_audit_logs_table_row", "table_name", "row_id"),
+    )
