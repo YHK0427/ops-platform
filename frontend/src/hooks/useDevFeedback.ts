@@ -2,13 +2,19 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { toast } from "sonner";
 
+export interface DevFeedbackReplyEntry {
+    id: number;
+    author_username: string;
+    reply: string;
+    created_at: string;
+}
+
 export interface DevFeedbackEntry {
     id: number;
     reporter_display_name: string;
     message: string;
     created_at: string;
-    reply?: string | null;
-    replied_at?: string | null;
+    replies: DevFeedbackReplyEntry[];
 }
 
 export const devFeedbackKeys = {
@@ -47,7 +53,7 @@ export function useReplyDevFeedback() {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, reply }: { id: number; reply: string }) => {
-            const { data } = await api.patch<DevFeedbackEntry>(`/dev-feedback/${id}/reply`, { reply });
+            const { data } = await api.post<DevFeedbackEntry>(`/dev-feedback/${id}/reply`, { reply });
             return data;
         },
         onSuccess: () => {

@@ -1025,9 +1025,17 @@ class DevFeedback(Base):
     reporter_display_name = Column(String(50), nullable=False)
     message = Column(Text, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-    # 답변 — adminyhk(실제 개발자 계정)만 작성 가능.
-    reply = Column(Text, nullable=True)
-    replied_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class DevFeedbackReply(Base):
+    """개발자 소통창구 답변 — 여러 개 달 수 있음(진행 상황 업데이트 등). adminyhk만 작성 가능."""
+    __tablename__ = "dev_feedback_replies"
+
+    id = Column(Integer, primary_key=True)
+    feedback_id = Column(Integer, ForeignKey("dev_feedback.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_username = Column(String(50), nullable=False)
+    reply = Column(Text, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
 
 class AuditLog(Base):

@@ -32,7 +32,7 @@ function ReplyBox({ entry }: { entry: DevFeedbackEntry }) {
             <div className="flex justify-end">
                 <Button size="sm" onClick={submit} disabled={isPending || !text.trim()}>
                     {isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
-                    답변 등록
+                    {entry.replies.length > 0 ? "답변 추가" : "답변 등록"}
                 </Button>
             </div>
         </div>
@@ -126,15 +126,18 @@ export default function DevFeedback() {
                                     <p className="text-sm text-[var(--color-text-primary)] whitespace-pre-wrap [word-break:keep-all]">
                                         {renderSafeHangul(e.message)}
                                     </p>
-                                    {e.reply && (
-                                        <div className="mt-2 pl-4 border-l-2 border-[var(--color-accent)]/40 flex items-start gap-1.5">
-                                            <CornerDownRight className="w-3.5 h-3.5 text-[var(--color-accent)] shrink-0 mt-0.5" />
-                                            <p className="text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap [word-break:keep-all]">
-                                                {renderSafeHangul(e.reply)}
-                                            </p>
+                                    {e.replies.map((r) => (
+                                        <div key={r.id} className="mt-2 pl-4 border-l-2 border-[var(--color-accent)]/40">
+                                            <div className="flex items-start gap-1.5">
+                                                <CornerDownRight className="w-3.5 h-3.5 text-[var(--color-accent)] shrink-0 mt-0.5" />
+                                                <p className="text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap [word-break:keep-all]">
+                                                    {renderSafeHangul(r.reply)}
+                                                </p>
+                                            </div>
+                                            <p className="text-[10px] text-[var(--color-text-muted)] pl-5">{relTime(r.created_at)}</p>
                                         </div>
-                                    )}
-                                    {isDeveloper && !e.reply && <ReplyBox entry={e} />}
+                                    ))}
+                                    {isDeveloper && <ReplyBox entry={e} />}
                                 </div>
                             ))
                         )}
