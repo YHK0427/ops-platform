@@ -3,11 +3,13 @@ import { motion } from "framer-motion";
 import { BarChart3, Wallet, ChevronRight, MessageSquareHeart, Megaphone, CalendarCheck } from "lucide-react";
 import { useMySummary } from "@/hooks/useMemberLedger";
 import { useOpenFeedbackBoard } from "@/hooks/useLiveFeedback";
+import { useUnreadAnnouncements } from "@/hooks/useMemberAnnouncements";
 
 export default function MemberHome() {
     const navigate = useNavigate();
     const { data: summary, isLoading } = useMySummary();
     const { data: openBoard } = useOpenFeedbackBoard();
+    const { unread, unreadCount } = useUnreadAnnouncements();
 
     const menu = [
         {
@@ -54,6 +56,31 @@ export default function MemberHome() {
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="mx-auto w-full max-w-lg px-4 py-6 space-y-5"
         >
+            {/* 안 읽은 공지 — 있을 때만. 누르면 공지 목록으로 */}
+            {unreadCount > 0 && (
+                <motion.button
+                    initial={{ opacity: 0, scale: 0.97 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => navigate("/member/announcements")}
+                    className="w-full flex items-center gap-4 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4 shadow-sm text-left"
+                >
+                    <div className="shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white">
+                        <Megaphone className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-amber-800">
+                            안 읽은 공지·자료 {unreadCount}개
+                        </p>
+                        <p className="text-xs text-amber-600/80 mt-0.5 [word-break:keep-all] truncate">
+                            {unread[0].title}
+                            {unreadCount > 1 ? ` 외 ${unreadCount - 1}개` : ""}
+                        </p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-amber-300 shrink-0" />
+                </motion.button>
+            )}
+
             {/* 실시간 피드백 진행 중 (보드 공개 시에만 노출) */}
             {openBoard && (
                 <motion.button

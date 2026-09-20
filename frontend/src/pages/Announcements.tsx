@@ -18,6 +18,7 @@ type Target = "all" | "members" | "staff" | "select";
 
 interface Announcement {
     id: number;
+    kind?: Kind;
     title: string;
     content: string;
     target: Target;
@@ -32,6 +33,9 @@ interface Announcement {
     read_count?: number | null;
     read_total?: number | null;
 }
+
+type Kind = "notice" | "resource";
+const KIND_LABEL: Record<Kind, string> = { notice: "공지", resource: "자료실" };
 
 const TARGET_LABEL: Record<Target, string> = {
     all: "기수 전체 (기수원+운영진)",
@@ -49,6 +53,17 @@ const uploadImage = async (file: File): Promise<string> => {
         headers: { "Content-Type": undefined },
     });
     return data.url;
+};
+
+const pdfToImages = async (file: File): Promise<string[]> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const { data } = await api.post<{ urls: string[] }>("/notifications/manage/pdf-to-images", fd, {
+        headers: { "Content-Type": undefined },
+        // 기본 15초로는 100페이지짜리가 못 끝난다. 업로드+렌더까지 넉넉히 5분.
+        timeout: 5 * 60 * 1000,
+    });
+    return data.urls;
 };
 
 const unfurlLink = async (url: string): Promise<LinkCardData> => {
@@ -91,18 +106,20 @@ function formatDate(iso: string) {
 export default function Announcements() {
     const [items, setItems] = useState<Announcement[]>([]);
     const [loading, setLoading] = useState(true);
+    const [kind, setKind] = useState<Kind>("notice");
     const [editing, setEditing] = useState<Announcement | "new" | null>(null);
     const [viewing, setViewing] = useState<Announcement | null>(null);
     const [quickPush, setQuickPush] = useState(false);
+    const isRes = kind === "resource";
 
     const reload = () => {
         setLoading(true);
-        api.get<Announcement[]>("/notifications/manage/announcements")
+        api.get<Announcement[]>("/notifications/manage/announcements", { params: { kind } })
             .then(({ data }) => setItems(data))
-            .catch(() => toast.error("공지 목록을 불러오지 못했습니다"))
+            .catch(() => toast.error(`${KIND_LABEL[kind]} 목록을 불러오지 못했습니다`))
             .finally(() => setLoading(false));
     };
-    useEffect(reload, []);
+    useEffect(reload, [kind]);
 
     const remove = async (id: number) => {
         if (!confirm("이 공지를 삭제할까요?")) return;
@@ -118,8 +135,10 @@ export default function Announcements() {
     return (
         <div className="min-h-full">
             <PageHeader
-                title="공지/알림"
-                subtitle="기수원에게 공지를 올리고 푸시 알림을 보냅니다"
+                title={isRes ? "자료실" : "공지/알림"}
+                subtitle={isRes
+                    ? "규칙·양식처럼 계속 찾아보는 자료를 올립니다. 내용을 고치면 다시 '안 읽음'이 됩니다"
+                    : "기수원에게 공지를 올리고 푸시 알림을 보냅니다"}
                 actions={
                     <>
                         <PushToggle http={api} endpoints={{ subscribePath: "/notifications/ops/subscribe" }} tone="accent" />
@@ -133,17 +152,29 @@ export default function Announcements() {
                             onClick={() => setEditing("new")}
                             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-[var(--color-accent)] text-white hover:opacity-90"
                         >
-                            <Plus className="w-4 h-4" /> 새 공지
+                            <Plus className="w-4 h-4" /> {isRes ? "새 자료" : "새 공지"}
                         </button>
                     </>
                 }
             />
 
             <div className="p-4 md:p-6">
+                <div className="mb-4 inline-flex rounded-xl border border-gray-200 bg-white p-1">
+                    {(["notice", "resource"] as Kind[]).map((k) => (
+                        <button key={k} onClick={() => setKind(k)}
+                            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${
+                                kind === k ? "bg-[var(--color-accent)] text-white" : "text-gray-500 hover:text-gray-800"
+                            }`}>
+                            {KIND_LABEL[k]}
+                        </button>
+                    ))}
+                </div>
                 {loading ? (
                     <div className="py-20 text-center text-sm text-gray-400">불러오는 중…</div>
                 ) : items.length === 0 ? (
-                    <div className="py-20 text-center text-sm text-gray-400">아직 작성한 공지가 없습니다</div>
+                    <div className="py-20 text-center text-sm text-gray-400">
+                        {isRes ? "아직 올린 자료가 없습니다. 규칙·양식·발표 가이드처럼 계속 찾아보는 걸 올려두세요." : "아직 작성한 공지가 없습니다"}
+                    </div>
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
                         {items.map((a) => (
@@ -199,6 +230,7 @@ export default function Announcements() {
 
             {editing && (
                 <AnnouncementModal
+                    kind={editing === "new" ? kind : (editing.kind || "notice")}
                     initial={editing === "new" ? null : editing}
                     onClose={() => setEditing(null)}
                     onSaved={() => { setEditing(null); reload(); }}
@@ -482,8 +514,9 @@ function TagInput({ tags, setTags }: { tags: string[]; setTags: (t: string[]) =>
 
 // ── 공지 작성/수정 모달 ────────────────────────────────────────────────────────
 function AnnouncementModal({
-    initial, onClose, onSaved,
-}: { initial: Announcement | null; onClose: () => void; onSaved: () => void }) {
+    kind: initialKind, initial, onClose, onSaved,
+}: { kind: Kind; initial: Announcement | null; onClose: () => void; onSaved: () => void }) {
+    const [kind, setKind] = useState<Kind>(initialKind);
     const [title, setTitle] = useState(initial?.title || "");
     const [content, setContent] = useState(initial?.content || "");
     const [target, setTarget] = useState<Target>(initial?.target || "members");
@@ -527,19 +560,20 @@ function AnnouncementModal({
         setSaving(true);
         try {
             const body = {
+                kind,
                 title: title.trim(),
                 content,
                 target,
                 target_member_ids: target === "select" ? memberIds : null,
                 tags,
-                push: isEdit ? false : push,
+                push,
             };
             if (isEdit) {
                 await api.patch(`/notifications/manage/announcements/${initial!.id}`, body);
                 toast.success("수정했습니다");
             } else {
                 const { data } = await api.post<Announcement>("/notifications/manage/announcements", body);
-                toast.success(data.pushed ? "공지를 등록하고 푸시를 보냈습니다 🔔" : "공지를 등록했습니다");
+                toast.success(data.pushed ? `${KIND_LABEL[kind]}를 등록하고 푸시를 보냈습니다 🔔` : `${KIND_LABEL[kind]}를 등록했습니다`);
                 clearDraft();
             }
             onSaved();
@@ -584,17 +618,34 @@ function AnnouncementModal({
                         className="w-full px-4 py-2.5 text-lg font-semibold border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] shrink-0"
                     />
                     <div className="flex-1 min-h-[45vh] flex flex-col">
-                        <RichEditor key={editorKey} value={content} onChange={setContent} uploadImage={uploadImage} uploadFile={uploadFile} unfurlLink={unfurlLink} />
+                        <RichEditor key={editorKey} value={content} onChange={setContent} uploadImage={uploadImage} uploadFile={uploadFile} unfurlLink={unfurlLink} pdfToImages={pdfToImages} />
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm text-gray-500 shrink-0">올릴 곳</span>
+                        <div className="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+                            {(["notice", "resource"] as Kind[]).map((k) => (
+                                <button key={k} type="button" onClick={() => setKind(k)}
+                                    className={`px-3 py-1 rounded-lg text-sm font-semibold transition ${
+                                        kind === k ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                                    }`}>
+                                    {KIND_LABEL[k]}
+                                </button>
+                            ))}
+                        </div>
+                        <span className="text-[11px] text-gray-400">
+                            {kind === "resource" ? "규칙·양식처럼 계속 찾아보는 자료" : "그때그때 알리는 소식"}
+                        </span>
                     </div>
                     <TagInput tags={tags} setTags={setTags} />
                     <TargetPicker target={target} setTarget={setTarget} memberIds={memberIds} setMemberIds={setMemberIds} />
-                    {!isEdit ? (
-                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer shrink-0">
-                            <input type="checkbox" checked={push} onChange={(e) => setPush(e.target.checked)} className="w-4 h-4 accent-[var(--color-accent)]" />
-                            작성과 동시에 푸시 알림 보내기
-                        </label>
-                    ) : (
-                        <p className="text-[11px] text-gray-400 shrink-0">※ 수정 시에는 푸시가 다시 발송되지 않습니다.</p>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer shrink-0">
+                        <input type="checkbox" checked={push} onChange={(e) => setPush(e.target.checked)} className="w-4 h-4 accent-[var(--color-accent)]" />
+                        {isEdit ? "수정했다고 푸시 알림 보내기" : "작성과 동시에 푸시 알림 보내기"}
+                    </label>
+                    {isEdit && (
+                        <p className="text-[11px] text-gray-400 shrink-0">
+                            ※ 제목이나 본문을 고치면 이미 읽은 사람도 다시 '안 읽음'이 됩니다. 대상·태그만 바꾸면 그대로 둡니다.
+                        </p>
                     )}
                 </div>
                 <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-gray-200 shrink-0">

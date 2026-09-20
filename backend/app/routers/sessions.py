@@ -46,6 +46,11 @@ from app.schemas.attendance import AttendanceResponse, GroupAssignment, GroupGen
 from app.services.team_builder import TeamBuilder
 from app.services.group_builder import build_groups
 
+# 출석률 분자에 넣을 상태. '결석이 아닌 것'으로 빼면 새 상태가 조용히 출석으로
+# 섞이므로(과거 지각·조퇴·사유결석이 그렇게 100%로 잡혔다) 포함할 것만 나열한다.
+# 사유결석(EXCUSED)은 출석으로 치지 않는다.
+PRESENT_LIKE_STATUSES = ("PRESENT", "LATE_UNDER10", "LATE_OVER10", "EARLY_LEAVE")
+
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 # 상태 머신 전환 허용 맵 (FINALIZED는 /finalize 엔드포인트 전용)
@@ -521,7 +526,10 @@ async def get_session_stats(
     # PENDING은 아직 입력 전 — 처리된 레코드 기준으로 출석률 계산
     pending_count = att_counts.get("PENDING", 0)
     processed_total = att_total - pending_count
-    att_present = processed_total - att_counts.get("ABSENT", 0)
+    # '결석만 빼기'로 계산하면 상태가 늘어날 때마다 조용히 출석으로 섞인다
+    # (실제로 지각·조퇴·사유결석이 전부 출석으로 잡혀 100%가 나왔다).
+    # 출석으로 칠 상태를 명시해 새 상태가 생겨도 기본은 '출석 아님'이 되게 한다.
+    att_present = sum(att_counts.get(s, 0) for s in PRESENT_LIKE_STATUSES)
 
     attendance_rate = (att_present / processed_total * 100.0) if processed_total > 0 else 0.0
 
@@ -561,6 +569,13 @@ async def get_session_stats(
         attendance_rate=round(attendance_rate, 1),
         attendance_present=att_present,
         attendance_total=att_total,
+        attendance_processed=processed_total,
+        att_present_only=att_counts.get("PRESENT", 0),
+        att_late=att_counts.get("LATE_UNDER10", 0) + att_counts.get("LATE_OVER10", 0),
+        att_early_leave=att_counts.get("EARLY_LEAVE", 0),
+        att_excused=att_counts.get("EXCUSED", 0),
+        att_absent=att_counts.get("ABSENT", 0),
+        att_pending=pending_count,
         ppt_submitted=ppt_submitted,
         ppt_total=ppt_total,
         ppt_email_submitted=ppt_email_submitted,

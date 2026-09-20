@@ -1,14 +1,14 @@
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.deps import get_current_cohort_id, get_db, require_staff, resolve_current_user_row
-from app.models import DevFeedback, DevFeedbackReply
+from app.models import DevFeedback, DevFeedbackReply, PushSubscription, User
 
 logger = logging.getLogger("dev_feedback")
 
@@ -38,6 +38,8 @@ class DevFeedbackReplyCreate(BaseModel):
 class DevFeedbackReplyOut(BaseModel):
     id: int
     author_username: str
+    author_display_name: str | None = None
+    is_developer: bool = False
     reply: str
     created_at: object
 
@@ -46,6 +48,7 @@ class DevFeedbackReplyOut(BaseModel):
 
 class DevFeedbackResponse(BaseModel):
     id: int
+    reporter_username: str = ""
     reporter_display_name: str
     message: str
     created_at: object
@@ -105,7 +108,7 @@ async def create_dev_feedback(
     )
 
 
-async def _replies_by_feedback_id(db: AsyncSession, feedback_ids: list[int]) -> dict[int, list[DevFeedbackReply]]:
+async def _replies_by_feedback_id(db: AsyncSession, feedback_ids: list[int]) -> dict[int, list[DevFeedbackReplyOut]]:
     if not feedback_ids:
         return {}
     rows = (await db.execute(
@@ -113,9 +116,17 @@ async def _replies_by_feedback_id(db: AsyncSession, feedback_ids: list[int]) -> 
         .where(DevFeedbackReply.feedback_id.in_(feedback_ids))
         .order_by(DevFeedbackReply.created_at)
     )).scalars().all()
-    grouped: dict[int, list[DevFeedbackReply]] = {fid: [] for fid in feedback_ids}
+    grouped: dict[int, list[DevFeedbackReplyOut]] = {fid: [] for fid in feedback_ids}
     for r in rows:
-        grouped[r.feedback_id].append(r)
+        grouped[r.feedback_id].append(DevFeedbackReplyOut(
+            id=r.id,
+            author_username=r.author_username,
+            # 과거 행은 표시명이 없다 — 그때는 개발자만 썼으므로 그렇게 보여준다
+            author_display_name=r.author_display_name or ("개발자" if r.author_username == DEVELOPER_USERNAME else r.author_username),
+            is_developer=(r.author_username == DEVELOPER_USERNAME),
+            reply=r.reply,
+            created_at=r.created_at,
+        ))
     return grouped
 
 
@@ -134,7 +145,8 @@ async def list_dev_feedback(
     replies_by_id = await _replies_by_feedback_id(db, [e.id for e in entries])
     return [
         DevFeedbackResponse(
-            id=e.id, reporter_display_name=e.reporter_display_name,
+            id=e.id, reporter_username=e.reporter_username,
+            reporter_display_name=e.reporter_display_name,
             message=e.message, created_at=e.created_at,
             replies=replies_by_id.get(e.id, []),
         )
@@ -142,30 +154,79 @@ async def list_dev_feedback(
     ]
 
 
+async def _notify_thread(
+    request: Request, db: AsyncSession, entry: DevFeedback,
+    author_username: str, author_label: str, text: str,
+) -> None:
+    """스레드에 새 글이 달리면 나머지 참여자에게 웹푸시.
+    참여자 = 요청자 + 기존 작성자들. 본인은 제외하고, 개발자는 텔레그램으로 따로 받는다."""
+    prior = (await db.execute(
+        select(DevFeedbackReply.author_username).where(DevFeedbackReply.feedback_id == entry.id)
+    )).scalars().all()
+    targets = {entry.reporter_username, *prior} - {author_username, DEVELOPER_USERNAME}
+    if not targets:
+        return
+    # username은 기수 간 중복될 수 있어 이 요청의 기수로 반드시 좁힌다
+    sub_ids = [r[0] for r in (await db.execute(
+        select(PushSubscription.id).where(
+            PushSubscription.user_id.in_(
+                select(User.id).where(
+                    User.username.in_(targets), User.cohort_id == entry.cohort_id,
+                )
+            )
+        )
+    )).all()]
+    if not sub_ids:
+        return
+    pool = getattr(request.app.state, "arq_pool", None)
+    if pool:
+        await pool.enqueue_job("task_send_push", payload={
+            "title": "개발자 요청에 새 글",
+            "body": f"{author_label}: {text[:60]}",
+            "url": "/dev-feedback",
+            "tag": f"devfb-{entry.id}",
+        }, subscription_ids=sub_ids)
+
+
 @router.post("/{feedback_id}/reply", response_model=DevFeedbackResponse)
 async def reply_dev_feedback(
     feedback_id: int,
     body: DevFeedbackReplyCreate,
+    request: Request,
     user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """개발자 본인만 답변 작성 가능. 진행상황 업데이트처럼 여러 번 남길 수 있다."""
-    if not await _is_developer(db, user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="개발자만 답변할 수 있습니다")
-
+    """스레드에 글 추가. 개발자는 전 기수, 나머지 운영진은 본인 기수 요청에만 쓸 수 있다
+    (읽기 범위와 같은 규칙 — 요청자도 이 경로로 되묻는다)."""
     entry = await db.get(DevFeedback, feedback_id)
     if not entry:
         raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다")
 
+    is_dev = await _is_developer(db, user)
+    if not is_dev and entry.cohort_id != cohort_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="다른 기수의 요청입니다")
+
+    urow = await resolve_current_user_row(db, user)
+    label = "개발자" if is_dev else (urow.display_name if urow else user["username"])
+    text = body.reply.strip()
+
     reply_row = DevFeedbackReply(
-        feedback_id=feedback_id, author_username=user["username"], reply=body.reply.strip(),
+        feedback_id=feedback_id, author_username=user["username"],
+        author_display_name=label, reply=text,
     )
     db.add(reply_row)
     await db.commit()
-    logger.audit(f"🛠️ 개발자 답변 — #{feedback_id}: {reply_row.reply[:80]}")
+    logger.audit(f"🛠️ 개발자창구 답글 — #{feedback_id} by {user['username']}: {text[:80]}")
+
+    # 개발자가 아닌 사람이 쓰면 개발자에게 텔레그램(기존 알림 경로 재사용)
+    if not is_dev:
+        await _notify_telegram(f"💬 *요청 #{feedback_id} 새 글* — {label}\n{text[:300]}")
+    await _notify_thread(request, db, entry, user["username"], label, text)
 
     replies = (await _replies_by_feedback_id(db, [feedback_id])).get(feedback_id, [])
     return DevFeedbackResponse(
-        id=entry.id, reporter_display_name=entry.reporter_display_name,
+        id=entry.id, reporter_username=entry.reporter_username,
+        reporter_display_name=entry.reporter_display_name,
         message=entry.message, created_at=entry.created_at, replies=replies,
     )

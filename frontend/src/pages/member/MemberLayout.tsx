@@ -6,6 +6,8 @@ import { LogOut, Home, BarChart3, Wallet, KeyRound, MessageSquareHeart, Megaphon
 import { cn } from "@/lib/utils";
 import memberApi from "@/lib/memberApi";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
+import { PatchNoteModal } from "@/components/PatchNoteModal";
+import { useUnreadAnnouncements } from "@/hooks/useMemberAnnouncements";
 
 const TABS = [
     { to: "/member", label: "홈", icon: Home, end: true },
@@ -18,6 +20,7 @@ const TABS = [
 export default function MemberLayout() {
     const { member, logout } = useMemberAuth();
     const [showPw, setShowPw] = useState(false);
+    const { unreadCount } = useUnreadAnnouncements();
 
     return (
         <div className="member-page pb-20">
@@ -59,6 +62,8 @@ export default function MemberLayout() {
                 />
             )}
 
+            <PatchNoteModal side="member" />
+
             <Outlet />
 
             {/* 하단 탭 네비게이션 */}
@@ -76,7 +81,15 @@ export default function MemberLayout() {
                                 )
                             }
                         >
-                            <Icon className="w-5 h-5" />
+                            <span className="relative">
+                                <Icon className="w-5 h-5" />
+                                {/* 안 읽은 공지가 있으면 '공지' 탭에만 점을 찍는다 */}
+                                {to === "/member/announcements" && unreadCount > 0 && (
+                                    <span className="absolute -top-0.5 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
+                                        {unreadCount > 9 ? "9+" : unreadCount}
+                                    </span>
+                                )}
+                            </span>
                             {label}
                         </NavLink>
                     ))}

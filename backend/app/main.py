@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.logging_config import setup_logging
-from app.routers import assignments, auth, cohorts, crawler, evaluation, generation, live_feedback, members, sessions, ledger, scoring, team_building, notifications, dev_feedback, audit_log, infra_status
+from app.routers import assignments, auth, cohorts, crawler, evaluation, generation, live_feedback, members, sessions, ledger, scoring, team_building, notifications, dev_feedback, audit_log, infra_status, patch_notes
 import app.audit_hook  # noqa: F401 — import 시 SQLAlchemy Session에 after_flush 훅 등록
 
 logger = logging.getLogger(__name__)
@@ -90,6 +90,7 @@ app.include_router(live_feedback.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(scoring.router, prefix="/api/v1")
 app.include_router(dev_feedback.router, prefix="/api/v1")
+app.include_router(patch_notes.router, prefix="/api/v1")
 app.include_router(audit_log.router, prefix="/api/v1")
 app.include_router(infra_status.router, prefix="/api/v1")
 # 공개(무로그인) 채점 폼 — 인증 의존성 없음. 라우터 내부에서 public_token + 레이트리밋으로 방어.

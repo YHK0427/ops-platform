@@ -5,12 +5,15 @@ import { toast } from "sonner";
 export interface DevFeedbackReplyEntry {
     id: number;
     author_username: string;
+    author_display_name?: string | null;
+    is_developer?: boolean;
     reply: string;
     created_at: string;
 }
 
 export interface DevFeedbackEntry {
     id: number;
+    reporter_username?: string;
     reporter_display_name: string;
     message: string;
     created_at: string;

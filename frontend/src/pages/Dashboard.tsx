@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { renderSafeHangul } from "@/components/SafeText";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, useImportNaverSession, useNaverLogin, useCrawlerTask, useTreasury, crawlerKeys } from "@/hooks";
+import type { SessionStats } from "@/hooks/useSessions";
 import { penaltyRisk } from "@/lib/penaltyRisk";
 import { toast } from "sonner";
 
@@ -347,6 +348,7 @@ export default function Dashboard() {
                                 <StatBox
                                     label="출석률"
                                     value={stats ? `${stats.attendance_rate}%` : "-"}
+                                    sub={stats ? attendanceBreakdown(stats) : undefined}
                                     icon={Users}
                                 />
                                 <StatBox
@@ -521,15 +523,35 @@ function RiskCard({
     );
 }
 
-function StatBox({ label, value, icon: Icon }: { label: string; value: string; icon: React.ElementType }) {
+/**
+ * 출석률 밑에 붙는 내역 한 줄.
+ * 출석률 = (출석+지각+조퇴) / (전체 − 미입력). 사유결석은 출석으로 치지 않는다.
+ * 0인 항목은 빼서 짧게 유지한다.
+ */
+function attendanceBreakdown(s: SessionStats): string {
+    const parts: string[] = [];
+    if (s.att_present_only) parts.push(`출석 ${s.att_present_only}`);
+    if (s.att_late) parts.push(`지각 ${s.att_late}`);
+    if (s.att_early_leave) parts.push(`조퇴 ${s.att_early_leave}`);
+    if (s.att_excused) parts.push(`사유 ${s.att_excused}`);
+    if (s.att_absent) parts.push(`결석 ${s.att_absent}`);
+    if (s.att_pending) parts.push(`미입력 ${s.att_pending}`);
+    return parts.join(" · ");
+}
+
+function StatBox({ label, value, sub, icon: Icon }: {
+    label: string; value: string; sub?: string; icon: React.ElementType;
+}) {
     return (
         <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-[var(--color-hover)] text-[var(--color-text-secondary)]">
+            <div className="p-2 rounded-lg bg-[var(--color-hover)] text-[var(--color-text-secondary)] shrink-0">
                 <Icon className="w-4 h-4" />
             </div>
-            <div>
+            <div className="min-w-0">
                 <p className="text-xs text-[var(--color-text-muted)]">{label}</p>
                 <p className="font-bold text-lg text-[var(--color-text-primary)]">{value}</p>
+                {/* 출석률 같은 합성 수치는 숫자만 보면 왜 그 값인지 알 수 없어 내역을 함께 적는다 */}
+                {sub && <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 [word-break:keep-all]">{sub}</p>}
             </div>
         </div>
     );

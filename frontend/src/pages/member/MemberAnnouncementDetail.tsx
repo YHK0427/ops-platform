@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import memberApi from "@/lib/memberApi";
+import { useQueryClient } from "@tanstack/react-query";
+import { memberAnnKeys } from "@/hooks/useMemberAnnouncements";
 import RichContent from "@/components/RichContent";
 import AnnouncementReactions from "@/components/AnnouncementReactions";
 import AnnouncementComments from "@/components/AnnouncementComments";
@@ -29,13 +31,21 @@ export default function MemberAnnouncementDetail() {
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
 
+    const qc = useQueryClient();
+
     useEffect(() => {
         setLoading(true);
         memberApi
             .get<Announcement>(`/notifications/announcements/${id}`)
-            .then(({ data }) => setAnn(data))
+            .then(({ data }) => {
+                setAnn(data);
+                // 이 GET 으로 서버에 읽음이 기록된다 — 목록 캐시를 무효화해야
+                // 홈 배너·탭 뱃지·목록의 안읽음 표시가 같이 사라진다.
+                qc.invalidateQueries({ queryKey: memberAnnKeys.list() });
+            })
             .catch(() => setNotFound(true))
             .finally(() => setLoading(false));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
     return (

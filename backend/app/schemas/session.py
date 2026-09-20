@@ -98,8 +98,17 @@ class SessionFinalizeResponse(BaseModel):
 
 class SessionStatsResponse(BaseModel):
     attendance_rate: float
-    attendance_present: int
-    attendance_total: int
+    attendance_present: int   # 출석으로 친 인원(출석+지각+조퇴)
+    attendance_total: int     # PENDING 포함 전체 행 수
+    # 출석률 분모(= 전체 − 미입력) 와 상태별 내역. 숫자 하나만 보면 왜 그 값인지
+    # 알 수 없어 화면에서 함께 풀어 보여준다.
+    attendance_processed: int = 0
+    att_present_only: int = 0
+    att_late: int = 0
+    att_early_leave: int = 0
+    att_excused: int = 0
+    att_absent: int = 0
+    att_pending: int = 0
     ppt_submitted: int
     ppt_total: int
     ppt_email_submitted: int

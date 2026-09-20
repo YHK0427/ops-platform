@@ -173,6 +173,14 @@ export interface SessionStats {
     attendance_rate: number;
     attendance_present: number;
     attendance_total: number;
+    /** 출석률 분모(= 전체 − 미입력) 와 상태별 내역 */
+    attendance_processed: number;
+    att_present_only: number;
+    att_late: number;
+    att_early_leave: number;
+    att_excused: number;
+    att_absent: number;
+    att_pending: number;
     ppt_submitted: number;
     ppt_total: number;
     ppt_email_submitted: number;

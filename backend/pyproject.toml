@@ -29,6 +29,9 @@ dependencies = [
     "python-multipart>=0.0.9",
     "boto3>=1.34.0",
     "pywebpush>=2.0.0",
+    # PDF 첨부를 페이지별 이미지로 변환 (공지/자료실)
+    "pypdfium2>=4.30.0",
+    "pillow>=10.3.0",
 ]
 
 [project.optional-dependencies]

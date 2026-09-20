@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useOutletContext, useParams } from "react-router-dom";
+import { PatchNoteModal } from "@/components/PatchNoteModal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
@@ -111,6 +112,7 @@ function DashboardLayout() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-auto pt-[45px] md:pt-0">
         <CohortGate>
+          <PatchNoteModal side="staff" />
           <Outlet />
         </CohortGate>
       </div>

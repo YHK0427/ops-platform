@@ -5,7 +5,7 @@ import {
     DndContext, DragOverlay, useDraggable, useDroppable, pointerWithin,
     PointerSensor, TouchSensor, useSensor, useSensors, type DragStartEvent, type DragEndEvent,
 } from "@dnd-kit/core";
-import { ArrowLeft, Dices, RotateCcw, ClipboardCopy, Loader2, HelpCircle, ChevronDown, Check, X } from "lucide-react";
+import { ArrowLeft, Dices, RotateCcw, ClipboardCopy, Loader2, HelpCircle, ChevronDown, Check, X, Pin } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -31,6 +31,8 @@ export default function TeamBuildingBoard() {
     const [numTeams, setNumTeams] = useState(6);
     const [assignment, setAssignment] = useState<Record<string, Slot>>({});
     const [excludedStaff, setExcludedStaff] = useState<Set<number>>(new Set());
+    // 고정된 사람은 랜덤을 돌려도 지금 팀에 그대로 남는다 (운영진 미리 배치용)
+    const [pinned, setPinned] = useState<Set<string>>(new Set());
     const [pastStaff, setPastStaff] = useState<Record<number, Record<number, number[]>>>({});
     const [consider, setConsider] = useState<{ mixed: boolean; staff: boolean }>({ mixed: true, staff: true });
     const [members, setMembers] = useState<MemberLite[]>([]);
@@ -42,6 +44,7 @@ export default function TeamBuildingBoard() {
     const [recordOpen, setRecordOpen] = useState(true);
     const [loaded, setLoaded] = useState(false);
     const savedAsgnRef = useRef<Record<string, Slot> | null>(null);
+    const appliedRef = useRef(false);
 
     // 마우스 + 터치 둘 다 지원
     const sensors = useSensors(
@@ -59,6 +62,7 @@ export default function TeamBuildingBoard() {
             setSelected(Array.isArray(d.selected_session_ids) ? d.selected_session_ids : []);
             setNumTeams(typeof d.num_teams === "number" ? d.num_teams : 6);
             setExcludedStaff(new Set(Array.isArray(d.excluded_staff) ? d.excluded_staff : []));
+            setPinned(new Set(Array.isArray(d.pinned) ? d.pinned : []));
             setPastStaff(d.past_staff && typeof d.past_staff === "object" ? d.past_staff : {});
             setConsider({ mixed: d.consider?.mixed ?? true, staff: d.consider?.staff ?? true });
             savedAsgnRef.current = d.assignment || null;
@@ -90,20 +94,31 @@ export default function TeamBuildingBoard() {
             }
             return next;
         });
-        savedAsgnRef.current = null;
+        // savedAsgnRef 는 비우지 않는다. 이 이펙트가 같은 커밋에서 두 번 돌면
+        // (StrictMode) 두 번째엔 prev 도 saved 도 비어서 전원 pool 로 덮어쓰고,
+        // 그게 자동저장으로 DB까지 날아간다. prev 에 키가 생기면 saved 는 어차피 무시된다.
+        appliedRef.current = true;
     }, [roster, numTeams]);
 
     const saveTimer = useRef<number | null>(null);
+    const pendingRef = useRef<(() => void) | null>(null);
     useEffect(() => {
-        if (!loaded) return;
-        if (saveTimer.current) window.clearTimeout(saveTimer.current);
-        saveTimer.current = window.setTimeout(() => {
+        // 명단이 아직 안 붙었으면 저장하지 않는다 — 빈 배치로 DB를 덮어쓰는 걸 막는다
+        if (!loaded || !appliedRef.current) return;
+        const put = () => {
+            pendingRef.current = null;
             api.put(`/team-building/boards/${boardId}`, {
-                data: { selected_session_ids: selected, num_teams: numTeams, assignment, excluded_staff: [...excludedStaff], past_staff: pastStaff, consider },
+                data: { selected_session_ids: selected, num_teams: numTeams, assignment, excluded_staff: [...excludedStaff], pinned: [...pinned], past_staff: pastStaff, consider },
             }).catch(() => {});
-        }, 700);
+        };
+        pendingRef.current = put;
+        if (saveTimer.current) window.clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(put, 700);
         return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); };
-    }, [assignment, numTeams, selKey, excludedStaff, pastStaff, consider, loaded, boardId, selected]);
+    }, [assignment, numTeams, selKey, excludedStaff, pinned, pastStaff, consider, loaded, boardId, selected]);
+
+    // 디바운스 700ms 안에 페이지를 떠나면 마지막 변경이 통째로 날아간다 — 떠날 때 밀어넣는다
+    useEffect(() => () => { pendingRef.current?.(); }, []);
 
     const staffName = useCallback((id: number) => staff.find((s) => s.id === id)?.name ?? `#${id}`, [staff]);
 
@@ -160,20 +175,63 @@ export default function TeamBuildingBoard() {
             }
             return p;
         };
-        const base = Math.floor(ids.length / numTeams), extra = ids.length - base * numTeams;
+        // 고정된 사람은 건드리지 않는다 — 지금 배정된 팀을 그대로 유지한다.
+        // (pool 에 있는 고정은 의미가 없으므로 자유 인원으로 본다)
+        const fixed: Record<string, Slot> = {};
+        for (const k of ids) {
+            const t = teamOf(k);
+            if (pinned.has(k) && t !== "pool") fixed[k] = t;
+        }
+        const freeKeys = ids.filter((k) => !(k in fixed));
+        // 운영진과 기수원을 각각 따로 돌려야 한쪽에 몰리지 않는다.
+        // 한 통에 섞으면 인원수만 맞고 운영진이 3:0 으로 갈릴 수 있다.
+        const isStaff = new Map(roster.map((p) => [p.key, p.staff]));
+        const freeStaff = freeKeys.filter((k) => isStaff.get(k));
+        const freeMembers = freeKeys.filter((k) => !isStaff.get(k));
+
+        const shuffle = (arr: string[]) => {
+            const a = arr.slice();
+            for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+            return a;
+        };
+        // 이미 고정으로 차 있는 만큼을 빼고, 적게 가진 팀부터 채운다 → 최대 1명 차이
+        const spread = (keys: string[], asgn: Record<string, Slot>, countOf: (t: number) => number) => {
+            for (const k of shuffle(keys)) {
+                // countOf 는 asgn 을 실시간으로 읽는다 — 한 명 넣을 때마다 최소 팀이 바뀐다
+                let bestT = 1, bestC = Infinity;
+                for (let t = 1; t <= numTeams; t++) {
+                    const c = countOf(t);
+                    if (c < bestC) { bestC = c; bestT = t; }
+                }
+                asgn[k] = bestT;
+            }
+        };
+
         let best: Record<string, Slot> | null = null, bestP = Infinity;
         for (let attempt = 0; attempt < 3000; attempt++) {
-            const sh = ids.slice();
-            for (let i = sh.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [sh[i], sh[j]] = [sh[j], sh[i]]; }
-            const asgn: Record<string, Slot> = {};
-            let idx = 0;
-            for (let t = 1; t <= numTeams; t++) { const cnt = base + (t <= extra ? 1 : 0); for (let k = 0; k < cnt; k++) asgn[sh[idx++]] = t; }
+            const asgn: Record<string, Slot> = { ...fixed };
+            const cnt = (t: number) => Object.values(asgn).filter((x) => x === t).length;
+            const staffCnt = (t: number) =>
+                Object.entries(asgn).filter(([k, x]) => x === t && isStaff.get(k)).length;
+            // 1) 운영진 먼저 균등하게 (고정 운영진 수를 반영해 적은 팀부터)
+            spread(freeStaff, asgn, staffCnt);
+            // 2) 기수원은 전체 인원수가 고르게
+            spread(freeMembers, asgn, cnt);
             const pen = penalty(asgn);
             if (pen < bestP) { bestP = pen; best = asgn; if (pen === 0) break; }
         }
-        if (best) { setAssignment(best); toast.success(bestP === 0 ? "겹침 0으로 배정!" : `최소 겹침으로 배정 (점수 ${bestP})`); }
+        if (best) {
+            setAssignment(best);
+            const pinNote = Object.keys(fixed).length ? ` · 고정 ${Object.keys(fixed).length}명 유지` : "";
+            toast.success((bestP === 0 ? "겹침 0으로 배정!" : `최소 겹침으로 배정 (점수 ${bestP})`) + pinNote);
+        }
     };
 
+    const togglePin = (key: string) => setPinned((prev) => {
+        const next = new Set(prev);
+        next.has(key) ? next.delete(key) : next.add(key);
+        return next;
+    });
     const resetPool = () => setAssignment(Object.fromEntries(roster.map((p) => [p.key, "pool" as Slot])));
     const copyResult = () => {
         const lines: string[] = [];
@@ -340,7 +398,7 @@ export default function TeamBuildingBoard() {
                         <div className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">미배정 ({pool.length})</div>
                         <Droppable id="slot:pool" className="min-h-[56px] rounded-xl border-2 border-dashed border-[var(--color-border)] bg-white p-3 flex flex-wrap gap-2" overClass="border-[var(--color-accent)] bg-[var(--color-accent-dim)]">
                             {pool.map((p) => <BuildChip key={p.key} p={p} badge={badges[p.key]} hovered={hover === p.key}
-                                partner={hover != null && hover !== p.key && overlapMap.has(pkey(hover, p.key)) && teamOf(hover) === teamOf(p.key) && considered(overlapMap.get(pkey(hover, p.key))!.kind)} onHover={setHover} />)}
+                                partner={hover != null && hover !== p.key && overlapMap.has(pkey(hover, p.key)) && teamOf(hover) === teamOf(p.key) && considered(overlapMap.get(pkey(hover, p.key))!.kind)} onHover={setHover} pinned={pinned.has(p.key)} onTogglePin={togglePin} />)}
                         </Droppable>
                     </section>
 
@@ -352,7 +410,7 @@ export default function TeamBuildingBoard() {
                                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-[var(--color-border-subtle)]"><span className="font-bold text-sm">팀 {t}</span>
                                     <span className="text-[11px] text-[var(--color-text-muted)] bg-[var(--color-hover)] px-1.5 py-0.5 rounded">기수 {tn}·운영 {ps.length - tn}</span></div>
                                 <div className="flex flex-col gap-1.5 flex-1">{ps.map((p) => <BuildChip key={p.key} p={p} badge={badges[p.key]} hovered={hover === p.key}
-                                    partner={hover != null && hover !== p.key && overlapMap.has(pkey(hover, p.key)) && teamOf(hover) === t && considered(overlapMap.get(pkey(hover, p.key))!.kind)} onHover={setHover} />)}</div>
+                                    partner={hover != null && hover !== p.key && overlapMap.has(pkey(hover, p.key)) && teamOf(hover) === t && considered(overlapMap.get(pkey(hover, p.key))!.kind)} onHover={setHover} pinned={pinned.has(p.key)} onTogglePin={togglePin} />)}</div>
                             </Droppable>);
                         })}
                     </div>
@@ -394,7 +452,10 @@ function DragPill({ id, label }: { id: string; label: string }) {
         className={`px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[12px] font-semibold cursor-grab ${isDragging ? "opacity-30" : ""}`}>{label}</div>;
 }
 
-function BuildChip({ p, badge, hovered, partner, onHover }: { p: Participant; badge?: { n: number; major: boolean }; hovered: boolean; partner: boolean; onHover: (k: string | null) => void }) {
+function BuildChip({ p, badge, hovered, partner, onHover, pinned, onTogglePin }: {
+    p: Participant; badge?: { n: number; major: boolean }; hovered: boolean; partner: boolean;
+    onHover: (k: string | null) => void; pinned?: boolean; onTogglePin?: (k: string) => void;
+}) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `b:${p.key}` });
     const conflict = !!badge;
     return (
@@ -408,6 +469,18 @@ function BuildChip({ p, badge, hovered, partner, onHover }: { p: Participant; ba
                     : p.staff ? "bg-amber-50/70 text-amber-800 border-amber-200" : "bg-[var(--color-hover)] text-[var(--color-text-primary)] border-transparent"}`}>
             <span className="flex-1 whitespace-nowrap">{p.name}{p.staff && <span className="opacity-60 text-[11px]"> 운영</span>}</span>
             {conflict && <span className={`text-[10px] font-bold px-1 rounded ${hovered ? "bg-white text-rose-600" : badge!.major ? "bg-rose-200 text-rose-700" : "bg-amber-200 text-amber-700"}`}>{badge!.n}</span>}
+            {/* 고정 토글 — 켜두면 랜덤을 돌려도 이 팀에 남는다. 드래그와 겹치지 않게 pointerDown 에서 끊는다 */}
+            {onTogglePin && (
+                <button
+                    type="button"
+                    onPointerDown={(e) => { e.stopPropagation(); }}
+                    onClick={(e) => { e.stopPropagation(); onTogglePin(p.key); }}
+                    title={pinned ? "고정 해제 — 랜덤 시 이동함" : "이 팀에 고정 — 랜덤 돌려도 안 움직임"}
+                    className={`shrink-0 -mr-1 px-1 rounded ${pinned ? "opacity-100" : "opacity-25 hover:opacity-70"}`}
+                >
+                    <Pin className={`w-3 h-3 ${pinned ? "fill-current" : ""}`} />
+                </button>
+            )}
         </div>
     );
 }

@@ -39,6 +39,8 @@ class User(Base):
     totp_secret = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True, server_default="true", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    # 패치노트를 어디까지 봤는지. 모달을 닫을 때만 갱신한다(접속 시각 아님).
+    patch_seen_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -61,6 +63,7 @@ class GenerationAccount(Base):
     password_hash = Column(String(200), nullable=False)
     is_active = Column(Boolean, default=True, server_default="true", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    patch_seen_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("cohort_id", "username", name="uq_generation_accounts_cohort_username"),
@@ -568,11 +571,14 @@ class PushSubscription(Base):
 
 
 class Announcement(Base):
-    """기수 공지 — 운영진 작성, 게시판형 리치 HTML 본문. 작성 시 대상에 푸시 발송."""
+    """기수 공지/자료실 — 운영진 작성, 게시판형 리치 HTML 본문. 작성 시 대상에 푸시 발송.
+    kind 로 '공지(notice)'와 '자료실(resource)'을 한 테이블에서 나눈다 — 댓글·반응·열람
+    집계가 완전히 같아서 테이블을 쪼개면 그 로직을 전부 두 벌로 만들어야 한다."""
     __tablename__ = "announcements"
 
     id = Column(Integer, primary_key=True)
     cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="CASCADE"), nullable=False)
+    kind = Column(String(10), nullable=False, server_default="notice", index=True)  # notice|resource
     title = Column(String(200), nullable=False)
     content = Column(Text, nullable=False)  # DOMPurify로 정제된 HTML
     target = Column(String(20), nullable=False, server_default="members")  # members|staff|all|select
@@ -583,11 +589,15 @@ class Announcement(Base):
     pushed = Column(Boolean, default=False, server_default="false", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+    # 제목/본문이 실제로 바뀐 시각. 대상 변경이나 태그 수정으로는 안 움직인다 —
+    # 이 값보다 이전에 읽은 사람은 '안 읽음'으로 되돌려 다시 읽게 한다.
+    content_updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=True)
 
     reaction_rows = relationship("AnnouncementReaction", back_populates="announcement", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint("target IN ('members','staff','all','select')", name="ck_announcement_target"),
+        CheckConstraint("kind IN ('notice','resource')", name="ck_announcement_kind"),
     )
 
 
@@ -614,7 +624,9 @@ class AnnouncementReaction(Base):
 
 
 class AnnouncementRead(Base):
-    """공지 열람 기록 — 상세 화면을 연 사람당 1행. 처음 연 시각만 남긴다(재열람은 갱신 안 함)."""
+    """공지 열람 기록 — 상세 화면을 연 사람당 1행.
+    read_at=처음 연 시각(보존), last_read_at=마지막으로 연 시각(재열람마다 갱신).
+    글이 수정되면 행을 지우지 않고 last_read_at 과 content_updated_at 을 비교해 판정한다."""
     __tablename__ = "announcement_reads"
 
     id = Column(Integer, primary_key=True)
@@ -623,6 +635,7 @@ class AnnouncementRead(Base):
     member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     read_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    last_read_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     __table_args__ = (
         Index("uq_ann_read_member", "announcement_id", "member_id",
@@ -1050,14 +1063,34 @@ class DevFeedback(Base):
 
 
 class DevFeedbackReply(Base):
-    """개발자 소통창구 답변 — 여러 개 달 수 있음(진행 상황 업데이트 등). adminyhk만 작성 가능."""
+    """개발자 소통창구 스레드 메시지 — 개발자·요청자·같은 기수 운영진이 이어서 쓴다."""
     __tablename__ = "dev_feedback_replies"
 
     id = Column(Integer, primary_key=True)
     feedback_id = Column(Integer, ForeignKey("dev_feedback.id", ondelete="CASCADE"), nullable=False, index=True)
     author_username = Column(String(50), nullable=False)
+    # 작성자가 개발자 한 명이 아니게 되면서 표시용 이름이 필요해졌다
+    author_display_name = Column(String(50), nullable=True)
     reply = Column(Text, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+
+class PatchNote(Base):
+    """업데이트 패치노트. 접속했을 때 '내가 마지막으로 확인한 시점' 이후에 올라온 게
+    있으면 모달로 띄운다. 운영진 사이트와 기수 포털은 보는 내용이 달라 audience 로 나눈다.
+    기수 구분 없이 전역 — 개발자(adminyhk)만 쓴다."""
+    __tablename__ = "patch_notes"
+
+    id = Column(Integer, primary_key=True)
+    audience = Column(String(10), nullable=False, server_default="all")  # staff / member / all
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=False)
+    published_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+    created_by = Column(String(50), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("audience IN ('staff','member','all')", name="ck_patch_notes_audience"),
+    )
 
 
 class AuditLog(Base):

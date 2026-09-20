@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Search, Loader2, CheckCircle2, XCircle, Check, X, MessageSquare, ExternalLink } from "lucide-react";
+import { RefreshCw, Search, Loader2, CheckCircle2, XCircle, Check, X, MessageSquare, ExternalLink, AlertTriangle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { useScanHomework } from "@/hooks/useCrawler";
+import { useScanHomework, useNaverSessionStatus } from "@/hooks/useCrawler";
 import { useSessionTask } from "@/hooks/useSessionTask";
 import type { Session } from "@/hooks/useSessions";
 import { useMembers } from "@/hooks/useMembers";
@@ -44,6 +44,11 @@ export function PostTab() {
 
     const queryClient = useQueryClient();
     const scanHomeworkMutation = useScanHomework();
+    const { data: naverSession } = useNaverSessionStatus();
+    // 스캔은 전부 네이버 카페 로그인 세션으로 돈다. 세션이 없으면 크롤러가
+    // 조용히 0건 처리하고 끝나서 "다들 미제출"처럼 보인다 — 특히 피드백은
+    // 영상 글의 댓글을 건건이 열어야 해서 세션 없이는 아예 감지가 안 된다.
+    const naverDown = naverSession ? !naverSession.is_valid : false;
     const { setTaskId, taskStatus } = useSessionTask(session.id, "homework-scan");
     // 이탈/수료한 멤버도 과거 세션엔 남아있으므로 활성 멤버만 조회하면 이름이 안 잡혀
     // "ID:42" 같은 식으로 표시됨 — 비활성 포함으로 조회.
@@ -123,6 +128,21 @@ export function PostTab() {
                     {isPolling ? "스캔 중..." : "과제 스캔"}
                 </Button>
             </div>
+
+            {naverDown && (
+                <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-amber-900 [word-break:keep-all]">
+                        <p className="font-bold">네이버 세션이 없어 스캔 결과를 믿을 수 없습니다</p>
+                        <p className="text-amber-800/90 mt-0.5 text-[13px]">
+                            리뷰·PPT는 일부만 잡힐 수 있고, <b>댓글 피드백은 아예 감지되지 않습니다</b>
+                            (영상 게시글의 댓글을 열어봐야 하는데 로그인이 필요함).
+                            대시보드에서 <b>네이버 로그인</b>을 먼저 하세요 — 안 하면 제출한 사람도
+                            미제출로 남습니다.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Task Progress */}
             {taskStatus && (

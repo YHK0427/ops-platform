@@ -59,6 +59,7 @@ class UnsubscribeIn(BaseModel):
 
 
 class AnnouncementIn(BaseModel):
+    kind: str = Field(default="notice", pattern=r"^(notice|resource)$")
     title: str = Field(max_length=200)
     content: str  # 정제 전 HTML (서버에서 한 번 더 정제 권장, v1은 길이만 제한)
     target: str = Field(default="members", pattern=r"^(members|staff|all|select)$")
@@ -77,6 +78,7 @@ class PushIn(BaseModel):
 
 class AnnouncementOut(BaseModel):
     id: int
+    kind: str = "notice"
     title: str
     content: str
     target: str
@@ -85,12 +87,15 @@ class AnnouncementOut(BaseModel):
     created_by: str | None = None
     pushed: bool
     created_at: datetime
+    content_updated_at: datetime | None = None
     reactions: dict[str, int] = {}
     my_reactions: list[str] = []
     comment_count: int = 0
     # 운영진 화면에서만 채워진다 (기수원 응답에는 None)
     read_count: int | None = None
     read_total: int | None = None
+    # 기수원 화면에서만 채워진다 (운영진 응답에는 None) — 본인이 읽었는지
+    is_read: bool | None = None
     model_config = {"from_attributes": True}
 
 
@@ -155,24 +160,55 @@ async def _attach_reactions(
         a.comment_count = ccount.get(a.id, 0)
 
 
+def _read_after_edit(last_read_at, content_updated_at) -> bool:
+    """글이 수정된 뒤에 읽었는지. 수정 전에 읽은 사람은 다시 '안 읽음'이 된다."""
+    if last_read_at is None:
+        return False
+    if content_updated_at is None:
+        return True
+    return last_read_at >= content_updated_at
+
+
+async def _attach_my_read(db: AsyncSession, anns: list, member_id: int) -> None:
+    """기수원 목록용 — 각 공지를 본인이 읽었는지 is_read 로 부착."""
+    ids = [a.id for a in anns]
+    if not ids:
+        return
+    rows = (await db.execute(
+        select(AnnouncementRead.announcement_id, AnnouncementRead.last_read_at).where(
+            AnnouncementRead.announcement_id.in_(ids),
+            AnnouncementRead.member_id == member_id,
+        )
+    )).all()
+    last = {ann_id: t for ann_id, t in rows}
+    for a in anns:
+        a.is_read = _read_after_edit(last.get(a.id), a.content_updated_at)
+
+
 async def _mark_read(
     db: AsyncSession, ann_id: int,
     member_id: int | None = None, user_id: int | None = None,
 ) -> None:
-    """공지 상세를 연 사람을 1회만 기록. 이미 있으면 그대로 둔다(첫 열람 시각 보존).
+    """공지 상세를 연 사람을 기록. 첫 열람 시각(read_at)은 보존하고 last_read_at 만 갱신한다 —
+    글이 수정되면 last_read_at 이 수정 시각보다 이전인 사람을 '안 읽음'으로 되돌리기 때문에
+    재열람을 반영하지 않으면 영영 안 읽은 상태로 남는다.
     열람 기록 실패가 공지 조회 자체를 막으면 안 되므로 조용히 넘어간다."""
     col = AnnouncementRead.member_id if member_id is not None else AnnouncementRead.user_id
     val = member_id if member_id is not None else user_id
     if val is None:
         return
-    exists = (await db.execute(
-        select(AnnouncementRead.id).where(
+    row = (await db.execute(
+        select(AnnouncementRead).where(
             AnnouncementRead.announcement_id == ann_id, col == val,
         )
     )).scalar_one_or_none()
-    if exists:
+    if row is not None:
+        row.last_read_at = datetime.now(timezone.utc)
+        await db.commit()
         return
-    db.add(AnnouncementRead(announcement_id=ann_id, member_id=member_id, user_id=user_id))
+    now = datetime.now(timezone.utc)
+    db.add(AnnouncementRead(announcement_id=ann_id, member_id=member_id, user_id=user_id,
+                            read_at=now, last_read_at=now))
     try:
         await db.commit()
     except IntegrityError:
@@ -189,17 +225,25 @@ async def _attach_read_counts(db: AsyncSession, anns: list, cohort_id: int) -> N
     # 분자는 '대상에 속한 사람'만 세야 분모와 기준이 같아진다. 운영진이 관리하려고
     # 기수원 공지를 열어본 것까지 세면 분모(기수원 수)에 없는 사람이 분자에 들어가
     # 100%를 넘길 수도 있다. 그래서 기수원 열람/운영진 열람을 따로 집계한다.
+    # 수정 전에 읽은 사람은 빼야 한다 — 개정본을 본 사람 수여야 의미가 있다.
+    edited_at = {a.id: a.content_updated_at for a in anns}
     rows = (await db.execute(
         select(
             AnnouncementRead.announcement_id,
-            func.count(AnnouncementRead.member_id),
-            func.count(AnnouncementRead.user_id),
-        )
-        .where(AnnouncementRead.announcement_id.in_(ids))
-        .group_by(AnnouncementRead.announcement_id)
+            AnnouncementRead.last_read_at,
+            AnnouncementRead.member_id,
+            AnnouncementRead.user_id,
+        ).where(AnnouncementRead.announcement_id.in_(ids))
     )).all()
-    read_by_member = {ann_id: m for ann_id, m, _ in rows}
-    read_by_staff = {ann_id: s for ann_id, _, s in rows}
+    read_by_member: dict[int, int] = {}
+    read_by_staff: dict[int, int] = {}
+    for ann_id, last_read_at, mid_, uid_ in rows:
+        if not _read_after_edit(last_read_at, edited_at.get(ann_id)):
+            continue
+        if mid_ is not None:
+            read_by_member[ann_id] = read_by_member.get(ann_id, 0) + 1
+        if uid_ is not None:
+            read_by_staff[ann_id] = read_by_staff.get(ann_id, 0) + 1
 
     active_members = (await db.execute(
         select(func.count(Member.id)).where(Member.cohort_id == cohort_id, Member.is_active.is_(True))
@@ -378,13 +422,14 @@ async def pwa_installed_ops(
 
 @router.get("/announcements", response_model=list[AnnouncementOut])
 async def member_announcements(
+    kind: str | None = None,
     member: dict = Depends(get_current_member),
     cohort_id: int = Depends(get_member_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """본인 기수의 공지 중 대상에 본인이 포함된 것."""
+    """본인 기수의 공지 중 대상에 본인이 포함된 것. kind 를 주면 공지/자료실만."""
     mid = member["member_id"]
-    rows = await db.execute(
+    q = (
         select(Announcement)
         .where(
             Announcement.cohort_id == cohort_id,
@@ -393,10 +438,15 @@ async def member_announcements(
                 (Announcement.target == "select") & Announcement.target_member_ids.any(mid),
             ),
         )
-        .order_by(Announcement.created_at.desc())
     )
+    if kind in ("notice", "resource"):
+        q = q.where(Announcement.kind == kind)
+    # 자료실은 '개정된 자료'가 위로 와야 유용하다. 공지는 올린 순서 그대로.
+    order = Announcement.content_updated_at if kind == "resource" else Announcement.created_at
+    rows = await db.execute(q.order_by(order.desc(), Announcement.id.desc()))
     anns = list(rows.scalars().all())
     await _attach_reactions(db, anns, mid)
+    await _attach_my_read(db, anns, mid)
     return anns
 
 
@@ -653,13 +703,16 @@ async def staff_delete_comment(
 
 @router.get("/manage/announcements", response_model=list[AnnouncementOut])
 async def list_announcements(
+    kind: str | None = None,
     user: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await db.execute(
-        select(Announcement).where(Announcement.cohort_id == cohort_id).order_by(Announcement.created_at.desc())
-    )
+    q = select(Announcement).where(Announcement.cohort_id == cohort_id)
+    if kind in ("notice", "resource"):
+        q = q.where(Announcement.kind == kind)
+    order = Announcement.content_updated_at if kind == "resource" else Announcement.created_at
+    rows = await db.execute(q.order_by(order.desc(), Announcement.id.desc()))
     anns = list(rows.scalars().all())
     urow = await resolve_current_user_row(db, user)
     await _attach_reactions(db, anns, viewer_user_id=urow.id if urow else None)
@@ -707,9 +760,10 @@ async def create_announcement(
     u = await resolve_current_user_row(db, user)
     author = (u.display_name + (f" · {u.department}" if u and u.department else "")) if u else user["username"]
     ann = Announcement(
-        cohort_id=cohort_id, title=body.title, content=body.content,
+        cohort_id=cohort_id, kind=body.kind, title=body.title, content=body.content,
         target=body.target, target_member_ids=body.target_member_ids,
         tags=_clean_tags(body.tags), created_by=author, author_username=user["username"], pushed=False,
+        content_updated_at=datetime.now(timezone.utc),
     )
     db.add(ann)
     await db.commit()
@@ -717,7 +771,8 @@ async def create_announcement(
 
     if body.push:
         sub_ids = await resolve_subscription_ids(db, cohort_id, body.target, body.target_member_ids)
-        payload = {"title": body.title, "body": _excerpt(body.content), "url": f"/go/announcement/{ann.id}", "tag": f"ann-{ann.id}"}
+        prefix = "[자료] " if body.kind == "resource" else ""
+        payload = {"title": prefix + body.title, "body": _excerpt(body.content), "url": f"/go/announcement/{ann.id}", "tag": f"ann-{ann.id}"}
         await _enqueue_push(request, payload, sub_ids)
         ann.pushed = True
         await db.commit()
@@ -730,6 +785,7 @@ async def create_announcement(
 async def update_announcement(
     ann_id: int,
     body: AnnouncementIn,
+    request: Request,
     _: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
@@ -738,14 +794,29 @@ async def update_announcement(
     if not ann or ann.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
     old_uuids = _asset_uuids(ann.content)
+    # 제목/본문이 실제로 바뀐 경우에만 '개정'으로 친다. 대상이나 태그만 고친 걸로
+    # 전원을 다시 안 읽음으로 돌리면 읽음 집계가 무의미해진다.
+    content_changed = (ann.title != body.title) or (ann.content != body.content)
+    ann.kind = body.kind
     ann.title = body.title
     ann.content = body.content
     ann.target = body.target
     ann.target_member_ids = body.target_member_ids
     ann.tags = _clean_tags(body.tags)
     ann.updated_at = datetime.now(timezone.utc)
+    if content_changed:
+        ann.content_updated_at = ann.updated_at
     await db.commit()
     await db.refresh(ann)
+    # 개정 알림 — body.push 가 켜져 있고 내용이 실제로 바뀐 경우에만
+    if content_changed and body.push:
+        sub_ids = await resolve_subscription_ids(db, cohort_id, body.target, body.target_member_ids)
+        await _enqueue_push(request, {
+            "title": ("[자료 수정] " if body.kind == "resource" else "[공지 수정] ") + body.title,
+            "body": _excerpt(body.content),
+            "url": f"/go/announcement/{ann.id}",
+            "tag": f"ann-{ann.id}",
+        }, sub_ids)
     # 수정으로 본문에서 빠진 첨부/이미지 정리
     removed = old_uuids - _asset_uuids(body.content)
     if removed:
@@ -877,6 +948,60 @@ async def upload_file(
         f.write(data)
     # 파일명은 쿼리로 전달(확장자를 URL 경로에 안 박아 nginx 정적규칙 충돌 회피).
     return {"url": f"/api/v1/notifications/file/{key}?name={quote(name)}", "name": name, "size": len(data)}
+
+
+# ── PDF → 페이지 이미지 ──────────────────────────────────────────────────────
+# PPT 를 서버에서 변환하면 글꼴이 치환돼 레이아웃이 깨진다(LibreOffice 는 pptx 임베드
+# 폰트를 안 읽는다). PDF 는 폰트 서브셋이 파일 안에 들어있어 서버 폰트와 무관하게
+# 원본 그대로 렌더된다 — 그래서 변환은 PDF 만 받는다.
+_PDF_DPI = 150
+_PDF_MAX_PAGES = 100
+
+
+def _render_pdf_pages(data: bytes) -> list[str]:
+    """PDF 바이트를 페이지별 WebP 로 저장하고 서빙 키 목록을 돌려준다. (동기 — 스레드에서 호출)"""
+    import io
+
+    import pypdfium2 as pdfium
+    from PIL import Image  # noqa: F401 — pdfium 의 to_pil() 이 필요로 함
+
+    os.makedirs(_UPLOAD_DIR, exist_ok=True)
+    keys: list[str] = []
+    doc = pdfium.PdfDocument(io.BytesIO(data))
+    try:
+        for i in range(min(len(doc), _PDF_MAX_PAGES)):
+            page = doc[i]
+            pil = page.render(scale=_PDF_DPI / 72).to_pil().convert("RGB")
+            key = uuid.uuid4().hex
+            pil.save(os.path.join(_UPLOAD_DIR, key + ".webp"), "WEBP", quality=88, method=4)
+            keys.append(key)
+    finally:
+        doc.close()
+    return keys
+
+
+@router.post("/manage/pdf-to-images")
+async def pdf_to_images(
+    file: UploadFile = File(...),
+    _: dict = Depends(require_staff),
+    __: int = Depends(get_current_cohort_id),
+):
+    """PDF 첨부를 페이지별 이미지로 변환 → 본문에 바로 넣을 URL 목록 반환."""
+    import anyio
+
+    data = await file.read()
+    if len(data) > _MAX_FILE:
+        raise HTTPException(status_code=413, detail="파일은 50MB 이하만 가능해요")
+    if not data.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="PDF 파일만 변환할 수 있어요")
+    try:
+        keys = await anyio.to_thread.run_sync(_render_pdf_pages, data)
+    except Exception:
+        logger.exception("pdf render failed")
+        raise HTTPException(status_code=400, detail="PDF 를 읽지 못했어요 (암호가 걸렸거나 손상된 파일)")
+    if not keys:
+        raise HTTPException(status_code=400, detail="변환할 페이지가 없어요")
+    return {"urls": [f"/api/v1/notifications/img/{k}" for k in keys], "pages": len(keys)}
 
 
 @router.get("/file/{key}")
