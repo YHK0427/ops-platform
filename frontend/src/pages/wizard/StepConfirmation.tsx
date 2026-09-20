@@ -82,7 +82,7 @@ export function StepConfirmation({ state, onBack }: StepProps) {
         <div className="space-y-6 max-w-2xl mx-auto">
             <Card className="bg-[var(--color-surface)] border-[var(--color-border)]">
                 <CardHeader>
-                    <CardTitle>Step 3: 최종 확인</CardTitle>
+                    <CardTitle>3단계: 최종 확인</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="grid grid-cols-2 gap-4 text-sm">
@@ -100,7 +100,7 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                         </div>
                         <div>
                             <span className="text-[var(--color-text-secondary)]">타입</span>
-                            <p className="text-[var(--color-accent)]">{state.type}</p>
+                            <p className="text-[var(--color-accent)]">{state.type === "TEAM" ? "팀 세션" : "개인 발표"}</p>
                         </div>
                         {state.type === "TEAM" && (
                             <div>

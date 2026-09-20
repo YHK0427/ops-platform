@@ -11,7 +11,7 @@ export function StepTeamBuilding({ state, onChange, onNext, onBack }: StepProps)
 
     return (
         <div className="space-y-6 max-w-[90vw] mx-auto h-[80vh] flex flex-col">
-            <h2 className="text-xl font-bold">Team Building</h2>
+            <h2 className="text-xl font-bold">팀 빌딩</h2>
             <div className="flex-1 min-h-0">
                 <TeamBuildingEditor
                     members={members ?? []}
