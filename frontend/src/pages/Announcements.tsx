@@ -11,7 +11,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
-    Plus, Pencil, Trash2, Send, X, BellRing, Check, Megaphone, Hash,
+    Plus, Pencil, Trash2, Send, X, BellRing, Check, Megaphone, Hash, Eye,
 } from "lucide-react";
 
 type Target = "all" | "members" | "staff" | "select";
@@ -28,6 +28,9 @@ interface Announcement {
     created_at: string;
     reactions: Record<string, number>;
     my_reactions: string[];
+    /** 운영진 응답에만 채워진다 — 열람한 인원 / 대상 인원 */
+    read_count?: number | null;
+    read_total?: number | null;
 }
 
 const TARGET_LABEL: Record<Target, string> = {
@@ -159,6 +162,7 @@ export default function Announcements() {
                                             {formatDate(a.created_at)} · 대상 {TARGET_LABEL[a.target]}
                                             {a.created_by ? ` · ${a.created_by}` : ""}
                                         </p>
+                                        <ReadStat ann={a} className="mt-1.5" />
                                     </div>
                                     <div className="flex items-center gap-1 shrink-0">
                                         <button onClick={() => setEditing(a)} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100" title="수정">
@@ -213,10 +217,48 @@ export default function Announcements() {
     );
 }
 
+/**
+ * 열람 현황 — "대상 28명 중 12명 읽음".
+ * 분모는 공지 대상(기수원/운영진/전체/특정)에 따라 서버가 정하고, 이탈한 기수원은 빠진다.
+ * 상세를 연 사람만 세므로 목록에서 스쳐 지나간 건 포함되지 않는다.
+ */
+function ReadStat({ ann, className }: { ann: Announcement; className?: string }) {
+    if (ann.read_count == null || ann.read_total == null) return null;
+    const total = ann.read_total;
+    const read = ann.read_count;
+    const pct = total > 0 ? Math.round((read / total) * 100) : 0;
+    return (
+        <div className={className}>
+            <div className="flex items-center gap-2 text-[12px] text-gray-500">
+                <Eye className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                    대상 <b className="text-gray-700">{total}명</b> 중{" "}
+                    <b className="text-[var(--color-accent)]">{read}명</b> 읽음
+                    {total > 0 && <span className="text-gray-400"> ({pct}%)</span>}
+                </span>
+            </div>
+            {total > 0 && (
+                <div className="mt-1 h-1.5 rounded-full bg-gray-100 overflow-hidden max-w-xs">
+                    <div
+                        className="h-full rounded-full bg-[var(--color-accent)] transition-all"
+                        style={{ width: `${pct}%` }}
+                    />
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── 공지 전체 보기 (읽기 전용) ──────────────────────────────────────────────────
 function AnnouncementViewModal({
     ann, onClose, onEdit, onDelete,
 }: { ann: Announcement; onClose: () => void; onEdit: () => void; onDelete: () => void }) {
+    // 운영진도 열람 집계에 포함된다 — 기수원은 상세 GET에서 자동 기록되지만
+    // 운영진은 목록에서 모달로 열기 때문에 여기서 한 번 알려준다.
+    useEffect(() => {
+        api.post(`/notifications/manage/announcements/${ann.id}/read`).catch(() => {});
+    }, [ann.id]);
+
     return (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={onClose}>
             <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl my-4 flex flex-col max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
@@ -239,6 +281,7 @@ function AnnouncementViewModal({
                         {formatDate(ann.created_at)} · 대상 {TARGET_LABEL[ann.target]}
                         {ann.created_by ? ` · ${ann.created_by}` : ""}
                     </p>
+                    <ReadStat ann={ann} className="mt-2" />
                     {ann.tags && ann.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-2">
                             {ann.tags.map((t) => (

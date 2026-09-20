@@ -610,6 +610,25 @@ class AnnouncementReaction(Base):
     )
 
 
+class AnnouncementRead(Base):
+    """공지 열람 기록 — 상세 화면을 연 사람당 1행. 처음 연 시각만 남긴다(재열람은 갱신 안 함)."""
+    __tablename__ = "announcement_reads"
+
+    id = Column(Integer, primary_key=True)
+    announcement_id = Column(Integer, ForeignKey("announcements.id", ondelete="CASCADE"), nullable=False)
+    # 열람 주체: 기수원(member_id) 또는 운영진(user_id) 중 하나만 채워짐
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    read_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("uq_ann_read_member", "announcement_id", "member_id",
+              unique=True, postgresql_where=text("member_id IS NOT NULL")),
+        Index("uq_ann_read_user", "announcement_id", "user_id",
+              unique=True, postgresql_where=text("user_id IS NOT NULL")),
+    )
+
+
 class AnnouncementComment(Base):
     """공지에 대한 기수원 댓글."""
     __tablename__ = "announcement_comments"

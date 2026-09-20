@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, 
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -28,7 +29,10 @@ from app.deps import (
     get_current_cohort_id, get_current_member, get_current_user, get_db,
     get_member_cohort_id, require_staff, resolve_current_user_row,
 )
-from app.models import Announcement, AnnouncementComment, AnnouncementReaction, Member, PushSubscription, User
+from app.models import (
+    Announcement, AnnouncementComment, AnnouncementReaction, AnnouncementRead,
+    Member, PushSubscription, User,
+)
 from app.services.push import resolve_subscription_ids
 from app.audit_hook import record_manual_event
 
@@ -84,6 +88,9 @@ class AnnouncementOut(BaseModel):
     reactions: dict[str, int] = {}
     my_reactions: list[str] = []
     comment_count: int = 0
+    # 운영진 화면에서만 채워진다 (기수원 응답에는 None)
+    read_count: int | None = None
+    read_total: int | None = None
     model_config = {"from_attributes": True}
 
 
@@ -146,6 +153,64 @@ async def _attach_reactions(
         a.reactions = counts.get(a.id, {})
         a.my_reactions = mine.get(a.id, [])
         a.comment_count = ccount.get(a.id, 0)
+
+
+async def _mark_read(
+    db: AsyncSession, ann_id: int,
+    member_id: int | None = None, user_id: int | None = None,
+) -> None:
+    """공지 상세를 연 사람을 1회만 기록. 이미 있으면 그대로 둔다(첫 열람 시각 보존).
+    열람 기록 실패가 공지 조회 자체를 막으면 안 되므로 조용히 넘어간다."""
+    col = AnnouncementRead.member_id if member_id is not None else AnnouncementRead.user_id
+    val = member_id if member_id is not None else user_id
+    if val is None:
+        return
+    exists = (await db.execute(
+        select(AnnouncementRead.id).where(
+            AnnouncementRead.announcement_id == ann_id, col == val,
+        )
+    )).scalar_one_or_none()
+    if exists:
+        return
+    db.add(AnnouncementRead(announcement_id=ann_id, member_id=member_id, user_id=user_id))
+    try:
+        await db.commit()
+    except IntegrityError:
+        # 같은 사람이 여러 탭에서 동시에 열면 UNIQUE 충돌 — 이미 기록된 것이므로 무시
+        await db.rollback()
+
+
+async def _attach_read_counts(db: AsyncSession, anns: list, cohort_id: int) -> None:
+    """운영진 화면용 — 공지별 열람 인원수와 '대상 인원수'를 부착.
+    분모는 공지 target에 따라 달라지고, 이탈한 기수원(is_active=false)은 빼고 센다."""
+    ids = [a.id for a in anns]
+    if not ids:
+        return
+    rows = (await db.execute(
+        select(AnnouncementRead.announcement_id, func.count(AnnouncementRead.id))
+        .where(AnnouncementRead.announcement_id.in_(ids))
+        .group_by(AnnouncementRead.announcement_id)
+    )).all()
+    read = {ann_id: n for ann_id, n in rows}
+
+    active_members = (await db.execute(
+        select(func.count(Member.id)).where(Member.cohort_id == cohort_id, Member.is_active.is_(True))
+    )).scalar_one()
+    staff = (await db.execute(
+        select(func.count(User.id)).where(User.cohort_id == cohort_id)
+    )).scalar_one()
+
+    for a in anns:
+        if a.target == "members":
+            total = active_members
+        elif a.target == "staff":
+            total = staff
+        elif a.target == "select":
+            total = len(a.target_member_ids or [])
+        else:  # all
+            total = active_members + staff
+        a.read_count = read.get(a.id, 0)
+        a.read_total = total
 
 
 def _excerpt(html: str, n: int = 120) -> str:
@@ -343,6 +408,7 @@ async def member_announcement_detail(
     )
     if not allowed:
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
+    await _mark_read(db, ann_id, member_id=mid)
     await _attach_reactions(db, [ann], mid)
     return ann
 
@@ -588,7 +654,26 @@ async def list_announcements(
     anns = list(rows.scalars().all())
     urow = await resolve_current_user_row(db, user)
     await _attach_reactions(db, anns, viewer_user_id=urow.id if urow else None)
+    await _attach_read_counts(db, anns, cohort_id)
     return anns
+
+
+@router.post("/manage/announcements/{ann_id}/read", status_code=status.HTTP_204_NO_CONTENT)
+async def mark_announcement_read_staff(
+    ann_id: int,
+    user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """운영진이 공지를 펼쳐 읽었을 때 호출 — 열람 집계에 운영진도 포함된다.
+    기수원은 상세 GET에서 자동 기록되지만, 운영진 화면은 목록에서 바로 읽으므로 명시 호출."""
+    ann = await db.get(Announcement, ann_id)
+    if not ann or ann.cohort_id != cohort_id:
+        raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
+    urow = await resolve_current_user_row(db, user)
+    if urow:
+        await _mark_read(db, ann_id, user_id=urow.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/manage/announcements", response_model=AnnouncementOut, status_code=status.HTTP_201_CREATED)

@@ -40,7 +40,10 @@ export default function ScoringRoundDetail() {
         );
     }
 
-    const setupIncomplete = round.areas.length === 0 || round.targets.length === 0;
+    // 서버의 링크 열기 조건과 같아야 한다 — 기준은 '영역'이나 '영역 없는 기준' 둘 중
+    // 하나만 있어도 충족된다(scoring.py: not rnd.areas and not rnd.criteria).
+    const noRubric = round.areas.length === 0 && round.criteria.length === 0;
+    const setupIncomplete = noRubric || round.targets.length === 0;
     const activeTab: Tab = tab ?? (setupIncomplete ? "settings" : "results");
 
     const toggleOpen = () => {
@@ -71,7 +74,14 @@ export default function ScoringRoundDetail() {
                             size="sm"
                             variant={round.is_open ? "outline" : "default"}
                             onClick={toggleOpen}
-                            disabled={toggle.isPending}
+                            // 설정이 덜 됐으면 서버가 어차피 400으로 막는다. 누르고 나서 토스트로
+                            // 알려주는 대신, 누르기 전부터 왜 못 여는지 보여준다.
+                            disabled={toggle.isPending || (!round.is_open && setupIncomplete)}
+                            title={
+                                !round.is_open && setupIncomplete
+                                    ? `${noRubric ? "심사 기준" : "심사 대상 팀"}을 먼저 등록해야 링크를 열 수 있습니다`
+                                    : undefined
+                            }
                         >
                             {toggle.isPending ? (
                                 <Loader2 className="w-4 h-4 mr-1 animate-spin" />
@@ -118,7 +128,7 @@ export default function ScoringRoundDetail() {
                         onClick={() => setTab("settings")}
                         className="w-full text-left px-4 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-sm text-rose-600 hover:bg-rose-500/15 transition-colors"
                     >
-                        ⚠️ {round.areas.length === 0 ? "심사 기준" : "심사 대상 팀"}이 아직 없어요 — 설정 탭에서 먼저 채워주세요 →
+                        ⚠️ {noRubric ? "심사 기준" : "심사 대상 팀"}이 아직 없어요 — 설정 탭에서 먼저 채워주세요 →
                     </button>
                 </div>
             )}

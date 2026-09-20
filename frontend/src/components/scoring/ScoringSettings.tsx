@@ -54,9 +54,12 @@ export function ScoringSettings({ round }: { round: ScoringRound }) {
             {({ statuses, saveAll }) => (
                 <div className="space-y-5">
                     <SaveBar statuses={statuses} saveAll={saveAll} />
-                    <WeightPanel round={round} groups={groups} setGroups={setGroups} />
+                    <SetupChecklist round={round} />
+                    {/* 링크를 열려면 반드시 있어야 하는 둘을 맨 위에 둔다 —
+                        집계 방식은 기본값(80/20 · 50·30·20%)만으로도 그냥 돌아간다. */}
                     <RubricPanel round={round} />
                     <TargetsPanel round={round} />
+                    <WeightPanel round={round} groups={groups} setGroups={setGroups} />
                     <RosterPanel round={round} />
                     <DeductionRulesPanel round={round} />
                     <MultiClubPanel round={round} groups={groups} />
@@ -65,6 +68,59 @@ export function ScoringSettings({ round }: { round: ScoringRound }) {
                 </div>
             )}
         </AutosaveProvider>
+    );
+}
+
+/**
+ * 설정 탭 맨 위 준비 상태 — "링크를 열려면 뭐가 더 필요한지"를 누르기 전에 알려준다.
+ * 서버가 링크 열기를 400으로 막는 조건(기준 1개+, 대상 1개+)과 정확히 같은 기준이다.
+ */
+function SetupChecklist({ round }: { round: ScoringRound }) {
+    const steps = [
+        { label: "심사 기준", done: round.areas.length > 0 || round.criteria.length > 0, anchor: "setup-rubric", hint: "무엇을 몇 점 만점으로 볼지" },
+        { label: "심사 대상 팀", done: round.targets.length > 0, anchor: "setup-targets", hint: "누구를 평가할지" },
+    ];
+    const left = steps.filter((s) => !s.done);
+
+    if (left.length === 0) {
+        return (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-emerald-200 bg-emerald-50/60 text-sm text-emerald-800">
+                <CloudCheck className="w-4 h-4 shrink-0" />
+                <span>
+                    준비 끝 — 위 <b>"링크 열기"</b>를 누르면 심사위원·청중이 바로 채점할 수 있습니다.
+                    아래 나머지는 필요할 때만 건드리면 됩니다.
+                </span>
+            </div>
+        );
+    }
+
+    return (
+        <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-4 space-y-2">
+            <p className="text-sm font-bold text-rose-900">
+                링크를 열려면 {left.length}가지만 채우면 됩니다
+            </p>
+            <div className="flex flex-wrap gap-2">
+                {steps.map((s) => (
+                    <button
+                        key={s.anchor}
+                        type="button"
+                        onClick={() => document.getElementById(s.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                        className={cn(
+                            "flex items-center gap-2 px-3 py-2 rounded-lg border text-sm text-left transition-colors",
+                            s.done
+                                ? "border-emerald-200 bg-white text-emerald-700"
+                                : "border-rose-300 bg-white text-[var(--color-text-primary)] hover:border-rose-400",
+                        )}
+                    >
+                        {s.done
+                            ? <CloudCheck className="w-4 h-4 shrink-0 text-emerald-600" />
+                            : <span className="w-4 h-4 shrink-0 rounded-full border-2 border-rose-400" />}
+                        <span className="font-medium">{s.label}</span>
+                        <span className="text-xs text-[var(--color-text-muted)]">{s.hint}</span>
+                    </button>
+                ))}
+            </div>
+        </div>
     );
 }
 
@@ -515,6 +571,8 @@ function MultiClubPanel({
     return (
         <Panel
             title="다동아리 모드"
+            state="optional"
+            defaultOpen={round.multi_club_mode}
             subtitle='여러 동아리가 함께 참가하는 연합 이벤트 전용입니다. 안 쓰면 아래 스위치만 꺼두면 됩니다.'
         >
             <label className="flex items-center gap-2 cursor-pointer">
@@ -694,7 +752,7 @@ function NoticesPanel({ round }: { round: ScoringRound }) {
     }, [round]);
 
     return (
-        <Panel title="안내문" subtitle="공개 채점 폼에 그대로 보이는 문구입니다. 안 바꾸면 기본 문구가 쓰입니다.">
+        <Panel title="안내문" state="optional" defaultOpen={false} subtitle="공개 채점 폼에 그대로 보이는 문구입니다. 안 바꾸면 기본 문구가 쓰입니다.">
             <div className="space-y-2">
                 <Label>참가자 안내문</Label>
                 <textarea
@@ -810,6 +868,8 @@ function RubricPanel({ round }: { round: ScoringRound }) {
     return (
         <Panel
             title="심사 기준 (영역 → 세부항목)"
+            anchor="setup-rubric"
+            state={areas.length > 0 || ungrouped.length > 0 ? "done" : "todo"}
             subtitle={`만점 합계 ${total}점 — 이 만점 대비 득점 비율이 비중으로 환산됩니다`}
         >
             <p className="text-xs text-[var(--color-text-muted)]">
@@ -1007,6 +1067,8 @@ function TargetsPanel({ round }: { round: ScoringRound }) {
     return (
         <Panel
             title="심사 대상 (팀)"
+            anchor="setup-targets"
+            state={round.targets.length > 0 ? "done" : "todo"}
             subtitle="평가 폼에는 '표시 이름'이 뜹니다. 비워두면 원본 팀명이 그대로 쓰입니다."
         >
             <div className="flex items-end gap-2 p-3 rounded-lg bg-[var(--color-hover)]">
@@ -1298,6 +1360,7 @@ function RosterPanel({ round }: { round: ScoringRound }) {
     return (
         <Panel
             title="명단"
+            state="optional"
             subtitle="제출자 이름을 이 명단과 매칭해 '누가 했는지' 체크합니다. 명단에 없어도 제출은 가능합니다."
         >
             <div className="p-3 rounded-lg bg-[var(--color-hover)] space-y-2">
@@ -1554,6 +1617,7 @@ function DeductionRulesPanel({ round }: { round: ScoringRound }) {
     return (
         <Panel
             title="감점 규정"
+            state="optional"
             subtitle="최종점수 = 심사 + 청중 − 감점. 규정을 만들면 아래 '감점' 탭에서 팀별로 입력합니다. (심사위원·청중에겐 안 보임)"
         >
             <div className="space-y-3">
@@ -1844,7 +1908,7 @@ function AccessPanel({ round }: { round: ScoringRound }) {
     };
 
     return (
-        <Panel title="열람 제한" subtitle="특정 부서 운영진이 이 라운드의 심사/채점 페이지를 볼 수 없게 합니다. 공개 링크(심사위원·청중)는 영향 없습니다.">
+        <Panel title="열람 제한" state="optional" defaultOpen={false} subtitle="특정 부서 운영진이 이 라운드의 심사/채점 페이지를 볼 수 없게 합니다. 공개 링크(심사위원·청중)는 영향 없습니다.">
             <div className="space-y-2">
                 <Label>열람 불가 부서</Label>
                 <div className="flex flex-wrap gap-2">
@@ -1896,18 +1960,45 @@ function AccessPanel({ round }: { round: ScoringRound }) {
 
 // ── 공통 ─────────────────────────────────────────────────────────────────────
 
+/** 필수 패널은 "아직 비었음/다 됐음"을, 선택 패널은 "안 건드려도 됨"을 제목 옆에 바로 보여준다. */
+function PanelBadge({ state }: { state: PanelState }) {
+    if (state === "optional") {
+        return (
+            <span className="shrink-0 text-[11px] font-medium px-1.5 py-0.5 rounded bg-[var(--color-hover)] text-[var(--color-text-muted)]">
+                선택
+            </span>
+        );
+    }
+    if (state === "todo") {
+        return (
+            <span className="shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600">
+                필수 · 아직 없음
+            </span>
+        );
+    }
+    return (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600">
+            <CloudCheck className="w-3 h-3" /> 완료
+        </span>
+    );
+}
+
+type PanelState = "todo" | "done" | "optional";
+
 function Panel({
-    title, subtitle, action, defaultOpen = true, children,
+    title, subtitle, action, defaultOpen = true, anchor, state, children,
 }: {
     title: string;
     subtitle?: string;
     action?: React.ReactNode;
     defaultOpen?: boolean;
+    anchor?: string;
+    state?: PanelState;
     children: React.ReactNode;
 }) {
     const [open, setOpen] = useState(defaultOpen);
     return (
-        <section className="rounded-xl border border-[var(--color-border-subtle)] bg-white overflow-hidden">
+        <section id={anchor} className="rounded-xl border border-[var(--color-border-subtle)] bg-white overflow-hidden scroll-mt-4">
             <div className={cn("flex items-center justify-between gap-3 p-5", open ? "pb-0" : "")}>
                 <button
                     type="button"
@@ -1921,7 +2012,10 @@ function Panel({
                         )}
                     />
                     <div className="min-w-0">
-                        <h2 className="font-bold text-[var(--color-text-primary)]">{title}</h2>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h2 className="font-bold text-[var(--color-text-primary)]">{title}</h2>
+                            {state && <PanelBadge state={state} />}
+                        </div>
                         {open && subtitle && <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{subtitle}</p>}
                     </div>
                 </button>
