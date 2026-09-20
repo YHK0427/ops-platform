@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
     AlertTriangle, Check, ChevronRight, Filter, Link2, Loader2, PenLine, Plus, RotateCcw, Trash2, X,
 } from "lucide-react";
@@ -934,35 +934,43 @@ function ProxyScoreGrid({
                                     <div className="text-[10px] text-[var(--color-text-muted)]">{c.max}점</div>
                                 </th>
                             ))}
-                            <th className="sticky top-0 z-10 bg-[var(--color-hover)] px-3 py-2 text-center font-bold text-[var(--color-accent)] min-w-[80px]">
+                            <th className="sticky top-0 right-0 z-20 bg-[var(--color-hover)] px-3 py-2 text-center font-bold text-[var(--color-accent)] min-w-[80px] shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.06)]">
                                 합계
                             </th>
                         </tr>
                     </thead>
                     <tbody>
-                        {targets.map((t) => {
+                        {targets.map((t, i) => {
                             const isBlocked = blocked.has(t.id);
                             const rowSum = cols.reduce((s, c) => s + (value.scores[colKey(c, t.id)] ?? 0), 0);
+                            const rowBg = isBlocked ? "bg-zinc-50" : i % 2 === 1 ? "bg-[var(--color-hover)]/40" : "bg-white";
                             return (
-                                <tr key={t.id} className={cn("border-t border-[var(--color-border-subtle)]", isBlocked && "opacity-50 bg-zinc-50")}>
-                                    <td className="sticky left-0 z-10 bg-white px-3 py-2 font-semibold text-[var(--color-text-primary)]">
+                                <tr
+                                    key={t.id}
+                                    className={cn("border-t border-[var(--color-border-subtle)] group", isBlocked && "opacity-50", !isBlocked && "hover:bg-sky-50/70")}
+                                >
+                                    <td className={cn("sticky left-0 z-10 px-3 py-2 font-semibold text-[var(--color-text-primary)] group-hover:bg-sky-50/70", rowBg)}>
                                         {t.name}
                                         {isBlocked && <span className="block text-[10px] font-normal text-zinc-400">본인 소속팀</span>}
                                     </td>
                                     {cols.map((c) => {
                                         const key = colKey(c, t.id);
+                                        const filled = value.scores[key] != null;
                                         return (
-                                            <td key={key} className="px-1.5 py-1.5">
+                                            <td key={key} className={cn("px-1.5 py-1.5", rowBg, "group-hover:bg-sky-50/70")}>
                                                 <Input
                                                     type="number" min={0} max={c.max} step="0.5" disabled={isBlocked}
-                                                    className="w-24 h-9 px-2 text-center mx-auto"
+                                                    className={cn(
+                                                        "w-24 h-9 px-2 text-center mx-auto",
+                                                        filled && !isBlocked && "border-[var(--color-accent)]/40 bg-[var(--color-accent-dim)]/30 font-medium",
+                                                    )}
                                                     value={value.scores[key] ?? ""}
                                                     onChange={(e) => setScore(key, e.target.value, c.max)}
                                                 />
                                             </td>
                                         );
                                     })}
-                                    <td className="px-3 py-2 text-center font-bold text-[var(--color-accent)]">
+                                    <td className={cn("sticky right-0 z-10 px-3 py-2 text-center font-bold text-[var(--color-accent)] group-hover:bg-sky-50/70 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.06)]", rowBg)}>
                                         {isBlocked ? "—" : `${rowSum}/${maxSum}`}
                                     </td>
                                 </tr>
@@ -1052,6 +1060,7 @@ function ProxySubmitDialog({
     onClose: () => void;
 }) {
     const proxy = useProxySubmit(round.id);
+    const nameRef = useRef<HTMLInputElement>(null);
     const [name, setName] = useState("");
     const [role, setRole] = useState<ScoringRole>("JUDGE");
     const [group, setGroup] = useState("");
@@ -1098,7 +1107,7 @@ function ProxySubmitDialog({
         onClose();
     };
 
-    const submit = () => {
+    const submit = (andContinue: boolean) => {
         if (!participant && !name.trim()) {
             toast.error("이름을 입력하세요");
             return;
@@ -1116,8 +1125,17 @@ function ProxySubmitDialog({
             },
             {
                 onSuccess: () => {
-                    toast.success("저장됨");
-                    close();
+                    if (andContinue) {
+                        toast.success(`${name.trim()} 저장됨 — 다음 심사위원을 입력하세요`);
+                        setName("");
+                        setSheet(emptySheet());
+                        setBlocked([]);
+                        setAreaMode(inferAreaMode(round.areas, round.targets, emptySheet()));
+                        nameRef.current?.focus();
+                    } else {
+                        toast.success("저장됨");
+                        close();
+                    }
                 },
                 onError: () => toast.error("저장 실패"),
             },
@@ -1147,10 +1165,12 @@ function ProxySubmitDialog({
                             <div className="space-y-2">
                                 <Label>이름</Label>
                                 <Input
+                                    ref={nameRef}
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
                                     placeholder="심사위원 이름"
                                     disabled={!!participant}
+                                    autoFocus={!participant}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -1241,9 +1261,14 @@ function ProxySubmitDialog({
                     <Button variant="outline" onClick={close}>
                         취소
                     </Button>
-                    <Button onClick={submit} disabled={proxy.isPending || loading}>
+                    {!participant && role === "JUDGE" && (
+                        <Button variant="outline" onClick={() => submit(true)} disabled={proxy.isPending || loading}>
+                            저장 후 다음 심사위원
+                        </Button>
+                    )}
+                    <Button onClick={() => submit(false)} disabled={proxy.isPending || loading}>
                         {proxy.isPending && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                        저장
+                        저장{!participant && role === "JUDGE" ? " 후 닫기" : ""}
                     </Button>
                 </DialogFooter>
             </DialogContent>
