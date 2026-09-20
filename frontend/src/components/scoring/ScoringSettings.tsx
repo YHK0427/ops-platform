@@ -55,6 +55,8 @@ export function ScoringSettings({ round }: { round: ScoringRound }) {
                     <TargetsPanel round={round} />
                     <RosterPanel round={round} />
                     <DeductionRulesPanel round={round} />
+                    <MultiClubPanel round={round} />
+                    <NoticesPanel round={round} />
                     <AccessPanel round={round} />
                 </div>
             )}
@@ -154,19 +156,8 @@ function WeightPanel({ round }: { round: ScoringRound }) {
     const [rankPts, setRankPts] = useState(round.rank_points);
     const [excludeOwn, setExcludeOwn] = useState(round.exclude_own_team);
     const [requireFeedback, setRequireFeedback] = useState(round.require_feedback);
-    const [intro, setIntro] = useState(round.intro ?? "");
-    const [rankNotice, setRankNotice] = useState(round.rank_form_notice ?? "");
-    const [feedbackNotice, setFeedbackNotice] = useState(round.feedback_form_notice ?? "");
     const [groups, setGroups] = useState<string[]>(round.observer_groups ?? []);
     const [newGroup, setNewGroup] = useState("");
-    const [multiClub, setMultiClub] = useState(round.multi_club_mode);
-    const [extLabels, setExtLabels] = useState<string[]>(round.external_group_labels ?? []);
-    const [blockedByGroup, setBlockedByGroup] = useState<Record<string, number[]>>(
-        round.group_blocked_targets ?? {},
-    );
-    const [internalW, setInternalW] = useState(String(round.internal_audience_weight));
-    const [externalW, setExternalW] = useState(String(round.external_audience_weight));
-    const [showCalcInfo, setShowCalcInfo] = useState(false);
 
     const draft = {
         judge_weight: Number(judge),
@@ -176,14 +167,6 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         exclude_own_team: excludeOwn,
         require_feedback: requireFeedback,
         observer_groups: groups,
-        intro,
-        rank_form_notice: rankNotice,
-        feedback_form_notice: feedbackNotice,
-        multi_club_mode: multiClub,
-        external_group_labels: extLabels,
-        group_blocked_targets: blockedByGroup,
-        internal_audience_weight: Number(internalW),
-        external_audience_weight: Number(externalW),
     };
     const serverDraft = {
         judge_weight: Number(round.judge_weight),
@@ -193,14 +176,6 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         exclude_own_team: round.exclude_own_team,
         require_feedback: round.require_feedback,
         observer_groups: round.observer_groups ?? [],
-        intro: round.intro ?? "",
-        rank_form_notice: round.rank_form_notice ?? "",
-        feedback_form_notice: round.feedback_form_notice ?? "",
-        multi_club_mode: round.multi_club_mode,
-        external_group_labels: round.external_group_labels ?? [],
-        group_blocked_targets: round.group_blocked_targets ?? {},
-        internal_audience_weight: Number(round.internal_audience_weight),
-        external_audience_weight: Number(round.external_audience_weight),
     };
 
     const weightSum = Number(judge) + Number(observer);
@@ -224,15 +199,7 @@ function WeightPanel({ round }: { round: ScoringRound }) {
         setRankPts(round.rank_points);
         setExcludeOwn(round.exclude_own_team);
         setRequireFeedback(round.require_feedback);
-        setIntro(round.intro ?? "");
-        setRankNotice(round.rank_form_notice ?? "");
-        setFeedbackNotice(round.feedback_form_notice ?? "");
         setGroups(round.observer_groups ?? []);
-        setMultiClub(round.multi_club_mode);
-        setExtLabels(round.external_group_labels ?? []);
-        setBlockedByGroup(round.group_blocked_targets ?? {});
-        setInternalW(String(round.internal_audience_weight));
-        setExternalW(String(round.external_audience_weight));
         acceptServer(serverDraft);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [round]);
@@ -246,19 +213,6 @@ function WeightPanel({ round }: { round: ScoringRound }) {
 
     const removeGroup = (g: string) => {
         setGroups(groups.filter((x) => x !== g));
-        setExtLabels(extLabels.filter((x) => x !== g));
-        const { [g]: _removed, ...rest } = blockedByGroup;
-        setBlockedByGroup(rest);
-    };
-
-    const toggleExternal = (g: string) => {
-        setExtLabels(extLabels.includes(g) ? extLabels.filter((x) => x !== g) : [...extLabels, g]);
-    };
-
-    const toggleBlockedTarget = (g: string, targetId: number) => {
-        const cur = blockedByGroup[g] ?? [];
-        const next = cur.includes(targetId) ? cur.filter((x) => x !== targetId) : [...cur, targetId];
-        setBlockedByGroup({ ...blockedByGroup, [g]: next });
     };
 
     // 총점은 항상 100 — 한쪽을 바꾸면 다른 쪽이 자동으로 보정된다.
@@ -471,146 +425,6 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                         <Plus className="w-4 h-4 mr-1" /> 추가
                     </Button>
                 </div>
-
-                <label className="flex items-center gap-2 cursor-pointer pt-3 border-t border-[var(--color-border-subtle)]">
-                    <Checkbox checked={multiClub} onCheckedChange={(v) => setMultiClub(!!v)} />
-                    <span className="text-sm text-[var(--color-text-primary)]">다동아리 모드</span>
-                    <span className="text-xs text-[var(--color-text-muted)]">
-                        (여러 동아리가 함께 참가하는 연합 이벤트용 — 소그룹별로 "외부 여부"·"투표 불가 팀"을 지정합니다)
-                    </span>
-                </label>
-
-                {multiClub && (
-                    <div className="space-y-3 pt-1">
-                        {groups.length === 0 ? (
-                            <p className="text-xs text-amber-700">
-                                먼저 위에서 동아리 이름 + "외부"를 소그룹으로 추가하세요.
-                            </p>
-                        ) : (
-                            groups.map((g) => {
-                                const isExt = extLabels.includes(g);
-                                const blocked = blockedByGroup[g] ?? [];
-                                return (
-                                    <div key={g} className="p-3 rounded-lg bg-white border border-[var(--color-border-subtle)] space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-sm font-bold">{g}</span>
-                                            <label className="flex items-center gap-1.5 cursor-pointer">
-                                                <Checkbox checked={isExt} onCheckedChange={() => toggleExternal(g)} />
-                                                <span className="text-xs text-[var(--color-text-secondary)]">외부 청중</span>
-                                            </label>
-                                        </div>
-                                        {!isExt && (
-                                            <div className="space-y-1">
-                                                <p className="text-xs text-[var(--color-text-muted)]">
-                                                    이 소그룹이 투표할 수 없는 팀 (= 이 동아리 소속 팀)
-                                                </p>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {round.targets.map((t) => {
-                                                        const checked = blocked.includes(t.id);
-                                                        return (
-                                                            <button
-                                                                key={t.id}
-                                                                type="button"
-                                                                onClick={() => toggleBlockedTarget(g, t.id)}
-                                                                className={cn(
-                                                                    "px-2 py-1 rounded-full text-xs border",
-                                                                    checked
-                                                                        ? "bg-rose-50 border-rose-300 text-rose-700"
-                                                                        : "bg-white border-[var(--color-border-subtle)] text-[var(--color-text-secondary)]",
-                                                                )}
-                                                            >
-                                                                {t.display_name || t.name}
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })
-                        )}
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                            <div className="space-y-1">
-                                <Label className="text-xs text-[var(--color-text-secondary)]">청중상 — 내부 비중</Label>
-                                <Input
-                                    type="number" min={0} max={100} value={internalW}
-                                    onChange={(e) => setInternalW(e.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-1">
-                                <Label className="text-xs text-[var(--color-text-secondary)]">청중상 — 외부 비중</Label>
-                                <Input
-                                    type="number" min={0} max={100} value={externalW}
-                                    onChange={(e) => setExternalW(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <p className="text-xs text-[var(--color-text-muted)]">
-                            대상/최우수/우수상 = 심사위원 {judge}% + 내부 청중 {observer}%(동아리별 정규화).
-                            청중상은 심사위원 없이 내부 청중 {internalW}% + 외부 청중 {externalW}%로 별도 집계합니다.
-                        </p>
-
-                        <button
-                            type="button"
-                            onClick={() => setShowCalcInfo((v) => !v)}
-                            className="flex items-center gap-1 text-xs font-medium text-[var(--color-accent)]"
-                        >
-                            <ChevronRight className={cn("w-3.5 h-3.5 transition-transform", showCalcInfo && "rotate-90")} />
-                            계산 방식 자세히 보기
-                        </button>
-
-                        {showCalcInfo && (
-                            <div className="p-4 rounded-lg bg-white border border-[var(--color-border-subtle)] space-y-3 text-xs text-[var(--color-text-secondary)] leading-relaxed">
-                                <p>
-                                    동아리마다 내부 청중 인원수가 달라도(예: 5명/4명/6명) 공평하게 반영되도록,
-                                    "몇 명이 투표했는지"가 아니라 <b>"그 동아리 안에서 얼마나 높게 평가받았는지"</b>를 봅니다.
-                                </p>
-                                <div>
-                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">1단계 — 순위 투표를 점수로 환산</p>
-                                    <p>
-                                        청중이 고른 등수를 위 "등수 가중치" 점수표로 바꿉니다(예: 1위 {rankPts.find((p) => p.rank === 1)?.points ?? 0}점,
-                                        2위 {rankPts.find((p) => p.rank === 2)?.points ?? 0}점…). 투표 안 한 팀은 0점입니다.
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">2단계 — 동아리 안에서 비율로 환산</p>
-                                    <p>
-                                        한 동아리 청중 전원이 그 팀에 준 점수 합계를, "전원이 1위를 줬을 경우의 최고점(인원수 × 1위 점수)"으로
-                                        나눕니다. 인원수가 몇 명이든 항상 0~100%로 맞춰집니다.
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">3단계 — 내부 청중 비율 = 다른 동아리들 평균</p>
-                                    <p>
-                                        한 팀은 자기 동아리 청중에게는 투표를 못 받으므로(자기 동아리 투표 자체가 막힘), 나머지 내부
-                                        동아리들의 그룹 비율만 남고, 이걸 <b>동아리 개수로 단순 평균</b>냅니다 — 동아리 인원이 몇 명이든
-                                        평균에서는 "동아리 1개 = 1표"로 동일하게 취급됩니다.
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">4단계 — 외부 청중 비율 = 단일 풀</p>
-                                    <p>
-                                        외부 청중은 동아리 구분 없이 전체를 하나로 합쳐서 2단계와 같은 방식으로 비율을 한 번만 냅니다.
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="font-bold text-[var(--color-text-primary)] mb-1">5단계 — 두 가지 상에 다르게 반영</p>
-                                    <p className="font-mono text-[11px] bg-[var(--color-hover)] rounded p-2 mt-1">
-                                        종합 순위(대상/최우수/우수상) = 심사위원 점수 + 내부 청중 비율 × 청중 비중 − 감점<br />
-                                        청중상(별도 순위) = 내부 청중 비율 × 내부 비중 + 외부 청중 비율 × 외부 비중 (감점 미반영, 실격만 제외)
-                                    </p>
-                                    <p className="mt-1">
-                                        같은 "내부 청중 비율"을 재사용하지만, 종합 순위는 심사위원 점수와 합쳐지고 외부 청중은 반영되지
-                                        않는 반면, 청중상은 심사위원 없이 내부+외부 청중만으로 완전히 별도로 계산됩니다 — 그래서 두 순위의
-                                        1위 팀이 서로 다를 수 있습니다.
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
             </div>
 
             <label className="flex items-center gap-2 cursor-pointer">
@@ -630,7 +444,252 @@ function WeightPanel({ round }: { round: ScoringRound }) {
                     </span>
                 </label>
             )}
+        </Panel>
+    );
+}
 
+// ── 다동아리 모드 (연합 이벤트 전용, 평소엔 꺼져 있어 안 보임) ──────────────────
+
+function MultiClubPanel({ round }: { round: ScoringRound }) {
+    const update = useUpdateRound(round.id);
+    const [multiClub, setMultiClub] = useState(round.multi_club_mode);
+    const [extLabels, setExtLabels] = useState<string[]>(round.external_group_labels ?? []);
+    const [blockedByGroup, setBlockedByGroup] = useState<Record<string, number[]>>(
+        round.group_blocked_targets ?? {},
+    );
+    const [internalW, setInternalW] = useState(String(round.internal_audience_weight));
+    const [externalW, setExternalW] = useState(String(round.external_audience_weight));
+    const [showCalcInfo, setShowCalcInfo] = useState(false);
+
+    const groups = round.observer_groups ?? [];
+
+    const draft = {
+        multi_club_mode: multiClub,
+        external_group_labels: extLabels,
+        group_blocked_targets: blockedByGroup,
+        internal_audience_weight: Number(internalW),
+        external_audience_weight: Number(externalW),
+    };
+    const serverDraft = {
+        multi_club_mode: round.multi_club_mode,
+        external_group_labels: round.external_group_labels ?? [],
+        group_blocked_targets: round.group_blocked_targets ?? {},
+        internal_audience_weight: Number(round.internal_audience_weight),
+        external_audience_weight: Number(round.external_audience_weight),
+    };
+
+    const { isDirty, acceptServer } = useAutosave({
+        id: "multiclub",
+        value: draft,
+        canSave: () => true,
+        save: (v) => update.mutateAsync(v),
+        serverValue: serverDraft,
+    });
+
+    useEffect(() => {
+        if (isDirty) return;
+        setMultiClub(round.multi_club_mode);
+        setExtLabels(round.external_group_labels ?? []);
+        setBlockedByGroup(round.group_blocked_targets ?? {});
+        setInternalW(String(round.internal_audience_weight));
+        setExternalW(String(round.external_audience_weight));
+        acceptServer(serverDraft);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [round]);
+
+    const toggleExternal = (g: string) => {
+        setExtLabels(extLabels.includes(g) ? extLabels.filter((x) => x !== g) : [...extLabels, g]);
+    };
+
+    const toggleBlockedTarget = (g: string, targetId: number) => {
+        const cur = blockedByGroup[g] ?? [];
+        const next = cur.includes(targetId) ? cur.filter((x) => x !== targetId) : [...cur, targetId];
+        setBlockedByGroup({ ...blockedByGroup, [g]: next });
+    };
+
+    return (
+        <Panel
+            title="다동아리 모드"
+            subtitle='여러 동아리가 함께 참가하는 연합 이벤트 전용입니다. 안 쓰면 아래 스위치만 꺼두면 됩니다.'
+        >
+            <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox checked={multiClub} onCheckedChange={(v) => setMultiClub(!!v)} />
+                <span className="text-sm text-[var(--color-text-primary)]">다동아리 모드 사용</span>
+                <span className="text-xs text-[var(--color-text-muted)]">
+                    (소그룹별로 "외부 여부"·"투표 불가 팀"을 지정합니다)
+                </span>
+            </label>
+
+            {multiClub && (
+                <div className="space-y-3 pt-1">
+                    {groups.length === 0 ? (
+                        <p className="text-xs text-amber-700">
+                            먼저 위 "집계 방식"에서 동아리 이름을 청중 소그룹으로 추가하세요.
+                        </p>
+                    ) : (
+                        groups.map((g) => {
+                            const isExt = extLabels.includes(g);
+                            const blocked = blockedByGroup[g] ?? [];
+                            return (
+                                <div key={g} className="p-3 rounded-lg bg-[var(--color-hover)] border border-[var(--color-border-subtle)] space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-bold">{g}</span>
+                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                            <Checkbox checked={isExt} onCheckedChange={() => toggleExternal(g)} />
+                                            <span className="text-xs text-[var(--color-text-secondary)]">외부 청중</span>
+                                        </label>
+                                    </div>
+                                    {!isExt && (
+                                        <div className="space-y-1">
+                                            <p className="text-xs text-[var(--color-text-muted)]">
+                                                이 소그룹이 투표할 수 없는 팀 (= 이 동아리 소속 팀)
+                                            </p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {round.targets.map((t) => {
+                                                    const checked = blocked.includes(t.id);
+                                                    return (
+                                                        <button
+                                                            key={t.id}
+                                                            type="button"
+                                                            onClick={() => toggleBlockedTarget(g, t.id)}
+                                                            className={cn(
+                                                                "px-2 py-1 rounded-full text-xs border",
+                                                                checked
+                                                                    ? "bg-rose-50 border-rose-300 text-rose-700"
+                                                                    : "bg-white border-[var(--color-border-subtle)] text-[var(--color-text-secondary)]",
+                                                            )}
+                                                        >
+                                                            {t.display_name || t.name}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                        <div className="space-y-1">
+                            <Label className="text-xs text-[var(--color-text-secondary)]">청중상 — 내부 비중</Label>
+                            <Input
+                                type="number" min={0} max={100} value={internalW}
+                                onChange={(e) => setInternalW(e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-xs text-[var(--color-text-secondary)]">청중상 — 외부 비중</Label>
+                            <Input
+                                type="number" min={0} max={100} value={externalW}
+                                onChange={(e) => setExternalW(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                        대상/최우수/우수상 = 심사위원 {round.judge_weight}% + 내부 청중 {round.observer_weight}%(동아리별 정규화).
+                        청중상은 심사위원 없이 내부 청중 {internalW}% + 외부 청중 {externalW}%로 별도 집계합니다.
+                    </p>
+
+                    <button
+                        type="button"
+                        onClick={() => setShowCalcInfo((v) => !v)}
+                        className="flex items-center gap-1 text-xs font-medium text-[var(--color-accent)]"
+                    >
+                        <ChevronRight className={cn("w-3.5 h-3.5 transition-transform", showCalcInfo && "rotate-90")} />
+                        계산 방식 자세히 보기
+                    </button>
+
+                    {showCalcInfo && (
+                        <div className="p-4 rounded-lg bg-white border border-[var(--color-border-subtle)] space-y-3 text-xs text-[var(--color-text-secondary)] leading-relaxed">
+                            <p>
+                                동아리마다 내부 청중 인원수가 달라도(예: 5명/4명/6명) 공평하게 반영되도록,
+                                "몇 명이 투표했는지"가 아니라 <b>"그 동아리 안에서 얼마나 높게 평가받았는지"</b>를 봅니다.
+                            </p>
+                            <div>
+                                <p className="font-bold text-[var(--color-text-primary)] mb-1">1단계 — 순위 투표를 점수로 환산</p>
+                                <p>
+                                    청중이 고른 등수를 "집계 방식"의 등수 가중치 점수표로 바꿉니다
+                                    (예: 1위 {round.rank_points.find((p) => p.rank === 1)?.points ?? 0}점,
+                                    2위 {round.rank_points.find((p) => p.rank === 2)?.points ?? 0}점…). 투표 안 한 팀은 0점입니다.
+                                </p>
+                            </div>
+                            <div>
+                                <p className="font-bold text-[var(--color-text-primary)] mb-1">2단계 — 동아리 안에서 비율로 환산</p>
+                                <p>
+                                    한 동아리 청중 전원이 그 팀에 준 점수 합계를, "전원이 1위를 줬을 경우의 최고점(인원수 × 1위 점수)"으로
+                                    나눕니다. 인원수가 몇 명이든 항상 0~100%로 맞춰집니다.
+                                </p>
+                            </div>
+                            <div>
+                                <p className="font-bold text-[var(--color-text-primary)] mb-1">3단계 — 내부 청중 비율 = 다른 동아리들 평균</p>
+                                <p>
+                                    한 팀은 자기 동아리 청중에게는 투표를 못 받으므로(자기 동아리 투표 자체가 막힘), 나머지 내부
+                                    동아리들의 그룹 비율만 남고, 이걸 <b>동아리 개수로 단순 평균</b>냅니다 — 동아리 인원이 몇 명이든
+                                    평균에서는 "동아리 1개 = 1표"로 동일하게 취급됩니다.
+                                </p>
+                            </div>
+                            <div>
+                                <p className="font-bold text-[var(--color-text-primary)] mb-1">4단계 — 외부 청중 비율 = 단일 풀</p>
+                                <p>
+                                    외부 청중은 동아리 구분 없이 전체를 하나로 합쳐서 2단계와 같은 방식으로 비율을 한 번만 냅니다.
+                                </p>
+                            </div>
+                            <div>
+                                <p className="font-bold text-[var(--color-text-primary)] mb-1">5단계 — 두 가지 상에 다르게 반영</p>
+                                <p className="font-mono text-[11px] bg-[var(--color-hover)] rounded p-2 mt-1">
+                                    종합 순위(대상/최우수/우수상) = 심사위원 점수 + 내부 청중 비율 × 청중 비중 − 감점<br />
+                                    청중상(별도 순위) = 내부 청중 비율 × 내부 비중 + 외부 청중 비율 × 외부 비중 (감점 미반영, 실격만 제외)
+                                </p>
+                                <p className="mt-1">
+                                    같은 "내부 청중 비율"을 재사용하지만, 종합 순위는 심사위원 점수와 합쳐지고 외부 청중은 반영되지
+                                    않는 반면, 청중상은 심사위원 없이 내부+외부 청중만으로 완전히 별도로 계산됩니다 — 그래서 두 순위의
+                                    1위 팀이 서로 다를 수 있습니다.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </Panel>
+    );
+}
+
+// ── 안내문 (공개 폼에 보이는 문구, 평소엔 안 건드림) ─────────────────────────────
+
+function NoticesPanel({ round }: { round: ScoringRound }) {
+    const update = useUpdateRound(round.id);
+    const [intro, setIntro] = useState(round.intro ?? "");
+    const [rankNotice, setRankNotice] = useState(round.rank_form_notice ?? "");
+    const [feedbackNotice, setFeedbackNotice] = useState(round.feedback_form_notice ?? "");
+
+    const draft = { intro, rank_form_notice: rankNotice, feedback_form_notice: feedbackNotice };
+    const serverDraft = {
+        intro: round.intro ?? "",
+        rank_form_notice: round.rank_form_notice ?? "",
+        feedback_form_notice: round.feedback_form_notice ?? "",
+    };
+
+    const { isDirty, acceptServer } = useAutosave({
+        id: "notices",
+        value: draft,
+        canSave: () => true,
+        save: (v) => update.mutateAsync(v),
+        serverValue: serverDraft,
+    });
+
+    useEffect(() => {
+        if (isDirty) return;
+        setIntro(round.intro ?? "");
+        setRankNotice(round.rank_form_notice ?? "");
+        setFeedbackNotice(round.feedback_form_notice ?? "");
+        acceptServer(serverDraft);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [round]);
+
+    return (
+        <Panel title="안내문" subtitle="공개 채점 폼에 그대로 보이는 문구입니다. 안 바꾸면 기본 문구가 쓰입니다.">
             <div className="space-y-2">
                 <Label>참가자 안내문</Label>
                 <textarea

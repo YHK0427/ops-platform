@@ -23,11 +23,14 @@ const JUDGE_COLOR = "#F43F5E";   // rose-500 (accent)
 const OBSERVER_COLOR = "#38BDF8"; // sky-400
 const RANK_COLORS = ["#F59E0B", "#94A3B8", "#B45309"]; // 금·은·동
 
+type ResultTab = "summary" | "charts" | "submitters" | "comments";
+
 export function ScoringResults({ round, connected }: { round: ScoringRound; connected: boolean }) {
     const [roleFilter, setRoleFilter] = useState<"ALL" | "JUDGE" | "OBSERVER">("ALL");
     const [groupFilter, setGroupFilter] = useState<string[]>([]);
     const { data, isLoading } = useScoringResults(round.id, { role: roleFilter, groups: groupFilter });
     const [downloading, setDownloading] = useState(false);
+    const [tab, setTab] = useState<ResultTab>("summary");
 
     if (isLoading || !data) {
         return (
@@ -103,16 +106,48 @@ export function ScoringResults({ round, connected }: { round: ScoringRound; conn
                 </div>
             ) : (
                 <>
-                    <RankTable data={data} round={round} />
-                    {round.multi_club_mode && <AudienceAwardTable data={data} />}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                        <TotalChart data={data} />
-                        <CriteriaRadar data={data} round={round} />
+                    <div className="flex flex-wrap gap-1.5 border-b border-[var(--color-border-subtle)] pb-px">
+                        {(
+                            [
+                                { key: "summary", label: "순위" },
+                                { key: "charts", label: "차트" },
+                                { key: "submitters", label: "제출자별" },
+                                { key: "comments", label: "서술형 피드백" },
+                            ] as { key: ResultTab; label: string }[]
+                        ).map((t) => (
+                            <button
+                                key={t.key}
+                                onClick={() => setTab(t.key)}
+                                className={cn(
+                                    "px-3 py-1.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors",
+                                    tab === t.key
+                                        ? "border-[var(--color-accent)] text-[var(--color-accent)]"
+                                        : "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
+                                )}
+                            >
+                                {t.label}
+                            </button>
+                        ))}
                     </div>
-                    {round.observer_mode === "RANK" && <RankVotesChart data={data} />}
-                    <JudgeMatrix data={data} />
-                    <SubmitterList data={data} round={round} />
-                    <CommentsPanel data={data} round={round} />
+
+                    {tab === "summary" && (
+                        <>
+                            <RankTable data={data} round={round} />
+                            {round.multi_club_mode && <AudienceAwardTable data={data} />}
+                        </>
+                    )}
+                    {tab === "charts" && (
+                        <>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                                <TotalChart data={data} />
+                                <CriteriaRadar data={data} round={round} />
+                            </div>
+                            {round.observer_mode === "RANK" && <RankVotesChart data={data} />}
+                            <JudgeMatrix data={data} />
+                        </>
+                    )}
+                    {tab === "submitters" && <SubmitterList data={data} round={round} />}
+                    {tab === "comments" && <CommentsPanel data={data} round={round} />}
                 </>
             )}
         </div>

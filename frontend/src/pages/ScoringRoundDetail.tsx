@@ -30,7 +30,7 @@ export default function ScoringRoundDetail() {
     const { data: round, isLoading } = useScoringRound(id);
     const toggle = useToggleRound(id);
     const { connected } = useScoringSocket(id || null);
-    const [tab, setTab] = useState<Tab>("results");
+    const [tab, setTab] = useState<Tab | null>(null);
 
     if (isLoading || !round) {
         return (
@@ -39,6 +39,9 @@ export default function ScoringRoundDetail() {
             </div>
         );
     }
+
+    const setupIncomplete = round.areas.length === 0 || round.targets.length === 0;
+    const activeTab: Tab = tab ?? (setupIncomplete ? "settings" : "results");
 
     const toggleOpen = () => {
         toggle.mutate(!round.is_open, {
@@ -85,26 +88,43 @@ export default function ScoringRoundDetail() {
 
             <div className="px-4 sm:px-6 pt-3 border-b border-[var(--color-border-subtle)] overflow-x-auto">
                 <div className="flex gap-1 w-max min-w-full">
-                    {TABS.map((t) => (
-                        <button
-                            key={t.key}
-                            onClick={() => setTab(t.key)}
-                            className={cn(
-                                "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap shrink-0",
-                                tab === t.key
-                                    ? "border-[var(--color-accent)] text-[var(--color-accent)]"
-                                    : "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
-                            )}
-                        >
-                            <t.icon className="w-4 h-4" />
-                            {t.label}
-                        </button>
-                    ))}
+                    {TABS.map((t) => {
+                        const needsAttention = t.key === "settings" && setupIncomplete;
+                        return (
+                            <button
+                                key={t.key}
+                                onClick={() => setTab(t.key)}
+                                className={cn(
+                                    "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap shrink-0",
+                                    activeTab === t.key
+                                        ? "border-[var(--color-accent)] text-[var(--color-accent)]"
+                                        : "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
+                                )}
+                            >
+                                <t.icon className="w-4 h-4" />
+                                {t.label}
+                                {needsAttention && (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" title="기준·대상 설정이 안 끝났어요" />
+                                )}
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
+            {setupIncomplete && activeTab !== "settings" && (
+                <div className="px-4 sm:px-6 pt-3">
+                    <button
+                        onClick={() => setTab("settings")}
+                        className="w-full text-left px-4 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-sm text-rose-600 hover:bg-rose-500/15 transition-colors"
+                    >
+                        ⚠️ {round.areas.length === 0 ? "심사 기준" : "심사 대상 팀"}이 아직 없어요 — 설정 탭에서 먼저 채워주세요 →
+                    </button>
+                </div>
+            )}
+
             <div className="flex-1 overflow-auto px-6 py-4">
-                {tab === "settings" && (
+                {activeTab === "settings" && (
                     <ScreenGuide
                         storageKey="scoring-settings" title="설정 가이드" defaultOpen={false}
                         images={[
@@ -121,7 +141,7 @@ export default function ScoringRoundDetail() {
                         ]}
                     />
                 )}
-                {tab === "deductions" && (
+                {activeTab === "deductions" && (
                     <ScreenGuide
                         storageKey="scoring-deductions" title="감점 입력 가이드" defaultOpen={false}
                         images={[
@@ -133,10 +153,10 @@ export default function ScoringRoundDetail() {
                         ]}
                     />
                 )}
-                {tab === "settings" && <ScoringSettings round={round} />}
-                {tab === "submissions" && <ScoringSubmissions round={round} />}
-                {tab === "deductions" && <ScoringDeductions round={round} />}
-                {tab === "results" && <ScoringResults round={round} connected={connected} />}
+                {activeTab === "settings" && <ScoringSettings round={round} />}
+                {activeTab === "submissions" && <ScoringSubmissions round={round} />}
+                {activeTab === "deductions" && <ScoringDeductions round={round} />}
+                {activeTab === "results" && <ScoringResults round={round} connected={connected} />}
             </div>
         </div>
     );

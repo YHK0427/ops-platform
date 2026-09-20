@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Ban, LayoutList, MessageSquareText, Square, Trophy } from "lucide-react";
+import { Ban, ChevronDown, ChevronLeft, ChevronRight, LayoutList, MessageSquareText, Square, Trophy } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { CommentEntry, ObserverMode, RankEntry, ScoreEntry, ScoringRole } from "@/hooks/useScoring";
 
@@ -124,6 +125,11 @@ export function ScoreSheet({
     const modeOf = (t: number, a: SheetArea): "detail" | "lump" =>
         a.criteria.length === 0 ? "lump" : (areaMode[`${t}:${a.id}`] ?? "detail");
 
+    // 심사위원/기준채점 청중 — 팀이 여러 개면 한 팀씩만 펼쳐서 채점 (전부 펼치면 무한 스크롤이 됨)
+    const [openTargetId, setOpenTargetId] = useState<number | null>(
+        targets.find((t) => !blockedTargetIds.includes(t.id))?.id ?? targets[0]?.id ?? null,
+    );
+
     const setKey = (key: string, raw: string, max: number) => {
         const next = { ...value.scores };
         if (raw === "") delete next[key];
@@ -237,10 +243,90 @@ export function ScoreSheet({
         );
     }
 
+    // 이 팀의 모든 항목에 값이 채워졌는지 (진행 표시용 — 제출 가능 여부와는 무관)
+    const isTargetComplete = (t: number) => {
+        for (const a of areas) {
+            if (modeOf(t, a) === "lump") {
+                if (value.scores[ask(t, a.id)] == null) return false;
+            } else if (!a.criteria.every((c) => value.scores[csk(t, c.id)] != null)) {
+                return false;
+            }
+        }
+        return criteria.every((c) => value.scores[csk(t, c.id)] != null);
+    };
+
+    const useAccordion = targets.length > 1;
+    const openIdx = Math.max(0, targets.findIndex((t) => t.id === openTargetId));
+    const doneCount = targets.filter((t) => !blocked.has(t.id) && isTargetComplete(t.id)).length;
+    const scorable = targets.filter((t) => !blocked.has(t.id)).length;
+
     return (
-        <div className="space-y-5">
+        <div className="space-y-3">
+            {useAccordion && (
+                <div className="flex items-center justify-between gap-3 bg-[var(--color-hover)] rounded-lg px-3 py-2 text-sm">
+                    <span className="font-medium text-[var(--color-text-primary)]">
+                        {doneCount} / {scorable}팀 채점 완료
+                    </span>
+                    <div className="flex items-center gap-1">
+                        <Button
+                            type="button" variant="ghost" size="sm" className="h-7 px-2"
+                            disabled={openIdx <= 0}
+                            onClick={() => setOpenTargetId(targets[openIdx - 1]?.id ?? null)}
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                        </Button>
+                        <span className="text-xs text-[var(--color-text-muted)] tabular-nums px-1">
+                            {openIdx + 1} / {targets.length}
+                        </span>
+                        <Button
+                            type="button" variant="ghost" size="sm" className="h-7 px-2"
+                            disabled={openIdx >= targets.length - 1}
+                            onClick={() => setOpenTargetId(targets[openIdx + 1]?.id ?? null)}
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </Button>
+                    </div>
+                </div>
+            )}
             {targets.map((t) => {
                 const isBlocked = blocked.has(t.id);
+                const isOpen = !useAccordion || t.id === openTargetId;
+
+                if (!isOpen) {
+                    const complete = isTargetComplete(t.id);
+                    return (
+                        <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setOpenTargetId(t.id)}
+                            className={cn(
+                                "w-full flex items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 text-left transition-colors hover:border-[var(--color-accent)]/40",
+                                isBlocked ? "border-zinc-200 opacity-60" : "border-[var(--color-border-subtle)]",
+                            )}
+                        >
+                            <span className="flex items-center gap-2 min-w-0">
+                                <span className="font-medium text-[var(--color-text-primary)] truncate">{t.name}</span>
+                                {isBlocked ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 shrink-0">
+                                        <Ban className="w-3 h-3" /> 채점 제외
+                                    </span>
+                                ) : (
+                                    <span className={cn(
+                                        "shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded-full",
+                                        complete ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-700",
+                                    )}>
+                                        {complete ? "완료" : "미완료"}
+                                    </span>
+                                )}
+                            </span>
+                            <span className="flex items-center gap-2 shrink-0 text-sm text-[var(--color-text-muted)]">
+                                {!isBlocked && <span className="tabular-nums">{targetSum(t.id)} / {maxSum}</span>}
+                                <ChevronDown className="w-4 h-4 -rotate-90" />
+                            </span>
+                        </button>
+                    );
+                }
+
                 return (
                     <div
                         key={t.id}
@@ -357,6 +443,25 @@ export function ScoreSheet({
                                 />
                             </div>
                         </fieldset>
+
+                        {useAccordion && (
+                            <div className="flex items-center justify-between gap-3 pt-4 mt-4 border-t border-[var(--color-border-subtle)]">
+                                <Button
+                                    type="button" variant="outline" size="sm"
+                                    disabled={openIdx <= 0}
+                                    onClick={() => setOpenTargetId(targets[openIdx - 1]?.id ?? null)}
+                                >
+                                    <ChevronLeft className="w-4 h-4 mr-1" /> 이전 팀
+                                </Button>
+                                <Button
+                                    type="button" size="sm"
+                                    disabled={openIdx >= targets.length - 1}
+                                    onClick={() => setOpenTargetId(targets[openIdx + 1]?.id ?? null)}
+                                >
+                                    다음 팀 <ChevronRight className="w-4 h-4 ml-1" />
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 );
             })}
