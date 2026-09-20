@@ -190,7 +190,7 @@ export function PostTab() {
                                                                     onValueChange={(val) => handleStatusChange(assignment.id, val)}
                                                                 >
                                                                     <SelectTrigger
-                                                                        className="h-7 w-[100px] text-xs border-[var(--color-border)] bg-transparent font-medium"
+                                                                        className="h-7 w-[116px] text-xs border-[var(--color-border)] bg-transparent font-medium"
                                                                         style={{ color: STATUS_COLOR[status] ?? "#94A3B8" }}
                                                                     >
                                                                         <SelectValue />
