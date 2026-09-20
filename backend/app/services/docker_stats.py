@@ -132,3 +132,57 @@ def uptime_seconds(started_at: str | None) -> float | None:
         return (datetime.now(timezone.utc) - datetime.fromisoformat(s)).total_seconds()
     except Exception:
         return None
+
+
+def _demux(raw: bytes) -> list[tuple[str, str]]:
+    """Docker 로그 스트림에서 8바이트 헤더를 벗겨 (스트림, 줄) 목록으로.
+
+    TTY 가 아닌 컨테이너의 로그는 [스트림(1바이트)][패딩3][길이(4, 빅엔디안)] 뒤에
+    본문이 붙는 형식으로 온다. 그대로 보여주면 줄마다 이상한 문자가 섞인다.
+    """
+    out: list[tuple[str, str]] = []
+    i, n = 0, len(raw)
+    while i + 8 <= n:
+        stream = raw[i]
+        size = int.from_bytes(raw[i + 4:i + 8], "big")
+        body = raw[i + 8:i + 8 + size]
+        i += 8 + size
+        for line in body.decode("utf-8", "replace").splitlines():
+            if line.strip():
+                out.append(("stderr" if stream == 2 else "stdout", line))
+    if not out and raw:
+        # TTY 컨테이너는 헤더가 없다
+        for line in raw.decode("utf-8", "replace").splitlines():
+            if line.strip():
+                out.append(("stdout", line))
+    return out
+
+
+async def container_logs(name: str, tail: int = 200, since_seconds: int | None = None) -> list[dict]:
+    """컨테이너 로그 최근 N줄. 이름으로 찾는다(id 를 화면에 들고 다니지 않으려고)."""
+    if not available():
+        return []
+    try:
+        async with _client() as c:
+            rs = (await c.get("/containers/json", params={"all": "true"})).json()
+            match = next(
+                (x for x in rs if (x.get("Names") or [""])[0].lstrip("/") == name),
+                None,
+            )
+            if match is None:
+                return []
+            params = {"stdout": 1, "stderr": 1, "tail": max(1, min(tail, 2000)), "timestamps": 1}
+            if since_seconds:
+                import time as _t
+                params["since"] = int(_t.time()) - since_seconds
+            r = await c.get(f"/containers/{match['Id']}/logs", params=params, timeout=15.0)
+            r.raise_for_status()
+
+            rows = []
+            for stream, line in _demux(r.content):
+                ts, _, msg = line.partition(" ")
+                rows.append({"ts": ts, "stream": stream, "message": msg or line})
+            return rows
+    except Exception:
+        logger.debug("로그 조회 실패", exc_info=True)
+        return []

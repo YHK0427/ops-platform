@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { History, ChevronLeft, ChevronRight, Cpu, HardDrive, MemoryStick, Database, Activity, CheckCircle2, AlertTriangle, XCircle, ListTodo, Archive, Users, Globe, Boxes, Gauge, RotateCw } from "lucide-react";
+import { History, ChevronLeft, ChevronRight, Cpu, HardDrive, MemoryStick, Database, Activity, CheckCircle2, AlertTriangle, XCircle, ListTodo, Archive, Users, Globe, Boxes, Gauge, RotateCw, ScrollText, Play, Pause } from "lucide-react";
 import {
     ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar,
     AreaChart, Area,
 } from "recharts";
-import { useAuditLogs, useAuditLogTables, useAuditDailyCounts, useInfraStatus, useMembers, useAccessLogs, useActiveUsers, useAccessDaily, useInfraHistory, useContainers, useApiHealth } from "@/hooks";
+import { useAuditLogs, useAuditLogTables, useAuditDailyCounts, useInfraStatus, useMembers, useAccessLogs, useActiveUsers, useAccessDaily, useInfraHistory, useContainers, useApiHealth, useContainerLogs } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -562,6 +562,70 @@ function ApiHealthPanel() {
     );
 }
 
+/** 컨테이너 로그. 별도 로그 뷰어를 띄워 iframe 으로 끼우는 대신 여기서 바로 본다 —
+ *  로그인이 두 번 필요하지 않고, 화면 언어도 그대로다. */
+function LogViewer() {
+    const { data: containers } = useContainers(true);
+    const ours = (containers ?? []).filter((c) => c.is_ours);
+    const [picked, setPicked] = useState<string | null>(null);
+    const [errorsOnly, setErrorsOnly] = useState(false);
+    const [q, setQ] = useState("");
+    const [live, setLive] = useState(true);
+
+    const name = picked ?? ours.find((c) => c.service === "backend")?.name ?? ours[0]?.name ?? null;
+    const { data: lines, isFetching } = useContainerLogs(name, { tail: 300, errors_only: errorsOnly, q }, live);
+
+    return (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+            <div className="px-4 py-3 flex flex-wrap items-center gap-2">
+                <ScrollText className="w-4 h-4 text-[var(--color-accent)]" />
+                <h3 className="text-sm font-bold">로그</h3>
+                <div className="inline-flex rounded-lg border border-[var(--color-border)] bg-gray-50 p-0.5 ml-1">
+                    {ours.map((c) => (
+                        <button key={c.name} onClick={() => setPicked(c.name)}
+                            className={cn("px-2.5 py-1 rounded-md text-xs font-semibold transition",
+                                name === c.name ? "bg-white shadow-sm" : "text-[var(--color-text-muted)]")}>
+                            {c.service}
+                        </button>
+                    ))}
+                </div>
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer ml-1">
+                    <input type="checkbox" checked={errorsOnly} onChange={(e) => setErrorsOnly(e.target.checked)} />
+                    오류만
+                </label>
+                <Input className="w-[180px] h-8 text-xs" placeholder="내용으로 찾기"
+                    value={q} onChange={(e) => setQ(e.target.value)} />
+                <Button variant="outline" size="sm" className="ml-auto h-8" onClick={() => setLive((v) => !v)}>
+                    {live ? <><Pause className="w-3.5 h-3.5 mr-1" />멈춤</> : <><Play className="w-3.5 h-3.5 mr-1" />따라가기</>}
+                </Button>
+            </div>
+            <div className="bg-[#0f172a] text-[#e2e8f0] font-mono text-[11px] leading-relaxed max-h-[420px] overflow-auto px-3 py-2">
+                {!lines || lines.length === 0 ? (
+                    <div className="text-gray-500 py-6 text-center">
+                        {isFetching ? "불러오는 중..." : "보여줄 로그가 없습니다"}
+                    </div>
+                ) : lines.map((l, i) => (
+                    <div key={i} className="flex gap-2 hover:bg-white/5 px-1 -mx-1 rounded">
+                        <span className="text-gray-500 shrink-0">
+                            {l.ts.length > 19 ? l.ts.slice(11, 19) : l.ts}
+                        </span>
+                        <span className={cn("whitespace-pre-wrap break-all",
+                            /ERROR|CRITICAL|Traceback|Exception/.test(l.message) ? "text-rose-400"
+                                : /WARNING|WARN/.test(l.message) ? "text-amber-300" : "")}>
+                            {l.message}
+                        </span>
+                    </div>
+                ))}
+            </div>
+            <div className="px-4 py-2 text-[11px] text-[var(--color-text-muted)]">
+                최근 300줄 · {live ? "3초마다 갱신" : "멈춤"}
+                {" · 터미널에서 보려면 "}
+                <code className="font-mono">docker compose logs -f {ours.find((c) => c.name === name)?.service}</code>
+            </div>
+        </div>
+    );
+}
+
 function InfraStatusTab({ active }: { active: boolean }) {
     const { data, isLoading, dataUpdatedAt } = useInfraStatus(active);
 
@@ -726,6 +790,7 @@ function InfraStatusTab({ active }: { active: boolean }) {
 
             <InfraCharts />
             <ContainerTable />
+            <LogViewer />
             <ApiHealthPanel />
         </div>
     );

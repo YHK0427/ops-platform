@@ -518,3 +518,35 @@ async def get_api_health(
         p50_ms=row[2], p95_ms=row[3], p99_ms=row[4],
         slowest=rows(slow), most_errors=rows(bad),
     )
+
+
+# ── 컨테이너 로그 ────────────────────────────────────────────────────────────
+# 별도 로그 뷰어(Dozzle 등)를 띄우고 iframe 으로 끼우는 대신 여기서 바로 보여준다.
+# 이미 읽기 전용 도커 프록시가 있고, 그러면 로그인이 두 번 필요하지 않고
+# 화면 언어도 그대로다. 컨테이너를 하나 덜 띄우는 건 덤.
+
+class LogLine(BaseModel):
+    ts: str
+    stream: str          # stdout / stderr
+    message: str
+
+
+@router.get("/logs", response_model=list[LogLine])
+async def get_logs(
+    container: str,
+    tail: int = 200,
+    errors_only: bool = False,
+    q: str | None = None,
+    _admin: dict = Depends(require_admin),
+):
+    from app.services import docker_stats
+
+    rows = await docker_stats.container_logs(container, tail=tail)
+    if errors_only:
+        # stderr 이거나 본문에 오류 흔적이 있는 줄만. 파이썬 로그는 ERROR 를 stdout 으로도 쓴다.
+        bad = ("ERROR", "CRITICAL", "Traceback", "Exception", "WARNING")
+        rows = [r for r in rows if r["stream"] == "stderr" or any(b in r["message"] for b in bad)]
+    if q:
+        needle = q.lower()
+        rows = [r for r in rows if needle in r["message"].lower()]
+    return [LogLine(**r) for r in rows]

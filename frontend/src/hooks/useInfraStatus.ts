@@ -183,3 +183,22 @@ export function useApiHealth(enabled: boolean, hours: number) {
         refetchInterval: 60_000,
     });
 }
+
+export interface LogLine { ts: string; stream: string; message: string }
+
+export function useContainerLogs(
+    container: string | null,
+    opts: { tail: number; errors_only: boolean; q: string },
+    live: boolean,
+) {
+    return useQuery({
+        queryKey: ["infra-logs", container, opts],
+        queryFn: async () => (await api.get<LogLine[]>("/infra/logs", {
+            params: { container, ...opts, q: opts.q || undefined },
+        })).data,
+        enabled: !!container,
+        // 실시간 스트리밍 대신 3초마다 다시 읽는다. 사용자가 30명이라 이걸로 충분하고,
+        // SSE/WebSocket 을 하나 더 늘리지 않아도 된다.
+        refetchInterval: live ? 3000 : false,
+    });
+}
