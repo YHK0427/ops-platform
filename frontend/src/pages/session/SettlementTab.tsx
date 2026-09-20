@@ -356,10 +356,10 @@ export default function SettlementTab() {
                                                 className={isMilestone ? "opacity-50 cursor-not-allowed" : ""}
                                             />
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell className="whitespace-nowrap">
                                             <div className="flex items-center gap-2">
                                                 {isMilestone && <span className="text-yellow-500">⚠</span>}
-                                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${isMilestone
+                                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border whitespace-nowrap ${isMilestone
                                                     ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
                                                     : "bg-red-500/10 text-red-500 border-red-500/20"
                                                     }`}>
