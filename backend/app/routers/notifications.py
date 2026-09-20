@@ -186,12 +186,20 @@ async def _attach_read_counts(db: AsyncSession, anns: list, cohort_id: int) -> N
     ids = [a.id for a in anns]
     if not ids:
         return
+    # 분자는 '대상에 속한 사람'만 세야 분모와 기준이 같아진다. 운영진이 관리하려고
+    # 기수원 공지를 열어본 것까지 세면 분모(기수원 수)에 없는 사람이 분자에 들어가
+    # 100%를 넘길 수도 있다. 그래서 기수원 열람/운영진 열람을 따로 집계한다.
     rows = (await db.execute(
-        select(AnnouncementRead.announcement_id, func.count(AnnouncementRead.id))
+        select(
+            AnnouncementRead.announcement_id,
+            func.count(AnnouncementRead.member_id),
+            func.count(AnnouncementRead.user_id),
+        )
         .where(AnnouncementRead.announcement_id.in_(ids))
         .group_by(AnnouncementRead.announcement_id)
     )).all()
-    read = {ann_id: n for ann_id, n in rows}
+    read_by_member = {ann_id: m for ann_id, m, _ in rows}
+    read_by_staff = {ann_id: s for ann_id, _, s in rows}
 
     active_members = (await db.execute(
         select(func.count(Member.id)).where(Member.cohort_id == cohort_id, Member.is_active.is_(True))
@@ -202,14 +210,15 @@ async def _attach_read_counts(db: AsyncSession, anns: list, cohort_id: int) -> N
 
     for a in anns:
         if a.target == "members":
-            total = active_members
+            total, cnt = active_members, read_by_member.get(a.id, 0)
         elif a.target == "staff":
-            total = staff
+            total, cnt = staff, read_by_staff.get(a.id, 0)
         elif a.target == "select":
-            total = len(a.target_member_ids or [])
-        else:  # all
+            total, cnt = len(a.target_member_ids or []), read_by_member.get(a.id, 0)
+        else:  # all — 기수원+운영진 둘 다 대상
             total = active_members + staff
-        a.read_count = read.get(a.id, 0)
+            cnt = read_by_member.get(a.id, 0) + read_by_staff.get(a.id, 0)
+        a.read_count = cnt
         a.read_total = total
 
 
@@ -670,9 +679,12 @@ async def mark_announcement_read_staff(
     ann = await db.get(Announcement, ann_id)
     if not ann or ann.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
-    urow = await resolve_current_user_row(db, user)
-    if urow:
-        await _mark_read(db, ann_id, user_id=urow.id)
+    # 운영진이 대상인 공지(staff/all)일 때만 기록한다. 기수원 공지를 운영진이
+    # 관리하려고 열어본 건 '확인한 사람'이 아니므로 집계에 넣지 않는다.
+    if ann.target in ("staff", "all"):
+        urow = await resolve_current_user_row(db, user)
+        if urow:
+            await _mark_read(db, ann_id, user_id=urow.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
