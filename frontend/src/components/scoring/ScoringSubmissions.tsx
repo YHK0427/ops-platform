@@ -934,7 +934,7 @@ function ProxyScoreGrid({
                                     <div className="text-[10px] text-[var(--color-text-muted)]">{c.max}점</div>
                                 </th>
                             ))}
-                            <th className="sticky top-0 right-0 z-20 bg-[var(--color-hover)] px-3 py-2 text-center font-bold text-[var(--color-accent)] min-w-[80px] shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                            <th className="sticky top-0 z-10 bg-[var(--color-hover)] px-3 py-2 text-center font-bold text-[var(--color-accent)] min-w-[80px]">
                                 합계
                             </th>
                         </tr>
@@ -970,7 +970,7 @@ function ProxyScoreGrid({
                                             </td>
                                         );
                                     })}
-                                    <td className={cn("sticky right-0 z-10 px-3 py-2 text-center font-bold text-[var(--color-accent)] group-hover:bg-sky-50/70 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.06)]", rowBg)}>
+                                    <td className={cn("px-3 py-2 text-center font-bold text-[var(--color-accent)] group-hover:bg-sky-50/70", rowBg)}>
                                         {isBlocked ? "—" : `${rowSum}/${maxSum}`}
                                     </td>
                                 </tr>
@@ -1160,7 +1160,7 @@ function ProxySubmitDialog({
                         <Loader2 className="w-6 h-6 animate-spin text-[var(--color-text-muted)]" />
                     </div>
                 ) : (
-                    <div className="space-y-4">
+                    <div className="space-y-4 min-w-0">
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-2">
                                 <Label>이름</Label>
