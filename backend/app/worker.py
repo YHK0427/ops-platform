@@ -472,8 +472,128 @@ async def task_cleanup_access_logs(ctx):
     return {"deleted": res.rowcount}
 
 
+# 같은 문제로 계속 알림이 오면 사람이 알림을 끈다. 한 번 알린 문제는
+# 이 시간 동안 다시 안 알린다. 해소되면 '복구됨'을 한 번 보내고 잊는다.
+_ALERT_COOLDOWN_MIN = 60
+_alert_state: dict[str, float] = {}
+
+
+async def _notify_infra(text_msg: str) -> None:
+    """운영진 텔레그램 alert 채널로. 설정이 없으면 조용히 넘어간다."""
+    if not (settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_ALERT_CHAT_ID):
+        return
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            await c.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={"chat_id": settings.TELEGRAM_ALERT_CHAT_ID, "text": text_msg},
+            )
+    except Exception:
+        logger.warning("인프라 알림 전송 실패", exc_info=True)
+
+
+async def task_infra_snapshot(ctx):
+    """1분마다 서버 상태를 한 줄 남기고, 임계값을 넘으면 알린다.
+
+    화면은 보고 있어야만 알 수 있다. 사람이 안 보고 있을 때 터지는 게 문제라서
+    넘어가는 순간에 알림을 보낸다. 무엇을 알릴지는 '증상'만 고른다 —
+    CPU 가 튀는 건 알리지 않는다. 사람이 할 수 있는 일이 없기 때문이다.
+    """
+    import time as _t
+    from sqlalchemy import text as _text
+    from app.models import InfraSnapshot
+
+    snap = {}
+    async with AsyncSessionLocal() as db:
+        try:
+            import os, shutil
+            load1, _, _ = os.getloadavg()
+            disk = shutil.disk_usage("/")
+            mem_total = mem_avail = None
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    k, _, rest = line.partition(":")
+                    if k == "MemTotal":
+                        mem_total = int(rest.split()[0])
+                    elif k == "MemAvailable":
+                        mem_avail = int(rest.split()[0])
+            snap["cpu_load_1m"] = round(load1, 2)
+            snap["disk_used_percent"] = round(disk.used / disk.total * 100, 1)
+            if mem_total and mem_avail is not None:
+                snap["memory_used_percent"] = round((1 - mem_avail / mem_total) * 100, 1)
+
+            t0 = _t.monotonic()
+            await db.execute(_text("SELECT 1"))
+            snap["db_latency_ms"] = round((_t.monotonic() - t0) * 1000, 1)
+            snap["db_size_mb"] = round(
+                (await db.execute(_text("SELECT pg_database_size(current_database())"))).scalar() / 1048576, 1)
+            snap["db_connections"] = int((await db.execute(_text(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"))).scalar())
+
+            # 지난 1분 동안 우리 API 가 받은 요청과 실패
+            r = (await db.execute(_text("""
+                SELECT COALESCE(sum(hits),0),
+                       COALESCE(sum(hits) FILTER (WHERE status_code >= 400),0),
+                       percentile_disc(0.95) WITHIN GROUP (ORDER BY duration_ms)
+                FROM access_logs WHERE last_seen_at >= now() - interval '1 minute'
+            """))).first()
+            snap["requests"], snap["errors"] = int(r[0]), int(r[1])
+            snap["p95_ms"] = int(r[2]) if r[2] is not None else None
+        except Exception:
+            logger.warning("스냅샷 수집 일부 실패", exc_info=True)
+
+        try:
+            from app.deps import _get_redis_client
+            redis = _get_redis_client()
+            info = await redis.info(section="memory")
+            snap["redis_used_mb"] = round(info.get("used_memory", 0) / 1048576, 1)
+            snap["queue_depth"] = int(await redis.zcard("arq:queue"))
+            snap["worker_alive"] = (await redis.get("arq:queue:health-check")) is not None
+        except Exception:
+            pass
+
+        db.add(InfraSnapshot(**snap))
+        await db.commit()
+
+    # ── 알림: 사람이 실제로 할 일이 있는 것만 ──
+    now = _t.time()
+    alerts: list[tuple[str, str]] = []
+    if (snap.get("disk_used_percent") or 0) >= 90:
+        alerts.append(("disk", f"⚠️ 디스크가 {snap['disk_used_percent']}% 찼습니다. 오래된 백업·영상·도커 이미지를 지우세요."))
+    if snap.get("worker_alive") is False:
+        alerts.append(("worker", "⚠️ 작업 워커가 멈췄습니다. 과제 검사와 푸시 알림이 처리되지 않습니다.\ndocker compose restart worker"))
+    if (snap.get("queue_depth") or 0) > 200:
+        alerts.append(("queue", f"⚠️ 처리 대기 중인 작업이 {snap['queue_depth']}건입니다. 워커가 따라가지 못하고 있습니다."))
+    if snap.get("requests") and snap["errors"] / snap["requests"] > 0.3 and snap["requests"] >= 20:
+        alerts.append(("errors", f"⚠️ 최근 1분 요청의 {snap['errors']}/{snap['requests']} 가 실패했습니다."))
+
+    firing = {k for k, _ in alerts}
+    for key, msg in alerts:
+        if now - _alert_state.get(key, 0) > _ALERT_COOLDOWN_MIN * 60:
+            _alert_state[key] = now
+            await _notify_infra(msg)
+    # 해소되면 한 번 알리고 상태를 지운다 — 언제 정상으로 돌아왔는지 모르면 불안하다
+    for key in list(_alert_state):
+        if key not in firing:
+            del _alert_state[key]
+            await _notify_infra(f"✅ 해결됨: {key}")
+
+    return snap
+
+
+async def task_cleanup_snapshots(ctx):
+    """스냅샷 보존 정리 — 90일."""
+    from sqlalchemy import text as _text
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(_text(
+            "DELETE FROM infra_snapshots WHERE created_at < now() - interval '90 days'"))
+        await db.commit()
+    return {"deleted": res.rowcount}
+
+
 class WorkerSettings:
-    functions = [task_heartbeat, task_cleanup_access_logs, task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check, task_send_push]
+    functions = [task_heartbeat, task_infra_snapshot, task_cleanup_access_logs, task_cleanup_snapshots, task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check, task_send_push]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     on_startup = startup
     # 기본값 3600초라 시간당 한 번만 기록돼 감시용으로 못 쓴다. 1분으로 당겨
@@ -483,4 +603,7 @@ class WorkerSettings:
         cron(task_naver_health_check, minute={0, 30}),
         cron(task_heartbeat, minute=set(range(0, 60, 5))),
         cron(task_cleanup_access_logs, hour={4}, minute={30}),
+        cron(task_cleanup_snapshots, hour={4}, minute={35}),
+        # 그래프의 해상도가 여기서 정해진다. 1분마다 한 줄.
+        cron(task_infra_snapshot, minute=set(range(60)), run_at_startup=True),
     ]

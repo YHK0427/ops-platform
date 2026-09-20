@@ -57,11 +57,16 @@ services:
     env_file: .env
     expose:
       - "8000"                     # 호스트 포트 바인딩 없음 — frontend-net 안에서만 접근
+    environment:
+      # 컨테이너 상태는 소켓 직결 대신 읽기 전용 프록시를 통해서만 읽는다(아래 dockerproxy 주석 참고)
+      DOCKER_API_URL: http://dockerproxy:2375
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      dockerproxy:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -105,6 +110,45 @@ services:
     networks:
       - frontend-net               # 외부 인터넷 접속용
       - backend-net                # db/redis와 통신
+
+  # Docker 소켓 읽기 전용 프록시.
+  #
+  # 백엔드에 /var/run/docker.sock 을 ':ro' 로 붙이는 건 **보호가 되지 않는다.**
+  # ':ro' 는 소켓 '파일'을 못 지우게 할 뿐, 소켓으로 나가는 POST 는 그대로 통과한다.
+  # 즉 인터넷에 열려 있는 백엔드가 털리면 컨테이너를 새로 띄울 수 있고, 그건 호스트 루트다.
+  #
+  # 그래서 소켓은 이 프록시만 잡고, 프록시는 컨테이너 '조회'만 열어둔다.
+  # POST_는 0 이라 생성·삭제·실행이 전부 403 으로 막힌다.
+  dockerproxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    logging: *default-logging
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1        # 목록·inspect·stats 조회 허용
+      POST: 0              # 쓰기 전부 차단 (기본값이지만 명시한다)
+      IMAGES: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      EXEC: 0
+      SERVICES: 0
+      TASKS: 0
+      SECRETS: 0
+      CONFIGS: 0
+      NODES: 0
+      SWARM: 0
+      SYSTEM: 0
+      INFO: 0
+      AUTH: 0
+      BUILD: 0
+      COMMIT: 0
+      DISTRIBUTION: 0
+      PLUGINS: 0
+      SESSION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # ports: 절대 노출하지 않음 — backend-net 안에서만
+    networks:
+      - backend-net
 
   # ── TIER 3: Data ─────────────────────────────────
   db:

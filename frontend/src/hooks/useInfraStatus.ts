@@ -128,3 +128,58 @@ export function useAccessDaily(enabled: boolean, days = 14) {
         enabled,
     });
 }
+
+// ── 이력 · 컨테이너 · API 건강도 ─────────────────────────────────────────────
+
+export interface HistoryPoint {
+    t: string;
+    cpu: number | null; mem: number | null; disk: number | null;
+    db_mb: number | null; db_conn: number | null; redis_mb: number | null;
+    queue: number | null; requests: number | null; errors: number | null; p95_ms: number | null;
+}
+
+export interface ContainerInfo {
+    name: string; service: string; project: string | null; is_ours: boolean;
+    image: string | null; state: string | null; status: string | null; health: string | null;
+    restart_count: number | null; uptime_seconds: number | null;
+    oom_killed: boolean | null; exit_code: number | null;
+    cpu_percent: number | null; memory_mb: number | null;
+}
+
+export interface EndpointStat {
+    path: string; requests: number; errors: number; avg_ms: number; max_ms: number;
+}
+
+export interface ApiHealth {
+    window_hours: number; requests: number; errors: number; error_rate: number;
+    p50_ms: number | null; p95_ms: number | null; p99_ms: number | null;
+    slowest: EndpointStat[]; most_errors: EndpointStat[];
+}
+
+export function useInfraHistory(enabled: boolean, hours: number) {
+    return useQuery({
+        queryKey: ["infra-history", hours],
+        queryFn: async () => (await api.get<HistoryPoint[]>("/infra/history", { params: { hours } })).data,
+        enabled,
+        refetchInterval: 60_000,
+    });
+}
+
+export function useContainers(enabled: boolean) {
+    return useQuery({
+        queryKey: ["infra-containers"],
+        queryFn: async () => (await api.get<ContainerInfo[]>("/infra/containers")).data,
+        enabled,
+        // 컨테이너 통계는 도커가 1초씩 재느라 느리다. 자주 부르지 않는다.
+        refetchInterval: 60_000,
+    });
+}
+
+export function useApiHealth(enabled: boolean, hours: number) {
+    return useQuery({
+        queryKey: ["infra-api-health", hours],
+        queryFn: async () => (await api.get<ApiHealth>("/infra/api-health", { params: { hours } })).data,
+        enabled,
+        refetchInterval: 60_000,
+    });
+}

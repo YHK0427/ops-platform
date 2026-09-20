@@ -337,3 +337,184 @@ async def get_infra_status(
         backup_age_hours=backup_age_h, backup_size_mb=backup_size_mb,
         problems=problems, warnings=warnings,
     )
+
+
+# ── 지표 이력 (그래프용) ─────────────────────────────────────────────────────
+# 화면을 켜둔 동안만 모으면 "어제부터 메모리가 새고 있다"를 영영 못 본다.
+# 워커가 분당 한 줄 쌓아두고, 여기서 기간에 맞게 솎아서 내려준다.
+
+class HistoryPoint(BaseModel):
+    t: str
+    cpu: float | None = None
+    mem: float | None = None
+    disk: float | None = None
+    db_mb: float | None = None
+    db_conn: int | None = None
+    redis_mb: float | None = None
+    queue: int | None = None
+    requests: int | None = None
+    errors: int | None = None
+    p95_ms: int | None = None
+
+
+@router.get("/history", response_model=list[HistoryPoint])
+async def get_history(
+    hours: int = 24,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    """최근 N시간 추이. 점이 너무 많으면 화면이 느려지므로 구간 평균으로 묶는다."""
+    from app.models import InfraSnapshot
+
+    hours = max(1, min(hours, 24 * 90))
+    # 어떤 기간을 봐도 점 200개 안팎이 되게 묶는 간격을 정한다.
+    bucket_min = max(1, round(hours * 60 / 200))
+
+    rows = (await db.execute(text("""
+        SELECT
+            to_timestamp(floor(extract(epoch FROM created_at) / (:b * 60)) * (:b * 60)) AS t,
+            avg(cpu_load_1m), avg(memory_used_percent), avg(disk_used_percent),
+            avg(db_size_mb), avg(db_connections), avg(redis_used_mb), max(queue_depth),
+            sum(requests), sum(errors), max(p95_ms)
+        FROM infra_snapshots
+        WHERE created_at >= now() - make_interval(hours => :h)
+        GROUP BY 1 ORDER BY 1
+    """), {"b": bucket_min, "h": hours})).all()
+
+    def f(v):
+        return round(float(v), 1) if v is not None else None
+
+    return [
+        HistoryPoint(
+            t=t.isoformat(), cpu=f(cpu), mem=f(mem), disk=f(disk), db_mb=f(dbmb),
+            db_conn=int(conn) if conn is not None else None, redis_mb=f(rmb),
+            queue=int(q) if q is not None else None,
+            requests=int(req) if req is not None else None,
+            errors=int(err) if err is not None else None,
+            p95_ms=int(p95) if p95 is not None else None,
+        )
+        for t, cpu, mem, disk, dbmb, conn, rmb, q, req, err, p95 in rows
+    ]
+
+
+# ── 컨테이너 ────────────────────────────────────────────────────────────────
+
+class ContainerOut(BaseModel):
+    name: str
+    service: str
+    project: str | None = None
+    is_ours: bool = False
+    image: str | None = None
+    state: str | None = None
+    status: str | None = None
+    health: str | None = None
+    restart_count: int | None = None
+    uptime_seconds: float | None = None
+    oom_killed: bool | None = None
+    exit_code: int | None = None
+    cpu_percent: float | None = None
+    memory_mb: float | None = None
+
+
+@router.get("/containers", response_model=list[ContainerOut])
+async def get_containers(_admin: dict = Depends(require_admin)):
+    """컨테이너별 상태. Docker 소켓이 없으면 빈 목록 — 화면이 이것 때문에 죽지 않게."""
+    from app.services import docker_stats
+
+    import socket
+
+    rows = await docker_stats.list_containers()
+    # 한 호스트에 dev 와 prod 가 같이 떠 있다. 내 컨테이너 id(=hostname)로
+    # 내가 속한 프로젝트를 찾아, 어느 쪽이 '우리 것'인지 표시한다.
+    me = socket.gethostname()
+    mine = next((c.get("project") for c in rows if c.get("id_short") == me), None)
+    out = []
+    for c in rows:
+        out.append(ContainerOut(
+            name=c["name"], service=c["service"], project=c.get("project"),
+            # 이 백엔드가 속한 프로젝트인지 — 한 호스트에 dev/prod 가 같이 떠 있어서 구분이 필요하다
+            is_ours=bool(mine and c.get("project") == mine),
+            image=c["image"], state=c["state"],
+            status=c["status"], health=c["health"], restart_count=c["restart_count"],
+            uptime_seconds=docker_stats.uptime_seconds(c["started_at"]),
+            oom_killed=c["oom_killed"], exit_code=c["exit_code"],
+            cpu_percent=c["cpu_percent"], memory_mb=c["memory_mb"],
+        ))
+    return out
+
+
+# ── 우리 API 가 얼마나 건강한가 (RED) ─────────────────────────────────────────
+# access_logs 에 이미 상태코드와 응답시간이 들어 있다. 새로 계측할 게 없다.
+
+class EndpointStat(BaseModel):
+    path: str
+    requests: int
+    errors: int
+    avg_ms: int
+    max_ms: int
+
+
+class ApiHealth(BaseModel):
+    window_hours: int
+    requests: int
+    errors: int
+    error_rate: float
+    p50_ms: int | None = None
+    p95_ms: int | None = None
+    p99_ms: int | None = None
+    slowest: list[EndpointStat] = []
+    most_errors: list[EndpointStat] = []
+
+
+@router.get("/api-health", response_model=ApiHealth)
+async def get_api_health(
+    hours: int = 24,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    hours = max(1, min(hours, 24 * 30))
+    p = {"h": hours}
+
+    row = (await db.execute(text("""
+        SELECT
+            COALESCE(sum(hits), 0),
+            COALESCE(sum(hits) FILTER (WHERE status_code >= 400), 0),
+            percentile_disc(0.50) WITHIN GROUP (ORDER BY duration_ms),
+            percentile_disc(0.95) WITHIN GROUP (ORDER BY duration_ms),
+            percentile_disc(0.99) WITHIN GROUP (ORDER BY duration_ms)
+        FROM access_logs
+        WHERE last_seen_at >= now() - make_interval(hours => :h)
+    """), p)).first()
+    total, errs = int(row[0]), int(row[1])
+
+    slow = (await db.execute(text("""
+        SELECT path, sum(hits), COALESCE(sum(hits) FILTER (WHERE status_code >= 400), 0),
+               avg(duration_ms), max(duration_ms)
+        FROM access_logs
+        WHERE last_seen_at >= now() - make_interval(hours => :h)
+        GROUP BY path ORDER BY avg(duration_ms) DESC NULLS LAST LIMIT 8
+    """), p)).all()
+
+    bad = (await db.execute(text("""
+        SELECT path, sum(hits), sum(hits) FILTER (WHERE status_code >= 400),
+               avg(duration_ms), max(duration_ms)
+        FROM access_logs
+        WHERE last_seen_at >= now() - make_interval(hours => :h)
+          AND status_code >= 400
+        GROUP BY path ORDER BY sum(hits) DESC LIMIT 8
+    """), p)).all()
+
+    def rows(rs):
+        return [
+            EndpointStat(
+                path=r[0], requests=int(r[1] or 0), errors=int(r[2] or 0),
+                avg_ms=int(r[3] or 0), max_ms=int(r[4] or 0),
+            ) for r in rs
+        ]
+
+    return ApiHealth(
+        window_hours=hours, requests=total, errors=errs,
+        error_rate=round(errs / total * 100, 2) if total else 0.0,
+        p50_ms=row[2], p95_ms=row[3], p99_ms=row[4],
+        slowest=rows(slow), most_errors=rows(bad),
+    )

@@ -1126,6 +1126,32 @@ class AccessLog(Base):
     )
 
 
+class InfraSnapshot(Base):
+    """서버 상태 1분 스냅샷 — 그래프용.
+
+    화면을 켜둔 동안만 모으면 "어제부터 메모리가 새고 있다" 같은 건 영영 못 본다.
+    전용 시계열 DB(Prometheus 등)를 들이는 대신 한 줄씩 쌓는다. 분당 1줄이면
+    하루 1,440줄, 90일에 13만 줄 — Postgres 한테는 아무것도 아니다.
+    """
+    __tablename__ = "infra_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+    cpu_load_1m = Column(Numeric(6, 2), nullable=True)
+    memory_used_percent = Column(Numeric(5, 1), nullable=True)
+    disk_used_percent = Column(Numeric(5, 1), nullable=True)
+    db_size_mb = Column(Numeric(12, 1), nullable=True)
+    db_connections = Column(Integer, nullable=True)
+    db_latency_ms = Column(Numeric(8, 1), nullable=True)
+    redis_used_mb = Column(Numeric(10, 1), nullable=True)
+    queue_depth = Column(Integer, nullable=True)
+    worker_alive = Column(Boolean, nullable=True)
+    # 이 1분 동안 우리 API 가 얼마나 요청을 받고 얼마나 실패했나 (access_logs 집계)
+    requests = Column(Integer, nullable=True)
+    errors = Column(Integer, nullable=True)
+    p95_ms = Column(Integer, nullable=True)
+
+
 class AuditLog(Base):
     """전체 모델 변경 이력 — SQLAlchemy after_flush 훅(app/audit_hook.py)이 자동 기록.
     누가(actor) 언제 어느 테이블의 어느 행을 insert/update/delete 했는지 + 변경 전후 값.
