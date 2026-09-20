@@ -28,6 +28,7 @@ from app.deps import (
     check_public_rate, decode_ws_token, get_current_cohort_id, get_db, get_real_ip,
     require_scoring_staff, resolve_current_user_row,
 )
+from app.audit_hook import record_manual_event
 from app.models import (
     Member, ScoringArea, ScoringComment, ScoringCriterion, ScoringDeduction,
     ScoringDeductionRule, ScoringParticipant, ScoringPart, ScoringRank,
@@ -730,9 +731,13 @@ async def _save_submission(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "존재하지 않는 심사 기준입니다")
 
     # 전체 교체 — 부분 수정보다 단순하고, 폼이 항상 전체 상태를 보내므로 안전
-    await db.execute(delete(ScoringScore).where(ScoringScore.participant_id == p.id))
-    await db.execute(delete(ScoringRank).where(ScoringRank.participant_id == p.id))
-    await db.execute(delete(ScoringComment).where(ScoringComment.participant_id == p.id))
+    r1 = await db.execute(delete(ScoringScore).where(ScoringScore.participant_id == p.id))
+    r2 = await db.execute(delete(ScoringRank).where(ScoringRank.participant_id == p.id))
+    r3 = await db.execute(delete(ScoringComment).where(ScoringComment.participant_id == p.id))
+    wiped = (r1.rowcount or 0) + (r2.rowcount or 0) + (r3.rowcount or 0)
+    if wiped:
+        await record_manual_event(db, "DELETE", "scoring_scores",
+                                  f"{wiped}건 삭제(제출 재저장 · 전체 교체)", row_id=str(p.id))
 
     for s in body.scores:
         db.add(ScoringScore(participant_id=p.id, target_id=s.target_id,
@@ -1111,7 +1116,10 @@ async def _import_session_teams(
     prior_display = {team_id: dn for team_id, dn, _ in prior_rows if dn}
     prior_part = {team_id: pid for team_id, _, pid in prior_rows if pid is not None}
 
-    await db.execute(delete(ScoringTarget).where(ScoringTarget.round_id == rnd.id))
+    res = await db.execute(delete(ScoringTarget).where(ScoringTarget.round_id == rnd.id))
+    if res.rowcount:
+        await record_manual_event(db, "DELETE", "scoring_targets",
+                                  f"{res.rowcount}건 삭제(심사 대상 · 전체 교체)", row_id=str(rnd.id))
     for i, t in enumerate(teams):
         # 팀원 id + 이름을 함께 스냅샷 — id는 자기팀 제외 판정용, 이름은 채점 폼 표시용.
         rows = (await db.execute(
@@ -1587,7 +1595,10 @@ async def put_deductions(
     valid_targets = {t.id for t in rnd.targets}
     rules = {r.id: r for r in rnd.deduction_rules}
 
-    await db.execute(delete(ScoringDeduction).where(ScoringDeduction.round_id == round_id))
+    res = await db.execute(delete(ScoringDeduction).where(ScoringDeduction.round_id == round_id))
+    if res.rowcount:
+        await record_manual_event(db, "DELETE", "scoring_deductions",
+                                  f"{res.rowcount}건 삭제(감점 · 전체 교체)", row_id=str(round_id))
     for item in body:
         if item.target_id not in valid_targets or item.rule_id not in rules:
             continue  # 삭제된 팀/규정은 조용히 무시

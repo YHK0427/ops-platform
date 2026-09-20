@@ -206,6 +206,9 @@ class TeamBuildingBoard(Base):
     name = Column(String(100), nullable=False)
     # {selected_session_ids:[...], num_teams:int, assignment:{memberId: teamIndex|"pool"}, consider:{...}}
     data = Column(JSONB, nullable=False, server_default=text("'{}'"))
+    # 누가 만들었는지 — 감사 로그와 별개로 보드 자체에 남겨 목록에서 바로 보이게 한다
+    created_by = Column(String(100), nullable=True)       # 표기용 "이름(아이디)"
+    created_by_username = Column(String(50), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 

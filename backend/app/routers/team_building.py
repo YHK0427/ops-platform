@@ -16,6 +16,7 @@ from sqlalchemy.orm import aliased
 
 from fastapi import HTTPException, status
 
+from app.audit_context import get_actor_label, get_actor_username
 from app.deps import get_current_cohort_id, get_db, require_staff
 from app.models import (
     Member, Session as SessionModel, Team, TeamBuildingBoard, TeamMember, User,
@@ -83,6 +84,7 @@ class BoardResponse(BaseModel):
     id: int
     name: str
     data: dict
+    created_by: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -207,7 +209,10 @@ async def create_board(
     db: AsyncSession = Depends(get_db),
 ):
     """새 팀빌딩 보드 생성 (운영진이 이름 지정)."""
-    board = TeamBuildingBoard(cohort_id=cohort_id, name=body.name.strip() or "팀 빌딩", data=body.data)
+    board = TeamBuildingBoard(
+        cohort_id=cohort_id, name=body.name.strip() or "팀 빌딩", data=body.data,
+        created_by=get_actor_label(), created_by_username=get_actor_username(),
+    )
     db.add(board)
     await db.commit()
     await db.refresh(board)
