@@ -423,10 +423,46 @@ async def task_send_push(ctx, payload: dict, subscription_ids: list):
     return {"sent": sent, "expired": len(expired_ids)}
 
 
+async def task_heartbeat(ctx):
+    """데드맨 스위치 — 5분마다 외부(healthchecks.io 등)에 '나 살아있다'를 찍는다.
+
+    이 핑이 끊기면 외부 서비스가 메일을 보낸다. 서버가 통째로 꺼지든, 인터넷이
+    끊기든, 워커가 살아만 있고 큐를 안 돌리든 전부 '핑이 안 온다'로 잡힌다.
+    안에서 감시하는 건 뭐든 서버와 운명을 같이하므로, 밖에서 침묵을 감시해야 한다.
+
+    이 체크만 예외적으로 DB까지 건드린다(deep check). 액추에이터가 '사람에게 메일'
+    뿐이라 안전하다 — 컨테이너를 죽이는 헬스체크였다면 절대 이렇게 하면 안 된다.
+    """
+    url = (settings.HEARTBEAT_URL or "").strip()
+    if not url:
+        return {"skipped": "HEARTBEAT_URL 미설정"}
+    import httpx
+    from sqlalchemy import text as _text
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(_text("SELECT 1"))
+        async with httpx.AsyncClient(timeout=10) as c:
+            await c.get(url)
+        return {"ok": True}
+    except Exception as e:
+        # 실패는 exit-code 경로로 즉시 알린다 — 유예시간 만료를 기다리지 않는다
+        logger.warning(f"heartbeat 실패: {e}")
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                await c.get(url.rstrip("/") + "/1")
+        except Exception:
+            pass
+        return {"ok": False}
+
+
 class WorkerSettings:
-    functions = [task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check, task_send_push]
+    functions = [task_heartbeat, task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check, task_send_push]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     on_startup = startup
+    # 기본값 3600초라 시간당 한 번만 기록돼 감시용으로 못 쓴다. 1분으로 당겨
+    # arq:queue:health-check 를 모니터링 화면과 워커 헬스체크가 같이 쓰게 한다.
+    health_check_interval = 60
     cron_jobs = [
         cron(task_naver_health_check, minute={0, 30}),
+        cron(task_heartbeat, minute=set(range(0, 60, 5))),
     ]

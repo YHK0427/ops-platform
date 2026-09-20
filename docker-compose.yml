@@ -1,5 +1,14 @@
 version: "3.9"
 
+# 컨테이너 로그는 기본값이 '무제한'이라 디스크를 조용히 다 먹는다.
+# 호스트 /etc/docker/daemon.json 대신 여기에 두면 레포와 같이 서버를 옮겨다닌다.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+    compress: "true"
+
 networks:
   frontend-net:
     driver: bridge
@@ -17,6 +26,7 @@ services:
 
   # ── TIER 1: Presentation ─────────────────────────
   frontend:
+    logging: *default-logging
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -34,6 +44,7 @@ services:
 
   # ── TIER 2: Application ──────────────────────────
   backend:
+    logging: *default-logging
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -41,6 +52,8 @@ services:
     volumes:
       - ./backend:/app         # Source code (Live Reload)
       - ./files:/app/files     # 영상 임시 저장
+      - ./backups:/app/backups:ro   # 모니터링 화면이 마지막 백업 시각을 읽는다
+      - ./.git:/app/.git:ro         # "지금 무슨 버전이 도는지"를 화면에서 보려고
     env_file: .env
     expose:
       - "8000"                     # 호스트 포트 바인딩 없음 — frontend-net 안에서만 접근
@@ -48,7 +61,7 @@ services:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -60,6 +73,7 @@ services:
       - backend-net                # db/redis와 통신
 
   worker:
+    logging: *default-logging
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -79,15 +93,29 @@ services:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      # arq 가 health_check_interval 마다 Redis 에 쓰는 기록을 확인한다.
+      # 프로세스가 살아만 있고 큐를 안 비우는 상태를 이걸로 잡는다.
+      test: ["CMD", "arq", "--check", "app.worker.WorkerSettings"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     networks:
       - frontend-net               # 외부 인터넷 접속용
       - backend-net                # db/redis와 통신
 
   # ── TIER 3: Data ─────────────────────────────────
   db:
+    logging: *default-logging
     image: postgres:16-alpine
     restart: unless-stopped
+    # 지표로 감시하는 대신 애초에 못 생기게 막는다 — 폭주 쿼리 30초, 열어둔 트랜잭션 5분에서 끊는다.
+    command: >
+      postgres
+      -c statement_timeout=30s
+      -c idle_in_transaction_session_timeout=5min
     volumes:
       - ./pg_data:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -106,16 +134,99 @@ services:
       - backend-net
 
   redis:
+    logging: *default-logging
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    command: >
+      redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+      --maxmemory 512mb --maxmemory-policy noeviction
     volumes:
       - ./redis_data:/data
     # ports: 절대 노출하지 않음
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      # redis-cli 는 NOAUTH 를 출력하면서도 exit 0 이라 PONG 을 직접 확인한다.
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 10s
     networks:
       - backend-net
+
+  # ── 모니터링 (선택) ────────────────────────────────
+  # 기본으로는 안 뜬다. 켜려면:  docker compose --profile monitoring up -d
+  #
+  # 직접 만들지 않고 기성품을 쓰는 이유: 이력 저장·그래프·알림·알림채널을 손으로
+  # 만들면 그게 다 나중 사람이 유지보수할 짐이 된다. 셋 다 설정 파일이 없고
+  # 브라우저에서 클릭으로 끝나서, 개발 모르는 후임에게 넘기기 좋다.
+  # Prometheus/Grafana/Loki 는 일부러 안 쓴다 — 설정 파일 6개에 2GB짜리라
+  # 이 규모(사용자 30명, 집 서버 7.7GB)에서 얻는 것보다 잃는 게 크다.
+
+  # 컨테이너 로그를 브라우저에서 본다. SSH 못 하는 사람이 "빨간 글씨"를 읽을 수 있게.
+  # 아무것도 저장하지 않고 Docker 소켓에서 흘려보기만 한다(≈18MB).
+  dozzle:
+    profiles: ["monitoring"]
+    image: amir20/dozzle:v8.14.4          # 태그 고정 — 자동 업데이트로 깨지지 않게
+    container_name: ops-dozzle
+    logging: *default-logging
+    restart: unless-stopped
+    environment:
+      DOZZLE_NO_ANALYTICS: "true"
+      # 비밀번호는 docker compose --profile monitoring run 전에 .env 에 넣는다
+      DOZZLE_AUTH_PROVIDER: simple
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # 읽기 전용
+      - ./monitoring/dozzle:/data
+    ports:
+      - "127.0.0.1:8081:8080"   # 외부 노출 금지 — Cloudflare Tunnel 로만 연다
+    networks:
+      - frontend-net
+
+  # CPU/메모리/디스크/네트워크 + 컨테이너별 지표를 '이력과 함께' 보고 알림을 보낸다.
+  # node_exporter + cAdvisor + Prometheus + Grafana + Alertmanager 를 20MB로 대체.
+  beszel:
+    profiles: ["monitoring"]
+    image: henrygd/beszel:0.9.1            # 0.x 라 태그 고정 필수
+    container_name: ops-beszel
+    logging: *default-logging
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/beszel:/beszel_data
+    ports:
+      - "127.0.0.1:8090:8090"
+    networks:
+      - frontend-net
+
+  beszel-agent:
+    profiles: ["monitoring"]
+    image: henrygd/beszel-agent:0.9.1
+    container_name: ops-beszel-agent
+    logging: *default-logging
+    restart: unless-stopped
+    network_mode: host                     # 호스트 네트워크 지표를 보려면 필요
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      LISTEN: 45876
+      # beszel 웹 UI 에서 시스템을 추가하면 나오는 공개키를 .env 의 BESZEL_KEY 에 넣는다
+      KEY: ${BESZEL_KEY:-}
+
+  # 밖에서 찔러보는 감시 + 알림 채널 90종 + 상태 페이지.
+  # 주의: 같은 서버에 있으므로 '서버가 통째로 죽는' 경우는 이걸로 못 잡는다.
+  #       그건 healthchecks.io 데드맨 스위치(HEARTBEAT_URL)가 담당한다.
+  uptime-kuma:
+    profiles: ["monitoring"]
+    image: louislam/uptime-kuma:2.0.2
+    container_name: ops-uptime-kuma
+    logging: *default-logging
+    restart: unless-stopped
+    mem_limit: 512m                        # 장기 구동 시 메모리가 새는 알려진 이슈가 있다
+    volumes:
+      - ./monitoring/uptime-kuma:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # 컨테이너 상태 감시용
+    ports:
+      - "127.0.0.1:3001:3001"
+    networks:
+      - frontend-net

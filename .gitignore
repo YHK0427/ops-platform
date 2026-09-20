@@ -69,3 +69,6 @@ frontend/@/
 *.sql
 misc/
 graphify-out/
+backups/
+monitoring/*
+!monitoring/.gitkeep

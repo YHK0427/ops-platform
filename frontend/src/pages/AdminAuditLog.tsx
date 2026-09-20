@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { History, ChevronLeft, ChevronRight, Cpu, HardDrive, MemoryStick, Database, Server, Activity } from "lucide-react";
+import { History, ChevronLeft, ChevronRight, Cpu, HardDrive, MemoryStick, Database, Server, Activity, CheckCircle2, AlertTriangle, XCircle, ListTodo, Archive, GitCommit } from "lucide-react";
 import {
     ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar,
 } from "recharts";
@@ -45,17 +45,35 @@ function formatUptime(seconds: number): string {
     return `${m}분`;
 }
 
-function StatCard({ icon: Icon, label, value, sub, warn }: { icon: any; label: string; value: string; sub?: string; warn?: boolean }) {
+type Level = "ok" | "warn" | "bad";
+
+function StatCard({ icon: Icon, label, value, sub, warn, level }: {
+    icon: any; label: string; value: string; sub?: string; warn?: boolean; level?: Level;
+}) {
+    const lv: Level = level ?? (warn ? "bad" : "ok");
     return (
-        <div className={cn("p-4 rounded-xl border bg-[var(--color-surface)]", warn ? "border-rose-300" : "border-[var(--color-border)]")}>
+        <div className={cn(
+            "p-4 rounded-xl border bg-[var(--color-surface)]",
+            lv === "bad" ? "border-rose-300" : lv === "warn" ? "border-amber-300" : "border-[var(--color-border)]",
+        )}>
             <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)] mb-1">
                 <Icon className="w-3.5 h-3.5" />
                 {label}
             </div>
-            <div className={cn("text-xl font-bold", warn && "text-rose-600")}>{value}</div>
+            <div className={cn("text-xl font-bold", lv === "bad" && "text-rose-600", lv === "warn" && "text-amber-600")}>
+                {value}
+            </div>
             {sub && <div className="text-xs text-[var(--color-text-muted)] mt-0.5">{sub}</div>}
         </div>
     );
+}
+
+/** 백업 경과 시간을 사람 말로 */
+function backupAge(h: number | null): string {
+    if (h == null) return "없음";
+    if (h < 1) return "방금";
+    if (h < 24) return `${Math.floor(h)}시간 전`;
+    return `${Math.floor(h / 24)}일 전`;
 }
 
 function ActivityLogTab() {
@@ -258,48 +276,158 @@ function InfraStatusTab({ active }: { active: boolean }) {
 
     return (
         <div className="space-y-4">
+            {/* 맨 위 한 줄로 '지금 괜찮은가'에 답한다. 숫자를 읽고 판단하게 하지 않는다 —
+                임계값 판정은 서버가 하고 화면은 그대로 보여주기만 한다. */}
+            {data.problems.length > 0 ? (
+                <div className="p-4 rounded-xl border border-rose-300 bg-rose-50">
+                    <div className="flex items-center gap-2 font-bold text-rose-700">
+                        <XCircle className="w-4 h-4" /> 조치가 필요합니다
+                    </div>
+                    <ul className="mt-2 space-y-1 text-sm text-rose-700">
+                        {data.problems.map((p) => <li key={p}>· {p}</li>)}
+                    </ul>
+                </div>
+            ) : data.warnings.length > 0 ? (
+                <div className="p-4 rounded-xl border border-amber-300 bg-amber-50">
+                    <div className="flex items-center gap-2 font-bold text-amber-700">
+                        <AlertTriangle className="w-4 h-4" /> 지켜볼 것
+                    </div>
+                    <ul className="mt-2 space-y-1 text-sm text-amber-700">
+                        {data.warnings.map((w) => <li key={w}>· {w}</li>)}
+                    </ul>
+                </div>
+            ) : (
+                <div className="p-4 rounded-xl border border-emerald-300 bg-emerald-50 flex items-center gap-2 font-bold text-emerald-700">
+                    <CheckCircle2 className="w-4 h-4" /> 모두 정상입니다
+                </div>
+            )}
+
+            {data.problems.length > 0 && data.warnings.length > 0 && (
+                <ul className="space-y-1 text-sm text-amber-700 px-1">
+                    {data.warnings.map((w) => <li key={w}>· {w}</li>)}
+                </ul>
+            )}
+
             <p className="text-xs text-[var(--color-text-muted)]">
                 15초마다 자동 갱신 · 마지막 갱신 {new Date(dataUpdatedAt).toLocaleTimeString("ko-KR")}
-                <br />
-                컨테이너별 개별 지표(재시작 횟수 등)는 이 화면 범위 밖입니다 — 백엔드 프로세스 기준 지표입니다.
+                {data.git_sha && <> · 배포된 버전 <code className="font-mono">{data.git_sha}</code></>}
             </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <StatCard icon={Server} label="백엔드 가동시간" value={formatUptime(data.backend_uptime_seconds)} />
-                <StatCard
-                    icon={Cpu}
-                    label={`CPU 부하 (코어 ${data.cpu_count}개)`}
-                    value={data.cpu_load_1m.toFixed(2)}
-                    sub={`5분 ${data.cpu_load_5m.toFixed(2)} · 15분 ${data.cpu_load_15m.toFixed(2)}`}
-                    warn={data.cpu_load_1m > data.cpu_count}
-                />
-                <StatCard
-                    icon={MemoryStick}
-                    label="메모리"
-                    value={data.memory_used_percent != null ? `${data.memory_used_percent}%` : "-"}
-                    sub={data.memory_total_mb ? `${((data.memory_total_mb - (data.memory_available_mb ?? 0)) / 1024).toFixed(1)}GB / ${(data.memory_total_mb / 1024).toFixed(1)}GB` : undefined}
-                    warn={(data.memory_used_percent ?? 0) > 85}
-                />
-                <StatCard
-                    icon={HardDrive}
-                    label="디스크"
-                    value={`${data.disk_used_percent}%`}
-                    sub={`${data.disk_used_gb}GB / ${data.disk_total_gb}GB`}
-                    warn={data.disk_used_percent > 85}
-                />
-                <StatCard
-                    icon={Database}
-                    label="DB"
-                    value={data.db_ok ? "정상" : "장애"}
-                    sub={data.db_ok ? `${data.db_latency_ms}ms · ${data.db_size_mb}MB · 연결 ${data.db_active_connections}개` : undefined}
-                    warn={!data.db_ok}
-                />
-                <StatCard
-                    icon={Activity}
-                    label="Redis"
-                    value={data.redis_ok ? "정상" : "장애"}
-                    sub={data.redis_ok ? `${data.redis_latency_ms}ms · ${data.redis_used_memory_mb}MB · 클라이언트 ${data.redis_connected_clients}개` : undefined}
-                    warn={!data.redis_ok}
-                />
+
+            {/* 조용히 실패하는 것들을 맨 앞에 둔다 — 화면이 깨지면 사람이 알려주지만
+                워커가 멈추거나 백업이 안 도는 건 아무도 알려주지 않는다. */}
+            <div>
+                <h3 className="text-sm font-bold mb-2">아무도 알려주지 않는 것들</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <StatCard
+                        icon={Server}
+                        label="작업 워커"
+                        value={data.worker_alive == null ? "확인 불가" : data.worker_alive ? "동작 중" : "멈춤"}
+                        sub={data.worker_alive
+                            ? `완료 ${data.worker_jobs_complete ?? 0} · 실패 ${data.worker_jobs_failed ?? 0} · 진행 ${data.worker_jobs_ongoing ?? 0}`
+                            : "크롤링·영상·푸시가 처리되지 않습니다"}
+                        level={data.worker_alive === false ? "bad" : data.worker_jobs_failed ? "warn" : "ok"}
+                    />
+                    <StatCard
+                        icon={ListTodo}
+                        label="대기 중인 작업"
+                        value={data.queue_depth == null ? "-" : `${data.queue_depth}개`}
+                        sub={data.queue_depth ? "처리되기를 기다리는 중" : "밀린 작업 없음"}
+                        level={(data.queue_depth ?? 0) > 100 ? "warn" : "ok"}
+                    />
+                    <StatCard
+                        icon={Archive}
+                        label="마지막 백업"
+                        value={backupAge(data.backup_age_hours)}
+                        sub={data.backup_size_mb != null
+                            ? `${data.backup_size_mb}MB`
+                            : "scripts/backup_db.sh 를 cron에 등록하세요"}
+                        level={data.backup_age_hours == null ? "warn"
+                            : data.backup_age_hours > 48 ? "bad"
+                            : data.backup_age_hours > 30 ? "warn" : "ok"}
+                    />
+                    <StatCard
+                        icon={GitCommit}
+                        label="백엔드 가동시간"
+                        value={formatUptime(data.backend_uptime_seconds)}
+                        sub={data.git_sha ? `버전 ${data.git_sha}` : undefined}
+                    />
+                </div>
+            </div>
+
+            <div>
+                <h3 className="text-sm font-bold mb-2">서버 자원</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <StatCard
+                        icon={Cpu}
+                        label={`CPU 부하 (코어 ${data.cpu_count}개)`}
+                        value={data.cpu_load_1m.toFixed(2)}
+                        sub={`5분 ${data.cpu_load_5m.toFixed(2)} · 15분 ${data.cpu_load_15m.toFixed(2)}`}
+                        level={data.cpu_load_1m > data.cpu_count ? "warn" : "ok"}
+                    />
+                    <StatCard
+                        icon={MemoryStick}
+                        label="메모리"
+                        value={data.memory_used_percent != null ? `${data.memory_used_percent}%` : "-"}
+                        sub={data.memory_total_mb ? `${((data.memory_total_mb - (data.memory_available_mb ?? 0)) / 1024).toFixed(1)}GB / ${(data.memory_total_mb / 1024).toFixed(1)}GB` : undefined}
+                        level={(data.memory_used_percent ?? 0) >= 90 ? "warn" : "ok"}
+                    />
+                    <StatCard
+                        icon={HardDrive}
+                        label="디스크"
+                        value={`${data.disk_used_percent}%`}
+                        sub={`${data.disk_used_gb}GB / ${data.disk_total_gb}GB`}
+                        level={data.disk_used_percent >= 90 ? "bad" : data.disk_used_percent >= 80 ? "warn" : "ok"}
+                    />
+                </div>
+            </div>
+
+            <div>
+                <h3 className="text-sm font-bold mb-2">데이터베이스 · Redis</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <StatCard
+                        icon={Database}
+                        label="DB 연결"
+                        value={data.db_ok
+                            ? `${data.db_active_connections ?? "-"} / ${data.db_max_connections ?? "-"}`
+                            : "장애"}
+                        sub={data.db_ok
+                            ? `한도의 ${data.db_connections_percent ?? 0}% · 응답 ${data.db_latency_ms}ms`
+                            : "연결되지 않습니다"}
+                        level={!data.db_ok ? "bad" : (data.db_connections_percent ?? 0) >= 80 ? "warn" : "ok"}
+                    />
+                    <StatCard
+                        icon={Database}
+                        label="DB 크기 · 캐시"
+                        value={data.db_size_mb != null ? `${data.db_size_mb}MB` : "-"}
+                        sub={data.db_cache_hit_percent != null
+                            ? `캐시 적중 ${data.db_cache_hit_percent}%${data.db_deadlocks ? ` · 교착 ${data.db_deadlocks}회` : ""}`
+                            : undefined}
+                        level={(data.db_cache_hit_percent ?? 100) < 95 ? "warn" : "ok"}
+                    />
+                    <StatCard
+                        icon={Activity}
+                        label="느린 쿼리 · 방치 트랜잭션"
+                        value={data.db_longest_query_seconds != null
+                            ? (data.db_longest_query_seconds >= 60
+                                ? `${Math.floor(data.db_longest_query_seconds / 60)}분`
+                                : `${Math.round(data.db_longest_query_seconds)}초`)
+                            : "-"}
+                        sub={`가장 오래 도는 쿼리 · 방치 트랜잭션 ${data.db_idle_in_transaction ?? 0}개`}
+                        level={(data.db_longest_query_seconds ?? 0) > 300 || (data.db_idle_in_transaction ?? 0) > 0 ? "warn" : "ok"}
+                    />
+                    <StatCard
+                        icon={Activity}
+                        label="Redis"
+                        value={data.redis_ok
+                            ? (data.redis_used_percent != null ? `${data.redis_used_percent}%` : `${data.redis_used_memory_mb}MB`)
+                            : "장애"}
+                        sub={data.redis_ok
+                            ? `${data.redis_used_memory_mb}MB / ${data.redis_max_memory_mb ?? "무제한"}MB · 버려진 키 ${data.redis_evicted_keys ?? 0}`
+                            : "연결되지 않습니다"}
+                        level={!data.redis_ok || data.redis_evicted_keys ? "bad"
+                            : (data.redis_used_percent ?? 0) >= 70 ? "warn" : "ok"}
+                    />
+                </div>
             </div>
 
             {history.length >= 2 && (

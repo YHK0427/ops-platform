@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     ENV: str = "dev"
 
     # Telegram
+    # 데드맨 스위치 핑 URL (healthchecks.io 등). 비우면 하트비트를 보내지 않는다.
+    HEARTBEAT_URL: str = ""
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_ALERT_CHAT_ID: str = ""
     TELEGRAM_AUDIT_CHAT_ID: str = ""
