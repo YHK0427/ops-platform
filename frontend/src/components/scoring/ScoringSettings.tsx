@@ -45,17 +45,21 @@ interface RosterDraft {
 }
 
 export function ScoringSettings({ round }: { round: ScoringRound }) {
+    // 청중 소그룹 목록은 "집계 방식"에서 만들고 "다동아리 모드"에서 곧바로 참조한다 —
+    // round.observer_groups를 각자 따로 읽으면 방금 추가한 그룹이 autosave 왕복 전까지
+    // 다동아리 모드 쪽엔 안 보인다. 두 패널이 같은 state를 보게 여기서 들어올린다.
+    const [groups, setGroups] = useState<string[]>(round.observer_groups ?? []);
     return (
         <AutosaveProvider>
             {({ statuses, saveAll }) => (
                 <div className="space-y-5">
                     <SaveBar statuses={statuses} saveAll={saveAll} />
-                    <WeightPanel round={round} />
+                    <WeightPanel round={round} groups={groups} setGroups={setGroups} />
                     <RubricPanel round={round} />
                     <TargetsPanel round={round} />
                     <RosterPanel round={round} />
                     <DeductionRulesPanel round={round} />
-                    <MultiClubPanel round={round} />
+                    <MultiClubPanel round={round} groups={groups} />
                     <NoticesPanel round={round} />
                     <AccessPanel round={round} />
                 </div>
@@ -148,7 +152,9 @@ export function SaveBar({
 
 // ── 비중 / 모드 ──────────────────────────────────────────────────────────────
 
-function WeightPanel({ round }: { round: ScoringRound }) {
+function WeightPanel({
+    round, groups, setGroups,
+}: { round: ScoringRound; groups: string[]; setGroups: (g: string[]) => void }) {
     const update = useUpdateRound(round.id);
     const [judge, setJudge] = useState(String(round.judge_weight));
     const [observer, setObserver] = useState(String(round.observer_weight));
@@ -156,7 +162,6 @@ function WeightPanel({ round }: { round: ScoringRound }) {
     const [rankPts, setRankPts] = useState(round.rank_points);
     const [excludeOwn, setExcludeOwn] = useState(round.exclude_own_team);
     const [requireFeedback, setRequireFeedback] = useState(round.require_feedback);
-    const [groups, setGroups] = useState<string[]>(round.observer_groups ?? []);
     const [newGroup, setNewGroup] = useState("");
 
     const draft = {
@@ -450,7 +455,9 @@ function WeightPanel({ round }: { round: ScoringRound }) {
 
 // ── 다동아리 모드 (연합 이벤트 전용, 평소엔 꺼져 있어 안 보임) ──────────────────
 
-function MultiClubPanel({ round }: { round: ScoringRound }) {
+function MultiClubPanel({
+    round, groups,
+}: { round: ScoringRound; groups: string[] }) {
     const update = useUpdateRound(round.id);
     const [multiClub, setMultiClub] = useState(round.multi_club_mode);
     const [extLabels, setExtLabels] = useState<string[]>(round.external_group_labels ?? []);
@@ -460,8 +467,6 @@ function MultiClubPanel({ round }: { round: ScoringRound }) {
     const [internalW, setInternalW] = useState(String(round.internal_audience_weight));
     const [externalW, setExternalW] = useState(String(round.external_audience_weight));
     const [showCalcInfo, setShowCalcInfo] = useState(false);
-
-    const groups = round.observer_groups ?? [];
 
     const draft = {
         multi_club_mode: multiClub,

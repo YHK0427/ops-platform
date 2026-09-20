@@ -265,7 +265,7 @@ export function ScoreSheet({
             {useAccordion && (
                 <div className="flex items-center justify-between gap-3 bg-[var(--color-hover)] rounded-lg px-3 py-2 text-sm">
                     <span className="font-medium text-[var(--color-text-primary)]">
-                        {doneCount} / {scorable}팀 채점 완료
+                        {scorable === 0 ? "채점할 팀 없음 (전부 본인 소속팀)" : `${doneCount} / ${scorable}팀 채점 완료`}
                     </span>
                     <div className="flex items-center gap-1">
                         <Button
