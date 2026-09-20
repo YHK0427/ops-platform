@@ -379,7 +379,7 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
                                 onChange={(e) => setName(e.target.value)}
                                 placeholder="이름을 입력하세요"
                                 autoFocus
-                                onKeyDown={(e) => e.key === "Enter" && identify()}
+                                onKeyDown={(e) => e.key === "Enter" && !identifying && identify()}
                             />
                         </div>
 

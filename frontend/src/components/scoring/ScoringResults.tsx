@@ -977,7 +977,13 @@ function CommentsPanel({ data, round }: { data: Results; round: ScoringRound }) 
     );
     const withComments = data.results.filter((r) => r.comments.length > 0);
 
-    if (withComments.length === 0) return null;
+    if (withComments.length === 0) {
+        return (
+            <section className="rounded-xl border border-[var(--color-border-subtle)] bg-white p-8 text-center text-sm text-[var(--color-text-muted)]">
+                아직 서술형 피드백이 없습니다. 심사위원 총평·기준별 코멘트나 청중 피드백이 들어오면 여기 표시됩니다.
+            </section>
+        );
+    }
 
     return (
         <section className="rounded-xl border border-[var(--color-border-subtle)] bg-white p-5">

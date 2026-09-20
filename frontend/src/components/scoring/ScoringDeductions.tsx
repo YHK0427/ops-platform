@@ -207,11 +207,11 @@ function RuleCell({
                             <span className="text-xs text-[var(--color-text-muted)]">실제 발표시간</span>
                             <Input type="number" min={0} className="w-20 h-9 px-2"
                                 value={min} placeholder="분"
-                                onChange={(e) => set(Number(e.target.value) || 0, sec === "" ? 0 : sec)} />
+                                onChange={(e) => set(Math.max(0, Number(e.target.value) || 0), sec === "" ? 0 : sec)} />
                             <span className="text-xs">분</span>
                             <Input type="number" min={0} max={59} className="w-20 h-9 px-2"
                                 value={sec} placeholder="초"
-                                onChange={(e) => set(min === "" ? 0 : min, Number(e.target.value) || 0)} />
+                                onChange={(e) => set(min === "" ? 0 : min, Math.max(0, Number(e.target.value) || 0))} />
                             <span className="text-xs">초</span>
                         </div>
                         <p className="text-[11px] text-[var(--color-text-muted)]">

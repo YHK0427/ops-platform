@@ -344,9 +344,9 @@ function CreateRoundDialog({ onCreate, pending }: { onCreate: (name: string) => 
 
     const submit = () => {
         if (!name.trim()) return;
+        // 성공 시 부모가 새 라운드 페이지로 navigate하면서 이 다이얼로그도 같이 사라진다.
+        // 실패 시엔 여기서 안 닫고 안 지워야 이름을 다시 안 쳐도 된다.
         onCreate(name.trim());
-        setOpen(false);
-        setName("");
     };
 
     return (
