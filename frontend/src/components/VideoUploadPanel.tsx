@@ -710,12 +710,12 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
             })()}
 
             {/* 카페 제목 접두어 */}
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-xs">
                 <span className="text-[var(--color-text-muted)] whitespace-nowrap">카페 제목 접두어</span>
                 <Input
                     value={titlePrefix}
                     onChange={(e) => setTitlePrefix(e.target.value)}
-                    className="h-7 text-xs flex-1"
+                    className="h-7 text-xs flex-1 min-w-0"
                 />
             </div>
 

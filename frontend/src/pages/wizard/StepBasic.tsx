@@ -26,7 +26,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                     <CardTitle>1단계: 기본 설정</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label>주차</Label>
                             <Input
@@ -156,7 +156,7 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                     {(state.has_ppt_email || state.has_ppt || state.has_review || state.has_feedback) && (
                     <div className="space-y-3 pt-4 border-t border-[var(--color-border)]">
                         <Label>제출 기한 설정</Label>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {state.has_ppt_email && (
                                 <>
                                     <div className="space-y-1.5">
