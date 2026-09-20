@@ -163,7 +163,7 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         "cohort_id": payload.get("cohort_id"),
         "cohort_claim": "cohort_id" in payload,
     }
-    set_actor(actor, request.url.path)
+    set_actor(actor, request.url.path, request.scope)
     return actor
 
 
@@ -229,7 +229,7 @@ async def get_current_member(
         raise credentials_exception
 
     actor = {"member_id": member_id, "username": username, "cohort_id": row[1]}
-    set_actor(actor, request.url.path)
+    set_actor(actor, request.url.path, request.scope)
     return actor
 
 

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { History, ChevronLeft, ChevronRight, Cpu, HardDrive, MemoryStick, Database, Server, Activity, CheckCircle2, AlertTriangle, XCircle, ListTodo, Archive, GitCommit } from "lucide-react";
+import { History, ChevronLeft, ChevronRight, Cpu, HardDrive, MemoryStick, Database, Server, Activity, CheckCircle2, AlertTriangle, XCircle, ListTodo, Archive, GitCommit, Users, Globe } from "lucide-react";
 import {
     ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar,
 } from "recharts";
-import { useAuditLogs, useAuditLogTables, useAuditDailyCounts, useInfraStatus, useMembers } from "@/hooks";
+import { useAuditLogs, useAuditLogTables, useAuditDailyCounts, useInfraStatus, useMembers, useAccessLogs, useActiveUsers, useAccessDaily } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -454,15 +454,239 @@ function InfraStatusTab({ active }: { active: boolean }) {
     );
 }
 
+
+// ── 접속 기록 탭 ──────────────────────────────────────────────────────────────
+// 활동 로그가 '무엇이 바뀌었나'라면 여기는 '누가 들어와서 뭘 봤나'다.
+// 로그인은 한 번만 찍히고 기수원 토큰은 사실상 만료가 없어서, 이게 없으면
+// "요즘 누가 쓰고 있나"에 답할 방법이 없었다.
+
+const KIND_LABEL_KO: Record<string, string> = { staff: "운영진", member: "기수원", anon: "비로그인" };
+
+/** API 경로를 사람이 읽는 화면 이름으로. 모르는 건 경로 그대로 보여준다. */
+function screenName(path: string): string {
+    const p = path.replace(/^\/api\/v1/, "");
+    const table: [RegExp, string][] = [
+        [/^\/notifications\/announcements\/\{id\}/, "공지 상세 (기수원)"],
+        [/^\/notifications\/announcements/, "공지 목록 (기수원)"],
+        [/^\/notifications\/manage\/announcements/, "공지 관리"],
+        [/^\/notifications\/manage\/pdf-to-images/, "PDF 변환"],
+        [/^\/notifications/, "알림"],
+        [/^\/sessions\/\{id\}\/stats/, "세션 통계"],
+        [/^\/sessions\/\{id\}/, "세션 상세"],
+        [/^\/sessions/, "세션 목록"],
+        [/^\/members/, "멤버"],
+        [/^\/ledger\/treasury/, "금고"],
+        [/^\/ledger/, "장부"],
+        [/^\/scoring/, "심사/채점"],
+        [/^\/live-feedback/, "실시간 피드백"],
+        [/^\/team-building/, "팀 빌딩"],
+        [/^\/evaluation|^\/eval/, "성장리포트"],
+        [/^\/assignments/, "과제"],
+        [/^\/crawler/, "크롤러"],
+        [/^\/dev-feedback/, "개발자 요청"],
+        [/^\/patch-notes/, "패치노트"],
+        [/^\/audit-logs\/access/, "접속 기록"],
+        [/^\/audit-logs/, "활동 로그"],
+        [/^\/infra/, "인프라 상태"],
+        [/^\/auth/, "로그인"],
+        [/^\/cohorts/, "기수 공간"],
+    ];
+    for (const [re, name] of table) if (re.test(p)) return name;
+    return p;
+}
+
+function relTimeKo(iso: string): string {
+    const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return "방금";
+    if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+    if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
+    return `${Math.floor(s / 86400)}일 전`;
+}
+
+function AccessLogTab({ active }: { active: boolean }) {
+    const [kind, setKind] = useState("");
+    const [q, setQ] = useState("");
+    const [onlyErrors, setOnlyErrors] = useState(false);
+    const [days, setDays] = useState(7);
+    const [page, setPage] = useState(0);
+    const LIMIT = 100;
+
+    const { data: activeUsers } = useActiveUsers(active, 30);
+    const { data: daily } = useAccessDaily(active, days);
+    const { data, isLoading } = useAccessLogs({
+        actor_kind: kind || undefined,
+        path: q || undefined,
+        only_errors: onlyErrors || undefined,
+        days,
+        limit: LIMIT,
+        offset: page * LIMIT,
+    }, active);
+
+    const items = data?.items ?? [];
+    const total = data?.total ?? 0;
+
+    return (
+        <div className="space-y-4">
+            {/* 지금 누가 쓰고 있나 — 제일 자주 궁금한 것 */}
+            <div className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <div className="flex items-center gap-2 text-sm font-bold mb-2">
+                    <Users className="w-4 h-4 text-[var(--color-accent)]" />
+                    최근 30분 접속 {activeUsers?.length ? `· ${activeUsers.length}명` : ""}
+                </div>
+                {!activeUsers || activeUsers.length === 0 ? (
+                    <p className="text-sm text-[var(--color-text-muted)]">최근 30분 동안 아무도 들어오지 않았습니다.</p>
+                ) : (
+                    <div className="flex flex-wrap gap-2">
+                        {activeUsers.map((u) => (
+                            <div key={`${u.actor_kind}-${u.actor_username}`}
+                                className="px-2.5 py-1.5 rounded-lg border border-[var(--color-border)] bg-white text-xs">
+                                <span className="font-bold">{u.actor_label || u.actor_username}</span>
+                                <span className="text-[var(--color-text-muted)]">
+                                    {" · "}{screenName(u.last_path)}{" · "}{relTimeKo(u.last_seen_at)}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* 날짜별 접속자 수 */}
+            {daily && daily.length >= 2 && (
+                <div className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                    <p className="text-xs text-[var(--color-text-muted)] mb-2">최근 {days}일 · 날짜별 접속자 수(중복 제외)와 요청 수</p>
+                    <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={daily} margin={{ left: -10, right: 10, top: 5, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                            <YAxis yAxisId="u" tick={{ fontSize: 11 }} allowDecimals={false} />
+                            <YAxis yAxisId="h" orientation="right" tick={{ fontSize: 11 }} />
+                            <Tooltip />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Bar yAxisId="u" dataKey="users" name="접속자 수" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
+                            <Bar yAxisId="h" dataKey="hits" name="요청 수" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
+
+            {/* 필터 */}
+            <div className="flex flex-wrap items-center gap-2">
+                <Select value={kind || "all"} onValueChange={(v) => { setKind(v === "all" ? "" : v); setPage(0); }}>
+                    <SelectTrigger className="w-[140px]"><SelectValue placeholder="전체" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">전체</SelectItem>
+                        <SelectItem value="staff">운영진</SelectItem>
+                        <SelectItem value="member">기수원</SelectItem>
+                        <SelectItem value="anon">비로그인</SelectItem>
+                    </SelectContent>
+                </Select>
+                <Select value={String(days)} onValueChange={(v) => { setDays(Number(v)); setPage(0); }}>
+                    <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                        {[1, 7, 14, 30, 90].map((d) => <SelectItem key={d} value={String(d)}>{d}일</SelectItem>)}
+                    </SelectContent>
+                </Select>
+                <Input className="w-[220px]" placeholder="경로로 찾기 (예: sessions)"
+                    value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} />
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input type="checkbox" checked={onlyErrors}
+                        onChange={(e) => { setOnlyErrors(e.target.checked); setPage(0); }} />
+                    오류만 (400 이상)
+                </label>
+                <span className="ml-auto text-sm text-[var(--color-text-muted)]">총 {total}건</span>
+            </div>
+
+            {isLoading ? (
+                <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">불러오는 중...</div>
+            ) : items.length === 0 ? (
+                <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">기록이 없습니다</div>
+            ) : (
+                <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead className="w-[150px]">시각</TableHead>
+                                <TableHead className="w-[170px]">누가</TableHead>
+                                <TableHead>무엇을 봤나</TableHead>
+                                <TableHead className="w-[90px]">결과</TableHead>
+                                <TableHead className="w-[130px]">접속 위치</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {items.map((r) => (
+                                <TableRow key={r.id}>
+                                    <TableCell className="text-xs text-[var(--color-text-muted)]">
+                                        {relTimeKo(r.last_seen_at || r.created_at)}
+                                        <div className="text-[10px]">
+                                            {new Date(r.last_seen_at || r.created_at).toLocaleTimeString("ko-KR")}
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="text-sm">
+                                        {r.actor_label || <span className="text-[var(--color-text-muted)]">비로그인</span>}
+                                        <div className="text-[10px] text-[var(--color-text-muted)]">
+                                            {KIND_LABEL_KO[r.actor_kind] ?? r.actor_kind}
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="text-sm">
+                                        {screenName(r.path)}
+                                        {r.hits > 1 && (
+                                            <span className="ml-1.5 text-[10px] text-[var(--color-text-muted)]">
+                                                {r.hits}회
+                                            </span>
+                                        )}
+                                        <div className="text-[10px] text-[var(--color-text-muted)] font-mono">
+                                            {r.method} {r.path}
+                                        </div>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Badge variant="outline" className={cn(
+                                            "text-[11px]",
+                                            (r.status_code ?? 0) >= 500 ? "bg-rose-500/15 text-rose-600 border-rose-500/30"
+                                                : (r.status_code ?? 0) >= 400 ? "bg-amber-500/15 text-amber-600 border-amber-500/30"
+                                                : "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
+                                        )}>
+                                            {r.status_code ?? "-"}
+                                        </Badge>
+                                        <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{r.duration_ms}ms</div>
+                                    </TableCell>
+                                    <TableCell className="text-[11px] text-[var(--color-text-muted)]">
+                                        <div className="flex items-center gap-1">
+                                            <Globe className="w-3 h-3" />{r.ip || "-"}
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+            )}
+
+            {total > LIMIT && (
+                <div className="flex items-center justify-center gap-2">
+                    <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                        <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <span className="text-sm text-[var(--color-text-muted)]">
+                        {page + 1} / {Math.ceil(total / LIMIT)}
+                    </span>
+                    <Button variant="outline" size="sm" disabled={(page + 1) * LIMIT >= total} onClick={() => setPage((p) => p + 1)}>
+                        <ChevronRight className="w-4 h-4" />
+                    </Button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function AdminAuditLog() {
-    const [tab, setTab] = useState<"activity" | "infra">("activity");
+    const [tab, setTab] = useState<"activity" | "access" | "infra">("activity");
 
     return (
         <div className="space-y-4">
             <PageHeader title="모니터링" subtitle="누가 언제 무엇을 바꿨는지, 서버 상태는 어떤지 한눈에 봅니다" />
 
             <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
-                {([["activity", "활동 로그"], ["infra", "인프라 상태"]] as const).map(([k, label]) => (
+                {([["activity", "활동 로그"], ["access", "접속 기록"], ["infra", "인프라 상태"]] as const).map(([k, label]) => (
                     <button
                         key={k}
                         onClick={() => setTab(k)}
@@ -476,7 +700,9 @@ export default function AdminAuditLog() {
                 ))}
             </div>
 
-            {tab === "activity" ? <ActivityLogTab /> : <InfraStatusTab active={tab === "infra"} />}
+            {tab === "activity" ? <ActivityLogTab />
+                : tab === "access" ? <AccessLogTab active={tab === "access"} />
+                : <InfraStatusTab active={tab === "infra"} />}
         </div>
     );
 }

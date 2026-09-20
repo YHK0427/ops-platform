@@ -145,3 +145,141 @@ async def list_audit_tables(
     rows = (await db.execute(select(AuditLog.table_name).distinct())).scalars().all()
     options = [{"name": r, "label": _TABLE_LABELS_KO.get(r, r)} for r in rows]
     return sorted(options, key=lambda o: o["label"])
+
+
+# ── 접속 기록 ────────────────────────────────────────────────────────────────
+# audit_logs 가 '무엇이 바뀌었나'라면, access_logs 는 '누가 들어와서 뭘 봤나'다.
+# 로그인은 한 번만 찍히고 기수원 토큰은 사실상 만료가 없어서, 이게 없으면
+# "요즘 누가 쓰고 있나"에 답할 방법이 없었다.
+
+class AccessLogOut(BaseModel):
+    id: int
+    created_at: datetime
+    last_seen_at: datetime | None
+    actor_kind: str
+    actor_username: str | None
+    actor_label: str | None
+    cohort_id: int | None
+    method: str
+    path: str
+    status_code: int | None
+    duration_ms: int | None
+    ip: str | None
+    user_agent: str | None
+    hits: int
+
+    class Config:
+        from_attributes = True
+
+
+class AccessLogPage(BaseModel):
+    items: list[AccessLogOut]
+    total: int
+
+
+class ActiveUser(BaseModel):
+    actor_kind: str
+    actor_username: str | None
+    actor_label: str | None
+    last_seen_at: datetime
+    hits: int
+    last_path: str
+
+
+@router.get("/access", response_model=AccessLogPage)
+async def list_access_logs(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+    actor_kind: str | None = None,
+    actor_username: str | None = None,
+    path: str | None = None,
+    only_errors: bool = False,
+    days: int = Query(7, ge=1, le=90),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    from app.models import AccessLog
+
+    q = select(AccessLog)
+    cq = select(func.count(AccessLog.id))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    conds = [AccessLog.last_seen_at >= cutoff]
+    if actor_kind in ("staff", "member", "anon"):
+        conds.append(AccessLog.actor_kind == actor_kind)
+    if actor_username:
+        conds.append(AccessLog.actor_username == actor_username)
+    if path:
+        conds.append(AccessLog.path.ilike(f"%{path}%"))
+    if only_errors:
+        conds.append(AccessLog.status_code >= 400)
+    for c in conds:
+        q = q.where(c)
+        cq = cq.where(c)
+
+    total = (await db.execute(cq)).scalar_one()
+    rows = (await db.execute(
+        q.order_by(desc(AccessLog.last_seen_at)).limit(limit).offset(offset)
+    )).scalars().all()
+    return {"items": list(rows), "total": total}
+
+
+@router.get("/access/active", response_model=list[ActiveUser])
+async def list_active_users(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+    minutes: int = Query(30, ge=1, le=1440),
+):
+    """최근 N분 안에 움직인 사람 — '지금 누가 쓰고 있나'에 답한다."""
+    from app.models import AccessLog
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    rows = (await db.execute(
+        select(
+            AccessLog.actor_kind,
+            AccessLog.actor_username,
+            func.max(AccessLog.actor_label),
+            func.max(AccessLog.last_seen_at).label("last_seen"),
+            func.sum(AccessLog.hits),
+        )
+        .where(AccessLog.last_seen_at >= cutoff, AccessLog.actor_username.is_not(None))
+        .group_by(AccessLog.actor_kind, AccessLog.actor_username)
+        .order_by(desc("last_seen"))
+        .limit(50)
+    )).all()
+
+    out = []
+    for kind, username, label, last_seen, hits in rows:
+        # 마지막으로 본 화면 — 목록에서 바로 "얘가 어디 있는지" 보이게
+        last_path = (await db.execute(
+            select(AccessLog.path)
+            .where(AccessLog.actor_username == username)
+            .order_by(desc(AccessLog.last_seen_at)).limit(1)
+        )).scalar_one_or_none() or "-"
+        out.append({
+            "actor_kind": kind, "actor_username": username, "actor_label": label,
+            "last_seen_at": last_seen, "hits": int(hits or 0), "last_path": last_path,
+        })
+    return out
+
+
+@router.get("/access/daily")
+async def access_daily_counts(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+    days: int = Query(14, ge=1, le=90),
+):
+    """날짜별 접속자 수(중복 제외)와 요청 수 — 사용량 추이."""
+    from app.models import AccessLog
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (await db.execute(
+        select(
+            cast(AccessLog.created_at, Date).label("date"),
+            func.count(func.distinct(AccessLog.actor_username)),
+            func.sum(AccessLog.hits),
+        )
+        .where(AccessLog.created_at >= cutoff)
+        .group_by(cast(AccessLog.created_at, Date))
+        .order_by(cast(AccessLog.created_at, Date))
+    )).all()
+    return [{"date": d, "users": int(u or 0), "hits": int(h or 0)} for d, u, h in rows]

@@ -9,10 +9,15 @@ current_actor: ContextVar[dict | None] = ContextVar("current_actor", default=Non
 current_request_path: ContextVar[str | None] = ContextVar("current_request_path", default=None)
 
 
-def set_actor(actor: dict | None, request_path: str | None = None) -> None:
+def set_actor(actor: dict | None, request_path: str | None = None, scope: dict | None = None) -> None:
     current_actor.set(actor)
     if request_path is not None:
         current_request_path.set(request_path)
+    # Starlette 의 BaseHTTPMiddleware 는 엔드포인트를 별도 태스크에서 돌린다.
+    # 그래서 여기서 set 한 ContextVar 는 미들웨어 쪽에서 안 보인다(접속 기록이
+    # 전부 익명으로 찍혔던 이유). scope 는 같은 dict 를 공유하므로 여기에도 둔다.
+    if scope is not None:
+        scope["actor"] = actor
 
 
 def get_actor_label() -> str:

@@ -58,3 +58,73 @@ export function useInfraStatus(enabled: boolean) {
         refetchInterval: 15_000,
     });
 }
+
+// ── 접속 기록 ────────────────────────────────────────────────────────────────
+
+export interface AccessLog {
+    id: number;
+    created_at: string;
+    last_seen_at: string | null;
+    actor_kind: "staff" | "member" | "anon";
+    actor_username: string | null;
+    actor_label: string | null;
+    cohort_id: number | null;
+    method: string;
+    path: string;
+    status_code: number | null;
+    duration_ms: number | null;
+    ip: string | null;
+    user_agent: string | null;
+    /** 짧은 시간 안에 같은 요청이 반복되면 한 줄로 묶고 이 값이 올라간다 */
+    hits: number;
+}
+
+export interface ActiveUser {
+    actor_kind: string;
+    actor_username: string | null;
+    actor_label: string | null;
+    last_seen_at: string;
+    hits: number;
+    last_path: string;
+}
+
+export function useAccessLogs(params: {
+    actor_kind?: string; actor_username?: string; path?: string;
+    only_errors?: boolean; days?: number; limit?: number; offset?: number;
+}, enabled: boolean) {
+    return useQuery({
+        queryKey: ["access-logs", params],
+        queryFn: async () => {
+            const { data } = await api.get<{ items: AccessLog[]; total: number }>(
+                "/audit-logs/access", { params },
+            );
+            return data;
+        },
+        enabled,
+    });
+}
+
+export function useActiveUsers(enabled: boolean, minutes = 30) {
+    return useQuery({
+        queryKey: ["access-active", minutes],
+        queryFn: async () => {
+            const { data } = await api.get<ActiveUser[]>("/audit-logs/access/active", { params: { minutes } });
+            return data;
+        },
+        enabled,
+        refetchInterval: 30_000,
+    });
+}
+
+export function useAccessDaily(enabled: boolean, days = 14) {
+    return useQuery({
+        queryKey: ["access-daily", days],
+        queryFn: async () => {
+            const { data } = await api.get<{ date: string; users: number; hits: number }[]>(
+                "/audit-logs/access/daily", { params: { days } },
+            );
+            return data;
+        },
+        enabled,
+    });
+}

@@ -455,8 +455,25 @@ async def task_heartbeat(ctx):
         return {"ok": False}
 
 
+async def task_cleanup_access_logs(ctx):
+    """접속 기록 보존 정리 — 90일 지난 건 지운다.
+
+    하루 몇 천 줄이면 1년에 200만 줄이다. 지금 규모에선 감당되지만, 아무도 안 보는
+    옛날 기록이 디스크를 계속 먹게 두면 결국 누군가 새벽에 치워야 한다.
+    """
+    from sqlalchemy import text as _text
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(_text(
+            "DELETE FROM access_logs WHERE created_at < now() - interval '90 days'"
+        ))
+        await db.commit()
+    if res.rowcount:
+        logger.info(f"접속 기록 정리: {res.rowcount}줄 삭제")
+    return {"deleted": res.rowcount}
+
+
 class WorkerSettings:
-    functions = [task_heartbeat, task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check, task_send_push]
+    functions = [task_heartbeat, task_cleanup_access_logs, task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check, task_send_push]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     on_startup = startup
     # 기본값 3600초라 시간당 한 번만 기록돼 감시용으로 못 쓴다. 1분으로 당겨
@@ -465,4 +482,5 @@ class WorkerSettings:
     cron_jobs = [
         cron(task_naver_health_check, minute={0, 30}),
         cron(task_heartbeat, minute=set(range(0, 60, 5))),
+        cron(task_cleanup_access_logs, hour={4}, minute={30}),
     ]

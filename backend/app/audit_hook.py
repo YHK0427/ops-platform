@@ -12,7 +12,9 @@ from sqlalchemy.orm.attributes import get_history
 
 from app.audit_context import get_actor_label, get_actor_username, get_actor_role, get_actor_cohort_id, current_request_path
 
-_EXCLUDED_TABLES = {"audit_logs"}
+# 자기 자신과 접속 기록은 감사 대상에서 뺀다. access_logs 는 요청마다 쓰이므로
+# 감사에 넣으면 기록 한 줄이 또 기록을 낳아 무한히 불어난다.
+_EXCLUDED_TABLES = {"audit_logs", "access_logs"}
 _REDACTED_FIELDS = {"password_hash", "totp_secret", "storage_json", "public_token", "token"}
 
 # 테이블명 → 사람이 읽는 한국어 종류명. entity_label의 괄호 안에 붙는다.

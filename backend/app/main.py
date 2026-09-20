@@ -63,6 +63,12 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
+from app.access_log import access_log_middleware  # noqa: E402
+
+# 접속 기록 — 누가 언제 어느 화면을 봤는지. 응답을 돌려준 뒤 뒤에서 쓴다.
+app.middleware("http")(access_log_middleware)
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.time()

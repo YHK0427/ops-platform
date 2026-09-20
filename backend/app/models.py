@@ -1093,6 +1093,39 @@ class PatchNote(Base):
     )
 
 
+class AccessLog(Base):
+    """접속 기록 — 누가 언제 어느 화면을 봤는지. 변경(audit_logs)과 별개로 '조회'를 남긴다.
+
+    로그인은 한 번만 찍히고 기수원 토큰은 사실상 만료가 없어서, audit_logs 의 LOGIN 만으로는
+    '언제 들어왔나'를 알 수 없다. 이 표가 그걸 채운다.
+
+    폭주 방지: 같은 사람이 같은 경로를 짧은 시간 안에 반복 호출하면(화면 자동 갱신 등)
+    한 줄로 묶고 hits 만 올린다. 그래서 15초마다 폴링하는 화면도 분당 한 줄이 된다.
+    """
+    __tablename__ = "access_logs"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+    # staff / member / anon
+    actor_kind = Column(String(10), nullable=False, server_default="anon")
+    actor_username = Column(String(50), nullable=True, index=True)
+    actor_label = Column(String(120), nullable=True)   # "홍길동(manager)" 처럼 읽을 수 있게
+    cohort_id = Column(Integer, nullable=True, index=True)
+    method = Column(String(8), nullable=False)
+    path = Column(String(200), nullable=False)
+    status_code = Column(Integer, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    ip = Column(String(45), nullable=True)             # IPv6 까지
+    user_agent = Column(String(300), nullable=True)
+    # 묶인 횟수. 폴링을 접으면 여기가 올라간다.
+    hits = Column(Integer, nullable=False, server_default="1")
+    last_seen_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_access_logs_actor_time", "actor_username", "created_at"),
+    )
+
+
 class AuditLog(Base):
     """전체 모델 변경 이력 — SQLAlchemy after_flush 훅(app/audit_hook.py)이 자동 기록.
     누가(actor) 언제 어느 테이블의 어느 행을 insert/update/delete 했는지 + 변경 전후 값.
