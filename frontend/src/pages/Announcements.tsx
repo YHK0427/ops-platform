@@ -22,6 +22,8 @@ interface Announcement {
     kind?: Kind;
     /** 공유 링크(서명 포함). 이게 있어야 카카오톡 미리보기에 제목이 뜬다 */
     share_path?: string | null;
+    /** 순수 조회수 — 연 횟수. 읽음 인원수(read_count)와는 다른 숫자 */
+    view_count?: number;
     title: string;
     content: string;
     target: Target;
@@ -259,21 +261,30 @@ export default function Announcements() {
  * 상세를 연 사람만 세므로 목록에서 스쳐 지나간 건 포함되지 않는다.
  */
 function ReadStat({ ann, className }: { ann: Announcement; className?: string }) {
-    if (ann.read_count == null || ann.read_total == null) return null;
-    const total = ann.read_total;
-    const read = ann.read_count;
+    const hasRead = ann.read_count != null && ann.read_total != null;
+    // 조회수는 읽음 집계와 별개다. 읽음 집계가 없는 공지(대상 계산이 안 되는 경우)에도
+    // 조회수는 보여야 해서, 예전처럼 여기서 통째로 빠져나가지 않는다.
+    if (!hasRead && ann.view_count == null) return null;
+    const total = ann.read_total ?? 0;
+    const read = ann.read_count ?? 0;
     const pct = total > 0 ? Math.round((read / total) * 100) : 0;
     return (
         <div className={className}>
-            <div className="flex items-center gap-2 text-[12px] text-gray-500">
+            <div className="flex items-center gap-2 text-[12px] text-gray-500 flex-wrap">
                 <Eye className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                    대상 <b className="text-gray-700">{total}명</b> 중{" "}
-                    <b className="text-[var(--color-accent)]">{read}명</b> 읽음
-                    {total > 0 && <span className="text-gray-400"> ({pct}%)</span>}
-                </span>
+                {hasRead && (
+                    <span>
+                        대상 <b className="text-gray-700">{total}명</b> 중{" "}
+                        <b className="text-[var(--color-accent)]">{read}명</b> 읽음
+                        {total > 0 && <span className="text-gray-400"> ({pct}%)</span>}
+                    </span>
+                )}
+                {/* 조회수는 '연 횟수'라 읽은 인원수보다 클 수 있다(같은 사람이 여러 번) */}
+                {ann.view_count != null && (
+                    <span className="text-gray-400">{hasRead ? "· " : ""}조회 {ann.view_count}</span>
+                )}
             </div>
-            {total > 0 && (
+            {hasRead && total > 0 && (
                 <div className="mt-1 h-1.5 rounded-full bg-gray-100 overflow-hidden max-w-xs">
                     <div
                         className="h-full rounded-full bg-[var(--color-accent)] transition-all"

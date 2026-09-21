@@ -20,7 +20,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,6 +98,8 @@ class AnnouncementOut(BaseModel):
     is_read: bool | None = None
     # 공유 버튼이 쓸 주소. 서명이 붙어 있어야 카카오톡 미리보기에 제목이 뜬다.
     share_path: str | None = None
+    # 순수 조회수 — 연 횟수. '몇 명이 읽었나'(read_count)와는 다른 숫자다.
+    view_count: int = 0
     model_config = {"from_attributes": True}
 
 
@@ -266,6 +268,20 @@ async def _attach_read_counts(db: AsyncSession, anns: list, cohort_id: int) -> N
             cnt = read_by_member.get(a.id, 0) + read_by_staff.get(a.id, 0)
         a.read_count = cnt
         a.read_total = total
+
+
+async def _bump_view(db: AsyncSession, ann_id: int) -> None:
+    """조회수 +1. 읽어서 더하고 저장하면 동시에 열었을 때 한 번으로 합쳐지므로
+    DB 안에서 더하게 한다. 조회수 때문에 공지가 안 열리면 안 되니 실패는 삼킨다."""
+    try:
+        await db.execute(
+            update(Announcement.__table__)
+            .where(Announcement.__table__.c.id == ann_id)
+            .values(view_count=Announcement.__table__.c.view_count + 1)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
 
 
 def _attach_share(anns: list) -> None:
@@ -477,9 +493,11 @@ async def member_announcement_detail(
     )
     if not allowed:
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
+    await _bump_view(db, ann_id)
     await _mark_read(db, ann_id, member_id=mid)
     await _attach_reactions(db, [ann], mid)
     _attach_share([ann])
+    await db.refresh(ann)
     return ann
 
 
@@ -746,6 +764,9 @@ async def mark_announcement_read_staff(
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
     # 운영진이 대상인 공지(staff/all)일 때만 기록한다. 기수원 공지를 운영진이
     # 관리하려고 열어본 건 '확인한 사람'이 아니므로 집계에 넣지 않는다.
+    # 읽음 집계는 대상일 때만 센다(기수원 공지를 운영진이 관리하려고 연 건
+    # '확인한 사람'이 아니다). 반면 조회수는 말 그대로 연 횟수라 구분하지 않는다.
+    await _bump_view(db, ann_id)
     if ann.target in ("staff", "all"):
         urow = await resolve_current_user_row(db, user)
         if urow:

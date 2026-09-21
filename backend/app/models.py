@@ -589,6 +589,9 @@ class Announcement(Base):
     pushed = Column(Boolean, default=False, server_default="false", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+    # 순수 조회수 — 상세를 연 횟수. 같은 사람이 여러 번 열면 그만큼 올라간다.
+    # '몇 명이 읽었나'(announcement_reads)와는 다른 숫자다. 게시판 조회수와 같은 의미.
+    view_count = Column(Integer, nullable=False, server_default="0")
     # 제목/본문이 실제로 바뀐 시각. 대상 변경이나 태그 수정으로는 안 움직인다 —
     # 이 값보다 이전에 읽은 사람은 '안 읽음'으로 되돌려 다시 읽게 한다.
     content_updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=True)

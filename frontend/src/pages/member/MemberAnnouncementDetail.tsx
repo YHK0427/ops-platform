@@ -19,6 +19,7 @@ interface Announcement {
     reactions?: Record<string, number>;
     my_reactions?: string[];
     share_path?: string | null;
+    view_count?: number;
 }
 
 function formatDate(iso: string) {
@@ -75,6 +76,7 @@ export default function MemberAnnouncementDetail() {
                     <p className="text-[12px] text-gray-400 mt-1.5">
                         {formatDate(ann.created_at)}
                         {ann.created_by ? ` · ${ann.created_by}` : ""}
+                        {ann.view_count != null ? ` · 조회 ${ann.view_count}` : ""}
                     </p>
                     {ann.tags && ann.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-2">

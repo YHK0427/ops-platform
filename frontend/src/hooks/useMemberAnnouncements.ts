@@ -14,6 +14,7 @@ export interface MemberAnnouncement {
     /** 본인이 읽었는지 — 기수원 응답에만 채워진다. 글이 수정되면 다시 false 가 된다. */
     is_read?: boolean | null;
     content_updated_at?: string | null;
+    view_count?: number;
 }
 
 export const memberAnnKeys = {
