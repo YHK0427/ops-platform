@@ -102,10 +102,17 @@ _REDIRECT_JS = """(function () {
   function show(htmlStr) { if (msg) msg.innerHTML = htmlStr; }
 
   if (inApp && isAndroid) {
-    // 크롬으로 넘긴다. 크롬이 없으면 아무 일도 안 일어나므로 아래 안내가 남는다.
+    // 인앱 브라우저를 빠져나간다.
+    // package 를 지정하지 않는 게 핵심이다. com.android.chrome 을 박으면 크롬이
+    // 강제로 열려서, PWA(WebAPK)를 깔아둔 사람도 앱으로 못 간다. 비워두면 안드로이드가
+    // 주소에 맞는 앱을 고르고, PWA 가 설치돼 있으면 그쪽이 잡는다(manifest 의
+    // scope 가 "/" 라 모든 주소가 대상이다). 없으면 기본 브라우저로 간다.
+    // browser_fallback_url 은 아무것도 못 찾았을 때 쓰인다.
     var intent = "intent://" + location.host + to
       + "#Intent;scheme=" + location.protocol.replace(":", "")
-      + ";package=com.android.chrome;end";
+      + ";action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE"
+      + ";S.browser_fallback_url=" + encodeURIComponent(target)
+      + ";end";
     location.href = intent;
     setTimeout(function () {
       show('<a href="' + target + '">계속하려면 여기를 누르세요</a>');
