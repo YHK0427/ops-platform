@@ -83,21 +83,10 @@ def _page(title: str, desc: str, url: str) -> str:
 # 그쪽으로 넘어가지 않는다(WebView 라 OS 의 링크 연결을 안 거친다).
 # 안드로이드는 intent:// 로 기본 브라우저를 띄울 수 있다. iOS 는 방법이 없어
 # "다른 브라우저로 열기"를 안내한다.
-# 이 사이트의 WebAPK(안드로이드에 설치된 PWA) 패키지 이름.
-# 크롬에서 chrome://webapks 로 확인한다.
-#
-# 이 이름은 사람마다 다르지 않다. Chromium 소스상 패키지 이름은 구글의 발급 서버가
-# 정해서 내려주고(WebApkResponse.package_name), 그 요청에는 사용자·기기 식별자가
-# 전혀 실리지 않는다(쿠키도 끈다). 크롬 코드에도 "다른 크롬 버전이 이미 설치했을 수
-# 있다"며 같은 이름을 기대하는 검사가 있다.
-#
-# 다만 **manifest 주소(/manifest.webmanifest)나 manifest 의 id 를 바꾸면
-# 다른 앱으로 취급돼 이름이 바뀐다.** 아이콘·이름·테마색·scope 변경은 괜찮다.
-# 이름이 틀리면 브라우저로 여는 단계로 넘어가므로 고장나지는 않는다.
-PWA_PACKAGE = "org.chromium.webapk.ab8b286fcec5ebba6_v2"
-
+# 안드로이드에서 링크를 설치된 PWA 로 열리게 하는 건 /.well-known/assetlinks.json 이
+# 담당한다(frontend/public/.well-known, 설명은 docs/android-pwa-links.md).
+# 여기서 패키지를 직접 지정하지 않는 이유도 그 문서에 적어뒀다.
 _REDIRECT_JS = """(function () {
-  var PWA_PACKAGE = "__PWA_PACKAGE__";
   var ua = navigator.userAgent || "";
   var isKakao = /KAKAOTALK/i.test(ua);
   var inApp = isKakao || /NAVER\\(inapp|Instagram|FBAN|FBAV|Line\\//i.test(ua);
@@ -127,23 +116,26 @@ _REDIRECT_JS = """(function () {
     var here = location.href;
 
     if (isAndroid) {
-      // 패키지를 명시하면 안드로이드의 앱링크 '검증'을 건너뛴다. Android 12 부터
-      // 검증 안 된 링크는 선택창도 없이 브라우저로 가는데, WebAPK 는 사이트가
-      // assetlinks.json 으로 보증하지 않으면 검증되지 않는다. 그래서 패키지를
-      // 비워두면 PWA 를 깔아놔도 크롬이 열렸다.
-      // 패키지 이름은 크롬 주소창에 chrome://webapks 로 확인한다.
-      var base = "intent://" + location.host + location.pathname + location.search
+      // 인앱 브라우저를 빠져나간다. 패키지는 지정하지 않는다.
+      //
+      // 전에는 PWA 패키지(org.chromium.webapk....)를 직접 지정했는데 두 가지로 실패했다.
+      // 1) 안드로이드 11 부터 앱은 선언하지 않은 다른 패키지를 볼 수 없다. 카카오톡이
+      //    그 패키지를 못 보므로 "설치되지 않음"으로 처리된다.
+      // 2) 그 상태에서 fallback 이 없으면 안드로이드는 그 패키지를 받으러
+      //    플레이스토어를 연다 — 스토어에 없는 앱이라 "항목을 찾을 수 없습니다"가 떴다.
+      //
+      // 대신 /.well-known/assetlinks.json 을 올려뒀다. 그러면 안드로이드가 설치된
+      // PWA 를 이 주소의 '검증된 처리기'로 인정해서, 아래처럼 평범한 https 주소만
+      // 넘겨도 알아서 PWA 를 띄운다. PWA 가 없으면 기본 브라우저로 간다.
+      // (검증은 앱 설치·업데이트 시점에 일어난다. 이미 깔아둔 사람은 PWA 를 다시
+      //  설치해야 바로 반영된다.)
+      var intent = "intent://" + location.host + location.pathname + location.search
         + "#Intent;scheme=" + location.protocol.replace(":", "")
         + ";action=android.intent.action.VIEW"
-        + ";category=android.intent.category.BROWSABLE";
-      var fb = ";S.browser_fallback_url=" + encodeURIComponent(here) + ";end";
-
-      // 1차: 설치된 PWA 를 직접 연다. **fallback 을 넣지 않는다** —
-      // 넣으면 인앱 브라우저가 앱을 띄워보기도 전에 그 주소를 기본 브라우저로
-      // 열어버리는 경우가 있다(PWA 를 깔아놔도 크롬이 뜨던 원인).
-      location.href = base + ";package=" + PWA_PACKAGE + ";end";
-      // 2차: PWA 가 없거나 이름이 달라졌으면 기본 브라우저로.
-      setTimeout(function () { if (!left) location.href = base + fb; }, 1800);
+        + ";category=android.intent.category.BROWSABLE"
+        + ";S.browser_fallback_url=" + encodeURIComponent(here)
+        + ";end";
+      location.href = intent;
     } else if (isIOS) {
       // x-safari-https 는 https 일 때만 의미가 있다. http 에서 치환하면 문자열이
       // 그대로라 같은 주소로 다시 이동 → 스크립트가 또 돌며 무한 새로고침이 된다.
@@ -194,7 +186,7 @@ _REDIRECT_JS = """(function () {
 @router.get("/redirect.js", include_in_schema=False)
 async def redirect_js():
     return Response(
-        content=_REDIRECT_JS.replace("__PWA_PACKAGE__", PWA_PACKAGE),
+        content=_REDIRECT_JS,
         media_type="application/javascript; charset=utf-8",
         # 짧게 잡는다. 길게 두면 고친 뒤에도 폰에 옛 파일이 남아 그만큼 옛 동작을 한다
         # (크롬 강제로 열리던 버전이 폰에 1시간 남아 있었다).
