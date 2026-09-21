@@ -43,6 +43,25 @@ _SKIP_PREFIX = (
 _ID_RE = re.compile(r"/\d+(?=/|$)")
 
 
+def _entry_source(request, path: str) -> str:
+    """공유 링크 랜딩(/go/)으로 들어온 사람이 '어디를 눌러서' 왔는지.
+
+    쿼리스트링은 기록하지 않는다(길고 토큰이 섞인다). 그래서 이 한 가지만
+    경로 뒤에 붙여 남긴다 — 푸시 알림이 실제로 읽히는지 알 방법이 달리 없다.
+      push  = 푸시 알림을 눌렀다        (푸시 URL 에 ?src=push 를 붙여 보낸다)
+      share = 공유 버튼으로 만든 링크    (서명 ?s=... 가 붙어 있다)
+      direct= 주소를 직접 열었다        (둘 다 없다)
+    """
+    if not path.startswith("/go/announcement"):
+        return ""
+    q = request.query_params
+    if q.get("src") == "push":
+        return " (푸시)"
+    if q.get("s"):
+        return " (공유링크)"
+    return " (직접)"
+
+
 def _should_skip(path: str) -> bool:
     return path in _SKIP_EXACT or path.startswith(_SKIP_PREFIX)
 
@@ -118,7 +137,7 @@ async def access_log_middleware(request, call_next):
         "actor_label": label,
         "cohort_id": cohort,
         "method": request.method,
-        "path": _ID_RE.sub("/{id}", path)[:200],
+        "path": (_ID_RE.sub("/{id}", path) + _entry_source(request, path))[:200],
         "status_code": response.status_code,
         "duration_ms": int((time.monotonic() - start) * 1000),
         "ip": _client_ip(request),

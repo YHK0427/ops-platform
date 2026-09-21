@@ -163,6 +163,7 @@ _COOKIE_MAX_AGE = 400 * 24 * 3600
 
 
 def _set_session_cookie(response: Response, name: str, token: str) -> None:
+    """'로그인 유지'를 켠 사람에게만 심는다. 끈 사람 몫은 호출부에서 거른다."""
     response.set_cookie(
         key=name, value=token,
         max_age=_COOKIE_MAX_AGE,
@@ -292,7 +293,11 @@ async def login(body: LoginRequest, request: Request, response: Response, db: As
     logger.audit(f"🔑 로그인 성공 — {user.username} ({user.role}) from {ip}")
     await record_auth_event(db, "LOGIN", user.username, user.role, user.cohort_id, f"{user.username} 로그인 성공", request.url.path, ip)
     token = _create_access_token(user.id, user.username, user.role, user.cohort_id, remember=body.remember)
-    _set_session_cookie(response, STAFF_COOKIE, token)
+    # '로그인 유지'를 끈 사람에게 쿠키를 심으면, 브라우저를 닫아도 되살아나 의도와 반대가 된다.
+    if body.remember:
+        _set_session_cookie(response, STAFF_COOKIE, token)
+    else:
+        _clear_session_cookie(response, STAFF_COOKIE)
     return TokenResponse(access_token=token)
 
 
@@ -323,7 +328,10 @@ async def verify_totp(body: VerifyTotpRequest, request: Request, response: Respo
     logger.audit(f"🔑 로그인 성공 (2FA) — {user.username} ({user.role}) from {ip}")
     await record_auth_event(db, "LOGIN", user.username, user.role, user.cohort_id, f"{user.username} 로그인 성공 (2FA)", request.url.path, ip)
     token = _create_access_token(user.id, user.username, user.role, user.cohort_id, remember=body.remember)
-    _set_session_cookie(response, STAFF_COOKIE, token)
+    if body.remember:
+        _set_session_cookie(response, STAFF_COOKIE, token)
+    else:
+        _clear_session_cookie(response, STAFF_COOKIE)
     return TokenResponse(access_token=token)
 
 
@@ -473,6 +481,10 @@ async def restore_session(request: Request, response: Response):
         if await is_token_blacklisted(raw):
             _clear_session_cookie(response, name)
             continue
+        # 되살릴 때마다 쿠키 수명을 다시 채운다. 브라우저가 쿠키를 400일까지만
+        # 받아주므로(크롬 상한), 갱신하지 않으면 400일 뒤에 결국 로그아웃된다.
+        # 갱신하면 '로그아웃을 누를 때까지' 유지된다.
+        _set_session_cookie(response, name, raw)
         return SessionRestore(access_token=raw, kind=kind)
     return SessionRestore()
 

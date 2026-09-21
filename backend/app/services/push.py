@@ -7,7 +7,7 @@ import json
 import logging
 
 from pywebpush import WebPushException, webpush
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from app.config import settings
 from app.models import Member, PushSubscription, User
@@ -51,8 +51,15 @@ async def resolve_subscription_ids(
     member_target = PushSubscription.member_id.in_(
         select(Member.id).where(Member.is_active == True, Member.cohort_id == cohort_id)  # noqa: E712
     )
+    # 전체 관리자(cohort_id IS NULL)도 받아야 한다.
+    # SQL 에서 NULL = 3 은 거짓이 아니라 UNKNOWN 이라 그냥 두면 조용히 빠진다 —
+    # 실제로 adminyhk·admin 이 어느 기수 공지에서도 푸시를 못 받고 있었다.
+    # 이들은 기수 하나에 속하지 않고 전 기수를 관리하므로, 기수 공지를 다 받는 게 맞다.
     staff_target = PushSubscription.user_id.in_(
-        select(User.id).where(User.is_active == True, User.cohort_id == cohort_id)  # noqa: E712
+        select(User.id).where(
+            User.is_active == True,  # noqa: E712
+            or_(User.cohort_id == cohort_id, User.cohort_id.is_(None)),
+        )
     )
     if target == "members":
         conds.append(member_target)

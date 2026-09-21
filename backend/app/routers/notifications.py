@@ -296,7 +296,7 @@ async def _notify_author(request: Request, db: AsyncSession, ann: Announcement, 
         )
     )).all()]
     if sub_ids:
-        await _enqueue_push(request, {"title": title, "body": body, "url": f"/go/announcement/{ann.id}", "tag": f"ann-act-{ann.id}"}, sub_ids)
+        await _enqueue_push(request, {"title": title, "body": body, "url": f"/go/announcement/{ann.id}?src=push", "tag": f"ann-act-{ann.id}"}, sub_ids)
 
 
 def _clean_tags(tags: list[str] | None) -> list[str] | None:
@@ -784,7 +784,7 @@ async def create_announcement(
     if body.push:
         sub_ids = await resolve_subscription_ids(db, cohort_id, body.target, body.target_member_ids)
         prefix = "[자료] " if body.kind == "resource" else ""
-        payload = {"title": prefix + body.title, "body": _excerpt(body.content), "url": f"/go/announcement/{ann.id}", "tag": f"ann-{ann.id}"}
+        payload = {"title": prefix + body.title, "body": _excerpt(body.content), "url": f"/go/announcement/{ann.id}?src=push", "tag": f"ann-{ann.id}"}
         await _enqueue_push(request, payload, sub_ids)
         ann.pushed = True
         await db.commit()
@@ -826,7 +826,7 @@ async def update_announcement(
         await _enqueue_push(request, {
             "title": ("[자료 수정] " if body.kind == "resource" else "[공지 수정] ") + body.title,
             "body": _excerpt(body.content),
-            "url": f"/go/announcement/{ann.id}",
+            "url": f"/go/announcement/{ann.id}?src=push",
             "tag": f"ann-{ann.id}",
         }, sub_ids)
     # 수정으로 본문에서 빠진 첨부/이미지 정리
