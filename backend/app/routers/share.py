@@ -84,8 +84,16 @@ def _page(title: str, desc: str, url: str) -> str:
 # 안드로이드는 intent:// 로 기본 브라우저를 띄울 수 있다. iOS 는 방법이 없어
 # "다른 브라우저로 열기"를 안내한다.
 # 이 사이트의 WebAPK(안드로이드에 설치된 PWA) 패키지 이름.
-# 크롬에서 chrome://webapks 로 확인한다. manifest 를 바꾸면 끝의 _v2 가 올라가며
-# 이름이 바뀔 수 있는데, 틀려도 브라우저로 여는 단계로 넘어가므로 고장나진 않는다.
+# 크롬에서 chrome://webapks 로 확인한다.
+#
+# 이 이름은 사람마다 다르지 않다. Chromium 소스상 패키지 이름은 구글의 발급 서버가
+# 정해서 내려주고(WebApkResponse.package_name), 그 요청에는 사용자·기기 식별자가
+# 전혀 실리지 않는다(쿠키도 끈다). 크롬 코드에도 "다른 크롬 버전이 이미 설치했을 수
+# 있다"며 같은 이름을 기대하는 검사가 있다.
+#
+# 다만 **manifest 주소(/manifest.webmanifest)나 manifest 의 id 를 바꾸면
+# 다른 앱으로 취급돼 이름이 바뀐다.** 아이콘·이름·테마색·scope 변경은 괜찮다.
+# 이름이 틀리면 브라우저로 여는 단계로 넘어가므로 고장나지는 않는다.
 PWA_PACKAGE = "org.chromium.webapk.ab8b286fcec5ebba6_v2"
 
 _REDIRECT_JS = """(function () {

@@ -4,6 +4,7 @@ import "./index.css";
 import App from "./App.tsx";
 import { getToken } from "@/lib/api";
 import { getMemberToken } from "@/lib/memberApi";
+import { restoreSession } from "@/lib/restoreSession";
 
 // 배포로 청크 해시가 바뀌면 열려있던 옛 탭이 옛 청크를 못 받아 404가 난다.
 // 동적 import(코드분할) 로드 실패 시 한 번만 새로고침해 최신 번들을 받는다.
@@ -71,7 +72,9 @@ async function waitForCriticalFonts(timeoutMs = 400): Promise<void> {
     }
 }
 
-waitForCriticalFonts().then(() => {
+// 폰트 대기와 로그인 복구를 같이 돌린다 — 복구가 렌더를 더 늦추지 않게.
+// 토큰이 이미 있으면 restoreSession 은 아무것도 하지 않고 바로 끝난다.
+Promise.all([waitForCriticalFonts(), restoreSession()]).then(() => {
     createRoot(document.getElementById("root")!).render(
         <StrictMode>
             <App />

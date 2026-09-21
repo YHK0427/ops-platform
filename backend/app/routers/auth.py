@@ -20,6 +20,7 @@ from app.deps import (
     get_current_user,
     get_db,
     get_real_ip,
+    is_token_blacklisted,
     hash_password,
     oauth2_scheme,
     require_admin,
@@ -145,6 +146,38 @@ class UserResponse(BaseModel):
 _DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
 
 
+# ── 로그인 백업 쿠키 ─────────────────────────────────────────────────────────
+# 로그인 토큰은 localStorage 에 있는데, 사파리/WebKit 은 **스크립트가 쓴 저장소**를
+# 7일간 그 사이트를 쓰지 않으면 지운다(localStorage·IndexedDB·SW 등록 모두).
+# 2주에 한 번 들어오는 기수원은 그래서 매번 다시 로그인하게 된다.
+# HttpOnly 쿠키는 스크립트가 쓴 저장소가 아니라서 그 삭제 대상이 아니다.
+#
+# 다만 이 쿠키로 **API 를 인증하지는 않는다.** 쿠키로 API 가 통과되면 다른 사이트가
+# 사용자의 쿠키를 얹어 요청을 보낼 수 있다(CSRF). 이 쿠키는 오직 /auth/session 하나,
+# 그것도 GET 으로 "토큰을 다시 달라"는 데만 쓴다. 응답 본문은 다른 출처의 스크립트가
+# 읽을 수 없으므로(CORS) 남의 사이트가 훔쳐갈 수 없다.
+STAFF_COOKIE = "ops_session"
+MEMBER_COOKIE = "member_session"
+# 400일 — 크롬이 그 이상은 잘라버린다.
+_COOKIE_MAX_AGE = 400 * 24 * 3600
+
+
+def _set_session_cookie(response: Response, name: str, token: str) -> None:
+    response.set_cookie(
+        key=name, value=token,
+        max_age=_COOKIE_MAX_AGE,
+        httponly=True,      # 이게 있어야 '스크립트가 쓴 저장소' 취급을 안 받는다
+        secure=True,
+        samesite="lax",     # 카카오톡에서 넘어오는 최상위 이동에도 실려야 한다
+        path="/",
+        # domain 은 지정하지 않는다 — 호스트 전용 쿠키가 형제 서브도메인으로 안 샌다
+    )
+
+
+def _clear_session_cookie(response: Response, name: str) -> None:
+    response.delete_cookie(key=name, path="/", httponly=True, secure=True, samesite="lax")
+
+
 def _create_access_token(
     user_id: int, username: str, role: str, cohort_id: int | None, remember: bool = False
 ) -> str:
@@ -196,7 +229,7 @@ async def _check_totp_rate(token: str) -> None:
 # ── Auth Endpoints ───────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     """DB 기반 로그인 → JWT 반환 (TOTP 필요 시 pending 토큰)"""
     ip = get_real_ip(request)
 
@@ -259,11 +292,12 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     logger.audit(f"🔑 로그인 성공 — {user.username} ({user.role}) from {ip}")
     await record_auth_event(db, "LOGIN", user.username, user.role, user.cohort_id, f"{user.username} 로그인 성공", request.url.path, ip)
     token = _create_access_token(user.id, user.username, user.role, user.cohort_id, remember=body.remember)
+    _set_session_cookie(response, STAFF_COOKIE, token)
     return TokenResponse(access_token=token)
 
 
 @router.post("/verify-totp", response_model=TokenResponse)
-async def verify_totp(body: VerifyTotpRequest, request: Request, db: AsyncSession = Depends(get_db)):
+async def verify_totp(body: VerifyTotpRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     """TOTP pending 토큰 + OTP 코드 → JWT 반환"""
     ip = request.client.host if request.client else "unknown"
 
@@ -289,6 +323,7 @@ async def verify_totp(body: VerifyTotpRequest, request: Request, db: AsyncSessio
     logger.audit(f"🔑 로그인 성공 (2FA) — {user.username} ({user.role}) from {ip}")
     await record_auth_event(db, "LOGIN", user.username, user.role, user.cohort_id, f"{user.username} 로그인 성공 (2FA)", request.url.path, ip)
     token = _create_access_token(user.id, user.username, user.role, user.cohort_id, remember=body.remember)
+    _set_session_cookie(response, STAFF_COOKIE, token)
     return TokenResponse(access_token=token)
 
 
@@ -319,14 +354,16 @@ async def logout(
     await blacklist_token(token, ttl)
     logger.audit("logout user=%s", current_user["username"])
     await record_auth_event(db, "LOGOUT", current_user["username"], current_user.get("role"), current_user.get("cohort_id"), f"{current_user['username']} 로그아웃", request.url.path)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    resp = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_session_cookie(resp, STAFF_COOKIE)
+    return resp
 
 
 # ── Member (GenerationAccount) Auth ─────────────────────────────────────────
 
 @router.post("/member-login", response_model=MemberTokenResponse)
 async def member_login(
-    body: MemberLoginRequest, request: Request, db: AsyncSession = Depends(get_db),
+    body: MemberLoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db),
 ):
     """기수 멤버 계정 로그인 → JWT 반환"""
     ip = get_real_ip(request)
@@ -401,7 +438,43 @@ async def member_login(
     mname = member.name if member else account.username
     logger.audit(f"🔓 기수 로그인 — {mname} (@{account.username}) from {ip}")  # type: ignore[attr-defined]
     await record_auth_event(db, "LOGIN", account.username, "기수원", member.cohort_id if member else None, f"{mname} 기수원 로그인 성공", request.url.path, ip)
+    _set_session_cookie(response, MEMBER_COOKIE, token)
     return MemberTokenResponse(access_token=token)
+
+
+class SessionRestore(BaseModel):
+    """브라우저가 토큰을 잃어버렸을 때 쿠키로 되살린 결과."""
+    access_token: str | None = None
+    kind: str | None = None   # staff / member
+
+
+@router.get("/session", response_model=SessionRestore)
+async def restore_session(request: Request, response: Response):
+    """localStorage 가 지워졌을 때 HttpOnly 쿠키로 로그인을 되살린다.
+
+    사파리/WebKit 은 7일간 사이트를 쓰지 않으면 **스크립트가 쓴 저장소**를 지운다.
+    2주에 한 번 들어오는 기수원은 그래서 매번 다시 로그인해야 했다.
+    쿠키는 그 대상이 아니라 살아남는다.
+
+    이 엔드포인트만 쿠키를 본다. 다른 API 는 그대로 Authorization 헤더만 받는다.
+    쿠키로 API 전체가 통과되면 다른 사이트가 사용자의 쿠키를 얹어 요청을 보낼 수
+    있는데(CSRF), 여기는 GET 이고 응답 본문은 다른 출처의 스크립트가 읽을 수 없다.
+    """
+    for name, kind in ((STAFF_COOKIE, "staff"), (MEMBER_COOKIE, "member")):
+        raw = request.cookies.get(name)
+        if not raw:
+            continue
+        try:
+            jwt.decode(raw, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        except JWTError:
+            # 만료·위조된 쿠키는 지워서 매번 헛되이 시도하지 않게 한다
+            _clear_session_cookie(response, name)
+            continue
+        if await is_token_blacklisted(raw):
+            _clear_session_cookie(response, name)
+            continue
+        return SessionRestore(access_token=raw, kind=kind)
+    return SessionRestore()
 
 
 @router.get("/member-me", response_model=MemberMeResponse)
@@ -471,7 +544,7 @@ async def change_password(
 
 
 @router.post("/member-logout")
-async def member_logout(request: Request, token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
+async def member_logout(request: Request, response: Response, token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
     """멤버 토큰 폐기 (블랙리스트 등록)"""
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
@@ -483,6 +556,7 @@ async def member_logout(request: Request, token: str = Depends(oauth2_scheme), d
         await record_auth_event(db, "LOGOUT", username, "기수원", payload.get("cohort_id"), f"{username} 기수원 로그아웃", request.url.path)
     except JWTError:
         pass
+    _clear_session_cookie(response, MEMBER_COOKIE)
     return {"status": "ok"}
 
 
