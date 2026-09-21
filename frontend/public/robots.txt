@@ -1,0 +1,16 @@
+# 동아리 내부 운영 도구다. 검색에 뜰 이유가 없다.
+# 주의: robots.txt 는 '크롤링하지 말라'는 요청이지 접근 차단이 아니다.
+# 실제 차단은 로그인과 아래 X-Robots-Tag 헤더가 한다.
+User-agent: *
+Disallow: /
+
+# 카카오톡·슬랙 등의 미리보기 크롤러는 막지 않는다. 검색 색인을 만들지 않고
+# 공유한 링크의 제목만 읽어가므로, 이걸 막으면 공유 미리보기가 안 뜬다.
+User-agent: kakaotalk-scrap
+Allow: /go/
+User-agent: Twitterbot
+Allow: /go/
+User-agent: facebookexternalhit
+Allow: /go/
+User-agent: Slackbot-LinkExpanding
+Allow: /go/

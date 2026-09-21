@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useOutletContext, useParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import { PatchNoteModal } from "@/components/PatchNoteModal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
@@ -130,13 +130,6 @@ function RootRedirect() {
 
 // 푸시 알림 클릭 랜딩 — 세션에 맞는 화면으로 라우팅.
 // 멤버 토큰 있으면 멤버 공지 상세, 운영진 토큰 있으면 운영진 공지 페이지, 없으면 로그인.
-function AnnouncementLanding() {
-  const { id } = useParams();
-  if (getMemberToken()) return <Navigate to={`/member/announcements/${id}`} replace />;
-  if (getToken()) return <Navigate to="/announcements" replace />;
-  return <Navigate to="/login" replace />;
-}
-
 export default function App() {
   useEffect(() => {
     document.title = "UnivPT Ops";
@@ -151,8 +144,9 @@ export default function App() {
               {/* 통합 로그인 + 루트 redirect (단일 도메인) */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<RootRedirect />} />
-              {/* 푸시 알림 클릭 랜딩 (세션별 라우팅) */}
-              <Route path="/go/announcement/:id" element={<AnnouncementLanding />} />
+              {/* /go/announcement/:id 는 서버(backend/app/routers/share.py)가 처리한다.
+                  카카오톡 미리보기 태그를 붙이려면 HTML 을 서버가 내려줘야 해서다.
+                  nginx 가 /go/ 를 백엔드로 보내므로 여기에 라우트를 두면 안 된다. */}
 
               {/* ── 공개 채점 폼 (로그인 불필요) ────────────────────────
                   주의: AuthGuard/MemberGuard 바깥, catch-all(*) 앞에 두어야 한다.

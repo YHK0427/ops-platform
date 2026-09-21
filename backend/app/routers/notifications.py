@@ -96,6 +96,8 @@ class AnnouncementOut(BaseModel):
     read_total: int | None = None
     # 기수원 화면에서만 채워진다 (운영진 응답에는 None) — 본인이 읽었는지
     is_read: bool | None = None
+    # 공유 버튼이 쓸 주소. 서명이 붙어 있어야 카카오톡 미리보기에 제목이 뜬다.
+    share_path: str | None = None
     model_config = {"from_attributes": True}
 
 
@@ -264,6 +266,13 @@ async def _attach_read_counts(db: AsyncSession, anns: list, cohort_id: int) -> N
             cnt = read_by_member.get(a.id, 0) + read_by_staff.get(a.id, 0)
         a.read_count = cnt
         a.read_total = total
+
+
+def _attach_share(anns: list) -> None:
+    """공유용 주소를 붙인다. 서명 없이 id 만 있는 주소는 미리보기가 안 뜨게 해뒀다."""
+    from app.routers.share import sign
+    for a in anns:
+        a.share_path = f"/go/announcement/{a.id}?s={sign(a.id)}"
 
 
 def _excerpt(html: str, n: int = 120) -> str:
@@ -447,6 +456,7 @@ async def member_announcements(
     anns = list(rows.scalars().all())
     await _attach_reactions(db, anns, mid)
     await _attach_my_read(db, anns, mid)
+    _attach_share(anns)
     return anns
 
 
@@ -469,6 +479,7 @@ async def member_announcement_detail(
         raise HTTPException(status_code=404, detail="공지를 찾을 수 없습니다")
     await _mark_read(db, ann_id, member_id=mid)
     await _attach_reactions(db, [ann], mid)
+    _attach_share([ann])
     return ann
 
 
@@ -717,6 +728,7 @@ async def list_announcements(
     urow = await resolve_current_user_row(db, user)
     await _attach_reactions(db, anns, viewer_user_id=urow.id if urow else None)
     await _attach_read_counts(db, anns, cohort_id)
+    _attach_share(anns)
     return anns
 
 

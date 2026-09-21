@@ -39,6 +39,12 @@ export default defineConfig({
         secure: false,
         ws: true,
       },
+      // 공유 링크 랜딩 — 미리보기 태그를 서버가 내려줘야 해서 백엔드로 보낸다
+      "/go": {
+        target: "http://backend:8000",
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 });

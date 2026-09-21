@@ -8,6 +8,7 @@ import type { LinkCardData } from "@/components/editor/LinkCardView";
 import type { FileData } from "@/components/editor/FileAttachmentView";
 import PushToggle from "@/components/PushToggle";
 import { PageHeader } from "@/components/PageHeader";
+import ShareButton from "@/components/ShareButton";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -19,6 +20,8 @@ type Target = "all" | "members" | "staff" | "select";
 interface Announcement {
     id: number;
     kind?: Kind;
+    /** 공유 링크(서명 포함). 이게 있어야 카카오톡 미리보기에 제목이 뜬다 */
+    share_path?: string | null;
     title: string;
     content: string;
     target: Target;
@@ -196,6 +199,7 @@ export default function Announcements() {
                                         <ReadStat ann={a} className="mt-1.5" />
                                     </div>
                                     <div className="flex items-center gap-1 shrink-0">
+                                        {a.share_path && <ShareButton compact path={a.share_path} title={a.title} className="border-0 px-1.5 py-1.5" />}
                                         <button onClick={() => setEditing(a)} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100" title="수정">
                                             <Pencil className="w-4 h-4" />
                                         </button>
@@ -332,6 +336,9 @@ function AnnouncementViewModal({
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-gray-200 shrink-0">
+                    {ann.share_path && (
+                        <ShareButton className="mr-auto" path={ann.share_path} title={ann.title} />
+                    )}
                     <button onClick={onDelete} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-rose-600 hover:bg-rose-50">
                         <Trash2 className="w-4 h-4" /> 삭제
                     </button>

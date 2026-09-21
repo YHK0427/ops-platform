@@ -7,6 +7,7 @@ import RichContent from "@/components/RichContent";
 import AnnouncementReactions from "@/components/AnnouncementReactions";
 import AnnouncementComments from "@/components/AnnouncementComments";
 import { ArrowLeft, Megaphone } from "lucide-react";
+import ShareButton from "@/components/ShareButton";
 
 interface Announcement {
     id: number;
@@ -17,6 +18,7 @@ interface Announcement {
     tags?: string[] | null;
     reactions?: Record<string, number>;
     my_reactions?: string[];
+    share_path?: string | null;
 }
 
 function formatDate(iso: string) {
@@ -65,6 +67,9 @@ export default function MemberAnnouncementDetail() {
                 <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                     <div className="flex items-center gap-1.5 text-rose-500 text-xs font-semibold mb-2">
                         <Megaphone className="w-4 h-4" /> 공지
+                        {ann.share_path && (
+                            <ShareButton className="ml-auto" compact path={ann.share_path} title={ann.title} />
+                        )}
                     </div>
                     <h1 className="text-xl font-bold text-gray-900 break-words">{ann.title}</h1>
                     <p className="text-[12px] text-gray-400 mt-1.5">
