@@ -67,11 +67,21 @@ def _should_skip(path: str) -> bool:
 
 
 def _client_ip(request) -> str | None:
-    """Cloudflare Tunnel 뒤라 request.client 는 항상 내부 IP다. 헤더를 먼저 본다."""
-    for h in ("cf-connecting-ip", "x-forwarded-for", "x-real-ip"):
-        v = request.headers.get(h)
-        if v:
-            return v.split(",")[0].strip()[:45]
+    """Cloudflare Tunnel 뒤라 request.client 는 항상 내부 IP다. 헤더를 먼저 본다.
+
+    다만 X-Forwarded-For 의 **첫 번째** 값은 클라이언트가 넣은 것일 수 있다
+    (nginx 가 기존 헤더 뒤에 덧붙이는 구조). 위조 불가능한 cf-connecting-ip 를
+    먼저 보고, XFF 는 마지막 값만 쓴다. 자세한 이유는 deps.get_real_ip 참고.
+    """
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()[:45]
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[-1].strip()[:45]
+    real = request.headers.get("x-real-ip")
+    if real:
+        return real.strip()[:45]
     return request.client.host[:45] if request.client else None
 
 

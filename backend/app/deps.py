@@ -50,11 +50,25 @@ async def is_token_blacklisted(token: str) -> bool:
 
 
 def get_real_ip(request: Request) -> str:
-    """X-Forwarded-For 헤더에서 실제 클라이언트 IP 추출 (Nginx 프록시 대응)"""
+    """실제 클라이언트 IP.
+
+    **X-Forwarded-For 의 첫 번째 값을 믿으면 안 된다.** nginx 는
+    `$proxy_add_x_forwarded_for` 로 기존 헤더 뒤에 덧붙이기 때문에, 클라이언트가
+    `X-Forwarded-For: 9.9.9.9` 를 보내면 백엔드에는 `9.9.9.9, <터널IP>` 로 도착한다.
+    첫 값을 쓰면 공격자가 자기 IP 를 마음대로 정할 수 있다 — 요청마다 바꾸면
+    IP 기준 레이트 리밋이 전부 무력화되고, 감사 로그의 IP 도 오염된다.
+
+    Cloudflare Tunnel 을 통과하면 엣지가 cf-connecting-ip 를 **덮어쓰므로**
+    클라이언트가 위조할 수 없다. 그걸 먼저 보고, 없으면 XFF 의 **마지막** 값
+    (프록시가 직접 붙인 값)을 쓴다.
+    """
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()[:45]
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        # 첫 번째 IP가 실제 클라이언트
-        return forwarded.split(",")[0].strip()
+        # 마지막 값 = 바로 앞 프록시가 붙인 것. 앞쪽은 전부 클라이언트가 넣을 수 있다.
+        return forwarded.split(",")[-1].strip()[:45]
     return request.client.host if request.client else "unknown"
 
 
