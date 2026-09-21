@@ -83,7 +83,80 @@ def _page(title: str, desc: str, url: str) -> str:
 # 그쪽으로 넘어가지 않는다(WebView 라 OS 의 링크 연결을 안 거친다).
 # 안드로이드는 intent:// 로 기본 브라우저를 띄울 수 있다. iOS 는 방법이 없어
 # "다른 브라우저로 열기"를 안내한다.
+# 이 사이트의 WebAPK(안드로이드에 설치된 PWA) 패키지 이름.
+# 크롬에서 chrome://webapks 로 확인한다. manifest 를 바꾸면 끝의 _v2 가 올라가며
+# 이름이 바뀔 수 있는데, 틀려도 브라우저로 여는 단계로 넘어가므로 고장나진 않는다.
+PWA_PACKAGE = "org.chromium.webapk.ab8b286fcec5ebba6_v2"
+
 _REDIRECT_JS = """(function () {
+  var PWA_PACKAGE = "__PWA_PACKAGE__";
+  var ua = navigator.userAgent || "";
+  var isKakao = /KAKAOTALK/i.test(ua);
+  var inApp = isKakao || /NAVER\\(inapp|Instagram|FBAN|FBAV|Line\\//i.test(ua);
+  var isAndroid = /Android/i.test(ua);
+  var isIOS = /iPhone|iPad|iPod/i.test(ua);
+  var msg = document.getElementById("msg");
+  function show(h) { if (msg) msg.innerHTML = h; }
+
+  var left = false;
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) left = true;
+  });
+
+  // ── 인앱 브라우저 처리 ──────────────────────────────────────────────
+  // 인앱 브라우저는 저장소가 따로라 로그인 정보가 없다. 그래서 여기서
+  // "기수원이냐 운영진이냐"를 판단하면 **항상 비로그인으로 보여** 로그인 화면으로
+  // 보내버린다(탈출에 성공해도 공지가 아니라 로그인 화면이 열리던 원인).
+  // 판단하지 말고 지금 주소를 그대로 넘긴다 — 세션이 있는 진짜 브라우저에서
+  // 이 스크립트가 다시 돌면서 알아서 제자리를 찾아간다.
+  if (inApp) {
+    var here = location.href;
+
+    if (isAndroid) {
+      // 패키지를 명시하면 안드로이드의 앱링크 '검증'을 건너뛴다. Android 12 부터
+      // 검증 안 된 링크는 선택창도 없이 브라우저로 가는데, WebAPK 는 사이트가
+      // assetlinks.json 으로 보증하지 않으면 검증되지 않는다. 그래서 패키지를
+      // 비워두면 PWA 를 깔아놔도 크롬이 열렸다.
+      // 패키지 이름은 크롬 주소창에 chrome://webapks 로 확인한다.
+      var base = "intent://" + location.host + location.pathname + location.search
+        + "#Intent;scheme=" + location.protocol.replace(":", "")
+        + ";action=android.intent.action.VIEW"
+        + ";category=android.intent.category.BROWSABLE";
+      var fb = ";S.browser_fallback_url=" + encodeURIComponent(here) + ";end";
+
+      location.href = base + ";package=" + PWA_PACKAGE + fb;
+      setTimeout(function () { if (!left) location.href = base + fb; }, 1200);
+    } else if (isIOS) {
+      // x-safari-https 는 https 일 때만 의미가 있다. http 에서 치환하면 문자열이
+      // 그대로라 같은 주소로 다시 이동 → 스크립트가 또 돌며 무한 새로고침이 된다.
+      var safari = location.protocol === "https:"
+        ? here.replace(/^https:/, "x-safari-https:") : null;
+
+      if (isKakao) {
+        // 카카오톡이 직접 처리하는 네이티브 스킴. WebView 가 아니라 카톡 앱이 받아서
+        // 기본 브라우저를 띄운다. 문서화돼 있진 않지만 현재 동작한다.
+        location.href = "kakaotalk://web/openExternal?url=" + encodeURIComponent(here);
+        // 안 먹으면 애플 비공식 스킴으로 한 번 더(iOS 16 에선 안 통한다).
+        if (safari) setTimeout(function () { if (!left) location.href = safari; }, 1200);
+      } else if (safari) {
+        setTimeout(function () { if (!left) location.href = safari; }, 100);
+      }
+    }
+
+    setTimeout(function () {
+      if (left) return;
+      var tip = isIOS
+        ? '<br><br><span style="font-size:13px;color:#94a3b8">'
+          + '로그인 화면이 계속 나오면 아래 <b>공유 버튼</b>을 눌러 <b>Safari로 열기</b>를 '
+          + '선택해 주세요</span>'
+        : "";
+      show('<a href="' + here + '">눌러서 계속하기</a>' + tip);
+    }, 2600);
+    return;
+  }
+
+  // ── 일반 브라우저 ───────────────────────────────────────────────────
+  // 여기는 로그인 정보가 있는 곳이라 목적지를 판단해도 된다.
   var m = location.pathname.match(/\\/go\\/announcement\\/(\\d+)/);
   var id = m ? m[1] : "";
   var to = "/login";
@@ -92,47 +165,9 @@ _REDIRECT_JS = """(function () {
     else if (localStorage.getItem("ops_access_token")) to = "/announcements";
   } catch (e) {}
 
-  var ua = navigator.userAgent || "";
-  var inApp = /KAKAOTALK|NAVER\\(inapp|Instagram|FBAN|FBAV|Line\\//i.test(ua);
-  var isAndroid = /Android/i.test(ua);
-  var isIOS = /iPhone|iPad|iPod/i.test(ua);
-  var target = location.origin + to;
-  var msg = document.getElementById("msg");
-
-  function show(htmlStr) { if (msg) msg.innerHTML = htmlStr; }
-
-  if (inApp && isAndroid) {
-    // 인앱 브라우저를 빠져나간다.
-    // package 를 지정하지 않는 게 핵심이다. com.android.chrome 을 박으면 크롬이
-    // 강제로 열려서, PWA(WebAPK)를 깔아둔 사람도 앱으로 못 간다. 비워두면 안드로이드가
-    // 주소에 맞는 앱을 고르고, PWA 가 설치돼 있으면 그쪽이 잡는다(manifest 의
-    // scope 가 "/" 라 모든 주소가 대상이다). 없으면 기본 브라우저로 간다.
-    // browser_fallback_url 은 아무것도 못 찾았을 때 쓰인다.
-    var intent = "intent://" + location.host + to
-      + "#Intent;scheme=" + location.protocol.replace(":", "")
-      + ";action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE"
-      + ";S.browser_fallback_url=" + encodeURIComponent(target)
-      + ";end";
-    location.href = intent;
-    setTimeout(function () {
-      show('<a href="' + target + '">계속하려면 여기를 누르세요</a>');
-    }, 1500);
-    return;
-  }
-
-  if (inApp && isIOS) {
-    // iOS 는 인앱 브라우저를 빠져나갈 공식적인 방법이 없다. 눌러서 들어가되,
-    // 로그인 상태가 없으면 기본 브라우저로 열라고 알려준다.
-    show('<a href="' + to + '">눌러서 계속하기</a>'
-       + '<br><br><span style="font-size:13px;color:#94a3b8">'
-       + '로그인 화면이 나오면 우측 아래 <b>···</b> → <b>다른 브라우저로 열기</b>를 눌러주세요</span>');
-    return;
-  }
-
   location.replace(to);
-  // 인앱 브라우저가 replace 를 무시하는 경우를 대비해 눌러서 갈 수 있게 남긴다
   setTimeout(function () {
-    show('<a href="' + to + '">계속하려면 여기를 누르세요</a>');
+    if (!left) show('<a href="' + to + '">계속하려면 여기를 누르세요</a>');
   }, 1200);
 })();
 """
@@ -141,7 +176,7 @@ _REDIRECT_JS = """(function () {
 @router.get("/redirect.js", include_in_schema=False)
 async def redirect_js():
     return Response(
-        content=_REDIRECT_JS,
+        content=_REDIRECT_JS.replace("__PWA_PACKAGE__", PWA_PACKAGE),
         media_type="application/javascript; charset=utf-8",
         headers={"Cache-Control": "public, max-age=3600"},
     )
