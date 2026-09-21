@@ -106,10 +106,16 @@ _REDIRECT_JS = """(function () {
   var msg = document.getElementById("msg");
   function show(h) { if (msg) msg.innerHTML = h; }
 
+  // 앱이 떠서 이 화면을 벗어났는지. 벗어났으면 다음 단계를 쏘지 않는다.
+  // visibilitychange 만 보면 일부 인앱 브라우저에서 신호가 안 와 다음 단계가
+  // 덧쏴지고, 결국 브라우저가 한 번 더 열린다. blur/pagehide 도 같이 본다.
   var left = false;
+  function markLeft() { left = true; }
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) left = true;
+    if (document.hidden) markLeft();
   });
+  window.addEventListener("blur", markLeft);
+  window.addEventListener("pagehide", markLeft);
 
   // ── 인앱 브라우저 처리 ──────────────────────────────────────────────
   // 인앱 브라우저는 저장소가 따로라 로그인 정보가 없다. 그래서 여기서
@@ -132,8 +138,12 @@ _REDIRECT_JS = """(function () {
         + ";category=android.intent.category.BROWSABLE";
       var fb = ";S.browser_fallback_url=" + encodeURIComponent(here) + ";end";
 
-      location.href = base + ";package=" + PWA_PACKAGE + fb;
-      setTimeout(function () { if (!left) location.href = base + fb; }, 1200);
+      // 1차: 설치된 PWA 를 직접 연다. **fallback 을 넣지 않는다** —
+      // 넣으면 인앱 브라우저가 앱을 띄워보기도 전에 그 주소를 기본 브라우저로
+      // 열어버리는 경우가 있다(PWA 를 깔아놔도 크롬이 뜨던 원인).
+      location.href = base + ";package=" + PWA_PACKAGE + ";end";
+      // 2차: PWA 가 없거나 이름이 달라졌으면 기본 브라우저로.
+      setTimeout(function () { if (!left) location.href = base + fb; }, 1800);
     } else if (isIOS) {
       // x-safari-https 는 https 일 때만 의미가 있다. http 에서 치환하면 문자열이
       // 그대로라 같은 주소로 다시 이동 → 스크립트가 또 돌며 무한 새로고침이 된다.
@@ -186,7 +196,9 @@ async def redirect_js():
     return Response(
         content=_REDIRECT_JS.replace("__PWA_PACKAGE__", PWA_PACKAGE),
         media_type="application/javascript; charset=utf-8",
-        headers={"Cache-Control": "public, max-age=3600"},
+        # 짧게 잡는다. 길게 두면 고친 뒤에도 폰에 옛 파일이 남아 그만큼 옛 동작을 한다
+        # (크롬 강제로 열리던 버전이 폰에 1시간 남아 있었다).
+        headers={"Cache-Control": "public, max-age=60"},
     )
 
 
