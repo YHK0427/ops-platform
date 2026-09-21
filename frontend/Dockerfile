@@ -14,5 +14,8 @@ RUN npm run build
 FROM nginx:1.25-alpine AS runner
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+# conf.d 가 아니라 그 바깥에 둔다 — conf.d 안의 .conf 는 nginx 가 server 블록으로
+# 자동 include 해버려서, 헤더 조각을 거기 두면 설정이 깨진다.
+COPY security-headers.conf /etc/nginx/security-headers.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
