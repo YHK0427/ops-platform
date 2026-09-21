@@ -15,7 +15,13 @@ from app.audit_context import get_actor_label, get_actor_username, get_actor_rol
 # 자기 자신과 접속 기록은 감사 대상에서 뺀다. access_logs 는 요청마다 쓰이므로
 # 감사에 넣으면 기록 한 줄이 또 기록을 낳아 무한히 불어난다.
 _EXCLUDED_TABLES = {"audit_logs", "access_logs"}
-_REDACTED_FIELDS = {"password_hash", "totp_secret", "storage_json", "public_token", "token"}
+# 감사 로그는 텔레그램 채널로도 나간다. 값 자체가 열쇠인 컬럼은 전부 여기 넣어야 한다.
+# endpoint/p256dh/auth 는 웹푸시 구독 비밀키다 — 이 셋이면 그 사람 폰으로 임의 알림을
+# 보낼 수 있다(실제로 평문으로 쌓이고 있었다).
+_REDACTED_FIELDS = {
+    "password_hash", "totp_secret", "storage_json", "public_token", "token",
+    "endpoint", "p256dh", "auth",
+}
 
 # 테이블명 → 사람이 읽는 한국어 종류명. entity_label의 괄호 안에 붙는다.
 _TABLE_LABELS_KO = {

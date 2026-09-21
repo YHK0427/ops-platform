@@ -73,3 +73,8 @@ backups/*
 !backups/.gitkeep
 monitoring/*
 !monitoring/.gitkeep
+
+# 네이버 로그인 세션(Playwright storage_state) — NID_AUT/NID_SES 가 들어 있다.
+# 이게 올라가면 비밀번호 없이도 동아리 네이버 계정을 그대로 쓸 수 있다.
+naver_session*.json
+backup_session*.txt
