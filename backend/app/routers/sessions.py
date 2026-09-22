@@ -617,6 +617,20 @@ async def get_session_attendance(
     ]
 
 
+def _excuse_deadline_warning(session_date, excuse_type: str | None) -> str | None:
+    """사유서 마감이 지났으면 안내 문구, 아니면 None. (KST 21:59:59 = UTC 12:59:59)"""
+    if excuse_type not in ("PRE", "POST"):
+        return None
+    offset, label = (-1, "사전사유서") if excuse_type == "PRE" else (1, "사후사유서")
+    deadline = datetime.combine(
+        session_date + timedelta(days=offset), time(12, 59, 59), tzinfo=timezone.utc
+    )
+    if datetime.now(timezone.utc) <= deadline:
+        return None
+    kst = (deadline + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M")
+    return f"{label} 마감({kst})이 지났습니다. 저장은 됐습니다."
+
+
 @router.patch("/{session_id}/attendance/{member_id}")
 async def update_attendance(
     session_id: int,
@@ -626,34 +640,25 @@ async def update_attendance(
     _: str = Depends(get_current_user),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
-    """출결 정보 수정 (열람자 이상 가능)"""
+    """출결 정보 수정 (열람자 이상 가능)
+
+    사유서 마감(PRE: 세션 전날 21:59 KST, POST: 세션 다음날 21:59 KST)이 지났어도
+    저장은 막지 않는다. 운영진이 뒤늦게 사유서를 정리하는 건 정상 업무인데,
+    422 로 막아버리면 손을 쓸 방법이 없다. 대신 지났다는 사실을 warning 으로
+    돌려줘서 화면이 경고 토스트를 띄우게 한다.
+
+    실제로 막는 건 세션이 FINALIZED 된 뒤다. 그때는 출결이 이미 장부(벌점·
+    디파짓)에 반영돼서, 출결만 고치면 장부와 어긋난다.
+    """
     session = await _get_session_or_404(session_id, db, cohort_id)
 
-    # 마감 검증 (KST 21:59:59 = UTC 12:59:59)
-    # PRE 마감: 세션 전날 21:59:59 KST
-    # POST 마감: 세션 다음날 21:59:59 KST
-    if body.excuse_type is not None:
-        now_utc = datetime.now(timezone.utc)
-        pre_deadline = datetime.combine(
-            session.date - timedelta(days=1),
-            time(12, 59, 59),
-            tzinfo=timezone.utc,
+    if session.status == "FINALIZED":
+        raise HTTPException(
+            status_code=422,
+            detail="이미 정산이 끝난 세션입니다. 장부에서 해당 내역을 직접 수정해주세요.",
         )
-        post_deadline = datetime.combine(
-            session.date + timedelta(days=1),
-            time(12, 59, 59),
-            tzinfo=timezone.utc,
-        )
-        if body.excuse_type == "PRE" and now_utc > pre_deadline:
-            raise HTTPException(
-                status_code=422,
-                detail="사전사유서 마감 시간이 지났습니다 (세션 전날 21:59)",
-            )
-        if body.excuse_type == "POST" and now_utc > post_deadline:
-            raise HTTPException(
-                status_code=422,
-                detail="사후사유서 마감 시간이 지났습니다 (세션 다음날 21:59)",
-            )
+
+    warning = _excuse_deadline_warning(session.date, body.excuse_type)
 
     result = await db.execute(
         select(Attendance).where(
@@ -674,7 +679,10 @@ async def update_attendance(
     await db.commit()
     # 빈번한 이벤트라 info 로그만 남김 (Telegram 스팸 방지). 강제 변경은 아래 엔드포인트에서 audit.
     logger.info(f"attendance_updated session={session_id} member={member_id} fields={list(update_data.keys())}")
-    return attendance
+    return {
+        **{c.name: getattr(attendance, c.name) for c in Attendance.__table__.columns},
+        "warning": warning,
+    }
 
 
 @router.patch("/{session_id}/attendance/{member_id}/force")

@@ -54,11 +54,12 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
     const handleExcuseChange = async (memberId: number, excuseType: string) => {
         setUpdating(prev => ({ ...prev, [memberId]: true }));
         try {
-            await api.patch(`/sessions/${sessionId}/attendance/${memberId}`, {
+            const { data } = await api.patch(`/sessions/${sessionId}/attendance/${memberId}`, {
                 excuse_type: excuseType === "NONE" ? null : excuseType
             });
             await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
-            toast.success("사유서가 업데이트되었습니다.");
+            if (data?.warning) toast.warning(data.warning);
+            else toast.success("사유서가 업데이트되었습니다.");
         } catch (error: any) {
             console.error(error);
             toast.error(error?.response?.data?.detail ?? "사유서 업데이트 실패");
