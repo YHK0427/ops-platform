@@ -5,7 +5,7 @@ import os
 import random
 import shutil
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile, status
 
@@ -626,34 +626,24 @@ async def update_attendance(
     _: str = Depends(get_current_user),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
-    """출결 정보 수정 (열람자 이상 가능)"""
+    """출결 정보 수정 (열람자 이상 가능)
+
+    2026-02-25 에 세션 날짜 기준 PRE/POST 마감 시각(세션 전날/다음날 21:59 KST)을
+    분 단위로 계산해서 막던 걸 없앴다. 실제로 지난 세션(9/19)의 사유서를 뒤늦게
+    올리려던 정상적인 운영 업무가 그 계산에 걸려 422 를 받았다 — 세션 자체가
+    아직 안 끝났으면(FINALIZED 전) 언제든 사유서를 정정할 수 있어야 맞다.
+    이제는 세션이 FINALIZED(마감)됐을 때만 막는다. /attendance/{member_id}/force 는
+    프론트 화면이 없는 백엔드 전용 경로라 안내해봐야 쓸 방법이 없다 — FINALIZED 는
+    이미 정산까지 끝나 출결이 장부(벌점·디파짓)에 반영된 뒤라, 실제 수정은 출결이
+    아니라 장부 화면에서 해당 항목을 직접 고치는 쪽이 맞다.
+    """
     session = await _get_session_or_404(session_id, db, cohort_id)
 
-    # 마감 검증 (KST 21:59:59 = UTC 12:59:59)
-    # PRE 마감: 세션 전날 21:59:59 KST
-    # POST 마감: 세션 다음날 21:59:59 KST
-    if body.excuse_type is not None:
-        now_utc = datetime.now(timezone.utc)
-        pre_deadline = datetime.combine(
-            session.date - timedelta(days=1),
-            time(12, 59, 59),
-            tzinfo=timezone.utc,
+    if session.status == "FINALIZED":
+        raise HTTPException(
+            status_code=422,
+            detail="이미 정산이 끝난 세션입니다. 장부에서 해당 내역을 직접 수정해주세요.",
         )
-        post_deadline = datetime.combine(
-            session.date + timedelta(days=1),
-            time(12, 59, 59),
-            tzinfo=timezone.utc,
-        )
-        if body.excuse_type == "PRE" and now_utc > pre_deadline:
-            raise HTTPException(
-                status_code=422,
-                detail="사전사유서 마감 시간이 지났습니다 (세션 전날 21:59)",
-            )
-        if body.excuse_type == "POST" and now_utc > post_deadline:
-            raise HTTPException(
-                status_code=422,
-                detail="사후사유서 마감 시간이 지났습니다 (세션 다음날 21:59)",
-            )
 
     result = await db.execute(
         select(Attendance).where(
