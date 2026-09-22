@@ -7,19 +7,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.deps import get_current_cohort_id, get_db, require_staff, resolve_current_user_row
+from app.deps import (
+    DEVELOPER_USERNAME, get_current_cohort_id, get_db, require_staff,
+    resolve_current_user_row,
+)
 from app.models import DevFeedback, DevFeedbackReply, PushSubscription, User
 
 logger = logging.getLogger("dev_feedback")
 
 router = APIRouter(prefix="/dev-feedback", tags=["dev-feedback"])
 
-# 실제 개발자 계정 — 이 사람만 답변을 남길 수 있다. 이 기능 전용으로 딱 한 명이라
-# 별도 역할 체계 없이 username으로 직접 체크한다.
-# 주의: 기수 분리로 username이 기수마다 중복될 수 있으므로, 반드시 DB 조회한 User row의
-# cohort_id IS NULL(슈퍼관리자만 가능)까지 같이 확인해야 한다 — username만 보면 어떤
-# 기수 매니저가 우연히 같은 아이디를 쓰면 개발자 권한을 그대로 얻어간다.
-DEVELOPER_USERNAME = "adminyhk"
+# 개발자 판별은 deps.DEVELOPER_USERNAME / require_developer 로 일원화했다.
+# 같은 규칙이 여러 파일에 복사돼 있으면 한 곳만 고치고 나머지를 놓친다.
 
 
 async def _is_developer(db: AsyncSession, user: dict) -> bool:

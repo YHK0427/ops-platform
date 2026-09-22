@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, desc, cast, Date
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, require_admin
+from app.deps import get_db, require_developer
 from app.models import AuditLog, Member
 from app.audit_hook import _TABLE_LABELS_KO
 
@@ -45,7 +45,7 @@ class AuditLogPage(BaseModel):
 @router.get("", response_model=AuditLogPage)
 async def list_audit_logs(
     db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
     actor_username: str | None = Query(None, description="행위자 아이디로 필터"),
     table_name: str | None = Query(None, description="테이블명으로 필터"),
     operation: str | None = Query(None, description="INSERT/UPDATE/DELETE로 필터"),
@@ -106,7 +106,7 @@ class DailyCount(BaseModel):
 @router.get("/daily-counts", response_model=list[DailyCount])
 async def daily_activity_counts(
     db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
     actor_username: str | None = Query(None),
     table_name: str | None = Query(None),
     operation: str | None = Query(None),
@@ -139,7 +139,7 @@ async def daily_activity_counts(
 @router.get("/tables", response_model=list[TableOption])
 async def list_audit_tables(
     db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
 ):
     """필터 드롭다운용 — 실제로 로그가 남은 테이블만, 한국어 이름과 함께."""
     rows = (await db.execute(select(AuditLog.table_name).distinct())).scalars().all()
@@ -189,7 +189,7 @@ class ActiveUser(BaseModel):
 @router.get("/access", response_model=AccessLogPage)
 async def list_access_logs(
     db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
     actor_kind: str | None = None,
     actor_username: str | None = None,
     path: str | None = None,
@@ -226,7 +226,7 @@ async def list_access_logs(
 @router.get("/access/active", response_model=list[ActiveUser])
 async def list_active_users(
     db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
     minutes: int = Query(30, ge=1, le=1440),
 ):
     """최근 N분 안에 움직인 사람 — '지금 누가 쓰고 있나'에 답한다."""
@@ -265,7 +265,7 @@ async def list_active_users(
 @router.get("/access/daily")
 async def access_daily_counts(
     db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
     days: int = Query(14, ge=1, le=90),
 ):
     """날짜별 접속자 수(중복 제외)와 요청 수 — 사용량 추이."""

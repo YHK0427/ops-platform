@@ -27,6 +27,10 @@ import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
 
+// 서버 내부(로그·컨테이너·접속기록) 메뉴는 개발자 본인만 봐야 한다.
+// 서버가 이미 require_developer 로 막고 있으니, 여기는 "안 보이게"만 하면 된다.
+const DEVELOPER_USERNAME = "adminyhk";
+
 interface NavItem {
     label: string;
     to: string;
@@ -260,20 +264,22 @@ export function Sidebar() {
                         <Shield className="w-4 h-4" />
                         사용자 관리
                     </NavLink>
-                    <NavLink
-                        to="/admin/audit-log"
-                        className={({ isActive }) =>
-                            cn(
-                                "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                                isActive
-                                    ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
-                                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
-                            )
-                        }
-                    >
-                        <History className="w-4 h-4" />
-                        모니터링
-                    </NavLink>
+                    {user?.username === DEVELOPER_USERNAME && (
+                        <NavLink
+                            to="/admin/audit-log"
+                            className={({ isActive }) =>
+                                cn(
+                                    "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                                    isActive
+                                        ? "text-[var(--color-accent)] bg-[var(--color-accent-dim)]"
+                                        : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
+                                )
+                            }
+                        >
+                            <History className="w-4 h-4" />
+                            모니터링
+                        </NavLink>
+                    )}
                     {user?.is_superadmin && (
                         <NavLink
                             to="/admin/cohorts"

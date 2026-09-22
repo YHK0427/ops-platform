@@ -409,6 +409,31 @@ async def get_member_cohort_id(member: dict = Depends(get_current_member)) -> in
     return cohort_id
 
 
+# 개발자 본인 계정. 서버 내부(로그·컨테이너·접속기록)는 이 사람만 본다.
+# 운영진용 admin 과 구분하려고 username 으로 못박는다 — 이 기능 전용으로 딱 한 명이라
+# 별도 역할 체계를 만드는 것보다 이 편이 단순하고 실수할 여지가 적다.
+DEVELOPER_USERNAME = "adminyhk"
+
+
+async def require_developer(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """개발자 전용.
+
+    토큰의 sub 를 믿지 않고 uid 로 DB 행을 다시 읽는다. 기수별로 username 이 중복
+    가능해서(기수 분리), 어느 기수 매니저가 같은 아이디를 만들면 통과해버린다.
+    cohort_id IS NULL(전체 관리자)까지 같이 확인해야 그게 막힌다.
+    """
+    row = await resolve_current_user_row(db, user)
+    if not (row and row.cohort_id is None and row.username == DEVELOPER_USERNAME):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="개발자 전용 기능입니다",
+        )
+    return user
+
+
 def require_superadmin(user: dict = Depends(get_current_user)) -> dict:
     """슈퍼관리자(전 기수 총괄) 전용 — cohort_id 없는 admin 계정.
 

@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, require_admin, _get_redis_client
+from app.deps import get_db, require_developer, _get_redis_client
 
 router = APIRouter(prefix="/infra", tags=["infra"])
 
@@ -174,7 +174,7 @@ class InfraStatus(BaseModel):
 @router.get("/status", response_model=InfraStatus)
 async def get_infra_status(
     db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
 ):
     load1, load5, load15 = os.getloadavg()
     disk = shutil.disk_usage("/")
@@ -361,7 +361,7 @@ class HistoryPoint(BaseModel):
 async def get_history(
     hours: int = 24,
     db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
 ):
     """최근 N시간 추이. 점이 너무 많으면 화면이 느려지므로 구간 평균으로 묶는다."""
     from app.models import InfraSnapshot
@@ -417,7 +417,7 @@ class ContainerOut(BaseModel):
 
 
 @router.get("/containers", response_model=list[ContainerOut])
-async def get_containers(_admin: dict = Depends(require_admin)):
+async def get_containers(_dev: dict = Depends(require_developer)):
     """컨테이너별 상태. Docker 소켓이 없으면 빈 목록 — 화면이 이것 때문에 죽지 않게."""
     from app.services import docker_stats
 
@@ -470,7 +470,7 @@ class ApiHealth(BaseModel):
 async def get_api_health(
     hours: int = 24,
     db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
 ):
     hours = max(1, min(hours, 24 * 30))
     p = {"h": hours}
@@ -537,7 +537,7 @@ async def get_logs(
     tail: int = 200,
     errors_only: bool = False,
     q: str | None = None,
-    _admin: dict = Depends(require_admin),
+    _dev: dict = Depends(require_developer),
 ):
     from app.services import docker_stats
 

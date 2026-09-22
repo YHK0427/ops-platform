@@ -12,9 +12,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_current_member, get_db, require_staff, resolve_current_user_row
+from app.deps import (
+    DEVELOPER_USERNAME, get_current_member, get_db, require_staff,
+    resolve_current_user_row,
+)
 from app.models import GenerationAccount, PatchNote, User
-from app.routers.dev_feedback import DEVELOPER_USERNAME
 
 router = APIRouter(prefix="/patch-notes", tags=["patch-notes"])
 
