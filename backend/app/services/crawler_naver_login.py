@@ -37,11 +37,22 @@ async def login_with_credentials(db: AsyncSession, username: str, password: str)
             # Note: Naver CAPTCHA is triggered easily by typing speed.
             
             # Method 1: JS Value Setting (Bypasses typing detection sometimes)
-            await page.evaluate(f"document.getElementById('id').value = '{username}'")
-            await page.evaluate(f"document.getElementById('pw').value = '{password}'")
-            
-            # Click Login
-            await page.click(".btn_login")
+            # 값은 인자로 넘긴다 — 문자열에 끼워 넣으면 비밀번호에 ' 가 있을 때 깨진다.
+            # 입력 이벤트도 쏴야 새 로그인 페이지가 값을 인식한다.
+            await page.evaluate(
+                """([u, p]) => {
+                    for (const [id, v] of [["id", u], ["pw", p]]) {
+                        const el = document.getElementById(id);
+                        el.value = v;
+                        el.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                }""",
+                [username, password],
+            )
+
+            # 2026-09 로그인 페이지 개편으로 .btn_login 이 없어지고, 화면 폭에 따라
+            # #loginBtn_column / #loginBtn_row 중 하나만 보인다.
+            await page.locator("#loginBtn_column:visible, #loginBtn_row:visible").first.click()
             
             # Wait for navigation or cookie
             # Success indicator: NID_SES cookie or URL change to www.naver.com / error message
@@ -57,6 +68,11 @@ async def login_with_credentials(db: AsyncSession, username: str, password: str)
                         logger.info("Login Successful!")
                         break
                     
+                    # 영수증 캡차 등 추가 인증 — 서버에선 풀 수 없으니 바로 실패로 알린다
+                    if await page.get_by_text("보안을 위해 추가 확인").is_visible():
+                        await browser.close()
+                        return {"status": "failed", "reason": "네이버가 추가 확인(캡차)을 요구함"}
+
                     # NEW: Handle Device Confirmation Screen
                     if "deviceConfirm" in page.url or await page.get_by_text("등록안함").is_visible():
                         logger.info("Device confirmation screen detected. Clicking 'Don't Register'...")
