@@ -364,11 +364,13 @@ async def _naver_auto_login(redis, reason: str):
     되살아나면(체크 정상 또는 로그인 성공) 플래그를 지워 다음 장애 때 다시 알린다.
     """
     first = await redis.set(_NAVER_DOWN_KEY, "1", nx=True)
+    # 계정은 기수 대표가 대시보드에서 직접 로그인한다. env 에 계정이 없으면 자동 로그인은 건너뛴다.
+    if not (settings.NAVER_ID and settings.NAVER_PWD):
+        (logger.warning if first else logger.info)(f"{reason} — 대시보드에서 네이버 재로그인 필요")
+        return {"status": "skipped", "reason": "NAVER_ID/NAVER_PWD 미설정"}
     (logger.warning if first else logger.info)(f"{reason} — 자동 로그인 시도")
-    username = settings.NAVER_ID
-    password = settings.NAVER_PWD
     async with AsyncSessionLocal() as db:
-        result = await login_with_credentials(db, username, password)
+        result = await login_with_credentials(db, settings.NAVER_ID, settings.NAVER_PWD)
     if result.get("status") == "complete":
         await redis.delete(_NAVER_DOWN_KEY)
         logger.log(25, f"네이버 자동 로그인 성공 (만료: {result.get('expires_hint')})")
