@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from app.deps import get_current_cohort_id, get_current_user, get_db, require_staff
+from app.deps import _get_redis_client, get_current_cohort_id, get_current_user, get_db, require_staff
 from app.models import NaverSession
 from app.models import Session as SessionModel
 from app.schemas.crawler import (
@@ -37,12 +37,17 @@ async def _assert_session_cohort(session_id: int, cohort_id: int, db: AsyncSessi
 
 @router.post("/naver/import", response_model=NaverSessionStatus)
 async def import_naver_session_api(
+    request: Request,
     body: NaverImportRequest,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
 ):
     """네이버 세션(Playwright storage state) 임포트"""
     session = await import_session(db, body.storage_json)
+    # 가져온 쿠키가 실제로 로그인된 건지 바로 확인 (대시보드가 결과를 폴링)
+    pool = getattr(request.app.state, "arq_pool", None)
+    if pool:
+        await pool.enqueue_job("task_naver_health_check")
     return NaverSessionStatus(
         is_valid=session.is_valid,
         created_at=session.created_at,
@@ -62,11 +67,20 @@ async def get_naver_session_status(
     
     if not session:
         return NaverSessionStatus(is_valid=False, created_at=None, expires_hint=None)
-        
+
+    # 워커 헬스체크 결과 — 지금 세션에 대한 것일 때만 쓴다 (새로 로그인했으면 확인 전)
+    checked = {}
+    raw = await _get_redis_client().get("naver:status")
+    if raw:
+        st = json.loads(raw)
+        if st.get("session_id") == session.id:
+            checked = {k: st.get(k) for k in ("alive", "nick", "level_name", "checked_at")}
+
     return NaverSessionStatus(
         is_valid=True,
         created_at=session.created_at,
         expires_hint=session.expires_hint,
+        **checked,
     )
 
 

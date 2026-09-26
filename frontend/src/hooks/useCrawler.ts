@@ -14,6 +14,11 @@ export interface NaverSessionStatus {
     is_valid: boolean;
     created_at?: string;
     expires_hint?: string;
+    // 워커가 네이버에 실제로 확인한 결과. null 이면 이 세션은 아직 확인 전.
+    alive?: boolean | null;
+    nick?: string | null;
+    level_name?: string | null;
+    checked_at?: string | null;
 }
 
 export interface VideoProgress {
@@ -80,6 +85,8 @@ export function useNaverSessionStatus() {
             const { data } = await api.get<NaverSessionStatus>("/crawler/naver/session-status");
             return data;
         },
+        // 새로 로그인/가져오기 직후엔 워커 확인이 끝날 때까지 짧게 다시 묻는다
+        refetchInterval: (query) => (query.state.data?.is_valid && query.state.data.alive == null ? 5_000 : false),
     });
 }
 

@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+from datetime import datetime, timezone
 
 from arq.connections import RedisSettings
 from arq import cron, func
@@ -8,7 +10,7 @@ from sqlalchemy import select, delete
 from app.config import settings
 from app.logging_config import setup_logging
 from app.database import AsyncSessionLocal
-from app.models import Member, Session, PushSubscription
+from app.models import Member, NaverSession, Session, PushSubscription
 from app.services.push import send_webpush
 from app.services.crawler_ppt import scan_ppt
 from app.services.crawler_video import upload_all_videos
@@ -16,7 +18,7 @@ from app.services.crawler_excuse import scan_excuses
 from app.services.crawler_homework import scan_homework_all, scan_feedback_comments
 from app.services.crawler_naver_login import login_with_credentials
 from app.services.crawler_cafe import fetch_board_articles, fetch_article_detail, NaverSessionExpiredError
-from app.services.naver_session import get_valid_requests_session
+from app.services.naver_session import _build_requests_session
 
 logger = logging.getLogger("worker")
 
@@ -348,6 +350,8 @@ async def task_naver_login(ctx, username: str, password: str):
         async with AsyncSessionLocal() as db:
             result = await login_with_credentials(db, username, password)
         logger.info("task_naver_login complete")
+        if result.get("status") == "complete":
+            await task_naver_health_check(ctx)
         return result
     except Exception as e:
         logger.error(f"task_naver_login failed: {e}", exc_info=True)
@@ -355,6 +359,7 @@ async def task_naver_login(ctx, username: str, password: str):
 
 
 _NAVER_DOWN_KEY = "naver:down_alerted"
+NAVER_STATUS_KEY = "naver:status"
 
 
 async def _naver_auto_login(redis, reason: str):
@@ -379,34 +384,55 @@ async def _naver_auto_login(redis, reason: str):
     return result
 
 
+async def _record_naver_status(redis, session_id: int, alive: bool, user: dict | None = None) -> None:
+    """헬스체크 결과를 대시보드가 읽도록 남긴다. session_id 로 어느 세션의 결과인지 묶는다."""
+    user = user or {}
+    await redis.set(NAVER_STATUS_KEY, json.dumps({
+        "session_id": session_id,
+        "alive": alive,
+        "nick": user.get("nick"),
+        "level_name": user.get("memberLevelName"),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }, ensure_ascii=False))
+
+
 async def task_naver_health_check(ctx):
-    """네이버 세션 헬스체크 — 30분마다 API 1회 호출로 세션 유효성 확인"""
+    """네이버 세션 헬스체크 — 30분마다 최신글 본문 1건 조회로 로그인 여부 확인"""
     import asyncio
+    redis = ctx["redis"]
+    session_id = None
     try:
         async with AsyncSessionLocal() as db:
-            req_session = await get_valid_requests_session(db)
-            if not req_session:
-                return await _naver_auto_login(ctx["redis"], "네이버 세션 없음")
+            naver_session = (await db.execute(
+                select(NaverSession).where(NaverSession.is_valid == True).order_by(NaverSession.id.desc()).limit(1)
+            )).scalar_one_or_none()
+        if not naver_session:
+            return await _naver_auto_login(redis, "네이버 세션 없음")
+        session_id = naver_session.id
+        req_session = _build_requests_session(naver_session.storage_json)
 
-            # 게시판 1페이지 1건만 조회 (최소 비용)
-            data = await asyncio.to_thread(
-                fetch_board_articles, req_session, settings.NAVER_CAFE_MENU_REVIEW, page=1, per_page=1
-            )
-            # 최신 게시글 정보 추출
-            articles = data.get("result", {}).get("articleList", [])
-            if articles:
-                a = articles[0].get("item", articles[0])
-                # 목록 API 는 비로그인도 200 이라 세션 판별이 안 된다. 본문은 비로그인 시 401.
-                await asyncio.to_thread(fetch_article_detail, req_session, a["articleId"])
-                nick = (a.get("writerInfo") or {}).get("nickName", "?")
-                article_info = f"\n최신글: [{a.get('subject', '?')}] by {nick}"
-            else:
-                article_info = "\n게시글 없음"
-        await ctx["redis"].delete(_NAVER_DOWN_KEY)
-        logger.log(25, f"네이버 세션 체크: 정상 (menu={settings.NAVER_CAFE_MENU_REVIEW}){article_info}")
-        return {"status": "ok"}
+        # 게시판 1페이지 1건만 조회 (최소 비용)
+        data = await asyncio.to_thread(
+            fetch_board_articles, req_session, settings.NAVER_CAFE_MENU_REVIEW, page=1, per_page=1
+        )
+        articles = data.get("result", {}).get("articleList", [])
+        if not articles:
+            logger.info("네이버 세션 체크: 게시글이 없어 로그인 여부 확인 불가")
+            return {"status": "unknown"}
+        a = articles[0].get("item", articles[0])
+        # 목록 API 는 비로그인도 200 이라 세션 판별이 안 된다. 본문은 비로그인 시 401.
+        # 본문 응답의 user 가 이 세션으로 로그인한 계정(닉네임·카페 등급)이다.
+        detail = await asyncio.to_thread(fetch_article_detail, req_session, a["articleId"])
+        user = (detail.get("result") or {}).get("user") or {}
+        await _record_naver_status(redis, session_id, True, user)
+        await redis.delete(_NAVER_DOWN_KEY)
+        writer = (a.get("writerInfo") or {}).get("nickName", "?")
+        logger.log(25, f"네이버 세션 체크: 정상 · 계정 {user.get('nick', '?')}"
+                       f"\n최신글: [{a.get('subject', '?')}] by {writer}")
+        return {"status": "ok", "nick": user.get("nick")}
     except NaverSessionExpiredError:
-        return await _naver_auto_login(ctx["redis"], "네이버 세션 만료")
+        await _record_naver_status(redis, session_id, False)
+        return await _naver_auto_login(redis, "네이버 세션 만료")
     except Exception as e:
         logger.error(f"네이버 세션 체크 실패: {e}", exc_info=True)
         raise

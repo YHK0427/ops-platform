@@ -92,24 +92,28 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:p-6 transition-all duration-300">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                 <div className="flex items-center gap-3 min-w-0">
-                    <div className={`p-2 rounded-lg flex-shrink-0 ${naverStatus?.is_valid ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                    <div className={`p-2 rounded-lg flex-shrink-0 ${naverStatus?.is_valid && naverStatus.alive !== false ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
                         <Lock className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
                         <h3 className="font-bold text-[var(--color-text-primary)]">네이버 세션 상태</h3>
                         {(() => {
-                            const d = naverStatus?.expires_hint ? new Date(naverStatus.expires_hint) : null;
-                            const hasDate = d && d.getFullYear() > 2000;
-                            const expired = !naverStatus?.is_valid || (hasDate && d!.getTime() < Date.now());
-                            const days = hasDate ? Math.ceil((d!.getTime() - Date.now()) / 86400000) : null;
+                            // 쿠키 만료일(expires_hint)은 네이버가 계속 갱신해서 믿을 수 없다.
+                            // 워커가 30분마다 본문을 실제로 열어본 결과(alive)로 표시한다.
+                            const pending = naverStatus?.is_valid && naverStatus.alive == null;
+                            const ok = naverStatus?.is_valid && naverStatus.alive === true;
+                            const who = naverStatus?.nick ? `${naverStatus.nick}${naverStatus.level_name ? `(${naverStatus.level_name})` : ""}` : "";
+                            const at = naverStatus?.checked_at ? new Date(naverStatus.checked_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+                            const color = ok ? "text-green-600" : pending ? "text-amber-600" : "text-red-500";
+                            const dot = ok ? "bg-green-500" : pending ? "bg-amber-500 animate-pulse" : "bg-red-500";
                             return (
-                                <p className={`text-xs md:text-sm font-medium flex items-center gap-1.5 ${expired ? "text-red-500" : "text-green-600"}`}>
-                                    <span className={`inline-block w-2 h-2 rounded-full ${expired ? "bg-red-500" : "bg-green-500"}`} />
-                                    {expired
-                                        ? "만료됨 — 재로그인이 필요합니다"
-                                        : hasDate
-                                            ? `유효 · ${d!.toLocaleDateString()}까지 (약 ${days}일 남음)`
-                                            : "유효 (만료일 정보 없음)"}
+                                <p className={`text-xs md:text-sm font-medium flex items-center gap-1.5 ${color}`}>
+                                    <span className={`inline-block w-2 h-2 rounded-full ${dot}`} />
+                                    {ok
+                                        ? `로그인됨 · ${who} · ${at} 확인`
+                                        : pending
+                                            ? "로그인 확인 중..."
+                                            : "로그아웃됨 — 재로그인이 필요합니다"}
                                 </p>
                             );
                         })()}

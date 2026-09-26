@@ -3,9 +3,14 @@ from typing import Optional, Any, Literal, List
 from datetime import datetime
 
 class NaverSessionStatus(BaseModel):
-    is_valid: bool
+    is_valid: bool  # DB 에 등록된 세션이 있나
     created_at: Optional[datetime]
     expires_hint: Optional[datetime]
+    # 워커 헬스체크가 네이버에 실제로 물어본 결과. None 이면 이 세션은 아직 확인 전.
+    alive: Optional[bool] = None
+    nick: Optional[str] = None
+    level_name: Optional[str] = None
+    checked_at: Optional[datetime] = None
 
 class CrawlerTaskResponse(BaseModel):
     task_id: str

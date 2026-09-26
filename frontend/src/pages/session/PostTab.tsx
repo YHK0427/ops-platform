@@ -48,7 +48,7 @@ export function PostTab() {
     // 스캔은 전부 네이버 카페 로그인 세션으로 돈다. 세션이 없으면 크롤러가
     // 조용히 0건 처리하고 끝나서 "다들 미제출"처럼 보인다 — 특히 피드백은
     // 영상 글의 댓글을 건건이 열어야 해서 세션 없이는 아예 감지가 안 된다.
-    const naverDown = naverSession ? !naverSession.is_valid : false;
+    const naverDown = naverSession ? !naverSession.is_valid || naverSession.alive === false : false;
     const { setTaskId, taskStatus } = useSessionTask(session.id, "homework-scan");
     // 이탈/수료한 멤버도 과거 세션엔 남아있으므로 활성 멤버만 조회하면 이름이 안 잡혀
     // "ID:42" 같은 식으로 표시됨 — 비활성 포함으로 조회.
