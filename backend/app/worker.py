@@ -15,7 +15,7 @@ from app.services.crawler_video import upload_all_videos
 from app.services.crawler_excuse import scan_excuses
 from app.services.crawler_homework import scan_homework_all, scan_feedback_comments
 from app.services.crawler_naver_login import login_with_credentials
-from app.services.crawler_cafe import fetch_board_articles, NaverSessionExpiredError
+from app.services.crawler_cafe import fetch_board_articles, fetch_article_detail, NaverSessionExpiredError
 from app.services.naver_session import get_valid_requests_session
 
 logger = logging.getLogger("worker")
@@ -354,16 +354,26 @@ async def task_naver_login(ctx, username: str, password: str):
         raise
 
 
-async def _naver_auto_login():
-    """네이버 자동 로그인 시도 (env 크레덴셜 사용)"""
-    username = settings.NAVER_ID or "bleach4738"
-    password = settings.NAVER_PWD or "youngheon633005!"
+_NAVER_DOWN_KEY = "naver:down_alerted"
+
+
+async def _naver_auto_login(redis, reason: str):
+    """네이버 자동 로그인 시도 (env 크레덴셜 사용).
+
+    세션이 죽어 있으면 30분마다 여기로 온다. 알림은 죽은 걸 처음 본 1회만 보내고,
+    되살아나면(체크 정상 또는 로그인 성공) 플래그를 지워 다음 장애 때 다시 알린다.
+    """
+    first = await redis.set(_NAVER_DOWN_KEY, "1", nx=True)
+    (logger.warning if first else logger.info)(f"{reason} — 자동 로그인 시도")
+    username = settings.NAVER_ID
+    password = settings.NAVER_PWD
     async with AsyncSessionLocal() as db:
         result = await login_with_credentials(db, username, password)
     if result.get("status") == "complete":
+        await redis.delete(_NAVER_DOWN_KEY)
         logger.log(25, f"네이버 자동 로그인 성공 (만료: {result.get('expires_hint')})")
     else:
-        logger.warning(f"네이버 자동 로그인 실패 — {result.get('reason', 'unknown')}")
+        (logger.warning if first else logger.info)(f"네이버 자동 로그인 실패 — {result.get('reason', 'unknown')}")
     return result
 
 
@@ -374,8 +384,7 @@ async def task_naver_health_check(ctx):
         async with AsyncSessionLocal() as db:
             req_session = await get_valid_requests_session(db)
             if not req_session:
-                logger.warning("네이버 세션 없음 — 자동 로그인 시도")
-                return await _naver_auto_login()
+                return await _naver_auto_login(ctx["redis"], "네이버 세션 없음")
 
             # 게시판 1페이지 1건만 조회 (최소 비용)
             data = await asyncio.to_thread(
@@ -385,15 +394,17 @@ async def task_naver_health_check(ctx):
             articles = data.get("result", {}).get("articleList", [])
             if articles:
                 a = articles[0].get("item", articles[0])
+                # 목록 API 는 비로그인도 200 이라 세션 판별이 안 된다. 본문은 비로그인 시 401.
+                await asyncio.to_thread(fetch_article_detail, req_session, a["articleId"])
                 nick = (a.get("writerInfo") or {}).get("nickName", "?")
                 article_info = f"\n최신글: [{a.get('subject', '?')}] by {nick}"
             else:
                 article_info = "\n게시글 없음"
+        await ctx["redis"].delete(_NAVER_DOWN_KEY)
         logger.log(25, f"네이버 세션 체크: 정상 (menu={settings.NAVER_CAFE_MENU_REVIEW}){article_info}")
         return {"status": "ok"}
     except NaverSessionExpiredError:
-        logger.warning("네이버 세션 만료 — 자동 로그인 시도")
-        return await _naver_auto_login()
+        return await _naver_auto_login(ctx["redis"], "네이버 세션 만료")
     except Exception as e:
         logger.error(f"네이버 세션 체크 실패: {e}", exc_info=True)
         raise
