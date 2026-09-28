@@ -93,12 +93,21 @@ function ExcuseForm({ editing, onDone }: { editing: Excuse | null; onDone: () =>
             const id = editing
                 ? (await memberApi.put<Excuse>(`/portal/excuses/${editing.id}`, body)).data.id
                 : (await memberApi.post<Excuse>("/portal/excuses", { ...body, target_date: date })).data.id;
+            const failed: string[] = [];
             for (const f of files) {
                 const form = new FormData();
                 form.append("file", f);
-                await memberApi.post(`/portal/excuses/${id}/attachments`, form, { headers: { "Content-Type": undefined } });
+                try {
+                    await memberApi.post(`/portal/excuses/${id}/attachments`, form, { headers: { "Content-Type": undefined } });
+                } catch (error: any) {
+                    failed.push(`${f.name}: ${errMsg(error, "업로드 실패")}`);
+                }
             }
-            toast.success(editing ? "사유서를 수정했습니다." : "사유서를 제출했습니다.");
+            if (failed.length) {
+                toast.warning(`사유서는 저장됐지만 사진 ${failed.length}장을 올리지 못했습니다.`, { description: failed.join("\n") });
+            } else {
+                toast.success(editing ? "사유서를 수정했습니다." : "사유서를 제출했습니다.");
+            }
             qc.invalidateQueries({ queryKey: ["member", "excuses"] });
             qc.invalidateQueries({ queryKey: ["member", "attendance"] });
             onDone();
