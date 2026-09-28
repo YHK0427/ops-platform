@@ -52,7 +52,7 @@ export function useExcusePreview(date: string) {
     });
 }
 
-export function useStaffExcuses(params: { session_id?: number; date_from?: string; date_to?: string }) {
+export function useStaffExcuses(params: { session_id?: number; date_from?: string; date_to?: string; review?: "PENDING" }) {
     return useQuery({
         queryKey: ["excuses", params],
         queryFn: async () => (await api.get<Excuse[]>("/excuses", { params })).data,

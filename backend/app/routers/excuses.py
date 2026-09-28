@@ -253,6 +253,7 @@ async def list_excuses(
     session_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    review: str | None = Query(None, pattern="^(PENDING|APPROVED|REJECTED)$"),
     _: dict = Depends(get_current_user),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
@@ -266,6 +267,8 @@ async def list_excuses(
         q = q.where(ExcuseSubmission.target_date >= date_from)
     if date_to is not None:
         q = q.where(ExcuseSubmission.target_date <= date_to)
+    if review is not None:
+        q = q.where(ExcuseSubmission.review == review)
     rows = (await db.execute(q.order_by(ExcuseSubmission.target_date.desc(), Member.name))).all()
     return [await _out(db, s, name) for s, name in rows]
 

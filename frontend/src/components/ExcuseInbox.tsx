@@ -37,14 +37,15 @@ function reviewCls(r: Excuse["review"]) {
         : "text-amber-600 bg-amber-500/10";
 }
 
-function Row({ e }: { e: Excuse }) {
+function Row({ e, withDate = false, actions = false }: { e: Excuse; withDate?: boolean; actions?: boolean }) {
     const [open, setOpen] = useState(false);
-    const pending = e.reason_kind === "RECOGNIZED" && e.review === "PENDING";
+    const pending = actions && e.reason_kind === "RECOGNIZED" && e.review === "PENDING";
     return (
         <div className="px-3 py-2.5">
             <div className="flex items-center gap-2">
                 <button type="button" onClick={() => setOpen(o => !o)} className="flex-1 min-w-0 flex items-center gap-2 text-left">
                     <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-[var(--color-text-muted)] transition-transform ${open ? "" : "-rotate-90"}`} />
+                    {withDate && <span className="text-xs font-bold text-[var(--color-text-muted)] shrink-0 w-16">{fmtDay(e.target_date)}</span>}
                     <span className="text-sm font-semibold text-[var(--color-text-primary)] shrink-0">{e.member_name}</span>
                     <span className="text-xs text-[var(--color-text-secondary)] truncate">
                         {CATEGORY_LABEL[e.category]} · {e.excuse_type === "PRE" ? "사전" : "사후"} · {e.reason_kind === "RECOGNIZED" ? "인정사유" : "일반사유"}
@@ -72,61 +73,89 @@ function Row({ e }: { e: Excuse }) {
     );
 }
 
+const GROUPS_STEP = 3;
+
+function Card({ title, badge, children }: { title: string; badge?: React.ReactNode; children: React.ReactNode }) {
+    return (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-elevated)]">
+                <span className="text-sm font-bold text-[var(--color-text-primary)]">{title}</span>
+                {badge}
+            </div>
+            <div className="divide-y divide-[var(--color-border)]">{children}</div>
+        </div>
+    );
+}
+
+// 대시보드는 "지금 할 일"만: 승인 대기(날짜 무관) + 오늘 이후 날짜 몇 개.
+// 지난 날짜는 이미 해당 세션 출결표에 반영돼 있으니 여기엔 쌓지 않는다.
 export function ExcuseInbox() {
-    const range = useMemo(() => {
-        const from = new Date(); from.setDate(from.getDate() - 7);
-        const to = new Date(); to.setDate(to.getDate() + 30);
-        return { date_from: ymd(from), date_to: ymd(to) };
-    }, []);
-    const { data: excuses } = useStaffExcuses(range);
+    const today = useMemo(() => ymd(new Date()), []);
+    const { data: pending } = useStaffExcuses({ review: "PENDING" });
+    const { data: upcoming } = useStaffExcuses({ date_from: today });
+    const [shown, setShown] = useState(GROUPS_STEP);
 
     const groups = useMemo(() => {
         const m = new Map<string, Excuse[]>();
-        for (const e of [...(excuses ?? [])].sort((a, b) => a.target_date.localeCompare(b.target_date))) {
+        for (const e of [...(upcoming ?? [])].sort((a, b) => a.target_date.localeCompare(b.target_date))) {
             m.set(e.target_date, [...(m.get(e.target_date) ?? []), e]);
         }
         return [...m.entries()];
-    }, [excuses]);
-    const pendingCount = (excuses ?? []).filter(e => e.review === "PENDING").length;
+    }, [upcoming]);
+    const pendingSorted = useMemo(
+        () => [...(pending ?? [])].sort((a, b) => a.target_date.localeCompare(b.target_date)),
+        [pending],
+    );
+    const rest = groups.length - shown;
 
     return (
         <div className="space-y-4">
             <h2 className="text-sm font-bold text-[var(--color-text-secondary)] uppercase tracking-wider flex items-center gap-2">
                 <FileText className="w-4 h-4 text-[var(--color-accent)]" />
                 사유서
-                {pendingCount > 0 && (
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white tracking-normal">
-                        공결 승인 대기 {pendingCount}
-                    </span>
-                )}
+                <span className="text-[10px] font-medium text-[var(--color-text-muted)] tracking-normal normal-case">
+                    (지난 날짜는 각 세션 출결표에서 확인)
+                </span>
             </h2>
+
+            {pendingSorted.length > 0 && (
+                <Card title="공결 승인 대기" badge={
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white">{pendingSorted.length}</span>
+                }>
+                    {pendingSorted.map(e => <Row key={e.id} e={e} withDate actions />)}
+                </Card>
+            )}
+
             {groups.length === 0 ? (
                 <div className="px-4 py-3 rounded-lg border border-dashed border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
-                    들어온 사유서가 없습니다.
+                    다가오는 세션에 들어온 사유서가 없습니다.
                 </div>
             ) : (
-                <div className="grid gap-3 md:grid-cols-2 items-start">
-                    {groups.map(([date, list]) => (
-                        <div key={date} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
-                            <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-elevated)]">
-                                <span className="text-sm font-bold text-[var(--color-text-primary)]">{fmtDay(date)}</span>
-                                <span className="text-xs text-[var(--color-text-muted)]">{list.length}명</span>
-                                {list[0].session_id === null && (
-                                    <span className="ml-auto px-1.5 py-0.5 rounded text-[10px] font-bold bg-[var(--color-hover)] text-[var(--color-text-muted)]">
-                                        세션 생성 전
-                                    </span>
-                                )}
-                            </div>
-                            <div className="divide-y divide-[var(--color-border)]">
-                                {list.map(e => <Row key={e.id} e={e} />)}
-                            </div>
-                        </div>
+                <div className="space-y-3">
+                    {groups.slice(0, shown).map(([date, list]) => (
+                        <Card key={date} title={fmtDay(date)} badge={<>
+                            <span className="text-xs text-[var(--color-text-muted)]">{list.length}명</span>
+                            {list[0].session_id === null && (
+                                <span className="ml-auto px-1.5 py-0.5 rounded text-[10px] font-bold bg-[var(--color-hover)] text-[var(--color-text-muted)]">
+                                    세션 생성 전
+                                </span>
+                            )}
+                        </>}>
+                            {list.map(e => <Row key={e.id} e={e} />)}
+                        </Card>
                     ))}
+                    {rest > 0 && (
+                        <button type="button" onClick={() => setShown(n => n + GROUPS_STEP)}
+                            className="w-full py-2 rounded-lg border border-[var(--color-border)] text-xs font-semibold text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)]">
+                            이후 날짜 {Math.min(rest, GROUPS_STEP)}개 더보기 (남은 {rest}개)
+                        </button>
+                    )}
                 </div>
             )}
         </div>
     );
 }
+
 
 export function PendingExcuseBadge({ excuse }: { excuse: Excuse }) {
     return (

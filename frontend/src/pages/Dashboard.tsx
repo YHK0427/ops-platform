@@ -395,9 +395,6 @@ export default function Dashboard() {
                     )}
                 </div>
 
-                {/* 사유서 (포털 제출) */}
-                <ExcuseInbox />
-
                 {/* 3. 위험 인물 한눈에 */}
                 <div className="space-y-4">
                     <h2 className="text-sm font-bold text-[var(--color-text-secondary)] uppercase tracking-wider flex items-center gap-2 flex-wrap">
@@ -462,6 +459,9 @@ export default function Dashboard() {
                         </div>
                     )}
                 </div>
+
+                {/* 사유서 (포털 제출) */}
+                <ExcuseInbox />
 
             </div>
         </div>
