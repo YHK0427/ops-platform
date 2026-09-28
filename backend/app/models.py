@@ -285,6 +285,36 @@ class Attendance(Base):
     member = relationship("Member", back_populates="attendances")
 
 
+class ExcuseSubmission(Base):
+    """기수 포털에서 낸 사유서. 세션이 없어도 날짜 기준으로 받아 두고, 세션이 생기면 연결한다."""
+    __tablename__ = "excuse_submissions"
+
+    id = Column(Integer, primary_key=True)
+    cohort_id = Column(Integer, ForeignKey("cohorts.id"), nullable=False, index=True)
+    member_id = Column(Integer, ForeignKey("members.id"), nullable=False, index=True)
+    target_date = Column(Date, nullable=False)
+    excuse_type = Column(String(10), nullable=False)
+    category = Column(String(20), nullable=False)
+    reason_kind = Column(String(20), nullable=False)
+    reason = Column(Text, nullable=False)
+    review = Column(String(20))
+    reviewed_by = Column(String(100))
+    reviewed_at = Column(TIMESTAMP(timezone=True))
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="SET NULL"), index=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("member_id", "target_date", name="uq_excuse_member_date"),
+        CheckConstraint("excuse_type IN ('PRE','POST')", name="ck_excuse_sub_type"),
+        CheckConstraint("category IN ('ABSENT','LATE','EARLY_LEAVE')", name="ck_excuse_sub_category"),
+        CheckConstraint("reason_kind IN ('NORMAL','RECOGNIZED')", name="ck_excuse_sub_reason_kind"),
+        CheckConstraint("review IN ('PENDING','APPROVED','REJECTED') OR review IS NULL", name="ck_excuse_sub_review"),
+    )
+
+    member = relationship("Member")
+
+
 class Ledger(Base):
     __tablename__ = "ledger"
 
