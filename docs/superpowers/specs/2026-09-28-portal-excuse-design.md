@@ -33,7 +33,9 @@
 |---|---|
 | 사전(PRE) | 제출 시각 ≤ 대상 날짜 전날 21:59:59 KST |
 | 사후(POST) | 그 이후 ~ 대상 날짜 다음날 21:59:59 KST |
-| 사후 + 마감 후 | 다음날 21:59:59 KST 이후. 받되 `is_late = true` 로 표시 |
+| 제출 불가 | 다음날 21:59:59 KST 이후. 날짜 선택기에서 고를 수 없고 서버도 422 |
+
+사후 마감이 지나면 포털로는 낼 수 없다(카톡으로 운영진에게 직접).
 
 사전/사후는 기수원이 고르지 않는다. 서버가 **최초 제출 시각**으로 판정하고, 수정해도 바뀌지 않는다.
 
@@ -54,7 +56,6 @@
 | review | NULL \| 'PENDING' \| 'APPROVED' \| 'REJECTED' | 인정사유일 때만. 생성 시 PENDING |
 | reviewed_by | varchar, null | 운영진 username |
 | reviewed_at | timestamptz, null | |
-| is_late | bool, default false | 사후 마감 후 제출 |
 | session_id | int FK sessions ON DELETE SET NULL, null | 연결된 세션 |
 | created_at / updated_at | timestamptz | |
 
@@ -69,11 +70,10 @@
 3. `attendance.excuse_text` = 헤더 + 본문. 예:
    ```
    [포털] 결석 · 사전 · 인정사유(승인 대기)
-   제출 2026-09-29 14:03 · 마감 후 제출
+   제출 2026-09-29 14:03
    ---
    <사유>
    ```
-   (`마감 후 제출` 은 `is_late` 일 때만.)
 4. 출결 상태:
    - 인정사유 + APPROVED → `EXCUSED`
    - 그 외 → category 에 해당하는 상태(`ABSENT` / `LATE_UNDER10` / `EARLY_LEAVE`).
@@ -96,7 +96,7 @@
 ## 수정·취소 허용 기간 (기수원)
 
 - 사전 제출: 전날 21:59:59 KST 까지
-- 사후 제출: 다음날 21:59:59 KST 까지 (마감 후 제출은 수정·취소 불가)
+- 사후 제출: 다음날 21:59:59 KST 까지
 - 세션이 FINALIZED 면 불가
 - 인정사유가 이미 승인/반려됐으면 불가
 
@@ -107,7 +107,7 @@
 - `POST /portal/excuses` — 제출. body: `target_date, category, reason_kind, reason`. 같은 날짜 있으면 409
 - `PUT  /portal/excuses/{id}` — 수정 (category, reason_kind, reason)
 - `DELETE /portal/excuses/{id}` — 취소
-- `GET  /portal/excuses/preview?date=YYYY-MM-DD` — "지금 내면 사전/사후/마감 후" 판정 결과
+- `GET  /portal/excuses/preview?date=YYYY-MM-DD` — "지금 내면 사전/사후" 판정 결과 (마감 지난 날짜면 null)
 
 운영진 (`require_staff`, 현재 기수 스코프):
 - `GET  /excuses?from=&to=` — 대시보드용 목록 (세션 연결 여부 포함)
@@ -119,7 +119,8 @@
 
 **기수 포털 — 내 출결 (`MemberAttendance.tsx`)**
 - 상단 "사유서 제출" 버튼 → 폼: 날짜, 결석/지각/조퇴, 일반사유/인정사유, 사유.
-- 날짜를 고르면 "지금 내면 사전사유서로 접수됩니다" / "사후사유서로 접수됩니다" / "사후 마감이 지나 마감 후 제출로 접수됩니다" 표시.
+- 날짜 선택기 최솟값 = 사후 마감이 아직 안 지난 가장 이른 날짜(KST 22시 전이면 어제, 이후면 오늘). 그보다 이른 날짜는 고를 수 없다.
+- 날짜를 고르면 "지금 내면 사전사유서로 접수됩니다" / "사후사유서로 접수됩니다" 표시.
 - 아래 "내 사유서" 목록: 날짜·유형·사전/사후·상태(접수됨 / 세션 반영됨 / 인정사유 승인 대기·승인·반려). 허용 기간 안이면 수정·취소 버튼.
 
 **운영진 — 대시보드 (`Dashboard.tsx`)**
@@ -137,6 +138,6 @@
 
 ## 검증
 
-- 백엔드 테스트 1개 파일: 사전/사후/마감 후 판정 경계값, 세션 생성 시 일괄 연결·반영, 승인/반려에 따른 상태 전환.
+- 백엔드 테스트 1개 파일: 사전/사후/제출 불가 판정 경계값, 세션 생성 시 일괄 연결·반영, 승인/반려에 따른 상태 전환.
 - 브라우저: 기수원 제출(세션 없음) → 운영진 세션 생성 → 출결표 반영·클립보드 확인 → 대시보드에서 인정사유 승인 → 공결 반영.
 - `npm run build`(tsc -b) 통과.
