@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { CalendarCheck } from "lucide-react";
 import { useMyAttendance, type MyAttendance } from "@/hooks/useMemberLedger";
+import MemberExcuseSection from "./MemberExcuseSection";
 
 // 출결 상태 → 라벨·색
 const STATUS: Record<string, { label: string; cls: string; dot: string }> = {
@@ -59,6 +60,13 @@ export default function MemberAttendance() {
                 ))}
             </div>
 
+            <MemberExcuseSection />
+
+            <h3 className="flex items-center gap-1.5 text-sm font-bold text-gray-900 mb-2.5">
+                <CalendarCheck className="w-4 h-4 text-rose-500" />
+                세션 출결
+            </h3>
+
             {isLoading ? (
                 <div className="py-20 text-center text-sm text-gray-400">불러오는 중…</div>
             ) : !rows || rows.length === 0 ? (
@@ -77,7 +85,7 @@ export default function MemberAttendance() {
                                     <p className="text-sm font-semibold text-gray-900 truncate">{r.title}</p>
                                     {(r.note || r.excuse_type) && (
                                         <p className="text-[11px] text-gray-400 mt-0.5 truncate">
-                                            {r.excuse_type === "PRE" ? "사전 공결" : r.excuse_type === "POST" ? "사후 공결" : ""}
+                                            {r.excuse_type === "PRE" ? "사전사유서" : r.excuse_type === "POST" ? "사후사유서" : ""}
                                             {r.note ? `${r.excuse_type ? " · " : ""}${r.note}` : ""}
                                         </p>
                                     )}
