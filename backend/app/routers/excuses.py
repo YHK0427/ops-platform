@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_current_cohort_id, get_current_member, get_current_user, get_db, require_staff
+from app.deps import get_current_cohort_id, get_current_member, get_db, require_staff
 from app.models import ExcuseAttachment, ExcuseSubmission, Member, Session as SessionModel
 from app.services.portal_excuse import apply_submission, classify, detach_submission, edit_deadline, sniff_type
 
@@ -74,8 +74,11 @@ def _remove_files(atts: list[ExcuseAttachment]) -> None:
 
 
 def _serve(att: ExcuseAttachment) -> FileResponse:
+    path = os.path.join(_ATT_DIR, att.stored_name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
     return FileResponse(
-        os.path.join(_ATT_DIR, att.stored_name),
+        path,
         media_type=att.content_type,
         headers={
             "Content-Disposition": "inline; filename*=UTF-8''" + quote(att.original_name),
@@ -100,11 +103,19 @@ async def _out(db: AsyncSession, sub: ExcuseSubmission, name: str | None = None)
         "review": sub.review, "reviewed_by": sub.reviewed_by, "reviewed_at": sub.reviewed_at,
         "session_id": sub.session_id, "created_at": sub.created_at,
         "editable": await _editable(db, sub),
+        "session_finalized": await _finalized(db, sub),
     }
 
 
+async def _locked(db: AsyncSession, excuse_id: int) -> ExcuseSubmission | None:
+    # 기수원 수정과 운영진 심사가 동시에 들어와도 한쪽이 끝난 값을 보고 판단하도록 행 잠금
+    return (await db.execute(
+        select(ExcuseSubmission).where(ExcuseSubmission.id == excuse_id).with_for_update()
+    )).scalar_one_or_none()
+
+
 async def _mine(db: AsyncSession, member: dict, excuse_id: int) -> ExcuseSubmission:
-    sub = await db.get(ExcuseSubmission, excuse_id)
+    sub = await _locked(db, excuse_id)
     if sub is None or sub.member_id != member["member_id"]:
         raise HTTPException(status_code=404, detail="사유서를 찾을 수 없습니다")
     return sub
@@ -158,7 +169,7 @@ async def _finalized_for_date(db: AsyncSession, sub: ExcuseSubmission) -> bool:
     s = (await db.execute(
         select(SessionModel.status).where(
             SessionModel.cohort_id == sub.cohort_id, SessionModel.date == sub.target_date,
-        ).limit(1)
+        ).order_by(SessionModel.id).limit(1)
     )).scalar_one_or_none()
     return s == "FINALIZED"
 
@@ -168,13 +179,12 @@ async def edit(excuse_id: int, body: ExcuseEdit, member: dict = Depends(get_curr
     sub = await _mine(db, member, excuse_id)
     if not await _editable(db, sub):
         raise HTTPException(status_code=422, detail="수정할 수 있는 기간이 지났습니다. 운영진에게 직접 연락해주세요.")
-    prev = sub.category
     sub.category = body.category
     sub.reason = body.reason.strip()
     if body.reason_kind != sub.reason_kind:
         sub.reason_kind = body.reason_kind
         sub.review = "PENDING" if body.reason_kind == "RECOGNIZED" else None
-    await apply_submission(db, sub, prev_category=prev)
+    await apply_submission(db, sub)
     await db.commit()
     await db.refresh(sub)
     return await _out(db, sub)
@@ -254,7 +264,7 @@ async def list_excuses(
     date_from: date | None = None,
     date_to: date | None = None,
     review: str | None = Query(None, pattern="^(PENDING|APPROVED|REJECTED)$"),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -280,7 +290,7 @@ async def review(
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):
-    sub = await db.get(ExcuseSubmission, excuse_id)
+    sub = await _locked(db, excuse_id)
     if sub is None or sub.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="사유서를 찾을 수 없습니다")
     if sub.reason_kind != "RECOGNIZED":
@@ -299,7 +309,7 @@ async def review(
 @router.get("/{excuse_id}/attachments/{att_id}")
 async def staff_attachment(
     excuse_id: int, att_id: int,
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
     db: AsyncSession = Depends(get_db),
 ):

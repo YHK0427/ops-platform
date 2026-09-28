@@ -772,6 +772,10 @@ async def clear_excuses(
     attendances = result.scalars().all()
     cleared = 0
     for att in attendances:
+        # 포털 사유서는 기수원이 직접 낸 원본이라 카페 스캔 정리 버튼으로 지우지 않는다
+        # (지우면 다시 반영될 경로가 없다). 포털 쪽은 기수원 취소로만 빠진다.
+        if (att.excuse_text or "").startswith("[포털]"):
+            continue
         att.excuse_type = None
         att.excuse_text = None
         cleared += 1

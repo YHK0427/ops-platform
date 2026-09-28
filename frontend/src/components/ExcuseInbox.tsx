@@ -39,7 +39,7 @@ function reviewCls(r: Excuse["review"]) {
 
 function Row({ e, withDate = false, actions = false }: { e: Excuse; withDate?: boolean; actions?: boolean }) {
     const [open, setOpen] = useState(false);
-    const pending = actions && e.reason_kind === "RECOGNIZED" && e.review === "PENDING";
+    const pending = actions && e.reason_kind === "RECOGNIZED" && e.review === "PENDING" && !e.session_finalized;
     return (
         <div className="px-3 py-2.5">
             <div className="flex items-center gap-2">
@@ -62,6 +62,9 @@ function Row({ e, withDate = false, actions = false }: { e: Excuse; withDate?: b
                     )}
                 </button>
                 {pending && <ReviewButtons excuse={e} />}
+                {actions && e.session_finalized && (
+                    <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]">정산 끝남 · 장부에서 처리</span>
+                )}
             </div>
             {open && (
                 <div className="mt-2 ml-6 space-y-2">
@@ -120,7 +123,9 @@ export function ExcuseInbox() {
 
             {pendingSorted.length > 0 && (
                 <Card title="공결 승인 대기" badge={
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white">{pendingSorted.length}</span>
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white">
+                        {pendingSorted.filter(e => !e.session_finalized).length}
+                    </span>
                 }>
                     {pendingSorted.map(e => <Row key={e.id} e={e} withDate actions />)}
                 </Card>

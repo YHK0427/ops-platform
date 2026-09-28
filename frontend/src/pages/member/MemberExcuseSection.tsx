@@ -72,7 +72,7 @@ function ExcuseForm({ editing, onDone }: { editing: Excuse | null; onDone: () =>
     };
 
     const removeExisting = async (attId: number) => {
-        if (!editing) return;
+        if (!editing || !confirm("이 사진을 삭제할까요? 바로 삭제됩니다.")) return;
         try {
             await memberApi.delete(`/portal/excuses/${editing.id}/attachments/${attId}`);
             qc.invalidateQueries({ queryKey: ["member", "excuses"] });

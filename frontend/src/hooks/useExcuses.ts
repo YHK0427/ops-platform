@@ -24,6 +24,7 @@ export interface Excuse {
     session_id: number | null;
     created_at: string;
     editable: boolean;
+    session_finalized: boolean;
     attachments: ExcuseAttachment[];
 }
 
@@ -52,9 +53,10 @@ export function useExcusePreview(date: string) {
     });
 }
 
-export function useStaffExcuses(params: { session_id?: number; date_from?: string; date_to?: string; review?: "PENDING" }) {
+export function useStaffExcuses(params: { session_id?: number; date_from?: string; date_to?: string; review?: "PENDING" }, enabled = true) {
     return useQuery({
         queryKey: ["excuses", params],
+        enabled,
         queryFn: async () => (await api.get<Excuse[]>("/excuses", { params })).data,
     });
 }

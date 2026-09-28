@@ -22,6 +22,7 @@ import type { SessionStats } from "@/hooks/useSessions";
 import { penaltyRisk } from "@/lib/penaltyRisk";
 import { toast } from "sonner";
 import { ExcuseInbox } from "@/components/ExcuseInbox";
+import { useAuth } from "@/context/AuthContext";
 
 function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
     const { mutate: importSession, isPending: isImporting } = useImportNaverSession();
@@ -260,6 +261,7 @@ function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
 
 export default function Dashboard() {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const { data: sessionData, isLoading: isSessionLoading } = useCurrentSession();
     const { data: sortedMembers, isLoading: isLoadingMembers } = useMembers(true); // Active only
     const { data: naverStatus, isLoading: isNaverLoading } = useNaverSessionStatus();
@@ -460,8 +462,8 @@ export default function Dashboard() {
                     )}
                 </div>
 
-                {/* 사유서 (포털 제출) */}
-                <ExcuseInbox />
+                {/* 사유서 (포털 제출) — 증빙이 민감해 운영진만 */}
+                {user?.role !== "viewer" && <ExcuseInbox />}
 
             </div>
         </div>

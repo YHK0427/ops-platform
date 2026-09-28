@@ -49,15 +49,18 @@ def classify(target_date: date, now: datetime) -> str | None:
 
 def desired_status(
     category: str, reason_kind: str, review: str | None, current: str,
-    prev_category: str | None = None,
+    applied: str | None = None,
 ) -> str | None:
-    """반영 후 출결 상태. None 이면 현재 값을 그대로 둔다(운영진이 직접 찍은 값 보호)."""
+    """반영 후 출결 상태. None 이면 현재 값을 그대로 둔다.
+
+    "우리 값"은 미처리/출석, 그리고 이 사유서가 실제로 써넣었던 값(applied)뿐이다.
+    현재 값이 우연히 사유서 유형과 같다고 우리 값으로 치면, 운영진이 찍은 결석을
+    기수원이 지각으로 수정해 낮출 수 있다.
+    """
     target = "EXCUSED" if reason_kind == "RECOGNIZED" and review == "APPROVED" else CATEGORY_STATUS[category]
-    ours = {"PENDING", "PRESENT", CATEGORY_STATUS[category]}
-    if prev_category:
-        ours.add(CATEGORY_STATUS[prev_category])
-    if reason_kind == "RECOGNIZED":
-        ours.add("EXCUSED")
+    ours = {"PENDING", "PRESENT"}
+    if applied:
+        ours.add(applied)
     if current not in ours or current == target:
         return None
     return target
@@ -94,18 +97,22 @@ async def _attendance(db: AsyncSession, session_id: int, member_id: int):
     )).scalar_one_or_none()
 
 
-def _write(att, sub, prev_category: str | None) -> None:
-    att.excuse_type = sub.excuse_type
+def write_attendance(att, sub) -> None:
+    """제출 1건을 출결 1행에 쓴다. 운영진이 바꾼 사전/사후 구분과 출결은 보존한다."""
+    ours_before = (att.excuse_text or "").startswith("[포털]")
+    if not ours_before or att.excuse_type == sub.excuse_type:
+        att.excuse_type = sub.excuse_type
     att.excuse_text = build_excuse_text(
         category=sub.category, excuse_type=sub.excuse_type, reason_kind=sub.reason_kind,
         review=sub.review, created_at=sub.created_at, reason=sub.reason,
     )
-    new = desired_status(sub.category, sub.reason_kind, sub.review, att.status, prev_category)
+    new = desired_status(sub.category, sub.reason_kind, sub.review, att.status, sub.applied_status)
     if new:
         att.status = new
+        sub.applied_status = new
 
 
-async def apply_submission(db: AsyncSession, sub, prev_category: str | None = None) -> None:
+async def apply_submission(db: AsyncSession, sub) -> None:
     session = await _session_for(db, sub)
     if session is None:
         return
@@ -114,7 +121,7 @@ async def apply_submission(db: AsyncSession, sub, prev_category: str | None = No
         return
     att = await _attendance(db, session.id, sub.member_id)
     if att is not None:
-        _write(att, sub, prev_category)
+        write_attendance(att, sub)
 
 
 async def apply_all_for_session(db: AsyncSession, session) -> int:
@@ -130,7 +137,7 @@ async def apply_all_for_session(db: AsyncSession, session) -> int:
         sub.session_id = session.id
         att = await _attendance(db, session.id, sub.member_id)
         if att is not None:
-            _write(att, sub, None)
+            write_attendance(att, sub)
     return len(subs)
 
 

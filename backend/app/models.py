@@ -301,6 +301,8 @@ class ExcuseSubmission(Base):
     reviewed_by = Column(String(100))
     reviewed_at = Column(TIMESTAMP(timezone=True))
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="SET NULL"), index=True)
+    # 이 사유서가 출결에 실제로 써넣은 상태. 운영진 값과 구분하는 유일한 근거.
+    applied_status = Column(String(20))
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 

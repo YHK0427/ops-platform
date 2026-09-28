@@ -24,6 +24,7 @@ import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
 import { PresenterOrderPanel } from "@/components/PresenterOrderPanel";
 import { ExcuseAttachmentButton, PendingExcuseBadge } from "@/components/ExcuseInbox";
 import { useStaffExcuses, type Excuse } from "@/hooks/useExcuses";
+import { useAuth } from "@/context/AuthContext";
 
 interface AttendanceGridProps {
     sessionId: number;
@@ -37,9 +38,10 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
     const queryClient = useQueryClient();
     const [updating, setUpdating] = useState<Record<string, boolean>>({});
     const [viewMode, setViewMode] = useState<"default" | "order">("default");
-    const { data: portalExcuses } = useStaffExcuses({ session_id: sessionId });
+    const { user } = useAuth();
+    const { data: portalExcuses } = useStaffExcuses({ session_id: sessionId }, user?.role !== "viewer");
     const excuseByMember = new Map((portalExcuses ?? []).map(e => [e.member_id, e]));
-    const pendingByMember = new Map((portalExcuses ?? []).filter(e => e.review === "PENDING").map(e => [e.member_id, e]));
+    const pendingByMember = new Map((portalExcuses ?? []).filter(e => e.review === "PENDING" && !e.session_finalized).map(e => [e.member_id, e]));
 
     const handleStatusChange = async (memberId: number, status: string) => {
         setUpdating(prev => ({ ...prev, [memberId]: true }));
