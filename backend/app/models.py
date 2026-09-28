@@ -471,7 +471,11 @@ class LiveFeedbackBoard(Base):
     title = Column(String(100), nullable=False)
     is_open = Column(Boolean, default=False, server_default="false", nullable=False)  # 공개/비공개
     # 발표자에 포함할 조퇴자(EARLY_LEAVE) member_id 목록 (개별 선택). 결석/공결은 항상 제외.
-    early_leave_member_ids = Column(ARRAY(Integer), server_default=text("'{}'"), nullable=False)
+    early_leave_member_ids = Column(ARRAY(Integer), server_default=text("'{}'"), nullable=False)  # 미사용(조퇴는 항상 포함)
+    # 운영진이 손으로 조정한 발표자 명단 — 출결로 계산한 명단에서 빼고/더한다.
+    # 결석자라도 넣을 수 있고 출석자라도 뺄 수 있다. [{member_id, group_num}]
+    added_presenters = Column(JSONB, nullable=False, server_default=text("'[]'"))
+    removed_member_ids = Column(ARRAY(Integer), server_default=text("'{}'"), nullable=False)
     # 보드별 피드백 카테고리 [{key,label,color}] — 기본 칭찬/발전
     categories = Column(
         JSONB,
@@ -487,6 +491,21 @@ class LiveFeedbackBoard(Base):
     session = relationship("Session")
     posts = relationship("LiveFeedbackPost", back_populates="board", cascade="all, delete-orphan")
     aliases = relationship("LiveFeedbackAnonAlias", back_populates="board", cascade="all, delete-orphan")
+    guests = relationship("LiveFeedbackGuest", back_populates="board", cascade="all, delete-orphan")
+
+
+class LiveFeedbackGuest(Base):
+    """기수원이 아닌 외부 발표자(이벤트성). 이 보드 안에만 존재 — 멤버·장부와 섞이지 않는다.
+    API 에서는 발표자 번호를 -id(음수)로 내보내 기수원 member_id 와 구분한다."""
+    __tablename__ = "live_feedback_guests"
+
+    id = Column(Integer, primary_key=True)
+    board_id = Column(Integer, ForeignKey("live_feedback_boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(50), nullable=False)
+    group_num = Column(Integer)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    board = relationship("LiveFeedbackBoard", back_populates="guests")
 
 
 class LiveFeedbackPost(Base):
@@ -498,7 +517,9 @@ class LiveFeedbackPost(Base):
     # 작성자: 기수원(author_member_id) 또는 운영진(author_user_id) 중 하나
     author_member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
     author_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
-    presenter_member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
+    # 발표자: 기수원(presenter_member_id) 또는 외부 발표자(presenter_guest_id) 중 하나
+    presenter_member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
+    presenter_guest_id = Column(Integer, ForeignKey("live_feedback_guests.id", ondelete="CASCADE"), nullable=True, index=True)
     # 카테고리별 내용 {categoryKey: text} — 최소 1개 필수 (보드 categories 키 기준)
     contents = Column(JSONB, nullable=False)
     is_anonymous = Column(Boolean, default=True, server_default="true", nullable=False)
@@ -507,12 +528,14 @@ class LiveFeedbackPost(Base):
 
     __table_args__ = (
         CheckConstraint("contents <> '{}'::jsonb", name="ck_live_feedback_post_has_content"),
+        CheckConstraint("(presenter_member_id IS NULL) <> (presenter_guest_id IS NULL)", name="ck_live_feedback_post_one_presenter"),
     )
 
     board = relationship("LiveFeedbackBoard", back_populates="posts")
     author = relationship("Member", foreign_keys=[author_member_id])
     author_user = relationship("User", foreign_keys=[author_user_id])
     presenter = relationship("Member", foreign_keys=[presenter_member_id])
+    presenter_guest = relationship("LiveFeedbackGuest")
     reactions = relationship("LiveFeedbackReaction", back_populates="post", cascade="all, delete-orphan")
     comments = relationship(
         "LiveFeedbackComment", back_populates="post", cascade="all, delete-orphan",

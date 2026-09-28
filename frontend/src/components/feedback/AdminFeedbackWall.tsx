@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
-import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2, ChevronDown, MessageCircle } from "lucide-react";
+import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2, ChevronDown, MessageCircle, UserPlus, UserMinus } from "lucide-react";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
     useAdminBoard,
@@ -10,6 +12,9 @@ import {
     useStaffToggleReaction,
     useStaffCreateComment,
     useStaffDeleteComment,
+    usePresenterCandidates,
+    useAddPresenter,
+    useRemovePresenter,
     type FeedbackPost,
     type FeedbackCategory,
     type PresenterColumn,
@@ -220,6 +225,101 @@ function StaffComposer({ boardId, presenterId, presenterName, categories }: {
     );
 }
 
+
+const STATUS_LABEL: Record<string, string> = {
+    PENDING: "미처리", PRESENT: "출석", LATE_UNDER10: "지각", LATE_OVER10: "지각", EARLY_LEAVE: "조퇴", ABSENT: "결석", EXCUSED: "공결",
+};
+
+function errText(e: any, fallback: string) {
+    const d = e?.response?.data?.detail;
+    return typeof d === "string" ? d : fallback;
+}
+
+/** 발표자 추가 — 명단에 없는 세션 인원(결석자·뺀 사람 포함) 또는 외부 발표자 이름 직접 입력 */
+function AddPresenterDialog({ boardId, hasGroups, open, onOpenChange }: {
+    boardId: number; hasGroups: boolean; open: boolean; onOpenChange: (v: boolean) => void;
+}) {
+    const { data: candidates } = usePresenterCandidates(boardId, open);
+    const add = useAddPresenter(boardId);
+    const [guestName, setGuestName] = useState("");
+    const [group, setGroup] = useState<number | null>(hasGroups ? 1 : null);
+
+    const addMember = (c: { member_id: number; name: string; group_num: number | null }) =>
+        add.mutate({ member_id: c.member_id, group_num: hasGroups ? (c.group_num ?? group) : null }, {
+            onSuccess: () => toast.success(`${c.name}을(를) 발표자에 넣었습니다.`),
+            onError: (e) => toast.error(errText(e, "추가 실패")),
+        });
+    const addGuest = () => {
+        const name = guestName.trim();
+        if (!name) return;
+        add.mutate({ name, group_num: hasGroups ? group : null }, {
+            onSuccess: () => { toast.success(`외부 발표자 ${name}을(를) 넣었습니다.`); setGuestName(""); },
+            onError: (e) => toast.error(errText(e, "추가 실패")),
+        });
+    };
+    const GroupPicker = () => hasGroups ? (
+        <div className="flex gap-1">
+            {[1, 2].map((g) => (
+                <button key={g} type="button" onClick={() => setGroup(g)}
+                    className={cn("px-2 py-1 rounded-md text-xs font-bold border",
+                        group === g ? groupBadgeClass(g) + " border-current" : "border-gray-200 text-gray-400")}>
+                    {g}분반
+                </button>
+            ))}
+            <button type="button" onClick={() => setGroup(null)}
+                className={cn("px-2 py-1 rounded-md text-xs font-bold border", group === null ? "bg-gray-100 text-gray-600 border-gray-300" : "border-gray-200 text-gray-400")}>
+                전체
+            </button>
+        </div>
+    ) : null;
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-md min-w-0">
+                <DialogHeader><DialogTitle>발표자 추가</DialogTitle></DialogHeader>
+                <div className="space-y-5">
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-bold text-gray-900">외부 발표자</p>
+                            <GroupPicker />
+                        </div>
+                        {hasGroups && <p className="text-[11px] text-gray-400">'전체'로 넣으면 모든 분반에 보입니다.</p>}
+                        <div className="flex gap-2">
+                            <input value={guestName} onChange={(e) => setGuestName(e.target.value)} maxLength={50}
+                                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) addGuest(); }}
+                                placeholder="이름 직접 입력 (예: 초청 강사 김OO)"
+                                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                            <button type="button" onClick={addGuest} disabled={!guestName.trim() || add.isPending}
+                                className="px-3 py-2 rounded-lg bg-gray-900 text-white text-sm font-bold disabled:opacity-40">추가</button>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <p className="text-sm font-bold text-gray-900">세션 인원 <span className="text-xs font-normal text-gray-400">(명단에 없는 사람 · 결석자 포함)</span></p>
+                        <div className="max-h-[40vh] overflow-y-auto divide-y divide-gray-100 rounded-lg border border-gray-200">
+                            {(candidates ?? []).length === 0 ? (
+                                <p className="px-3 py-4 text-center text-xs text-gray-400">추가할 사람이 없습니다</p>
+                            ) : (candidates ?? []).map((c) => (
+                                <div key={c.member_id} className="flex items-center gap-2 px-3 py-2">
+                                    <span className="text-sm font-semibold text-gray-900">{c.name}</span>
+                                    <span className="text-[11px] text-gray-400">{STATUS_LABEL[c.status] ?? c.status}</span>
+                                    {c.group_num != null && (
+                                        <span className={cn("px-1.5 py-0.5 rounded-full text-[10px] font-bold", groupBadgeClass(c.group_num))}>{c.group_num}분반</span>
+                                    )}
+                                    <button type="button" onClick={() => addMember(c)} disabled={add.isPending}
+                                        className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+                                        <Plus className="w-3 h-3" />넣기
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        {hasGroups && <p className="text-[11px] text-gray-400">분반이 없는 사람은 위에서 고른 분반으로 들어갑니다.</p>}
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     const { data: board } = useAdminBoard(boardId);
     const { data: posts } = useAdminPosts(boardId);
@@ -228,6 +328,19 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     const presenters: PresenterColumn[] = board?.presenters ?? [];
     const categories: FeedbackCategory[] = board?.categories ?? [];
     const isOpen = board?.is_open ?? false;
+    const hasGroups = presenters.some((p) => p.group_num != null);
+    const [addOpen, setAddOpen] = useState(false);
+    const remove = useRemovePresenter(boardId);
+    const removePresenter = (pr: PresenterColumn, count: number) => {
+        const msg = pr.is_guest
+            ? `외부 발표자 ${pr.name}을(를) 지웁니다.${count ? ` 달린 피드백 ${count}개도 함께 삭제됩니다.` : ""}`
+            : `${pr.name}을(를) 발표자 명단에서 뺍니다. 달린 피드백은 남고, 다시 넣으면 돌아옵니다.`;
+        if (!confirm(msg)) return;
+        remove.mutate(pr.presenter_member_id, {
+            onSuccess: () => toast.success(pr.is_guest ? "외부 발표자를 지웠습니다." : "명단에서 뺐습니다."),
+            onError: (e) => toast.error(errText(e, "빼기 실패")),
+        });
+    };
     // 다 본 발표자는 접어둘 수 있게 — 기본 펼침, 접힌 발표자 id 집합
     const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
     const toggleCollapse = (id: number) => setCollapsed((prev) => {
@@ -248,8 +361,14 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     return (
         <div>
             <div className="flex items-center justify-between mb-4">
-                <div className="text-sm text-gray-500">
-                    총 <span className="font-bold text-gray-900">{posts?.length ?? 0}</span>개 피드백
+                <div className="flex items-center gap-3">
+                    <div className="text-sm text-gray-500">
+                        총 <span className="font-bold text-gray-900">{posts?.length ?? 0}</span>개 피드백
+                    </div>
+                    <button type="button" onClick={() => setAddOpen(true)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                        <UserPlus className="w-3.5 h-3.5" />발표자 추가
+                    </button>
                 </div>
                 <span
                     className={cn(
@@ -262,9 +381,10 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                 </span>
             </div>
 
+            <AddPresenterDialog boardId={boardId} hasGroups={hasGroups} open={addOpen} onOpenChange={setAddOpen} />
             {presenters.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-                    분반/발표순서를 먼저 지정하세요. (출석 탭에서 분반 배정)
+                    발표자가 없습니다. 출석 탭에서 분반을 배정하거나 '발표자 추가'로 넣어주세요.
                 </div>
             ) : (
                 <div className="columns-1 md:columns-2 lg:columns-3 gap-4">
@@ -284,12 +404,21 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                             </span>
                                         )}
                                         <span className="text-sm font-bold text-gray-900 truncate">{pr.name}</span>
+                                        {pr.is_guest && (
+                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-600 shrink-0">외부</span>
+                                        )}
                                         {pr.presenter_order != null && (
                                             <span className="text-[11px] text-gray-400 shrink-0">#{pr.presenter_order}</span>
                                         )}
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0 text-gray-400">
                                         <span className="text-xs tabular-nums">{list.length}</span>
+                                        <span role="button" tabIndex={0} title="발표자에서 빼기"
+                                            onClick={(e) => { e.stopPropagation(); removePresenter(pr, list.length); }}
+                                            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); removePresenter(pr, list.length); } }}
+                                            className="p-1 rounded hover:bg-rose-50 hover:text-rose-500">
+                                            <UserMinus className="w-3.5 h-3.5" />
+                                        </span>
                                         <ChevronDown className={cn("w-4 h-4 transition-transform", !open && "-rotate-90")} />
                                     </div>
                                 </button>

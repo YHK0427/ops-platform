@@ -156,6 +156,7 @@ export default function MemberFeedbackBoard() {
                                 >
                                     <span className="flex items-center gap-1.5 min-w-0">
                                         <span className="truncate">{pr.name}</span>
+                                        {pr.is_guest && <span className="shrink-0 px-1 rounded text-[9px] font-bold bg-amber-50 text-amber-600">외부</span>}
                                         {own && (
                                             <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0", active ? "bg-white/25 text-white" : "bg-rose-50 text-rose-600")}>나</span>
                                         )}

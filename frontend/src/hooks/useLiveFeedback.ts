@@ -36,6 +36,7 @@ export interface PresenterColumn {
     name: string;
     group_num: number | null; // 분반 미사용 개인 세션이면 null
     presenter_order?: number; // 운영진(reveal_order)에서만 포함 — 멤버에겐 비노출
+    is_guest?: boolean; // 외부 발표자(번호는 음수)
 }
 
 export interface FeedbackBoardDetail {
@@ -115,6 +116,46 @@ export function useFeedbackBoards() {
         queryFn: async () => {
             const { data } = await api.get<FeedbackBoardListItem[]>("/live-feedback/boards");
             return data;
+        },
+    });
+}
+
+export interface PresenterCandidate {
+    member_id: number;
+    name: string;
+    group_num: number | null;
+    status: string;
+}
+
+export function usePresenterCandidates(boardId: number | null, enabled: boolean) {
+    return useQuery({
+        queryKey: [...lfKeys.board(boardId ?? 0), "candidates"] as const,
+        queryFn: async () => (await api.get<PresenterCandidate[]>(`/live-feedback/boards/${boardId}/presenter-candidates`)).data,
+        enabled: !!boardId && enabled,
+    });
+}
+
+// 발표자 추가(기수원 member_id 또는 외부 발표자 name) / 빼기 — 성공하면 명단·글 다시 받기
+export function useAddPresenter(boardId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (body: { member_id?: number; name?: string; group_num?: number | null }) =>
+            (await api.post(`/live-feedback/boards/${boardId}/presenters`, body)).data,
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: lfKeys.board(boardId) });
+            qc.invalidateQueries({ queryKey: lfKeys.posts(boardId) });
+        },
+    });
+}
+
+export function useRemovePresenter(boardId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (presenterId: number) =>
+            (await api.delete(`/live-feedback/boards/${boardId}/presenters/${presenterId}`)).data,
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: lfKeys.board(boardId) });
+            qc.invalidateQueries({ queryKey: lfKeys.posts(boardId) });
         },
     });
 }
