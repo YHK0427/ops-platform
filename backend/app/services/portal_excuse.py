@@ -5,6 +5,9 @@
 """
 from datetime import date, datetime, time, timedelta, timezone
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 CATEGORY_STATUS = {"ABSENT": "ABSENT", "LATE": "LATE_UNDER10", "EARLY_LEAVE": "EARLY_LEAVE"}
 CATEGORY_LABEL = {"ABSENT": "결석", "LATE": "지각", "EARLY_LEAVE": "조퇴"}
 _REVIEW_LABEL = {"PENDING": "승인 대기", "APPROVED": "승인", "REJECTED": "반려"}
@@ -51,3 +54,76 @@ def build_excuse_text(
     head = f"[포털] {CATEGORY_LABEL[category]} · {'사전' if excuse_type == 'PRE' else '사후'} · {kind}"
     sub = f"제출 {created_at.astimezone(_KST).strftime('%Y-%m-%d %H:%M')}"
     return f"{head}\n{sub}\n---\n{reason}"
+
+
+async def _session_for(db: AsyncSession, sub):
+    from app.models import Session as SessionModel
+    if sub.session_id:
+        return await db.get(SessionModel, sub.session_id)
+    return (await db.execute(
+        select(SessionModel).where(
+            SessionModel.cohort_id == sub.cohort_id,
+            SessionModel.date == sub.target_date,
+        ).order_by(SessionModel.id).limit(1)
+    )).scalar_one_or_none()
+
+
+async def _attendance(db: AsyncSession, session_id: int, member_id: int):
+    from app.models import Attendance
+    return (await db.execute(
+        select(Attendance).where(
+            Attendance.session_id == session_id, Attendance.member_id == member_id,
+        )
+    )).scalar_one_or_none()
+
+
+def _write(att, sub, prev_category: str | None) -> None:
+    att.excuse_type = sub.excuse_type
+    att.excuse_text = build_excuse_text(
+        category=sub.category, excuse_type=sub.excuse_type, reason_kind=sub.reason_kind,
+        review=sub.review, created_at=sub.created_at, reason=sub.reason,
+    )
+    new = desired_status(sub.category, sub.reason_kind, sub.review, att.status, prev_category)
+    if new:
+        att.status = new
+
+
+async def apply_submission(db: AsyncSession, sub, prev_category: str | None = None) -> None:
+    session = await _session_for(db, sub)
+    if session is None:
+        return
+    sub.session_id = session.id
+    if session.status == "FINALIZED":
+        return
+    att = await _attendance(db, session.id, sub.member_id)
+    if att is not None:
+        _write(att, sub, prev_category)
+
+
+async def apply_all_for_session(db: AsyncSession, session) -> int:
+    from app.models import ExcuseSubmission
+    subs = (await db.execute(
+        select(ExcuseSubmission).where(
+            ExcuseSubmission.cohort_id == session.cohort_id,
+            ExcuseSubmission.target_date == session.date,
+            ExcuseSubmission.session_id.is_(None),
+        )
+    )).scalars().all()
+    for sub in subs:
+        sub.session_id = session.id
+        att = await _attendance(db, session.id, sub.member_id)
+        if att is not None:
+            _write(att, sub, None)
+    return len(subs)
+
+
+async def detach_submission(db: AsyncSession, sub) -> None:
+    if not sub.session_id:
+        return
+    session = await _session_for(db, sub)
+    if session is None or session.status == "FINALIZED":
+        return
+    att = await _attendance(db, session.id, sub.member_id)
+    if att is not None and (att.excuse_text or "").startswith("[포털]"):
+        att.excuse_type = None
+        att.excuse_text = None

@@ -172,6 +172,10 @@ async def create_session(
                         status="PENDING",
                     ))
 
+        await db.flush()
+        from app.services.portal_excuse import apply_all_for_session
+        await apply_all_for_session(db, session)
+
         await db.commit()
 
         # Google Drive 폴더 생성: 메인 + videos/ + ppt/ (실패해도 세션 생성은 유지)
