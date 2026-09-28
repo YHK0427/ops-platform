@@ -135,6 +135,7 @@ async def apply_all_for_session(db: AsyncSession, session) -> int:
     )).scalars().all()
     for sub in subs:
         sub.session_id = session.id
+        sub.applied_status = None  # 새 출결표 — 이전(삭제된) 세션에 써넣은 기록은 무의미
         att = await _attendance(db, session.id, sub.member_id)
         if att is not None:
             write_attendance(att, sub)

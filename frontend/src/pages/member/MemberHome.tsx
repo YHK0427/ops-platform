@@ -43,8 +43,8 @@ export default function MemberHome() {
         {
             to: "/member/attendance",
             icon: CalendarCheck,
-            title: "내 출결",
-            desc: "주차별 출석 현황",
+            title: "내 출결 · 사유서",
+            desc: "출석 현황 · 사유서 제출",
             color: "from-emerald-500 to-teal-600",
         },
     ];

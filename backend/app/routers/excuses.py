@@ -216,6 +216,8 @@ async def add_attachment(
     if len(data) > _ATT_MAX_BYTES:
         raise HTTPException(status_code=413, detail="파일은 10MB 이하만 가능해요")
     ctype = sniff_type(data)
+    if ctype is None and data[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1", b"ftyphevc"):
+        raise HTTPException(status_code=400, detail="고효율(HEIC) 사진은 올릴 수 없어요. 사진을 화면 캡처해서 올려주세요")
     if ctype is None:
         raise HTTPException(status_code=400, detail="사진 파일(jpg/png/webp/gif)만 올릴 수 있어요")
     os.makedirs(_ATT_DIR, exist_ok=True)
