@@ -78,6 +78,12 @@ def test_closed_after_post_deadline():
     assert classify(D, datetime(2026, 10, 8, 13, 0, 0, tzinfo=UTC)) is None
 
 
+def test_closed_date_does_not_block_later_date():
+    now = datetime(2026, 10, 8, 14, 0, 0, tzinfo=UTC)  # 10/8 23:00 KST
+    assert classify(D, now) is None                     # 10/7 세션: 사후 마감 지남
+    assert classify(date(2026, 10, 14), now) == "PRE"   # 다음 주 세션: 사전 가능
+
+
 def test_edit_deadline():
     assert edit_deadline(D, "PRE") == datetime(2026, 10, 6, 12, 59, 59, tzinfo=UTC)
     assert edit_deadline(D, "POST") == datetime(2026, 10, 8, 12, 59, 59, tzinfo=UTC)
@@ -195,7 +201,7 @@ def build_excuse_text(
 - [ ] **Step 4: 통과 확인**
 
 Run: `docker cp backend/app/services/portal_excuse.py ops-platform-backend-1:/app/app/services/ && docker compose exec -T backend sh -c 'cd /app && python -m pytest tests -q'`
-Expected: 기존 24개 + 신규 14개 전부 PASS
+Expected: 기존 24개 + 신규 15개 전부 PASS
 
 - [ ] **Step 5: 커밋**
 
