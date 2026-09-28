@@ -6,17 +6,19 @@ import { useUnseenPatchNotes, useMarkPatchNotesSeen } from "@/hooks/usePatchNote
 import { PatchNoteBody } from "@/components/PatchNoteBody";
 
 /**
- * 마지막으로 '확인' 누른 시점 이후에 올라온 패치노트를 접속 시 한 번 띄운다.
+ * '다시 보지 않기'를 체크하고 닫은 시점 이후에 올라온 패치노트를 접속할 때마다 띄운다.
  * 운영진 사이트(staff)와 기수 포털(member)이 각자 다른 노트를 본다.
  */
 export function PatchNoteModal({ side }: { side: "staff" | "member" }) {
     const { data } = useUnseenPatchNotes(side);
     const { mutate: markSeen } = useMarkPatchNotesSeen(side);
     const [open, setOpen] = useState(false);
+    const [dontShow, setDontShow] = useState(false);
 
     useEffect(() => { if (data && data.length > 0) setOpen(true); }, [data]);
 
-    const close = () => { setOpen(false); markSeen(); };
+    // 체크 안 하고 닫으면 읽음 처리 안 함 → 다음 접속 때 다시 뜬다
+    const close = () => { setOpen(false); if (dontShow) markSeen(); };
 
     if (!data || data.length === 0) return null;
 
@@ -44,8 +46,13 @@ export function PatchNoteModal({ side }: { side: "staff" | "member" }) {
                         </div>
                     ))}
                 </div>
-                <div className="flex justify-end">
-                    <Button onClick={close}>확인했어요</Button>
+                <div className="flex items-center justify-between gap-3">
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)] cursor-pointer select-none">
+                        <input type="checkbox" checked={dontShow} onChange={(e) => setDontShow(e.target.checked)}
+                            className="w-4 h-4 accent-[var(--color-accent)]" />
+                        다시 보지 않기
+                    </label>
+                    <Button onClick={close}>닫기</Button>
                 </div>
             </DialogContent>
         </Dialog>
