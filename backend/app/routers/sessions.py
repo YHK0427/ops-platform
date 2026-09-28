@@ -683,6 +683,8 @@ async def update_attendance(
     # 사유서를 지우면 인정 표시도 끈다 — 사유서 없이 벌점만 면제된 상태가 숨어 남지 않게
     if "excuse_type" in update_data and update_data["excuse_type"] is None:
         attendance.is_recognized = False
+    if attendance.is_recognized and not attendance.excuse_type:
+        raise HTTPException(status_code=422, detail="사유서(사전/사후)를 먼저 선택해야 인정 처리할 수 있습니다.")
 
     await db.commit()
     # 빈번한 이벤트라 info 로그만 남김 (Telegram 스팸 방지). 강제 변경은 아래 엔드포인트에서 audit.
@@ -782,6 +784,7 @@ async def clear_excuses(
             continue
         att.excuse_type = None
         att.excuse_text = None
+        att.is_recognized = False  # 사유서가 없어지면 인정(벌점 면제)도 같이
         cleared += 1
 
     await db.commit()
