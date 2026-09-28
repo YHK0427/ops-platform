@@ -105,7 +105,7 @@ export function ExcuseInbox() {
                     들어온 사유서가 없습니다.
                 </div>
             ) : (
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-2 items-start">
                     {groups.map(([date, list]) => (
                         <div key={date} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
                             <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-elevated)]">
