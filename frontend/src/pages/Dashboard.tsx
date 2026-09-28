@@ -21,6 +21,7 @@ import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, 
 import type { SessionStats } from "@/hooks/useSessions";
 import { penaltyRisk } from "@/lib/penaltyRisk";
 import { toast } from "sonner";
+import { ExcuseInbox } from "@/components/ExcuseInbox";
 
 function NaverSessionCard({ naverStatus }: { naverStatus: any }) {
     const { mutate: importSession, isPending: isImporting } = useImportNaverSession();
@@ -393,6 +394,9 @@ export default function Dashboard() {
                         </div>
                     )}
                 </div>
+
+                {/* 사유서 (포털 제출) */}
+                <ExcuseInbox />
 
                 {/* 3. 위험 인물 한눈에 */}
                 <div className="space-y-4">

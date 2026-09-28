@@ -22,6 +22,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
 import { PresenterOrderPanel } from "@/components/PresenterOrderPanel";
+import { PendingExcuseBadge } from "@/components/ExcuseInbox";
+import { useStaffExcuses, type Excuse } from "@/hooks/useExcuses";
 
 interface AttendanceGridProps {
     sessionId: number;
@@ -35,6 +37,8 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
     const queryClient = useQueryClient();
     const [updating, setUpdating] = useState<Record<string, boolean>>({});
     const [viewMode, setViewMode] = useState<"default" | "order">("default");
+    const { data: portalExcuses } = useStaffExcuses({ session_id: sessionId });
+    const pendingByMember = new Map((portalExcuses ?? []).filter(e => e.review === "PENDING").map(e => [e.member_id, e]));
 
     const handleStatusChange = async (memberId: number, status: string) => {
         setUpdating(prev => ({ ...prev, [memberId]: true }));
@@ -335,6 +339,9 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                                     </PopoverContent>
                                                 </Popover>
                                             )}
+                                            {pendingByMember.get(member.member_id) && (
+                                                <PendingExcuseBadge excuse={pendingByMember.get(member.member_id)!} />
+                                            )}
                                         </div>
                                     </TableCell>
                                     <TableCell>
@@ -416,6 +423,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                 onExcuseChange={handleExcuseChange}
                                 onPptEmailChange={handlePptEmailChange}
                                 onNoteChange={handleNoteChange}
+                                pendingExcuse={pendingByMember.get(member.member_id)}
                             />
                         ))}
                     </div>
@@ -469,6 +477,7 @@ interface MobileAttendanceRowProps {
     onExcuseChange: (memberId: number, excuseType: string) => void;
     onPptEmailChange: (assignmentId: number, newStatus: string) => void;
     onNoteChange: (memberId: number, note: string) => void;
+    pendingExcuse?: Excuse;
 }
 
 function MobileAttendanceRow({
@@ -481,6 +490,7 @@ function MobileAttendanceRow({
     onExcuseChange,
     onPptEmailChange,
     onNoteChange,
+    pendingExcuse,
 }: MobileAttendanceRowProps) {
     const [expanded, setExpanded] = useState(false);
 
@@ -531,6 +541,7 @@ function MobileAttendanceRow({
                             </PopoverContent>
                         </Popover>
                     )}
+                    {pendingExcuse && <PendingExcuseBadge excuse={pendingExcuse} />}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                     {/* 사유서 유형 */}
