@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
@@ -14,6 +14,15 @@ export function PatchNoteModal({ side }: { side: "staff" | "member" }) {
     const { mutate: markSeen } = useMarkPatchNotesSeen(side);
     const [open, setOpen] = useState(false);
     const [dontShow, setDontShow] = useState(false);
+    const [readToEnd, setReadToEnd] = useState(false);
+    const scrollRef = useRef<HTMLDivElement>(null);
+
+    // 끝까지 내렸는지 — 스크롤할 것도 없으면 바로 true. 사진이 늦게 로드되면(onLoadCapture) 다시 잰다.
+    const checkEnd = useCallback(() => {
+        const el = scrollRef.current;
+        if (el && el.scrollTop + el.clientHeight >= el.scrollHeight - 8) setReadToEnd(true);
+    }, []);
+    useEffect(() => { if (open) requestAnimationFrame(checkEnd); }, [open, data, checkEnd]);
 
     useEffect(() => { if (data && data.length > 0) setOpen(true); }, [data]);
 
@@ -31,7 +40,7 @@ export function PatchNoteModal({ side }: { side: "staff" | "member" }) {
                         업데이트 안내
                     </DialogTitle>
                 </DialogHeader>
-                <div className="max-h-[60vh] overflow-y-auto space-y-4 pr-1">
+                <div ref={scrollRef} onScroll={checkEnd} onLoadCapture={checkEnd} className="max-h-[60vh] overflow-y-auto space-y-4 pr-1">
                     {data.map((n) => (
                         <div key={n.id} className="rounded-xl border border-[var(--color-border)] bg-white p-3">
                             <div className="flex items-baseline justify-between gap-2">
@@ -52,8 +61,11 @@ export function PatchNoteModal({ side }: { side: "staff" | "member" }) {
                             className="w-4 h-4 accent-[var(--color-accent)]" />
                         다시 보지 않기
                     </label>
-                    <Button onClick={close}>닫기</Button>
+                    <Button onClick={close} disabled={!readToEnd} title={readToEnd ? undefined : "끝까지 내리면 누를 수 있어요"}>
+                        {readToEnd ? "확인했습니다" : "끝까지 읽어주세요"}
+                    </Button>
                 </div>
+
             </DialogContent>
         </Dialog>
     );
