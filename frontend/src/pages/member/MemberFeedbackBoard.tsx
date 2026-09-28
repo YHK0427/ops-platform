@@ -465,7 +465,7 @@ function CommentThread({ comments, canComment, onAdd, onDelete }: {
                             <input
                                 value={text}
                                 onChange={(e) => setText(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter" && !sending) submit(); }}
+                                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !sending) submit(); }}
                                 placeholder="댓글 달기..."
                                 maxLength={500}
                                 className="flex-1 min-w-0 rounded-full border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"

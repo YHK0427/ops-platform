@@ -41,10 +41,11 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
     const delComment = useStaffDeleteComment(boardId);
     const [commentOpen, setCommentOpen] = useState(false);
     const [commentText, setCommentText] = useState("");
+    const [commentAnon, setCommentAnon] = useState(false);  // 운영진 댓글은 실명이 기본, 선택하면 익명
     const submitComment = async () => {
         const trimmed = commentText.trim();
         if (!trimmed) return;
-        await addComment.mutateAsync({ postId: post.id, content: trimmed, is_anonymous: false });
+        await addComment.mutateAsync({ postId: post.id, content: trimmed, is_anonymous: commentAnon });
         setCommentText("");
     };
     return (
@@ -146,11 +147,22 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
                             <input
                                 value={commentText}
                                 onChange={(e) => setCommentText(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter" && !addComment.isPending) submitComment(); }}
-                                placeholder="운영진 댓글..."
+                                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !addComment.isPending) submitComment(); }}
+                                placeholder={commentAnon ? "익명 댓글..." : "운영진 댓글..."}
                                 maxLength={500}
                                 className="flex-1 min-w-0 rounded-full border border-gray-200 px-2.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                             />
+                            <button
+                                type="button"
+                                onClick={() => setCommentAnon((v) => !v)}
+                                title={commentAnon ? "익명으로 작성 (기수에게 닉네임으로 보임)" : "실명(운영진)으로 작성"}
+                                className={cn(
+                                    "shrink-0 px-2 py-1 rounded-full border text-[10px] font-bold",
+                                    commentAnon ? "bg-rose-50 text-rose-500 border-rose-200" : "bg-white text-gray-400 border-gray-200",
+                                )}
+                            >
+                                익명
+                            </button>
                             <button
                                 onClick={submitComment}
                                 disabled={addComment.isPending || !commentText.trim()}
