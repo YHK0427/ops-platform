@@ -26,6 +26,24 @@ import { ExcuseAttachmentButton, PendingExcuseBadge } from "@/components/ExcuseI
 import { useStaffExcuses, type Excuse } from "@/hooks/useExcuses";
 import { useAuth } from "@/context/AuthContext";
 
+// 지각·조퇴 "인정"(벌점 면제) — 포털 인정사유 승인 시 자동으로 켜지고, 카톡 사유서 등은 운영진이 직접 켠다
+function RecognizedToggle({ attendance, disabled, onToggle }: {
+    attendance: any; disabled?: boolean; onToggle: (v: boolean) => void;
+}) {
+    if (!["LATE_UNDER10", "LATE_OVER10", "EARLY_LEAVE"].includes(attendance?.status)) return null;
+    const on = !!attendance?.is_recognized;
+    return (
+        <button type="button" disabled={disabled}
+            onClick={(e) => { e.stopPropagation(); onToggle(!on); }}
+            title={on ? "인정사유 — 벌점 면제 (누르면 해제)" : "누르면 인정사유로 표시 — 벌점 면제"}
+            className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-50 ${
+                on ? "bg-blue-600 text-white border-blue-600" : "bg-white text-[var(--color-text-muted)] border-dashed border-[var(--color-border)] hover:text-blue-600 hover:border-blue-400"
+            }`}>
+            인정
+        </button>
+    );
+}
+
 interface AttendanceGridProps {
     sessionId: number;
     teams: any[];
@@ -53,6 +71,20 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
         } catch (error) {
             console.error(error);
             toast.error("출결 변경 실패");
+        } finally {
+            setUpdating(prev => ({ ...prev, [memberId]: false }));
+        }
+    };
+
+    const handleRecognizedChange = async (memberId: number, value: boolean) => {
+        setUpdating(prev => ({ ...prev, [memberId]: true }));
+        try {
+            await api.patch(`/sessions/${sessionId}/attendance/${memberId}`, { is_recognized: value });
+            await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
+            toast.success(value ? "인정사유로 표시했습니다. 벌점이 면제됩니다." : "인정 표시를 해제했습니다.");
+        } catch (error: any) {
+            const d = error?.response?.data?.detail;
+            toast.error(typeof d === "string" ? d : "인정 표시 변경 실패");
         } finally {
             setUpdating(prev => ({ ...prev, [memberId]: false }));
         }
@@ -268,6 +300,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                         </div>
                                     </TableCell>
                                     <TableCell>
+                                        <div className="flex items-center gap-1.5">
                                         <div className="relative">
                                             <Select
                                                 value={member.attendance?.status || "PENDING"}
@@ -303,6 +336,9 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                                     <RefreshCw className="w-3 h-3 animate-spin text-[var(--color-text-muted)]" />
                                                 </div>
                                             )}
+                                        </div>
+                                        <RecognizedToggle attendance={member.attendance} disabled={updating[member.member_id]}
+                                            onToggle={(v) => handleRecognizedChange(member.member_id, v)} />
                                         </div>
                                     </TableCell>
                                     <TableCell>
@@ -429,6 +465,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                 onExcuseChange={handleExcuseChange}
                                 onPptEmailChange={handlePptEmailChange}
                                 onNoteChange={handleNoteChange}
+                                onRecognizedChange={handleRecognizedChange}
                                 pendingExcuse={pendingByMember.get(member.member_id)}
                                 portalExcuse={excuseByMember.get(member.member_id)}
                             />
@@ -484,6 +521,7 @@ interface MobileAttendanceRowProps {
     onExcuseChange: (memberId: number, excuseType: string) => void;
     onPptEmailChange: (assignmentId: number, newStatus: string) => void;
     onNoteChange: (memberId: number, note: string) => void;
+    onRecognizedChange: (memberId: number, value: boolean) => void;
     pendingExcuse?: Excuse;
     portalExcuse?: Excuse;
 }
@@ -498,6 +536,7 @@ function MobileAttendanceRow({
     onExcuseChange,
     onPptEmailChange,
     onNoteChange,
+    onRecognizedChange,
     pendingExcuse,
     portalExcuse,
 }: MobileAttendanceRowProps) {
@@ -537,6 +576,7 @@ function MobileAttendanceRow({
                     {updating[member.member_id] && (
                         <RefreshCw className="w-3 h-3 animate-spin text-[var(--color-text-muted)] shrink-0" />
                     )}
+                    <RecognizedToggle attendance={member.attendance} disabled={updating[member.member_id]} onToggle={(v) => onRecognizedChange(member.member_id, v)} />
                     {/* 사유서 아이콘 (excuse_text 있을 때) */}
                     {member.attendance?.excuse_text && (
                         <Popover>

@@ -92,7 +92,7 @@ export default function MemberAttendance() {
                                 </div>
                                 <span className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-bold ${st.cls}`}>
                                     <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                                    {st.label}
+                                    {st.label}{r.is_recognized && r.status !== "ABSENT" && r.status !== "EXCUSED" ? " · 인정" : ""}
                                 </span>
                             </div>
                         );

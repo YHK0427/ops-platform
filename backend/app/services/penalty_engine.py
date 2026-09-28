@@ -32,6 +32,21 @@ ATTENDANCE_MATRIX = {
     ("PRESENT",      None):   (0,  0),
 }
 
+_RECOGNIZABLE = {"LATE_UNDER10", "LATE_OVER10", "EARLY_LEAVE"}
+
+
+def attendance_penalty(status: str, excuse_type: str | None, is_recognized: bool = False) -> tuple[int, int]:
+    """출결 벌점 (점수, 디파짓). 인정사유가 승인된 지각·조퇴는 출결은 그대로 두고 벌점만 면제."""
+    if is_recognized and status in _RECOGNIZABLE:
+        return (0, 0)
+    key = (status, excuse_type or None)
+    if key in ATTENDANCE_MATRIX:
+        return ATTENDANCE_MATRIX[key]
+    if status in ("EXCUSED", "PRESENT"):
+        return (0, 0)
+    return ATTENDANCE_MATRIX.get((status, None), (0, 0))
+
+
 PPT_EMAIL_MATRIX = {
     "PASS":    (0, 0),
     "LATE":    (-1, -1000),
@@ -142,25 +157,7 @@ class PenaltyEngine:
             # --- 페널티 계산 ---
 
             # [출결]
-            # excuse_type이 None이면 None으로, 아니면 값 그대로
-            key = (att_status, excuse_type if excuse_type else None)
-            # ATTENDANCE_MATRIX 키에 (status, None) 형태가 많으므로 주의
-            # DB에는 excuse_type이 NULL일 수 있음.
-            
-            # 매트릭스 조회
-            if key in ATTENDANCE_MATRIX:
-                score_d, dep_d = ATTENDANCE_MATRIX[key]
-            else:
-                # 키가 없으면 (예: EXCUSED에 사유서가 달려있거나?) -> 기본값 0
-                # 하지만 EXCUSED는 항상 (0,0)
-                if att_status == "EXCUSED":
-                    score_d, dep_d = (0, 0)
-                elif att_status == "PRESENT":
-                    score_d, dep_d = (0, 0)
-                else:
-                    # 매트릭스에 없는 케이스 (예: LATE_UNDER10인데 excuse_type이 이상함)
-                    # Fallback to None key
-                    score_d, dep_d = ATTENDANCE_MATRIX.get((att_status, None), (0, 0))
+            score_d, dep_d = attendance_penalty(att_status, excuse_type, bool(att and att.is_recognized))
 
             if score_d != 0 or dep_d != 0:
                 penalties.append(PenaltyItem(

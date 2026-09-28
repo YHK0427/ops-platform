@@ -9,6 +9,7 @@ class AttendanceUpdate(BaseModel):
     excuse_type: Optional[str] = Field(None, pattern="^(PRE|POST)$")
     excuse_text: Optional[str] = None
     note: Optional[str] = None
+    is_recognized: Optional[bool] = None  # 지각·조퇴 인정(벌점 면제) — 운영진 수동 표시
 
 
 class AttendanceForceUpdate(BaseModel):
@@ -29,6 +30,7 @@ class AttendanceResponse(BaseModel):
     note: Optional[str] = None
     group_num: Optional[int] = None
     presenter_order: Optional[int] = None
+    is_recognized: bool = False
     updated_at: datetime
 
     model_config = {"from_attributes": True}

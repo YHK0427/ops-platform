@@ -57,7 +57,9 @@ def desired_status(
     현재 값이 우연히 사유서 유형과 같다고 우리 값으로 치면, 운영진이 찍은 결석을
     기수원이 지각으로 수정해 낮출 수 있다.
     """
-    target = "EXCUSED" if reason_kind == "RECOGNIZED" and review == "APPROVED" else CATEGORY_STATUS[category]
+    # 인정사유 승인: 결석만 공결로. 지각·조퇴는 출결 그대로 두고 is_recognized 로 벌점만 면제
+    approved = reason_kind == "RECOGNIZED" and review == "APPROVED"
+    target = "EXCUSED" if approved and category == "ABSENT" else CATEGORY_STATUS[category]
     ours = {"PENDING", "PRESENT"}
     if applied:
         ours.add(applied)
@@ -110,6 +112,9 @@ def write_attendance(att, sub) -> None:
     if new:
         att.status = new
         sub.applied_status = new
+    # 일반사유면 인정 표시는 운영진 몫(카톡 사유서를 손으로 인정하는 경우) — 건드리지 않는다
+    if sub.reason_kind == "RECOGNIZED":
+        att.is_recognized = sub.review == "APPROVED" and sub.category != "ABSENT"
 
 
 async def apply_submission(db: AsyncSession, sub) -> None:
@@ -152,3 +157,5 @@ async def detach_submission(db: AsyncSession, sub) -> None:
     if att is not None and (att.excuse_text or "").startswith("[포털]"):
         att.excuse_type = None
         att.excuse_text = None
+        if sub.reason_kind == "RECOGNIZED":
+            att.is_recognized = False

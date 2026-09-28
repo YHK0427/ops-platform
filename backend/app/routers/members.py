@@ -135,7 +135,8 @@ async def my_attendance(
     """로그인한 기수 본인의 세션별 출결 내역(주차순). 출석 집계가 끝난 세션만."""
     result = await db.execute(
         select(SessionModel.id, SessionModel.week_num, SessionModel.title,
-               SessionModel.date, Attendance.status, Attendance.excuse_type, Attendance.note)
+               SessionModel.date, Attendance.status, Attendance.excuse_type, Attendance.note,
+               Attendance.is_recognized)
         .join(Attendance, Attendance.session_id == SessionModel.id)
         .where(Attendance.member_id == member["member_id"],
                Attendance.status != "PENDING")
@@ -150,8 +151,9 @@ async def my_attendance(
             "status": status,
             "excuse_type": excuse_type,
             "note": note,
+            "is_recognized": recognized,
         }
-        for sid, week_num, title, sdate, status, excuse_type, note in result.all()
+        for sid, week_num, title, sdate, status, excuse_type, note, recognized in result.all()
     ]
 
 

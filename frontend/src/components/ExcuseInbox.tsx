@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { ChevronDown, FileText, Paperclip } from "lucide-react";
 import { ExcuseAttachments } from "@/components/ExcuseAttachments";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CATEGORY_LABEL, REVIEW_LABEL, errMsg, useReviewExcuse, useStaffExcuses, type Excuse } from "@/hooks/useExcuses";
+import { CATEGORY_LABEL, approvalWord, reviewLabel, errMsg, useReviewExcuse, useStaffExcuses, type Excuse } from "@/hooks/useExcuses";
 
 function ymd(d: Date) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -18,8 +18,8 @@ export function ReviewButtons({ excuse }: { excuse: Excuse }) {
     const review = useReviewExcuse();
     const decide = (decision: "APPROVED" | "REJECTED") =>
         review.mutate({ id: excuse.id, decision }, {
-            onSuccess: () => toast.success(decision === "APPROVED" ? "공결을 승인했습니다." : "공결을 반려했습니다."),
-            onError: (error: any) => toast.error(errMsg(error, "공결 처리 실패")),
+            onSuccess: () => toast.success(`${approvalWord(excuse)}을 ${decision === "APPROVED" ? "승인" : "반려"}했습니다.`),
+            onError: (error: any) => toast.error(errMsg(error, "인정사유 처리 실패")),
         });
     return (
         <div className="flex gap-1.5 shrink-0">
@@ -57,7 +57,7 @@ function Row({ e, withDate = false, actions = false }: { e: Excuse; withDate?: b
                     )}
                     {e.reason_kind === "RECOGNIZED" && e.review && !pending && (
                         <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${reviewCls(e.review)}`}>
-                            {REVIEW_LABEL[e.review]}
+                            {reviewLabel(e)}
                         </span>
                     )}
                 </button>
@@ -121,7 +121,7 @@ export function ExcuseInbox() {
             </h2>
 
             {pendingSorted.length > 0 && (
-                <Card title="공결 승인 대기" badge={
+                <Card title="인정사유 승인 대기" badge={
                     <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white">{pendingSorted.length}</span>
                 }>
                     {pendingSorted.map(e => <Row key={e.id} e={e} withDate actions />)}
@@ -165,7 +165,7 @@ export function PendingExcuseBadge({ excuse }: { excuse: Excuse }) {
             <PopoverTrigger asChild>
                 <button type="button" onClick={(ev) => ev.stopPropagation()}
                     className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30">
-                    공결 요청
+                    {approvalWord(excuse)} 요청
                 </button>
             </PopoverTrigger>
             <PopoverContent className="w-72 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 text-sm space-y-3" align="end">

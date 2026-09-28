@@ -35,7 +35,12 @@ export function errMsg(error: any, fallback: string): string {
 }
 
 export const CATEGORY_LABEL = { ABSENT: "결석", LATE: "지각", EARLY_LEAVE: "조퇴" } as const;
-export const REVIEW_LABEL = { PENDING: "승인 대기", APPROVED: "공결 승인", REJECTED: "공결 반려" } as const;
+// 결석 인정사유는 공결, 지각·조퇴 인정사유는 출결 그대로 두고 벌점만 면제("인정")
+export const approvalWord = (e: Pick<Excuse, "category">) => (e.category === "ABSENT" ? "공결" : "인정");
+export function reviewLabel(e: Pick<Excuse, "category" | "review">): string {
+    if (e.review === "PENDING") return "승인 대기";
+    return `${approvalWord(e)} ${e.review === "APPROVED" ? "승인" : "반려"}`;
+}
 
 export function useMyExcuses() {
     return useQuery({

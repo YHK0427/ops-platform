@@ -5,7 +5,7 @@ import { FileText, ImagePlus, Plus, X } from "lucide-react";
 import { ExcuseAttachments } from "@/components/ExcuseAttachments";
 import memberApi from "@/lib/memberApi";
 import {
-    CATEGORY_LABEL, REVIEW_LABEL, errMsg, useExcusePreview, useMyExcuses, type Excuse,
+    CATEGORY_LABEL, reviewLabel, errMsg, useExcusePreview, useMyExcuses, type Excuse,
 } from "@/hooks/useExcuses";
 
 type Category = Excuse["category"];
@@ -162,7 +162,7 @@ function ExcuseForm({ editing, onDone }: { editing: Excuse | null; onDone: () =>
                         options={[["NORMAL", "일반사유"], ["RECOGNIZED", "인정사유"]]} />
                 </div>
                 {reasonKind === "RECOGNIZED" && (
-                    <p className="mt-1.5 text-xs text-gray-500">인정사유는 운영진 승인 후 공결 처리됩니다.</p>
+                    <p className="mt-1.5 text-xs text-gray-500">인정사유는 운영진 승인 후 처리됩니다. 결석은 공결, 지각·조퇴는 벌점 면제.</p>
                 )}
             </div>
 
@@ -219,7 +219,7 @@ function statusBadge(e: Excuse) {
         const cls = e.review === "APPROVED" ? "bg-emerald-50 text-emerald-600 border-emerald-200"
             : e.review === "REJECTED" ? "bg-rose-50 text-rose-600 border-rose-200"
             : "bg-amber-50 text-amber-600 border-amber-200";
-        return { label: REVIEW_LABEL[e.review], cls };
+        return { label: reviewLabel(e), cls };
     }
     return e.session_id
         ? { label: "반영됨", cls: "bg-slate-100 text-slate-600 border-slate-200" }

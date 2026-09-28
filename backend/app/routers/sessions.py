@@ -614,6 +614,7 @@ async def get_session_attendance(
             "status": a.status,
             "excuse_type": a.excuse_type,
             "excuse_text": a.excuse_text,
+            "is_recognized": a.is_recognized,
             "note": a.note,
             "updated_at": a.updated_at,
         }

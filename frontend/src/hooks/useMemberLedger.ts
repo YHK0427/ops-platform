@@ -40,6 +40,7 @@ export interface MyAttendance {
     status: string;
     excuse_type: string | null;
     note: string | null;
+    is_recognized?: boolean;
 }
 
 /** 로그인한 기수 본인의 세션별 출결 내역 */
