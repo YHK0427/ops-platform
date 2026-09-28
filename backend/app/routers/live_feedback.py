@@ -78,14 +78,13 @@ def _validate_categories(cats: list["CategoryIn"] | None) -> list[dict]:
         out.append({"key": key, "label": label, "color": color})
     return out
 
-# 발표(피드백 대상)로 인정하는 출석 상태. 결석(ABSENT)·공결(EXCUSED)은 항상 제외.
-# 조퇴(EARLY_LEAVE)는 보드의 early_leave_member_ids에 개별 포함된 사람만.
-PRESENT_STATUSES = {"PRESENT", "LATE_UNDER10", "LATE_OVER10", "PENDING"}
+# 발표(피드백 대상)로 인정하는 출석 상태. 결석(ABSENT)·공결(EXCUSED)만 뺀다.
+# 지각·조퇴는 발표를 하므로 항상 포함한다(예전엔 조퇴자를 보드 설정에서 골라 넣었음 —
+# early_leave_member_ids 는 이제 쓰지 않는다).
+PRESENT_STATUSES = {"PRESENT", "LATE_UNDER10", "LATE_OVER10", "EARLY_LEAVE", "PENDING"}
 
 
 def _attended(status: str | None, member_id: int, early_leave_ids: set[int]) -> bool:
-    if status == "EARLY_LEAVE":
-        return member_id in early_leave_ids
     return status in PRESENT_STATUSES
 
 # 익명 닉네임 풀 (요상한 형용사 × 동물/사물)
@@ -208,7 +207,7 @@ async def _presenter_columns(
     restrict_group: int | None = None, early_leave_ids: set[int] | None = None,
 ) -> list[dict]:
     """세션의 발표자 목록을 Attendance에서 실시간 조회.
-    결석/공결 제외, 조퇴는 early_leave_ids에 개별 포함된 사람만.
+    결석/공결만 제외(지각·조퇴 포함).
     분반(group_num)이 있으면 분반별, 없으면(분반 미사용 개인 세션) 전체 출석자를 단일 그룹으로.
     restrict_group이 주어지면 해당 분반만(멤버는 자기 분반끼리만 피드백).
     reveal_order=False(멤버용)이면 presenter_order 제외 + 이름 가나다순(발표 순서 비노출)."""
@@ -784,7 +783,7 @@ async def member_get_board(
     board = await _get_board_or_404(db, board_id, member_cohort_id)
     session = await db.get(Session, board.session_id)
     my_group = await _member_group(db, board.session_id, member["member_id"])
-    # 분반이 나뉘면 같은 분반끼리만 (발표 순서 비노출), 결석 제외·조퇴는 설정 따름
+    # 분반이 나뉘면 같은 분반끼리만 (발표 순서 비노출), 결석·공결만 제외
     presenters = await _presenter_columns(
         db, board.session_id, reveal_order=False,
         restrict_group=my_group, early_leave_ids=set(board.early_leave_member_ids or []),

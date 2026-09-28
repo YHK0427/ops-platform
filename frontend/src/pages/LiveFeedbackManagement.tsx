@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { useSessions } from "@/hooks/useSessions";
 import {
-    useFeedbackBoards, useCreateBoard, useUpdateBoard, useDeleteBoard, useEarlyLeaveCandidates,
+    useFeedbackBoards, useCreateBoard, useUpdateBoard, useDeleteBoard,
     type FeedbackBoardListItem, type FeedbackCategory,
 } from "@/hooks/useLiveFeedback";
 import { AdminFeedbackWall } from "@/components/feedback/AdminFeedbackWall";
@@ -111,9 +111,7 @@ export default function LiveFeedbackManagement() {
                                             </div>
                                             <p className="text-xs text-gray-500 mb-3">
                                                 피드백 <span className="font-semibold text-gray-700">{b.post_count}</span>개
-                                                {(b.early_leave_member_ids?.length ?? 0) > 0 && (
-                                                    <span className="text-gray-400"> · 조퇴 포함 {b.early_leave_member_ids.length}명</span>
-                                                )}
+
                                             </p>
                                             <div className="flex items-center gap-2">
                                                 <Button size="sm" variant={b.is_open ? "outline" : "default"}
@@ -195,7 +193,7 @@ function HelpPanel() {
     const steps = [
         { icon: Plus, title: "1. 보드 만들기", body: "우측 상단 [새 보드] → 개인(분반) 세션을 고르고 제목을 입력하세요. 한 세션에 보드 1개입니다." },
         { icon: Tag, title: "2. 카테고리 정하기", body: "기수가 작성할 항목입니다. 기본은 칭찬·발전이고, 프리셋(질문·총평·인상깊은 점 등)이나 [직접 추가]로 자유롭게 구성·색 지정할 수 있어요. 만든 뒤에도 카드의 연필(수정)에서 변경 가능합니다." },
-        { icon: Users, title: "3. 발표자 = 출석자", body: "결석·공결자는 자동 제외됩니다. 조퇴자는 보드 설정에서 개별로 체크한 사람만 발표자 목록에 들어갑니다. 발표 순서는 기수에게 보이지 않습니다." },
+        { icon: Users, title: "3. 발표자 = 출석자", body: "결석·공결자만 자동 제외됩니다. 지각·조퇴한 사람도 발표자 목록에 들어갑니다. 발표 순서는 기수에게 보이지 않습니다." },
         { icon: LockOpen, title: "4. 열기 / 마감", body: "[열기]를 누르면 상태가 '진행 중'이 되고, 그때부터 기수 화면(홈·피드백 탭)에 보드가 떠서 작성할 수 있습니다. [마감하기]를 누르면 기수는 더 이상 작성할 수 없고 읽기만 됩니다. (※ 공개/비공개가 아니라 '작성 받기'를 여닫는 것)" },
         { icon: Radio, title: "5. 라이브 보기", body: "[라이브] 버튼으로 실시간으로 올라오는 피드백을 분반·발표자별로 모니터링합니다. 부적절한 글은 눈(가리기)·휴지통(삭제)으로 정리할 수 있어요." },
         { icon: Maximize2, title: "6. 전체화면(발표용)", body: "[전체화면] 버튼은 강의실 화면 투사용입니다. 발표자를 ◀▶로 넘기면서 그 사람의 피드백을 크게 띄울 수 있습니다." },
@@ -338,7 +336,6 @@ function BoardDialog({
     const [sessionId, setSessionId] = useState<string>("");
     const [title, setTitle] = useState("");
     const [cats, setCats] = useState<FeedbackCategory[]>(DEFAULT_CATEGORIES);
-    const [earlyIds, setEarlyIds] = useState<number[]>([]);
 
     // 다이얼로그 열릴 때 초기화/프리필
     useEffect(() => {
@@ -347,14 +344,12 @@ function BoardDialog({
             setSessionId(String(editBoard.session_id));
             setTitle(editBoard.title);
             setCats(editBoard.categories?.length ? editBoard.categories : DEFAULT_CATEGORIES);
-            setEarlyIds(editBoard.early_leave_member_ids ?? []);
         } else {
-            setSessionId(""); setTitle(""); setCats(DEFAULT_CATEGORIES); setEarlyIds([]);
+            setSessionId(""); setTitle(""); setCats(DEFAULT_CATEGORIES);
         }
     }, [open, editBoard]);
 
     const individualSessions = useMemo(() => (sessions ?? []).filter((s) => s.type === "INDIVIDUAL"), [sessions]);
-    const { data: earlyCandidates } = useEarlyLeaveCandidates(sessionId ? Number(sessionId) : null);
 
     const catsValid = cats.length > 0 && cats.every((c) => c.label.trim());
     const canSubmit = !!sessionId && !!title.trim() && catsValid;
@@ -363,11 +358,11 @@ function BoardDialog({
         if (!canSubmit) return;
         const payloadCats = cats.map((c) => ({ key: c.key, label: c.label.trim(), color: c.color }));
         if (isEdit && editBoard) {
-            await update.mutateAsync({ id: editBoard.id, title: title.trim(), categories: payloadCats, early_leave_member_ids: earlyIds });
+            await update.mutateAsync({ id: editBoard.id, title: title.trim(), categories: payloadCats });
             onOpenChange(false);
         } else {
             const board = await create.mutateAsync({
-                session_id: Number(sessionId), title: title.trim(), categories: payloadCats, early_leave_member_ids: earlyIds,
+                session_id: Number(sessionId), title: title.trim(), categories: payloadCats,
             });
             onOpenChange(false);
             if (board?.id) onCreated(board.id);
@@ -404,27 +399,6 @@ function BoardDialog({
                         <Label>피드백 카테고리 <span className="text-xs text-gray-400 font-normal">(작성 항목 — 기본 칭찬·발전)</span></Label>
                         <CategoryEditor cats={cats} setCats={setCats} />
                     </div>
-                    {/* 조퇴자 개별 포함 */}
-                    {(earlyCandidates?.length ?? 0) > 0 && (
-                        <div className="space-y-1.5">
-                            <Label>조퇴자 포함 <span className="text-xs text-gray-400 font-normal">(체크한 사람만 발표자에 포함 · 결석/공결은 항상 제외)</span></Label>
-                            <div className="flex flex-wrap gap-2">
-                                {earlyCandidates!.map((m) => {
-                                    const checked = earlyIds.includes(m.member_id);
-                                    return (
-                                        <label key={m.member_id} className={cn(
-                                            "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer select-none",
-                                            checked ? "border-rose-300 bg-rose-50 text-rose-600" : "border-gray-200 text-gray-600")}>
-                                            <input type="checkbox" checked={checked}
-                                                onChange={() => setEarlyIds((ids) => checked ? ids.filter((x) => x !== m.member_id) : [...ids, m.member_id])}
-                                                className="w-3.5 h-3.5 accent-rose-500" />
-                                            {m.name}{m.group_num != null && <span className="text-[10px] opacity-60">{m.group_num}분반</span>}
-                                        </label>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>

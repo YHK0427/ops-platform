@@ -19,6 +19,7 @@ from app.services.crawler_homework import scan_homework_all, scan_feedback_comme
 from app.services.crawler_naver_login import login_with_credentials
 from app.services.crawler_cafe import fetch_board_articles, fetch_article_detail, NaverSessionExpiredError
 from app.services.naver_session import _build_requests_session
+import app.roster_hook  # noqa: F401,E402 — 카페 스캔 등 워커의 출결 변경도 보드에 알린다
 
 logger = logging.getLogger("worker")
 

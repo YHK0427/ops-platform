@@ -27,6 +27,7 @@ export function useLiveFeedbackSocket(boardId: number | null, role: Role) {
     const stoppedRef = useRef(false);
     const hbRef = useRef<number | null>(null);
     const reconnectRef = useRef<number | null>(null);
+    const rosterTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (!boardId) return;
@@ -68,6 +69,14 @@ export function useLiveFeedbackSocket(boardId: number | null, role: Role) {
                 );
             } else if (type === "post.unhidden") {
                 qc.invalidateQueries({ queryKey: key });
+            } else if (type === "board.roster_changed") {
+                // 분반·출결이 바뀜 → 발표자 명단과(분반 스코프가 바뀌었을 수 있으니) 글 목록을 다시 받는다.
+                // 일괄 출석처럼 연달아 오면 0.4초 모아서 한 번만.
+                if (rosterTimerRef.current) window.clearTimeout(rosterTimerRef.current);
+                rosterTimerRef.current = window.setTimeout(() => {
+                    qc.invalidateQueries({ queryKey: lfKeys.board(boardId) });
+                    qc.invalidateQueries({ queryKey: lfKeys.posts(boardId) });
+                }, 400);
             } else if (type === "board.opened" || type === "board.closed") {
                 qc.setQueryData<FeedbackBoardDetail>(lfKeys.board(boardId), (prev) =>
                     prev ? { ...prev, is_open: data.is_open } : prev,
@@ -121,6 +130,7 @@ export function useLiveFeedbackSocket(boardId: number | null, role: Role) {
             stoppedRef.current = true;
             if (hbRef.current) clearInterval(hbRef.current);
             if (reconnectRef.current) clearTimeout(reconnectRef.current);
+            if (rosterTimerRef.current) clearTimeout(rosterTimerRef.current);
             wsRef.current?.close();
         };
     }, [boardId, role, qc]);

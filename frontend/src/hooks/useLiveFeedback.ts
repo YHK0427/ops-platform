@@ -158,7 +158,7 @@ export function useCreateBoard() {
         mutationFn: async (body: {
             session_id: number;
             title: string;
-            early_leave_member_ids: number[];
+            early_leave_member_ids?: number[];
             categories: FeedbackCategory[];
         }) => {
             const { data } = await api.post("/live-feedback/boards", body);
