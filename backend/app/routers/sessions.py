@@ -680,7 +680,10 @@ async def update_attendance(
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(attendance, field, value)
-    
+    # 사유서를 지우면 인정 표시도 끈다 — 사유서 없이 벌점만 면제된 상태가 숨어 남지 않게
+    if "excuse_type" in update_data and update_data["excuse_type"] is None:
+        attendance.is_recognized = False
+
     await db.commit()
     # 빈번한 이벤트라 info 로그만 남김 (Telegram 스팸 방지). 강제 변경은 아래 엔드포인트에서 audit.
     logger.info(f"attendance_updated session={session_id} member={member_id} fields={list(update_data.keys())}")

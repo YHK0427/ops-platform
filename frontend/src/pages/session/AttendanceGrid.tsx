@@ -26,16 +26,17 @@ import { ExcuseAttachmentButton, PendingExcuseBadge } from "@/components/ExcuseI
 import { useStaffExcuses, type Excuse } from "@/hooks/useExcuses";
 import { useAuth } from "@/context/AuthContext";
 
-// 지각·조퇴 "인정"(벌점 면제) — 포털 인정사유 승인 시 자동으로 켜지고, 카톡 사유서 등은 운영진이 직접 켠다
+// 사유서(사전/사후)가 있을 때 "인정" — 결석은 공결로, 지각·조퇴 등은 출결 그대로 두고 벌점만 면제.
+// 포털 인정사유 승인 시 자동으로 켜지고, 카톡 사유서 등은 운영진이 직접 켠다.
 function RecognizedToggle({ attendance, disabled, onToggle }: {
     attendance: any; disabled?: boolean; onToggle: (v: boolean) => void;
 }) {
-    if (!["LATE_UNDER10", "LATE_OVER10", "EARLY_LEAVE"].includes(attendance?.status)) return null;
-    const on = !!attendance?.is_recognized;
+    if (!attendance?.excuse_type) return null;
+    const on = attendance.status === "EXCUSED" || (!!attendance.is_recognized && attendance.status !== "ABSENT");
     return (
         <button type="button" disabled={disabled}
             onClick={(e) => { e.stopPropagation(); onToggle(!on); }}
-            title={on ? "인정사유 — 벌점 면제 (누르면 해제)" : "누르면 인정사유로 표시 — 벌점 면제"}
+            title={on ? "인정사유 (누르면 해제)" : "누르면 인정사유로 처리 — 결석은 공결, 지각·조퇴는 벌점 면제"}
             className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-50 ${
                 on ? "bg-blue-600 text-white border-blue-600" : "bg-white text-[var(--color-text-muted)] border-dashed border-[var(--color-border)] hover:text-blue-600 hover:border-blue-400"
             }`}>
@@ -76,12 +77,20 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
         }
     };
 
-    const handleRecognizedChange = async (memberId: number, value: boolean) => {
+    const handleRecognizedChange = async (memberId: number, value: boolean, status?: string) => {
         setUpdating(prev => ({ ...prev, [memberId]: true }));
+        // 결석 인정 = 공결, 공결 해제 = 결석. 그 외는 출결 그대로 두고 표시만.
+        const body = value && status === "ABSENT" ? { status: "EXCUSED", is_recognized: true }
+            : !value && status === "EXCUSED" ? { status: "ABSENT", is_recognized: false }
+            : { is_recognized: value };
         try {
-            await api.patch(`/sessions/${sessionId}/attendance/${memberId}`, { is_recognized: value });
+            await api.patch(`/sessions/${sessionId}/attendance/${memberId}`, body);
             await queryClient.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });
-            toast.success(value ? "인정사유로 표시했습니다. 벌점이 면제됩니다." : "인정 표시를 해제했습니다.");
+            toast.success(
+                "status" in body
+                    ? (value ? "인정사유로 공결 처리했습니다." : "공결을 해제해 결석으로 돌렸습니다.")
+                    : (value ? "인정사유로 표시했습니다. 벌점이 면제됩니다." : "인정 표시를 해제했습니다.")
+            );
         } catch (error: any) {
             const d = error?.response?.data?.detail;
             toast.error(typeof d === "string" ? d : "인정 표시 변경 실패");
@@ -337,8 +346,6 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                                 </div>
                                             )}
                                         </div>
-                                        <RecognizedToggle attendance={member.attendance} disabled={updating[member.member_id]}
-                                            onToggle={(v) => handleRecognizedChange(member.member_id, v)} />
                                         </div>
                                     </TableCell>
                                     <TableCell>
@@ -364,6 +371,8 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                                     <SelectItem value="POST">사후 제출</SelectItem>
                                                 </SelectContent>
                                             </Select>
+                                            <RecognizedToggle attendance={member.attendance} disabled={updating[member.member_id]}
+                                                onToggle={(v) => handleRecognizedChange(member.member_id, v, member.attendance?.status)} />
 
                                             {/* Excuse Text Popover */}
                                             {member.attendance?.excuse_text && (
@@ -521,7 +530,7 @@ interface MobileAttendanceRowProps {
     onExcuseChange: (memberId: number, excuseType: string) => void;
     onPptEmailChange: (assignmentId: number, newStatus: string) => void;
     onNoteChange: (memberId: number, note: string) => void;
-    onRecognizedChange: (memberId: number, value: boolean) => void;
+    onRecognizedChange: (memberId: number, value: boolean, status?: string) => void;
     pendingExcuse?: Excuse;
     portalExcuse?: Excuse;
 }
@@ -576,7 +585,7 @@ function MobileAttendanceRow({
                     {updating[member.member_id] && (
                         <RefreshCw className="w-3 h-3 animate-spin text-[var(--color-text-muted)] shrink-0" />
                     )}
-                    <RecognizedToggle attendance={member.attendance} disabled={updating[member.member_id]} onToggle={(v) => onRecognizedChange(member.member_id, v)} />
+                    <RecognizedToggle attendance={member.attendance} disabled={updating[member.member_id]} onToggle={(v) => onRecognizedChange(member.member_id, v, member.attendance?.status)} />
                     {/* 사유서 아이콘 (excuse_text 있을 때) */}
                     {member.attendance?.excuse_text && (
                         <Popover>
