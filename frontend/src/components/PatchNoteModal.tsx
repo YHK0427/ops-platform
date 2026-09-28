@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
 import { useUnseenPatchNotes, useMarkPatchNotesSeen } from "@/hooks/usePatchNotes";
+import { PatchNoteBody } from "@/components/PatchNoteBody";
 
 /**
  * 마지막으로 '확인' 누른 시점 이후에 올라온 패치노트를 접속 시 한 번 띄운다.
@@ -37,8 +38,8 @@ export function PatchNoteModal({ side }: { side: "staff" | "member" }) {
                                     {new Date(n.published_at).toLocaleDateString("ko-KR")}
                                 </div>
                             </div>
-                            <div className="mt-1.5 text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap leading-relaxed">
-                                {n.body}
+                            <div className="mt-1.5 text-sm text-[var(--color-text-secondary)]">
+                                <PatchNoteBody body={n.body} />
                             </div>
                         </div>
                     ))}

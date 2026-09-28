@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Trash2, Loader2, Megaphone } from "lucide-react";
+import { Trash2, Loader2, Megaphone, ImagePlus } from "lucide-react";
+import api from "@/lib/api";
+import { PatchNoteBody, imageLine } from "@/components/PatchNoteBody";
 import { toast } from "sonner";
 import { useAllPatchNotes, useCreatePatchNote, useDeletePatchNote } from "@/hooks/usePatchNotes";
 
@@ -19,6 +21,37 @@ export function PatchNoteWriter({ open, onOpenChange }: { open: boolean; onOpenC
     const { data: notes } = useAllPatchNotes(open);
     const { mutate: create, isPending } = useCreatePatchNote();
     const { mutate: remove } = useDeletePatchNote();
+    const [uploading, setUploading] = useState(false);
+    const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+    // 커서 위치에 이미지 줄 삽입 (앞뒤 줄바꿈 보정)
+    const insertImages = async (files: File[]) => {
+        const imgs = files.filter((f) => f.type.startsWith("image/"));
+        if (!imgs.length) return;
+        setUploading(true);
+        try {
+            const urls: string[] = [];
+            for (const f of imgs) {
+                const fd = new FormData();
+                fd.append("file", f);
+                const { data } = await api.post<{ url: string }>("/notifications/manage/upload-image", fd, {
+                    headers: { "Content-Type": undefined },
+                });
+                urls.push(data.url);
+            }
+            const el = bodyRef.current;
+            const pos = el ? el.selectionStart : body.length;
+            const before = body.slice(0, pos);
+            const after = body.slice(pos);
+            const block = urls.map(imageLine).join("\n");
+            setBody(`${before}${before && !before.endsWith("\n") ? "\n" : ""}${block}\n${after.startsWith("\n") ? after.slice(1) : after}`);
+        } catch (e: any) {
+            const d = e?.response?.data?.detail;
+            toast.error(typeof d === "string" ? d : "이미지 업로드 실패");
+        } finally {
+            setUploading(false);
+        }
+    };
 
     const submit = () => {
         if (!title.trim() || !body.trim()) return;
@@ -66,15 +99,35 @@ export function PatchNoteWriter({ open, onOpenChange }: { open: boolean; onOpenC
                         className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
                     />
                     <textarea
+                        ref={bodyRef}
                         value={body}
+                        onPaste={(e) => {
+                            const files = Array.from(e.clipboardData.files);
+                            if (files.some((f) => f.type.startsWith("image/"))) {
+                                e.preventDefault();
+                                insertImages(files);
+                            }
+                        }}
                         onChange={(e) => setBody(e.target.value)}
-                        placeholder={"내용 (줄바꿈 그대로 보임)\n- 공지 상세를 열면 읽음으로 잡혀요\n- 팀빌딩에서 운영진 고정이 가능해요"}
+                        placeholder={"내용 (줄바꿈 그대로 보임, 캡처는 Ctrl+V 로 붙여넣기)\n- 공지 상세를 열면 읽음으로 잡혀요\n- 팀빌딩에서 운영진 고정이 가능해요"}
                         rows={6}
                         maxLength={20000}
                         className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
                     />
-                    <div className="flex justify-end">
-                        <Button onClick={submit} disabled={isPending || !title.trim() || !body.trim()}>
+                    {body.includes("![](") && (
+                        <div className="rounded-lg border border-dashed border-[var(--color-border)] p-3 max-h-[40vh] overflow-y-auto text-sm text-[var(--color-text-secondary)]">
+                            <div className="text-[11px] font-bold text-[var(--color-text-muted)] mb-2">미리보기</div>
+                            <PatchNoteBody body={body} />
+                        </div>
+                    )}
+                    <div className="flex items-center justify-between gap-2">
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] cursor-pointer hover:bg-[var(--color-hover)]">
+                            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+                            사진 넣기
+                            <input type="file" accept="image/*" multiple className="hidden" disabled={uploading}
+                                onChange={(e) => { insertImages(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
+                        </label>
+                        <Button onClick={submit} disabled={isPending || uploading || !title.trim() || !body.trim()}>
                             {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                             발행하기
                         </Button>
