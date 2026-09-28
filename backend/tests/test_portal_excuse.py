@@ -80,3 +80,23 @@ def test_excuse_text_post_normal():
         created_at=datetime(2026, 10, 7, 14, 0, tzinfo=UTC), reason="늦잠",
     )
     assert text == "[포털] 지각 · 사후 · 일반사유\n제출 2026-10-07 23:00\n---\n늦잠"
+
+
+def test_sniff_accepts_images():
+    from app.services.portal_excuse import sniff_type
+    assert sniff_type(b"\x89PNG\r\n\x1a\n....") == "image/png"
+    assert sniff_type(b"\xff\xd8\xff\xe0....") == "image/jpeg"
+    assert sniff_type(b"GIF89a....") == "image/gif"
+    assert sniff_type(b"RIFF\x00\x00\x00\x00WEBPVP8 ") == "image/webp"
+
+
+def test_sniff_rejects_html_disguised_as_image():
+    from app.services.portal_excuse import sniff_type
+    assert sniff_type(b"<svg onload=alert(1)>") is None
+    assert sniff_type(b"<html><script>") is None
+    assert sniff_type(b"") is None
+
+
+def test_sniff_rejects_pdf():
+    from app.services.portal_excuse import sniff_type
+    assert sniff_type(b"%PDF-1.7\n....") is None

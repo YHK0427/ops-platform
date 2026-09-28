@@ -23,7 +23,7 @@
 - 카페 사유서 스캔(`services/crawler_excuse.py`, `/crawler/scan-excuses`)은 **수정하지 않는다**.
   같은 사람을 카페 스캔이 다시 긁으면 카페 내용으로 덮어써진다. 이번 기수는 카페를
   쓰지 않으므로 받아들인다.
-- 운영진 푸시 알림, 첨부파일(진단서 등), 세션 날짜 변경 대응(날짜 수정 API가 없음).
+- 운영진 푸시 알림, 세션 날짜 변경 대응(날짜 수정 API가 없음).
 
 ## 마감 규칙
 
@@ -60,6 +60,17 @@
 | created_at / updated_at | timestamptz | |
 
 제약: `UNIQUE(member_id, target_date)` — 한 사람 한 날짜 1건. 다시 내면 수정이다.
+
+## 증빙자료
+
+- 선택 사항. 사진만(jpg/png/webp/gif), 사유서 1건당 5장, 장당 10MB.
+- 형식은 파일 앞 바이트로 판별한다(확장자·브라우저 content-type 불신). 위장 SVG/HTML 차단.
+- 테이블 `excuse_attachments(id, submission_id FK CASCADE, stored_name, original_name, content_type, size, created_at)`.
+- 파일은 `/app/files/uploads/excuse` 에 비공개 저장. 공지 이미지(`/notifications/img`)처럼 링크로 열리지 않는다.
+- 받기: 기수원 `GET /portal/excuses/{id}/attachments/{aid}`(본인만), 운영진 `GET /excuses/{id}/attachments/{aid}`(같은 기수만). 응답은 `inline` + `CSP sandbox` + `nosniff` + `no-store`.
+- 올리기/지우기: 기수원 `POST|DELETE /portal/excuses/{id}/attachments[/{aid}]`, 수정 가능 기간에만.
+- 화면: 기수원 폼·목록, 대시보드 사유서 행, 출결표 클립 아이콘·공결 요청 팝오버. 썸네일, 누르면 크게 보기.
+- 사유서 취소 시 파일도 삭제.
 
 ## 반영 규칙 — `services/portal_excuse.py: apply_submission(db, sub, attendance)`
 

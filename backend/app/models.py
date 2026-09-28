@@ -1208,3 +1208,16 @@ class AuditLog(Base):
     __table_args__ = (
         Index("ix_audit_logs_table_row", "table_name", "row_id"),
     )
+
+
+class ExcuseAttachment(Base):
+    """포털 사유서 증빙자료. 파일은 공개 경로가 아닌 /app/files/uploads/excuse 에 둔다."""
+    __tablename__ = "excuse_attachments"
+
+    id = Column(Integer, primary_key=True)
+    submission_id = Column(Integer, ForeignKey("excuse_submissions.id", ondelete="CASCADE"), nullable=False, index=True)
+    stored_name = Column(String(64), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    size = Column(Integer, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)

@@ -2,6 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import memberApi from "@/lib/memberApi";
 
+export interface ExcuseAttachment {
+    id: number;
+    name: string;
+    content_type: string;
+    size: number;
+}
+
 export interface Excuse {
     id: number;
     member_id: number;
@@ -17,6 +24,13 @@ export interface Excuse {
     session_id: number | null;
     created_at: string;
     editable: boolean;
+    attachments: ExcuseAttachment[];
+}
+
+// FastAPI 422 검증 오류는 detail 이 배열이라 그대로 토스트에 넣으면 React 가 죽는다
+export function errMsg(error: any, fallback: string): string {
+    const d = error?.response?.data?.detail;
+    return typeof d === "string" ? d : fallback;
 }
 
 export const CATEGORY_LABEL = { ABSENT: "결석", LATE: "지각", EARLY_LEAVE: "조퇴" } as const;

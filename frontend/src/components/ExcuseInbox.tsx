@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, FileText } from "lucide-react";
+import { ChevronDown, FileText, Paperclip } from "lucide-react";
+import { ExcuseAttachments } from "@/components/ExcuseAttachments";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CATEGORY_LABEL, REVIEW_LABEL, useReviewExcuse, useStaffExcuses, type Excuse } from "@/hooks/useExcuses";
+import { CATEGORY_LABEL, REVIEW_LABEL, errMsg, useReviewExcuse, useStaffExcuses, type Excuse } from "@/hooks/useExcuses";
 
 function ymd(d: Date) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -18,7 +19,7 @@ export function ReviewButtons({ excuse }: { excuse: Excuse }) {
     const decide = (decision: "APPROVED" | "REJECTED") =>
         review.mutate({ id: excuse.id, decision }, {
             onSuccess: () => toast.success(decision === "APPROVED" ? "공결을 승인했습니다." : "공결을 반려했습니다."),
-            onError: (error: any) => toast.error(error?.response?.data?.detail ?? "공결 처리 실패"),
+            onError: (error: any) => toast.error(errMsg(error, "공결 처리 실패")),
         });
     return (
         <div className="flex gap-1.5 shrink-0">
@@ -48,6 +49,11 @@ function Row({ e }: { e: Excuse }) {
                     <span className="text-xs text-[var(--color-text-secondary)] truncate">
                         {CATEGORY_LABEL[e.category]} · {e.excuse_type === "PRE" ? "사전" : "사후"} · {e.reason_kind === "RECOGNIZED" ? "인정사유" : "일반사유"}
                     </span>
+                    {e.attachments.length > 0 && (
+                        <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-[var(--color-text-muted)]">
+                            <Paperclip className="w-3 h-3" />{e.attachments.length}
+                        </span>
+                    )}
                     {e.reason_kind === "RECOGNIZED" && e.review && !pending && (
                         <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${reviewCls(e.review)}`}>
                             {REVIEW_LABEL[e.review]}
@@ -57,7 +63,10 @@ function Row({ e }: { e: Excuse }) {
                 {pending && <ReviewButtons excuse={e} />}
             </div>
             {open && (
-                <p className="mt-2 ml-6 text-xs text-[var(--color-text-secondary)] whitespace-pre-line break-words">{e.reason}</p>
+                <div className="mt-2 ml-6 space-y-2">
+                    <p className="text-xs text-[var(--color-text-secondary)] whitespace-pre-line break-words">{e.reason}</p>
+                    <ExcuseAttachments excuse={e} owner="staff" />
+                </div>
             )}
         </div>
     );
@@ -133,7 +142,27 @@ export function PendingExcuseBadge({ excuse }: { excuse: Excuse }) {
                     {excuse.member_name} · {CATEGORY_LABEL[excuse.category]} · 인정사유
                 </p>
                 <p className="text-xs text-[var(--color-text-secondary)] whitespace-pre-line break-words">{excuse.reason}</p>
+                <ExcuseAttachments excuse={excuse} owner="staff" />
                 <ReviewButtons excuse={excuse} />
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+
+export function ExcuseAttachmentButton({ excuse }: { excuse: Excuse }) {
+    if (!excuse.attachments.length) return null;
+    return (
+        <Popover>
+            <PopoverTrigger asChild>
+                <button type="button" onClick={(ev) => ev.stopPropagation()} title="증빙자료"
+                    className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold text-blue-600 hover:text-blue-500">
+                    <Paperclip className="w-3.5 h-3.5" />{excuse.attachments.length}
+                </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 bg-[var(--color-elevated)] border-[var(--color-border)] p-3 space-y-2" align="end">
+                <p className="text-xs font-bold text-[var(--color-text-primary)]">{excuse.member_name} 증빙자료</p>
+                <ExcuseAttachments excuse={excuse} owner="staff" />
             </PopoverContent>
         </Popover>
     );

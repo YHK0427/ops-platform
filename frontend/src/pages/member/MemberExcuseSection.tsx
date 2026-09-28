@@ -1,14 +1,18 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { FileText, Plus, X } from "lucide-react";
+import { FileText, ImagePlus, Plus, X } from "lucide-react";
+import { ExcuseAttachments } from "@/components/ExcuseAttachments";
 import memberApi from "@/lib/memberApi";
 import {
-    CATEGORY_LABEL, REVIEW_LABEL, useExcusePreview, useMyExcuses, type Excuse,
+    CATEGORY_LABEL, REVIEW_LABEL, errMsg, useExcusePreview, useMyExcuses, type Excuse,
 } from "@/hooks/useExcuses";
 
 type Category = Excuse["category"];
 type ReasonKind = Excuse["reason_kind"];
+
+const MAX_FILES = 5;
+const MAX_BYTES = 10 * 1024 * 1024;
 
 // 사후 마감(대상 날짜 다음날 21:59:59 KST)이 아직 안 지난 가장 이른 날짜
 function minExcuseDate(): string {
@@ -53,6 +57,30 @@ function ExcuseForm({ editing, onDone }: { editing: Excuse | null; onDone: () =>
     const [reasonKind, setReasonKind] = useState<ReasonKind>(editing?.reason_kind ?? "NORMAL");
     const [reason, setReason] = useState(editing?.reason ?? "");
     const [saving, setSaving] = useState(false);
+    const [files, setFiles] = useState<File[]>([]);
+    const [kept, setKept] = useState(editing?.attachments ?? []);
+    const existing = kept.length;
+    const previews = useMemo(() => files.map(f => URL.createObjectURL(f)), [files]);
+    useEffect(() => () => previews.forEach(URL.revokeObjectURL), [previews]);
+
+    const pick = (list: FileList | null) => {
+        const picked = Array.from(list ?? []);
+        if (picked.some(f => !f.type.startsWith("image/"))) return toast.error("사진 파일만 올릴 수 있어요");
+        if (picked.some(f => f.size > MAX_BYTES)) return toast.error("사진은 한 장에 10MB 이하만 가능해요");
+        if (existing + files.length + picked.length > MAX_FILES) return toast.error(`증빙자료는 ${MAX_FILES}장까지 올릴 수 있어요`);
+        setFiles(prev => [...prev, ...picked]);
+    };
+
+    const removeExisting = async (attId: number) => {
+        if (!editing) return;
+        try {
+            await memberApi.delete(`/portal/excuses/${editing.id}/attachments/${attId}`);
+            qc.invalidateQueries({ queryKey: ["member", "excuses"] });
+            setKept(prev => prev.filter(a => a.id !== attId));
+        } catch (error: any) {
+            toast.error(errMsg(error, "삭제 실패"));
+        }
+    };
     const { data: preview } = useExcusePreview(editing ? "" : date);
 
     const closed = !editing && preview?.excuse_type === null;
@@ -62,18 +90,21 @@ function ExcuseForm({ editing, onDone }: { editing: Excuse | null; onDone: () =>
         setSaving(true);
         try {
             const body = { category, reason_kind: reasonKind, reason };
-            if (editing) {
-                await memberApi.put(`/portal/excuses/${editing.id}`, body);
-                toast.success("사유서를 수정했습니다.");
-            } else {
-                await memberApi.post("/portal/excuses", { ...body, target_date: date });
-                toast.success("사유서를 제출했습니다.");
+            const id = editing
+                ? (await memberApi.put<Excuse>(`/portal/excuses/${editing.id}`, body)).data.id
+                : (await memberApi.post<Excuse>("/portal/excuses", { ...body, target_date: date })).data.id;
+            for (const f of files) {
+                const form = new FormData();
+                form.append("file", f);
+                await memberApi.post(`/portal/excuses/${id}/attachments`, form, { headers: { "Content-Type": undefined } });
             }
+            toast.success(editing ? "사유서를 수정했습니다." : "사유서를 제출했습니다.");
             qc.invalidateQueries({ queryKey: ["member", "excuses"] });
             qc.invalidateQueries({ queryKey: ["member", "attendance"] });
             onDone();
         } catch (error: any) {
-            toast.error(error?.response?.data?.detail ?? "사유서 제출 실패");
+            toast.error(errMsg(error, "사유서 제출 실패"));
+            qc.invalidateQueries({ queryKey: ["member", "excuses"] });
         } finally {
             setSaving(false);
         }
@@ -138,6 +169,30 @@ function ExcuseForm({ editing, onDone }: { editing: Excuse | null; onDone: () =>
                 />
             </label>
 
+            <div>
+                <span className="text-xs font-semibold text-gray-500">증빙자료 (선택, 사진 {MAX_FILES}장까지)</span>
+                <div className="mt-1 flex flex-wrap gap-2">
+                    {editing && <ExcuseAttachments excuse={{ ...editing, attachments: kept }} owner="member" onRemove={removeExisting} />}
+                    {files.map((f, i) => (
+                        <div key={i} className="relative w-16 h-16">
+                            <img src={previews[i]} alt={f.name} className="w-full h-full rounded-lg object-cover border border-gray-200" />
+                            <button type="button" aria-label="사진 빼기"
+                                onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))}
+                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gray-900/80 text-white flex items-center justify-center">
+                                <X className="w-3 h-3" />
+                            </button>
+                        </div>
+                    ))}
+                    {existing + files.length < MAX_FILES && (
+                        <label className="w-16 h-16 rounded-lg border border-dashed border-gray-300 flex items-center justify-center text-gray-400 cursor-pointer">
+                            <ImagePlus className="w-5 h-5" />
+                            <input type="file" accept="image/*" multiple className="hidden"
+                                onChange={(e) => { pick(e.target.files); e.target.value = ""; }} />
+                        </label>
+                    )}
+                </div>
+            </div>
+
             <button
                 type="button"
                 onClick={submit}
@@ -176,7 +231,7 @@ export default function MemberExcuseSection() {
             qc.invalidateQueries({ queryKey: ["member", "excuses"] });
             qc.invalidateQueries({ queryKey: ["member", "attendance"] });
         } catch (error: any) {
-            toast.error(error?.response?.data?.detail ?? "사유서 취소 실패");
+            toast.error(errMsg(error, "사유서 취소 실패"));
         }
     };
 
@@ -219,6 +274,9 @@ export default function MemberExcuseSection() {
                             </span>
                         </div>
                         <p className="mt-1.5 text-xs text-gray-500 line-clamp-2 whitespace-pre-line">{e.reason}</p>
+                        {e.attachments.length > 0 && (
+                            <div className="mt-2"><ExcuseAttachments excuse={e} owner="member" /></div>
+                        )}
                         {e.editable && (
                             <div className="mt-2 flex gap-3 text-xs font-semibold">
                                 <button type="button" className="text-gray-500"

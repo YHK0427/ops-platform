@@ -22,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { ExcuseTextDisplay } from "@/components/ExcuseTextDisplay";
 import { PresenterOrderPanel } from "@/components/PresenterOrderPanel";
-import { PendingExcuseBadge } from "@/components/ExcuseInbox";
+import { ExcuseAttachmentButton, PendingExcuseBadge } from "@/components/ExcuseInbox";
 import { useStaffExcuses, type Excuse } from "@/hooks/useExcuses";
 
 interface AttendanceGridProps {
@@ -38,6 +38,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
     const [updating, setUpdating] = useState<Record<string, boolean>>({});
     const [viewMode, setViewMode] = useState<"default" | "order">("default");
     const { data: portalExcuses } = useStaffExcuses({ session_id: sessionId });
+    const excuseByMember = new Map((portalExcuses ?? []).map(e => [e.member_id, e]));
     const pendingByMember = new Map((portalExcuses ?? []).filter(e => e.review === "PENDING").map(e => [e.member_id, e]));
 
     const handleStatusChange = async (memberId: number, status: string) => {
@@ -339,6 +340,9 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                                     </PopoverContent>
                                                 </Popover>
                                             )}
+                                            {excuseByMember.get(member.member_id) && (
+                                                <ExcuseAttachmentButton excuse={excuseByMember.get(member.member_id)!} />
+                                            )}
                                             {pendingByMember.get(member.member_id) && (
                                                 <PendingExcuseBadge excuse={pendingByMember.get(member.member_id)!} />
                                             )}
@@ -424,6 +428,7 @@ export function AttendanceGrid({ sessionId, teams, assignments, sessionType, sta
                                 onPptEmailChange={handlePptEmailChange}
                                 onNoteChange={handleNoteChange}
                                 pendingExcuse={pendingByMember.get(member.member_id)}
+                                portalExcuse={excuseByMember.get(member.member_id)}
                             />
                         ))}
                     </div>
@@ -478,6 +483,7 @@ interface MobileAttendanceRowProps {
     onPptEmailChange: (assignmentId: number, newStatus: string) => void;
     onNoteChange: (memberId: number, note: string) => void;
     pendingExcuse?: Excuse;
+    portalExcuse?: Excuse;
 }
 
 function MobileAttendanceRow({
@@ -491,6 +497,7 @@ function MobileAttendanceRow({
     onPptEmailChange,
     onNoteChange,
     pendingExcuse,
+    portalExcuse,
 }: MobileAttendanceRowProps) {
     const [expanded, setExpanded] = useState(false);
 
@@ -541,6 +548,7 @@ function MobileAttendanceRow({
                             </PopoverContent>
                         </Popover>
                     )}
+                    {portalExcuse && <ExcuseAttachmentButton excuse={portalExcuse} />}
                     {pendingExcuse && <PendingExcuseBadge excuse={pendingExcuse} />}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">

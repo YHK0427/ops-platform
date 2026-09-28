@@ -14,6 +14,23 @@ _REVIEW_LABEL = {"PENDING": "승인 대기", "APPROVED": "승인", "REJECTED": "
 _KST = timezone(timedelta(hours=9))
 
 
+_SIGNATURES = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF8", "image/gif"),
+)
+
+
+def sniff_type(data: bytes) -> str | None:
+    """파일 앞 바이트로 형식 판별. 브라우저가 보낸 content-type 은 믿지 않는다(위장 SVG/HTML 차단)."""
+    for sig, ctype in _SIGNATURES:
+        if data.startswith(sig):
+            return ctype
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def _deadline(d: date, offset_days: int) -> datetime:
     return datetime.combine(d + timedelta(days=offset_days), time(12, 59, 59), tzinfo=timezone.utc)
 

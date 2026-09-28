@@ -1,19 +1,29 @@
 """기수 포털 사유서 — 기수원 제출 / 운영진 조회·공결 심사."""
+import os
+import uuid
 from datetime import date, datetime, timezone
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_current_cohort_id, get_current_member, get_current_user, get_db, require_staff
-from app.models import ExcuseSubmission, Member, Session as SessionModel
-from app.services.portal_excuse import apply_submission, classify, detach_submission, edit_deadline
+from app.models import ExcuseAttachment, ExcuseSubmission, Member, Session as SessionModel
+from app.services.portal_excuse import apply_submission, classify, detach_submission, edit_deadline, sniff_type
 
 portal_router = APIRouter(prefix="/portal/excuses", tags=["excuses"])
 router = APIRouter(prefix="/excuses", tags=["excuses"])
 
 _CATEGORY = "^(ABSENT|LATE|EARLY_LEAVE)$"
+# 증빙자료는 의료·가족 사정이 담긴 민감 파일이라 공개 경로(/notifications/img)가 아닌
+# 별도 디렉터리에 두고, 인증된 본인·같은 기수 운영진만 받게 한다.
+_ATT_DIR = "/app/files/uploads/excuse"
+_ATT_MAX_BYTES = 10 * 1024 * 1024
+_ATT_MAX_COUNT = 5
+_ATT_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 _REASON_KIND = "^(NORMAL|RECOGNIZED)$"
 
 
@@ -49,10 +59,41 @@ async def _editable(db: AsyncSession, sub: ExcuseSubmission) -> bool:
     return not await _finalized(db, sub)
 
 
+async def _attachments(db: AsyncSession, sub_id: int) -> list[ExcuseAttachment]:
+    return list((await db.execute(
+        select(ExcuseAttachment).where(ExcuseAttachment.submission_id == sub_id).order_by(ExcuseAttachment.id)
+    )).scalars().all())
+
+
+def _remove_files(atts: list[ExcuseAttachment]) -> None:
+    for a in atts:
+        try:
+            os.remove(os.path.join(_ATT_DIR, a.stored_name))
+        except OSError:
+            pass
+
+
+def _serve(att: ExcuseAttachment) -> FileResponse:
+    return FileResponse(
+        os.path.join(_ATT_DIR, att.stored_name),
+        media_type=att.content_type,
+        headers={
+            "Content-Disposition": "inline; filename*=UTF-8''" + quote(att.original_name),
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
 async def _out(db: AsyncSession, sub: ExcuseSubmission, name: str | None = None) -> dict:
     if name is None:
         name = (await db.get(Member, sub.member_id)).name
+    atts = await _attachments(db, sub.id)
     return {
+        "attachments": [
+            {"id": a.id, "name": a.original_name, "content_type": a.content_type, "size": a.size} for a in atts
+        ],
         "id": sub.id, "member_id": sub.member_id, "member_name": name,
         "target_date": sub.target_date, "excuse_type": sub.excuse_type,
         "category": sub.category, "reason_kind": sub.reason_kind, "reason": sub.reason,
@@ -144,9 +185,66 @@ async def cancel(excuse_id: int, member: dict = Depends(get_current_member), db:
     sub = await _mine(db, member, excuse_id)
     if not await _editable(db, sub):
         raise HTTPException(status_code=422, detail="취소할 수 있는 기간이 지났습니다. 운영진에게 직접 연락해주세요.")
+    atts = await _attachments(db, sub.id)
     await detach_submission(db, sub)
     await db.delete(sub)
     await db.commit()
+    _remove_files(atts)
+
+
+@portal_router.post("/{excuse_id}/attachments", status_code=status.HTTP_201_CREATED)
+async def add_attachment(
+    excuse_id: int, file: UploadFile = File(...),
+    member: dict = Depends(get_current_member), db: AsyncSession = Depends(get_db),
+):
+    sub = await _mine(db, member, excuse_id)
+    if not await _editable(db, sub):
+        raise HTTPException(status_code=422, detail="수정할 수 있는 기간이 지났습니다. 운영진에게 직접 연락해주세요.")
+    if len(await _attachments(db, sub.id)) >= _ATT_MAX_COUNT:
+        raise HTTPException(status_code=422, detail=f"증빙자료는 {_ATT_MAX_COUNT}개까지 올릴 수 있어요")
+    data = await file.read(_ATT_MAX_BYTES + 1)
+    if len(data) > _ATT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="파일은 10MB 이하만 가능해요")
+    ctype = sniff_type(data)
+    if ctype is None:
+        raise HTTPException(status_code=400, detail="사진 파일(jpg/png/webp/gif)만 올릴 수 있어요")
+    os.makedirs(_ATT_DIR, exist_ok=True)
+    stored = uuid.uuid4().hex + _ATT_EXT[ctype]
+    with open(os.path.join(_ATT_DIR, stored), "wb") as f:
+        f.write(data)
+    name = (file.filename or "증빙자료").replace("\r", " ").replace("\n", " ").strip()[:255] or "증빙자료"
+    db.add(ExcuseAttachment(submission_id=sub.id, stored_name=stored, original_name=name,
+                            content_type=ctype, size=len(data)))
+    await db.commit()
+    return await _out(db, sub)
+
+
+@portal_router.delete("/{excuse_id}/attachments/{att_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_attachment(
+    excuse_id: int, att_id: int,
+    member: dict = Depends(get_current_member), db: AsyncSession = Depends(get_db),
+):
+    sub = await _mine(db, member, excuse_id)
+    if not await _editable(db, sub):
+        raise HTTPException(status_code=422, detail="수정할 수 있는 기간이 지났습니다. 운영진에게 직접 연락해주세요.")
+    att = await db.get(ExcuseAttachment, att_id)
+    if att is None or att.submission_id != sub.id:
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
+    await db.delete(att)
+    await db.commit()
+    _remove_files([att])
+
+
+@portal_router.get("/{excuse_id}/attachments/{att_id}")
+async def my_attachment(
+    excuse_id: int, att_id: int,
+    member: dict = Depends(get_current_member), db: AsyncSession = Depends(get_db),
+):
+    sub = await _mine(db, member, excuse_id)
+    att = await db.get(ExcuseAttachment, att_id)
+    if att is None or att.submission_id != sub.id:
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
+    return _serve(att)
 
 
 # ── 운영진 ────────────────────────────────────────────────────────────────
@@ -193,3 +291,17 @@ async def review(
     await db.commit()
     await db.refresh(sub)
     return await _out(db, sub)
+
+
+@router.get("/{excuse_id}/attachments/{att_id}")
+async def staff_attachment(
+    excuse_id: int, att_id: int,
+    _: dict = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    sub = await db.get(ExcuseSubmission, excuse_id)
+    att = await db.get(ExcuseAttachment, att_id)
+    if sub is None or sub.cohort_id != cohort_id or att is None or att.submission_id != sub.id:
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
+    return _serve(att)
