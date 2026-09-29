@@ -42,11 +42,13 @@ export function reviewLabel(e: Pick<Excuse, "category" | "review">): string {
     return `${approvalWord(e)} ${e.review === "APPROVED" ? "승인" : "반려"}`;
 }
 
-export function useMyExcuses() {
-    return useQuery({
+export const myExcusesQuery = {
         queryKey: ["member", "excuses"],
         queryFn: async () => (await memberApi.get<Excuse[]>("/portal/excuses")).data,
-    });
+};
+
+export function useMyExcuses() {
+    return useQuery(myExcusesQuery);
 }
 
 export function useExcusePreview(date: string) {

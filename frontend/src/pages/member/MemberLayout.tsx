@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { Suspense, useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMemberAuth } from "@/context/MemberAuthContext";
 import { motion } from "framer-motion";
 import { LogOut, Home, BarChart3, Wallet, KeyRound, MessageSquareHeart, Megaphone } from "lucide-react";
@@ -7,7 +8,18 @@ import { cn } from "@/lib/utils";
 import memberApi from "@/lib/memberApi";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
 import { PatchNoteModal } from "@/components/PatchNoteModal";
-import { useUnreadAnnouncements } from "@/hooks/useMemberAnnouncements";
+import { useUnreadAnnouncements, memberAnnouncementsQuery } from "@/hooks/useMemberAnnouncements";
+import { pendingEvalsQuery } from "@/hooks/useMemberEvaluation";
+import { memberFeedbackBoardsQuery } from "@/hooks/useLiveFeedback";
+import { myLedgerQuery, myAttendanceQuery, mySummaryQuery } from "@/hooks/useMemberLedger";
+import { myExcusesQuery } from "@/hooks/useExcuses";
+import { whenIdle } from "@/lib/lazyPreload";
+
+// 하단 탭·홈 카드가 처음 열릴 때 쓰는 데이터 — 한가할 때 미리 받아 탭을 눌러도 로딩이 안 보이게
+const PREFETCH = [
+    memberAnnouncementsQuery, pendingEvalsQuery, memberFeedbackBoardsQuery,
+    myLedgerQuery, mySummaryQuery, myAttendanceQuery, myExcusesQuery,
+];
 
 const TABS = [
     { to: "/member", label: "홈", icon: Home, end: true },
@@ -21,6 +33,11 @@ export default function MemberLayout() {
     const { member, logout } = useMemberAuth();
     const [showPw, setShowPw] = useState(false);
     const { unreadCount } = useUnreadAnnouncements();
+    const qc = useQueryClient();
+    const { pathname } = useLocation();
+    useEffect(() => {
+        whenIdle(() => { for (const q of PREFETCH) void qc.prefetchQuery(q as Parameters<typeof qc.prefetchQuery>[0]); });
+    }, [qc]);
 
     return (
         <div className="member-page pb-20">
@@ -64,7 +81,13 @@ export default function MemberLayout() {
 
             <PatchNoteModal side="member" />
 
-            <Outlet />
+            <Suspense fallback={<div className="py-24" />}>
+                {/* 화면 전환: 사라지는 애니메이션은 없이(다음 화면을 늦추지 않게) 들어올 때만 살짝 */}
+                <motion.div key={pathname} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.18, ease: "easeOut" }}>
+                    <Outlet />
+                </motion.div>
+            </Suspense>
 
             {/* 하단 탭 네비게이션 */}
             <nav className="fixed bottom-0 inset-x-0 z-20 bg-white/90 backdrop-blur-md border-t border-gray-200">

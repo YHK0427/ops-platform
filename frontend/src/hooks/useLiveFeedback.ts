@@ -273,25 +273,28 @@ export interface MemberBoardListItem {
     created_at: string | null;
 }
 
-export function useMemberFeedbackBoards() {
-    return useQuery({
+export const memberFeedbackBoardsQuery = {
         queryKey: [...lfKeys.all, "member-boards"] as const,
         queryFn: async () => {
             const { data } = await memberApi.get<MemberBoardListItem[]>("/live-feedback/member/boards");
             return data;
         },
-    });
+};
+
+export function useMemberFeedbackBoards() {
+    return useQuery(memberFeedbackBoardsQuery);
 }
 
+export const openFeedbackBoardQuery = {
+    queryKey: lfKeys.openBoard(),
+    queryFn: async () => {
+        const { data } = await memberApi.get<OpenBoardInfo | null>("/live-feedback/member/open-board");
+        return data;
+    },
+};
+
 export function useOpenFeedbackBoard() {
-    return useQuery({
-        queryKey: lfKeys.openBoard(),
-        queryFn: async () => {
-            const { data } = await memberApi.get<OpenBoardInfo | null>("/live-feedback/member/open-board");
-            return data;
-        },
-        refetchInterval: 30_000, // 보드 열림 감지(멤버 홈 카드)
-    });
+    return useQuery({ ...openFeedbackBoardQuery, refetchInterval: 30_000 }); // 보드 열림 감지(멤버 홈 카드)
 }
 
 export function useMemberBoard(boardId: number | null) {

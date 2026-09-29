@@ -25,14 +25,16 @@ export const memberAnnKeys = {
  * 기수원 공지 목록. 홈 배너(안 읽은 공지)와 공지 탭이 같은 캐시를 쓰도록
  * 여기 한 군데로 모은다 — 상세를 열면 읽음 처리되므로 목록도 같이 무효화된다.
  */
-export function useMemberAnnouncements() {
-    return useQuery({
+export const memberAnnouncementsQuery = {
         queryKey: memberAnnKeys.list(),
         queryFn: async () => {
             const { data } = await memberApi.get<MemberAnnouncement[]>("/notifications/announcements");
             return data;
         },
-    });
+};
+
+export function useMemberAnnouncements() {
+    return useQuery(memberAnnouncementsQuery);
 }
 
 /** 안 읽은 공지만 (홈 배너용). is_read 가 안 내려오는 구버전 응답은 읽음으로 본다. */

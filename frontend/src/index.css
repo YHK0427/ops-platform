@@ -146,3 +146,10 @@
 .member-page {
   min-height: 100vh;
 }
+/* 화면 전환 — 들어올 때만 살짝(사라지는 애니메이션 없음: 다음 화면을 늦추지 않게) */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.page-in { animation: page-in 0.18s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .page-in { animation: none; } }

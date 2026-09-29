@@ -32,6 +32,16 @@ interface MemberAuthContextValue {
 
 const MemberAuthContext = createContext<MemberAuthContextValue | null>(null);
 
+// 로그인 확인은 한 번만 보내고 결과를 공유한다. 이 컴포넌트가 로딩 경계 안에 있어 화면 조각을
+// 기다리는 동안 다시 만들어지면 확인 요청이 두 번 나갔다. 앱 시작 직후에도 바로 부른다(App.tsx).
+let mePromise: Promise<MemberUser> | null = null;
+export function fetchMemberMe(): Promise<MemberUser> {
+    return (mePromise ??= memberApi.get<MemberUser>("/auth/member-me").then(
+        (r) => r.data,
+        (e) => { mePromise = null; throw e; },
+    ));
+}
+
 export function MemberAuthProvider({ children }: { children: React.ReactNode }) {
     const [member, setMember] = useState<MemberUser | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -42,9 +52,8 @@ export function MemberAuthProvider({ children }: { children: React.ReactNode }) 
             setIsLoading(false);
             return;
         }
-        memberApi
-            .get<MemberUser>("/auth/member-me")
-            .then(({ data }) => {
+        fetchMemberMe()
+            .then((data) => {
                 setMember(data);
                 // 앱 열 때 자동 재구독 — 권한 허용 상태면 끊긴/갱신된 구독 자가복구
                 void resyncPushSubscription(memberApi, { subscribePath: "/notifications/subscribe" });
@@ -70,7 +79,8 @@ export function MemberAuthProvider({ children }: { children: React.ReactNode }) 
         }
 
         setMemberToken(data.access_token!, remember);
-        const { data: me } = await memberApi.get<MemberUser>("/auth/member-me");
+        mePromise = null;  // 새 계정 — 이전 확인 결과를 쓰면 안 된다
+        const me = await fetchMemberMe();
         setMember(me);
         return null;
     }, []);
@@ -81,6 +91,7 @@ export function MemberAuthProvider({ children }: { children: React.ReactNode }) 
         await unsubscribePush(memberApi, { subscribePath: "/notifications/subscribe" });
         memberApi.post("/auth/member-logout").catch(() => {});
         setMemberToken(null);
+        mePromise = null;
         setMember(null);
         window.location.href = "/login";
     }, []);

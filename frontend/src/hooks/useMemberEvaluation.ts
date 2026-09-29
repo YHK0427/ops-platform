@@ -56,8 +56,7 @@ export const memberEvalKeys = {
 
 // ── Query Hooks ────────────────────────────────────────────────────────
 
-export function usePendingEvals() {
-    return useQuery({
+export const pendingEvalsQuery = {
         queryKey: memberEvalKeys.pending(),
         queryFn: async () => {
             const { data } = await memberApi.get<PendingEval[]>(
@@ -65,7 +64,10 @@ export function usePendingEvals() {
             );
             return data;
         },
-    });
+};
+
+export function usePendingEvals() {
+    return useQuery(pendingEvalsQuery);
 }
 
 export function useSelfEvalForm(roundId: number | string) {

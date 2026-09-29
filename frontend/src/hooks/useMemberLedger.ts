@@ -11,25 +11,29 @@ export interface MySummary {
 }
 
 /** 로그인한 기수 본인의 점수·디파짓 요약 */
-export function useMySummary() {
-    return useQuery({
+export const mySummaryQuery = {
         queryKey: ["member", "summary"],
         queryFn: async () => {
             const { data } = await memberApi.get<MySummary>("/members/my-summary");
             return data;
         },
-    });
+};
+
+export function useMySummary() {
+    return useQuery(mySummaryQuery);
 }
 
 /** 로그인한 기수 본인의 장부 내역 */
-export function useMyLedger() {
-    return useQuery({
+export const myLedgerQuery = {
         queryKey: ["member", "ledger"],
         queryFn: async () => {
             const { data } = await memberApi.get<LedgerEntry[]>("/members/my-ledger");
             return data;
         },
-    });
+};
+
+export function useMyLedger() {
+    return useQuery(myLedgerQuery);
 }
 
 export interface MyAttendance {
@@ -44,12 +48,14 @@ export interface MyAttendance {
 }
 
 /** 로그인한 기수 본인의 세션별 출결 내역 */
-export function useMyAttendance() {
-    return useQuery({
+export const myAttendanceQuery = {
         queryKey: ["member", "attendance"],
         queryFn: async () => {
             const { data } = await memberApi.get<MyAttendance[]>("/members/my-attendance");
             return data;
         },
-    });
+};
+
+export function useMyAttendance() {
+    return useQuery(myAttendanceQuery);
 }

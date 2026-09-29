@@ -9,7 +9,7 @@ export default function MemberReports() {
 
     return (
         <motion.main
-            initial={{ opacity: 0, y: 20 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="mx-auto w-full max-w-lg px-4 py-6"
