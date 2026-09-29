@@ -12,6 +12,7 @@ import { memberFeedbackBoardsQuery, openFeedbackBoardQuery } from "@/hooks/useLi
 import { myLedgerQuery, myAttendanceQuery, mySummaryQuery } from "@/hooks/useMemberLedger";
 import { myExcusesQuery } from "@/hooks/useExcuses";
 import { AuthGuard } from "@/components/AuthGuard";
+import { useHoldSplash, hideSplashSoon } from "@/lib/bootSplash";
 import { Sidebar } from "@/components/Sidebar";
 import { CohortGate } from "@/components/CohortGate";
 import { getToken } from "@/lib/api";
@@ -109,6 +110,8 @@ if (typeof window !== "undefined") {
 
 // ── Loading fallback ───────────────────────────────────────────────────
 function LoadingFallback({ inline = false }: { inline?: boolean }) {
+  // 첫 접속 중이면 로고 화면이 대신 보이고 있으니 따로 그리지 않는다
+  useHoldSplash();
   // 0.2초 안에 끝나는 로딩은 아예 안 보여준다 — 짧은 깜빡임이 '버벅임'으로 느껴진다
   const [show, setShow] = useState(false);
   useEffect(() => { const t = window.setTimeout(() => setShow(true), 200); return () => window.clearTimeout(t); }, []);
@@ -214,6 +217,7 @@ function RootRedirect() {
 export default function App() {
   useEffect(() => {
     document.title = "UnivPT Ops";
+    hideSplashSoon();  // 로딩 표시 없이 바로 그려진 경우(로그인 화면 등)
   }, []);
 
   return (

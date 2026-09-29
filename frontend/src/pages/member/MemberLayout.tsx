@@ -14,6 +14,7 @@ import { memberFeedbackBoardsQuery } from "@/hooks/useLiveFeedback";
 import { myLedgerQuery, myAttendanceQuery, mySummaryQuery } from "@/hooks/useMemberLedger";
 import { myExcusesQuery } from "@/hooks/useExcuses";
 import { whenIdle } from "@/lib/lazyPreload";
+import { useHoldSplash } from "@/lib/bootSplash";
 
 // 하단 탭·홈 카드가 처음 열릴 때 쓰는 데이터 — 한가할 때 미리 받아 탭을 눌러도 로딩이 안 보이게
 const PREFETCH = [
@@ -81,7 +82,7 @@ export default function MemberLayout() {
 
             <PatchNoteModal side="member" />
 
-            <Suspense fallback={<div className="py-24" />}>
+            <Suspense fallback={<PageLoading />}>
                 {/* 화면 전환: 사라지는 애니메이션은 없이(다음 화면을 늦추지 않게) 들어올 때만 살짝 */}
                 <motion.div key={pathname} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.18, ease: "easeOut" }}>
@@ -120,4 +121,9 @@ export default function MemberLayout() {
             </nav>
         </div>
     );
+}
+
+function PageLoading() {
+    useHoldSplash();  // 첫 접속이면 머리글만 덩그러니 보이지 않게 로고 화면을 유지
+    return <div className="py-24" />;
 }

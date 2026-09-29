@@ -23,8 +23,21 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="UnivPT" />
+    <!-- 첫 접속 로고 화면 — 자바스크립트가 오기 전부터 보이고, 첫 화면 내용이 그려지면 src/lib/bootSplash.ts 가 걷어낸다 -->
+    <style>
+      #boot-splash { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #F5F5F7; transition: opacity .3s ease; }
+      #boot-splash.boot-out { opacity: 0; pointer-events: none; }
+      #boot-splash img { width: 64px; height: 64px; border-radius: 16px; opacity: 0; animation: boot-in .4s ease-out .12s forwards, boot-breathe 1.6s ease-in-out .52s infinite; }
+      #boot-splash .bar { width: 72px; height: 3px; border-radius: 3px; background: rgba(0,0,0,.07); overflow: hidden; opacity: 0; animation: boot-in .4s ease-out .3s forwards; }
+      #boot-splash .bar::after { content: ""; display: block; width: 40%; height: 100%; border-radius: 3px; background: #F43F5E; animation: boot-slide 1.1s ease-in-out infinite; }
+      @keyframes boot-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+      @keyframes boot-breathe { 50% { transform: scale(.94); } }
+      @keyframes boot-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      @media (prefers-reduced-motion: reduce) { #boot-splash img, #boot-splash .bar, #boot-splash .bar::after { animation: none; opacity: 1; } }
+    </style>
   </head>
   <body>
+    <div id="boot-splash" aria-label="불러오는 중"><img src="/icons/icon-192.png" alt="" /><div class="bar"></div></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

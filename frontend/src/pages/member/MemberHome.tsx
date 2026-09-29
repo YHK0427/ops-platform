@@ -4,6 +4,7 @@ import { BarChart3, Wallet, ChevronRight, MessageSquareHeart, Megaphone, Calenda
 import { useMySummary } from "@/hooks/useMemberLedger";
 import { useOpenFeedbackBoard } from "@/hooks/useLiveFeedback";
 import { useUnreadAnnouncements } from "@/hooks/useMemberAnnouncements";
+import { HoldSplash } from "@/lib/bootSplash";
 
 export default function MemberHome() {
     const navigate = useNavigate();
@@ -56,6 +57,8 @@ export default function MemberHome() {
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="mx-auto w-full max-w-lg px-4 py-6 space-y-5"
         >
+            {/* 첫 접속이면 숫자가 '—' 로 비어 보이지 않게 받을 때까지 로고 화면 유지 */}
+            {isLoading && <HoldSplash />}
             {/* 안 읽은 공지 — 있을 때만. 누르면 공지 목록으로 */}
             {unreadCount > 0 && (
                 <motion.button

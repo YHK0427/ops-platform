@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { HoldSplash } from "@/lib/bootSplash";
 import { useSession, useUpdateSessionStatus, useDeleteSession, useUpdateSessionConfig } from "@/hooks";
 import { type Session } from "@/hooks/useSessions";
 import { Lock, Trash2, Clock, Pencil, Check, X } from "lucide-react";
@@ -16,8 +17,8 @@ export default function SessionLayout() {
     const { mutate: deleteSession, isPending: isDeleting } = useDeleteSession();
     const { data: session, isLoading } = useSession(sessionId);
 
-    if (isLoading) return <div>로딩 중...</div>;
-    if (!session) return <div>세션을 찾을 수 없습니다</div>;
+    if (isLoading) return <div className="flex-1 flex items-center justify-center py-24"><HoldSplash /><span className="inline-block w-6 h-6 border-2 border-[var(--color-border)] border-t-[var(--color-accent)] rounded-full animate-spin" /></div>;
+    if (!session) return <div className="py-24 text-center text-sm text-[var(--color-text-muted)]">세션을 찾을 수 없습니다</div>;
 
     const typedSession = session as Session;
 

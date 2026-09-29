@@ -50,7 +50,7 @@ export default function TeamEditPage() {
         return result;
     }, [session.teams, allMembers]);
 
-    if (membersLoading) return <div className="p-6 text-[var(--color-text-secondary)]">멤버 목록 로딩 중...</div>;
+    if (membersLoading) return <div className="flex-1 flex items-center justify-center py-24"><span className="inline-block w-6 h-6 border-2 border-[var(--color-border)] border-t-[var(--color-accent)] rounded-full animate-spin" /></div>;
 
     return (
         <div className="p-6 h-full flex flex-col">

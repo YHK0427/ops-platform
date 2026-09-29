@@ -130,7 +130,7 @@ export default function Members() {
                             {isLoading ? (
                                 <TableRow>
                                     <TableCell colSpan={9} className="h-24 text-center text-[var(--color-text-muted)]">
-                                        로딩 중...
+                                        불러오는 중...
                                     </TableCell>
                                 </TableRow>
                             ) : filteredMembers?.length === 0 ? (
@@ -229,7 +229,7 @@ export default function Members() {
                 {/* Mobile 카드 리스트 */}
                 <div className="md:hidden space-y-2">
                     {isLoading ? (
-                        <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">로딩 중...</div>
+                        <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">불러오는 중...</div>
                     ) : filteredMembers?.length === 0 ? (
                         <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">데이터가 없습니다.</div>
                     ) : (
