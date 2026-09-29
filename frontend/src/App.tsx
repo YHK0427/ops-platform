@@ -70,9 +70,11 @@ const DevFeedback = lazyPreload(() => import("@/pages/DevFeedback"));
 // ── 화면 조각 미리 받기 ─────────────────────────────────────────────────
 // 지금 들어온 쪽(기수 포털/운영진)의 화면은 로그인 확인과 동시에 받기 시작하고,
 // 나머지는 한가할 때 받는다. 한 번 받은 화면은 대체 화면 없이 바로 그려진다(lazyPreload).
+// 평가 결과(차트 라이브러리 101KB)·자기평가·완료 화면은 드물게 열어서 뺀다 — import() 는 받기만이 아니라
+// 실행까지 해서, 넣어두면 첫 화면 직후 메인 스레드를 잡아먹었다(Lighthouse TBT 80ms → 350ms).
 const MEMBER_PAGES = [
   MemberLayout, MemberHome, MemberAnnouncements, MemberAnnouncementDetail, MemberReports,
-  MemberFeedbackList, MemberFeedbackBoard, MemberLedger, MemberAttendance, SelfEvalForm, EvalComplete, MemberResult,
+  MemberFeedbackList, MemberFeedbackBoard, MemberLedger, MemberAttendance,
 ];
 const OPS_PAGES = [
   Dashboard, SessionList, Members, MemberDetail, Ledger, Treasury, Announcements, SessionLayout, PrepTab, OpsTab,

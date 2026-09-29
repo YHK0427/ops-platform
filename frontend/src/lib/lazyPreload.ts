@@ -31,9 +31,11 @@ export function preloadAll(components: { preload: () => Promise<void> }[]) {
     for (const c of components) c.preload().catch(() => {});
 }
 
-/** 브라우저가 한가할 때 실행 (없으면 1초 뒤). */
-export function whenIdle(fn: () => void) {
+/** 첫 화면이 다 그려진 뒤 한가할 때 실행 — 첫 화면 작업과 겹치지 않게 최소 delayMs 기다린다. */
+export function whenIdle(fn: () => void, delayMs = 3000) {
     const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
-    if (w.requestIdleCallback) w.requestIdleCallback(fn, { timeout: 3000 });
-    else window.setTimeout(fn, 1000);
+    window.setTimeout(() => {
+        if (w.requestIdleCallback) w.requestIdleCallback(fn, { timeout: 3000 });
+        else fn();
+    }, delayMs);
 }

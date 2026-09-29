@@ -6,6 +6,18 @@ import { getToken } from "@/lib/api";
 import { getMemberToken } from "@/lib/memberApi";
 import { restoreSession } from "@/lib/restoreSession";
 
+// 예비 글꼴 CSS — 기본 글꼴(Paperlogy, 자체 서버)에 없는 글자·숫자용이라 첫 그림을 막을 필요가 없다
+for (const href of [
+    "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css",
+    "https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300..700&display=swap",
+    "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap",
+]) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    document.head.appendChild(link);
+}
+
 // 배포로 청크 해시가 바뀌면 열려있던 옛 탭이 옛 청크를 못 받아 404가 난다.
 // 동적 import(코드분할) 로드 실패 시 한 번만 새로고침해 최신 번들을 받는다.
 function reloadOnceForStaleChunk() {

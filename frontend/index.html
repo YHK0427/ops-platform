@@ -12,10 +12,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/Paperlogy-4Regular.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/Paperlogy-7Bold.woff2" crossorigin />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300..700&display=swap" />
-    <!-- Noto Sans KR — 희귀 한글 폴백 (윺, 뷁 등) -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" />
+    <!-- Pretendard·Noto Sans KR(희귀 한글 폴백)·Geist Mono(숫자·코드)는 예비 글꼴이라 첫 그림을 막지 않게
+         main.tsx 에서 붙인다(Lighthouse: 렌더 차단 약 1.3초). CSP 로 인라인 onload 트릭은 못 쓴다. -->
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest.webmanifest" />
