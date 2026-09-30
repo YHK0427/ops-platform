@@ -1304,10 +1304,12 @@ async def get_settlement_preview(
                 "source": "manual",
             })
 
+    from app.services.finalize import merit_signature
     return SettlementPreviewResponse(
         session_id=session.id,
         penalties=response_items,
         merits=merits,
+        merit_signature=merit_signature(merits),
     )
 
 
@@ -1321,6 +1323,8 @@ async def add_staged_merits(
 ):
     """수동 상점을 session config에 staging"""
     session = await _get_session_or_404(session_id, db, cohort_id)
+    # 오프·오피 투표 닫기와 동시에 와도 서로 덮어쓰지 않게 행을 잡고 최신 config 로
+    await db.refresh(session, with_for_update=True)
     if session.status == "FINALIZED":
         raise HTTPException(status_code=400, detail="FINALIZED 세션에는 상점을 추가할 수 없습니다")
 
@@ -1348,12 +1352,16 @@ async def add_staged_merits(
 async def remove_staged_merit(
     session_id: int,
     index: int,
+    expect_member_id: int | None = None,
+    expect_reason: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """수동 staged 상점 삭제 (인덱스)"""
     session = await _get_session_or_404(session_id, db, cohort_id)
+    # 오프·오피 투표 닫기와 동시에 와도 서로 덮어쓰지 않게 행을 잡고 최신 config 로
+    await db.refresh(session, with_for_update=True)
     if session.status == "FINALIZED":
         raise HTTPException(status_code=400, detail="FINALIZED 세션은 수정할 수 없습니다")
 
@@ -1364,6 +1372,10 @@ async def remove_staged_merit(
 
     if index < 0 or index >= len(staged):
         raise HTTPException(status_code=404, detail="해당 인덱스의 staged merit이 없습니다")
+    # 순번으로 지우므로, 화면을 연 뒤 목록이 바뀌었으면(오프·오피 투표 재오픈 등) 다른 상점을 지우게 된다
+    if expect_member_id is not None and (staged[index].get("member_id") != expect_member_id
+                                         or staged[index].get("reason") != expect_reason):
+        raise HTTPException(status_code=409, detail="상점 목록이 그사이 바뀌었습니다. 화면을 새로고침한 뒤 다시 지워주세요.")
 
     staged.pop(index)
     config["staged_merits"] = staged
@@ -1382,16 +1394,23 @@ async def finalize_session_api(
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션 마감 (Finalize) - 페널티 확정 및 정산 처리"""
-    from app.services.finalize import finalize_session, SessionAlreadyFinalizedError
+    from app.services.finalize import finalize_session, SessionAlreadyFinalizedError, MeritListChangedError
 
     # 기수 격리: 다른 기수의 세션을 마감하지 못하도록 사전 검증
     await _get_session_or_404(session_id, db, cohort_id)
+    # 세션 행을 먼저 잡는다 — 확인과 마감 사이에 오프·오피 투표가 닫히거나 다시 열리며 상점 목록을 바꾸지 못하게
+    await db.execute(select(SessionModel).where(SessionModel.id == session_id).with_for_update()
+                     .execution_options(populate_existing=True))
+    from app.routers.session_votes import finalize_blocker
+    blocker = await finalize_blocker(db, session_id)
+    if blocker:
+        raise HTTPException(status_code=409, detail=blocker)
 
     # Pydantic 모델 -> Dict 변환
     overrides_dict = [o.model_dump() for o in body.overrides]
     
     try:
-        await finalize_session(session_id, db, overrides_dict, body.skip_merit_indices)
+        await finalize_session(session_id, db, overrides_dict, body.skip_merit_indices, body.merit_signature)
         await db.commit() # 트랜잭션 확정
         # 세션 정보 조회 — 라벨 구성 + finalized_at
         updated_session = await db.get(SessionModel, session_id)
@@ -1405,6 +1424,9 @@ async def finalize_session_api(
         
     except SessionAlreadyFinalizedError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except MeritListChangedError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

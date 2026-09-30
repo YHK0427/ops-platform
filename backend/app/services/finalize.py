@@ -20,11 +20,21 @@ class SessionAlreadyFinalizedError(Exception):
     pass
 
 
+class MeritListChangedError(Exception):
+    """정산 화면이 본 상점 목록과 지금 목록이 다르다 — 순서 기반 skip_merit_indices 가 엉뚱한 상점을 빼게 된다."""
+
+
+def merit_signature(merits: list[dict]) -> str:
+    """상점 목록 서명 — 정산 미리보기와 마감이 같은 목록을 보고 있는지 확인한다(순서 포함)."""
+    return "|".join(f"{m['member_id']}:{m['score_delta']}:{m['description']}" for m in merits)
+
+
 async def finalize_session(
     session_id: int,
     db: AsyncSession,
     overrides: Optional[list[dict[str, Any]]] = None,
     skip_merit_indices: Optional[list[int]] = None,
+    expected_merit_signature: Optional[str] = None,
 ):
     """
     세션 마감 처리 (Finalize)
@@ -135,6 +145,9 @@ async def finalize_session(
 
     # 3) 합산 (auto 먼저, manual 뒤)
     all_merits = auto_merits + manual_merits
+    # 화면을 연 뒤 오프·오피 투표 재오픈 등으로 목록이 바뀌었으면, 체크 해제한 순번이 다른 상점을 가리킨다
+    if expected_merit_signature is not None and merit_signature(all_merits) != expected_merit_signature:
+        raise MeritListChangedError("정산 상점 목록이 그사이 바뀌었습니다. 화면을 새로고침해 상점 목록을 다시 확인한 뒤 마감해주세요.")
 
     # 4) 멤버 조회 (merit 대상)
     merit_member_ids = {m["member_id"] for m in all_merits}

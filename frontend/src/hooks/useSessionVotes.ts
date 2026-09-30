@@ -9,16 +9,20 @@ export type VoteCategory = "OFF" | "OPI";
 export const VOTE_LABEL: Record<VoteCategory, string> = { OFF: "오프", OPI: "오피" };
 export const VOTE_DESC: Record<VoteCategory, string> = { OFF: "오늘의 프레젠터", OPI: "오늘의 PPT" };
 
-export interface Person { id: number; name: string }
+export interface Person { id: number; name: string; sub?: string } // sub: 팀 후보의 팀원 이름
 export interface CategoryResult {
     winners: number[];
     votes: number;
     tie: boolean;
     resolved: "auto" | "all" | "runoff" | "none" | null;
 }
+export type VoteKind = "MEMBER" | "TEAM";
+export interface VoteMerit { reason: string; score: number }
 export interface SessionVote {
     id: number;
     group_num: number | null;
+    kind: VoteKind;
+    merit: Record<VoteCategory, VoteMerit>;
     round: number;
     parent_id: number | null;
     is_open: boolean;
@@ -31,12 +35,16 @@ export interface SessionVote {
 }
 export interface SessionVotesData {
     session_status: string;
+    kind: VoteKind;
     groups: (number | null)[];
     eligible: Record<string, Person[]>;
+    pool: Record<string, Person[]>; // 투표 열 때 기본 후보 — 개인: 분반 출석자, 팀: 모든 팀
+    default_merit: Record<VoteCategory, VoteMerit>;
     votes: SessionVote[];
 }
 export interface MemberVote {
     id: number;
+    kind: VoteKind;
     round: number;
     group_num: number | null;
     session_title: string;
@@ -73,9 +81,9 @@ function useVoteMutation<T>(sessionId: number, fn: (arg: T) => Promise<unknown>)
 }
 
 export const useOpenVote = (sid: number) =>
-    useVoteMutation(sid, (b: { group_num: number | null; candidates: number[] }) => api.post(`/sessions/${sid}/votes`, b));
+    useVoteMutation(sid, (b: { group_num: number | null; candidates: number[]; merit?: Record<VoteCategory, VoteMerit> }) => api.post(`/sessions/${sid}/votes`, b));
 export const useUpdateCandidates = (sid: number) =>
-    useVoteMutation(sid, (b: { id: number; candidates: number[] }) => api.put(`/session-votes/${b.id}/candidates`, { candidates: b.candidates }));
+    useVoteMutation(sid, (b: { id: number; candidates: number[]; merit?: Record<VoteCategory, VoteMerit> }) => api.put(`/session-votes/${b.id}/candidates`, { candidates: b.candidates, merit: b.merit }));
 export const useCloseVote = (sid: number) =>
     useVoteMutation(sid, (id: number) => api.post(`/session-votes/${id}/close`));
 export const useResolveVote = (sid: number) =>
@@ -102,22 +110,17 @@ export function useMemberOpenVotes() {
 export function useCastBallot() {
     const qc = useQueryClient();
     return useMutation({
+        mutationKey: ["cast-ballot"],
         mutationFn: (b: { id: number } & Partial<Record<VoteCategory, number | null>>) => {
             const { id, ...picks } = b;
             return memberApi.put(`/session-votes/member/${id}/ballot`, picks);
         },
-        // 누르자마자 선택이 보이게(저장 실패하면 onSettled 가 서버 값으로 되돌린다)
-        onMutate: ({ id, ...picks }) => {
-            qc.setQueryData<MemberVote[]>(voteKeys.memberOpen(), (prev) => prev?.map((v) => {
-                if (v.id !== id) return v;
-                const my = { ...v.my };
-                for (const [c, p] of Object.entries(picks) as [VoteCategory, number | null][]) {
-                    if (p == null) delete my[c]; else my[c] = p;
-                }
-                return { ...v, my };
-            }));
+        // 진행 중인 조회가 방금 누른 선택을 옛 값으로 덮지 않게(선택 표시는 MemberVote 가 누르는 즉시 한다)
+        onMutate: () => qc.cancelQueries({ queryKey: voteKeys.memberOpen() }),
+        // 연달아 누른 저장이 남아 있으면 서버 값으로 덮지 않는다(중간 상태가 잠깐 보이는 깜빡임 방지)
+        onSettled: () => {
+            if (qc.isMutating({ mutationKey: ["cast-ballot"] }) <= 1) qc.invalidateQueries({ queryKey: voteKeys.memberOpen() });
         },
-        onSettled: () => qc.invalidateQueries({ queryKey: voteKeys.memberOpen() }),
     });
 }
 

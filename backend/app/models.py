@@ -1262,17 +1262,28 @@ class SessionVote(Base):
 
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
-    group_num = Column(Integer, nullable=True)  # NULL = 분반 없이 전체
+    group_num = Column(Integer, nullable=True)  # NULL = 분반 없이 전체 (팀 세션은 항상 NULL)
+    kind = Column(String(6), nullable=False, server_default="MEMBER")  # MEMBER=사람 후보, TEAM=팀 후보(팀 세션)
     round = Column(Integer, nullable=False, server_default="1")
     parent_id = Column(Integer, ForeignKey("session_votes.id", ondelete="CASCADE"), nullable=True, index=True)
-    # 부문별 후보 {"OFF":[member_id...], "OPI":[...]} — 재투표는 동률 난 부문만 키가 있다
+    # 부문별 후보 {"OFF":[id...], "OPI":[...]} — kind 에 따라 member_id 또는 team_id. 재투표는 동률 난 부문만 키가 있다
     candidates = Column(JSONB, nullable=False)
     is_open = Column(Boolean, nullable=False, server_default="true")
     # 닫을 때 기록 {"OFF":{"winners":[ids],"tie":bool,"resolved":"auto"|"all"|"runoff"|null}, ...}
     result = Column(JSONB, nullable=True)
+    # 닫는 순간의 투표권자 — 닫은 뒤 출결이 바뀌어도 결과 화면의 득표가 결과와 어긋나지 않게
+    closed_voters = Column(ARRAY(Integer), nullable=True)
+    # 부문별 상점 {"OFF":{"reason":"오프/오피 선정","score":1}, ...} — NULL 이면 기본값(팀 세션은 운영진이 고른다)
+    merit = Column(JSONB, nullable=True)
     opened_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     closed_at = Column(TIMESTAMP(timezone=True), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        # 분반당 본투표는 하나 — 두 운영진이 동시에 열어도 하나만 생긴다(분반 없음 = -1 로 취급)
+        Index("uq_session_vote_round1", "session_id", text("coalesce(group_num, -1)"),
+              unique=True, postgresql_where=text("round = 1")),
+    )
 
     ballots = relationship("SessionVoteBallot", back_populates="vote", cascade="all, delete-orphan", passive_deletes=True)
 
@@ -1285,7 +1296,7 @@ class SessionVoteBallot(Base):
     vote_id = Column(Integer, ForeignKey("session_votes.id", ondelete="CASCADE"), nullable=False, index=True)
     voter_member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
     category = Column(String(3), nullable=False)
-    candidate_member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    candidate_id = Column(Integer, nullable=False)  # 투표 kind 에 따라 member_id 또는 team_id (후보 명단 밖이면 집계에서 빠진다)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (

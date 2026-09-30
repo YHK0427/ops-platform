@@ -77,6 +77,7 @@ class SettlementPreviewResponse(BaseModel):
     session_id: int
     penalties: list[PenaltyItemResponse]
     merits: list[MeritItemResponse] = []
+    merit_signature: str = ""
 
 class StagedMeritCreate(BaseModel):
     member_ids: list[int]
@@ -90,6 +91,7 @@ class SessionFinalizeOverride(BaseModel):
 class SessionFinalizeRequest(BaseModel):
     overrides: list[SessionFinalizeOverride] = []
     skip_merit_indices: list[int] = []
+    merit_signature: str | None = None  # 정산 미리보기의 merit_signature — 다르면 409
 
 class SessionFinalizeResponse(BaseModel):
     status: str

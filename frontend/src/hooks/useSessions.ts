@@ -167,6 +167,7 @@ export interface MeritPreviewItem {
 interface SettlementPreviewResponse {
     penalties: SettlementPenalty[];
     merits: MeritPreviewItem[];
+    merit_signature?: string;
 }
 
 export interface SessionStats {
@@ -214,8 +215,8 @@ export function useSettlementPreview(sessionId: number) {
 export function useFinalizeSession() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ sessionId, overrides, skip_merit_indices = [] }: { sessionId: number; overrides: any[]; skip_merit_indices?: number[] }) => {
-            const { data } = await api.post(`/sessions/${sessionId}/finalize`, { overrides, skip_merit_indices });
+        mutationFn: async ({ sessionId, overrides, skip_merit_indices = [], merit_signature }: { sessionId: number; overrides: any[]; skip_merit_indices?: number[]; merit_signature?: string }) => {
+            const { data } = await api.post(`/sessions/${sessionId}/finalize`, { overrides, skip_merit_indices, merit_signature });
             return data;
         },
         onSuccess: () => {
@@ -282,15 +283,20 @@ export function useAddStagedMerit() {
 export function useRemoveStagedMerit() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ sessionId, index }: { sessionId: number; index: number }) => {
-            await api.delete(`/sessions/${sessionId}/staged-merits/${index}`);
+        mutationFn: async ({ sessionId, index, expect }: { sessionId: number; index: number; expect?: { member_id: number; reason: string } }) => {
+            // 순번으로 지우므로 화면이 본 상점을 같이 보낸다 — 그사이 목록이 바뀌었으면 서버가 409
+            await api.delete(`/sessions/${sessionId}/staged-merits/${index}`, {
+                params: expect ? { expect_member_id: expect.member_id, expect_reason: expect.reason } : undefined,
+            });
         },
         onSuccess: (_, vars) => {
             queryClient.invalidateQueries({ queryKey: [...sessionsKeys.detail(vars.sessionId), "settlement"] });
             toast.success("상점이 삭제되었습니다.");
         },
-        onError: () => {
-            toast.error("상점 삭제 실패");
+        onError: (e: any, vars) => {
+            queryClient.invalidateQueries({ queryKey: [...sessionsKeys.detail(vars.sessionId), "settlement"] });
+            const d = e?.response?.data?.detail;
+            toast.error(typeof d === "string" ? d : "상점 삭제 실패");
         },
     });
 }

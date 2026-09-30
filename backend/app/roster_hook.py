@@ -63,6 +63,9 @@ async def _broadcast(session_ids: set[int]) -> None:
         evt = {"type": "board.roster_changed", "data": {}}
         for bid in board_ids:
             await manager.broadcast(bid, evt, evt)
+    except Exception:
+        logger.warning("명단 변경 알림 실패", exc_info=True)
+    try:
         # 오프·오피 투표 — 투표권(출석자)·집계가 바뀐다
         from app.models import Session as SessionModel, SessionVote
         from app.services.live_feedback_ws import vote_manager
@@ -75,4 +78,4 @@ async def _broadcast(session_ids: set[int]) -> None:
         for cid in cohorts:
             await vote_manager.broadcast(cid, vote_evt, vote_evt)
     except Exception:
-        logger.warning("명단 변경 알림 실패", exc_info=True)
+        logger.warning("투표 명단 변경 알림 실패", exc_info=True)

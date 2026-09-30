@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Vote, Trophy, Loader2, RotateCcw, Trash2, Lock, Users, Pencil, Info } from "lucide-react";
+import { Vote, Trophy, Loader2, RotateCcw, Trash2, Lock, Users, Pencil, Info, ClipboardList } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,11 +12,13 @@ import { errMsg } from "@/hooks/useExcuses";
 import {
     useSessionVotes, useOpenVote, useUpdateCandidates, useCloseVote, useResolveVote, useReopenVote, useDeleteVote,
     useVoteSignals, voteKeys, VOTE_LABEL, VOTE_DESC,
-    type SessionVote, type SessionVotesData, type VoteCategory, type Person,
+    type SessionVote, type SessionVotesData, type VoteCategory, type Person, type VoteMerit, type VoteKind,
 } from "@/hooks/useSessionVotes";
 
 const CATS: VoteCategory[] = ["OFF", "OPI"];
 const groupLabel = (g: number | null) => (g == null ? "전체" : `${g}분반`);
+// 서버 분반 키(session_votes._gkey) — 분반 없음은 "all"
+const gkey = (g: number | null) => (g == null ? "all" : String(g));
 const roundLabel = (r: number) => (r === 1 ? "본투표" : `${r - 1}차 재투표`);
 const STAGED_NOTE = "정산 단계 상점 목록에 추가되었습니다. 세션을 정산하면 상점이 적용됩니다.";
 
@@ -29,7 +33,9 @@ export function SessionVoteCard({ sessionId, weekNum }: { sessionId: number; wee
         <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)] flex flex-col">
             <div className="mb-3">
                 <h3 className="font-bold text-lg flex items-center gap-2"><Vote className="w-5 h-5 text-[var(--color-accent)]" />오프·오피 투표</h3>
-                <p className="text-sm text-[var(--color-text-secondary)]">기수원 투표로 오늘의 프레젠터·PPT를 뽑습니다</p>
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                    {data?.kind === "TEAM" ? "기수원 투표로 오늘의 프레젠터·PPT 팀을 뽑습니다" : "기수원 투표로 오늘의 프레젠터·PPT를 뽑습니다"}
+                </p>
             </div>
             <div className="space-y-1.5 mb-3 flex-1">
                 {(data?.groups ?? []).map((g) => (
@@ -110,27 +116,29 @@ function GroupDot({ chain }: { chain: SessionVote[] }) {
 
 function GroupPanel({ sessionId, group, data, finalized }: { sessionId: number; group: number | null; data: SessionVotesData; finalized: boolean }) {
     const chain = chainOf(data, group);
-    const eligible = data.eligible[String(group)] ?? [];
-    if (!chain.length) return <OpenForm sessionId={sessionId} group={group} eligible={eligible} disabled={finalized} />;
+    const pool = data.pool[gkey(group)] ?? [];
+    const voters = data.eligible[gkey(group)]?.length ?? 0;
+    if (!chain.length) return <OpenForm sessionId={sessionId} group={group} kind={data.kind} pool={pool} voters={voters} defaultMerit={data.default_merit} disabled={finalized} />;
     // 최신 라운드가 위로
     return (
         <>
             {[...chain].reverse().map((v) => (
-                <VotePanel key={v.id} sessionId={sessionId} vote={v} eligible={eligible} finalized={finalized} />
+                <VotePanel key={v.id} sessionId={sessionId} vote={v} pool={pool} finalized={finalized} />
             ))}
         </>
     );
 }
 
-function CandidatePicker({ people, value, onChange }: { people: Person[]; value: Set<number>; onChange: (s: Set<number>) => void }) {
+function CandidatePicker({ people, value, onChange, unit = "명" }: { people: Person[]; value: Set<number>; onChange: (s: Set<number>) => void; unit?: string }) {
     const all = people.length > 0 && people.every((p) => value.has(p.id));
+    const team = people.some((p) => p.sub !== undefined);
     return (
         <div>
             <label className="flex items-center gap-2 text-sm font-semibold mb-2 cursor-pointer select-none">
                 <Checkbox checked={all} onCheckedChange={(c) => onChange(new Set(c ? people.map((p) => p.id) : []))} />
-                전체 선택 ({value.size}/{people.length}명)
+                전체 선택 ({value.size}/{people.length}{unit})
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5">
+            <div className={cn("grid gap-1.5", team ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4")}>
                 {people.map((p) => (
                     <label key={p.id} className={cn("flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer select-none transition-colors",
                         value.has(p.id) ? "border-[var(--color-accent)] bg-rose-50/60" : "border-[var(--color-border)] hover:bg-gray-50")}>
@@ -139,7 +147,10 @@ function CandidatePicker({ people, value, onChange }: { people: Person[]; value:
                             if (c) n.add(p.id); else n.delete(p.id);
                             onChange(n);
                         }} />
-                        {p.name}
+                        <span className="min-w-0">
+                            <span className="block">{p.name}</span>
+                            {p.sub && <span className="block text-xs text-[var(--color-text-muted)] truncate">{p.sub}</span>}
+                        </span>
                     </label>
                 ))}
             </div>
@@ -147,34 +158,76 @@ function CandidatePicker({ people, value, onChange }: { people: Person[]; value:
     );
 }
 
-function OpenForm({ sessionId, group, eligible, disabled }: { sessionId: number; group: number | null; eligible: Person[]; disabled: boolean }) {
-    const [picked, setPicked] = useState(() => new Set(eligible.map((p) => p.id)));
+function MeritFields({ value, onChange }: { value: Record<VoteCategory, VoteMerit>; onChange: (v: Record<VoteCategory, VoteMerit>) => void }) {
+    return (
+        <div className="grid sm:grid-cols-2 gap-2">
+            {CATS.map((c) => (
+                <div key={c} className="rounded-lg border border-[var(--color-border)] p-3 space-y-2">
+                    <p className="text-sm font-bold">{VOTE_LABEL[c]} 1등 팀 전원 상점</p>
+                    <div className="flex gap-2">
+                        <Input value={value[c].reason} maxLength={40} placeholder="상점 명목"
+                            onChange={(e) => onChange({ ...value, [c]: { ...value[c], reason: e.target.value } })} />
+                        <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-sm">+</span>
+                            <Input type="number" min={1} max={10} className="w-16" value={value[c].score}
+                                onChange={(e) => onChange({ ...value, [c]: { ...value[c], score: Math.max(1, Math.min(10, Number(e.target.value) || 1)) } })} />
+                            <span className="text-sm">점</span>
+                        </div>
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+const meritValid = (m: Record<VoteCategory, VoteMerit>) => CATS.every((c) => m[c].reason.trim().length > 0);
+
+function ScoringHint() {
+    return (
+        <p className="text-sm rounded-lg bg-sky-50 border border-sky-200 text-sky-800 px-3 py-2 flex items-start gap-2">
+            <ClipboardList className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>팀별 세부 점수(항목별 채점·심사위원 점수)가 필요하면 <Link to="/scoring" className="font-semibold underline underline-offset-2">심사/채점 페이지</Link>를 사용하세요. 이 투표는 오프·오피 1등만 뽑습니다.</span>
+        </p>
+    );
+}
+
+function OpenForm({ sessionId, group, kind, pool, voters, defaultMerit, disabled }: {
+    sessionId: number; group: number | null; kind: VoteKind; pool: Person[]; voters: number;
+    defaultMerit: Record<VoteCategory, VoteMerit>; disabled: boolean;
+}) {
+    const team = kind === "TEAM";
+    const [picked, setPicked] = useState(() => new Set(pool.map((p) => p.id)));
+    const [merit, setMerit] = useState(defaultMerit);
     const openVote = useOpenVote(sessionId);
-    useEffect(() => setPicked(new Set(eligible.map((p) => p.id))), [eligible.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => setPicked(new Set(pool.map((p) => p.id))), [pool.length]); // eslint-disable-line react-hooks/exhaustive-deps
     return (
         <div className="rounded-xl border border-[var(--color-border)] p-4 space-y-4">
             <div>
-                <p className="font-bold">{groupLabel(group)} 투표 열기 — 후보 고르기</p>
+                <p className="font-bold">{team ? "투표 열기 — 후보 팀 고르기" : `${groupLabel(group)} 투표 열기 — 후보 고르기`}</p>
                 <p className="text-sm text-[var(--color-text-secondary)] mt-1">
-                    {groupLabel(group)} 오늘 출석자 {eligible.length}명이 오프·오피에 한 표씩 던집니다. 결석·공결은 투표할 수 없고, 본인에게는 투표할 수 없습니다.
+                    {team
+                        ? `오늘 출석자 ${voters}명이 오프·오피 팀에 한 표씩 던집니다. 결석·공결은 투표할 수 없고, 자기 팀에는 투표할 수 없습니다. 1등 팀은 팀원 전원이 상점을 받습니다.`
+                        : `${groupLabel(group)} 오늘 출석자 ${voters}명이 오프·오피에 한 표씩 던집니다. 결석·공결은 투표할 수 없고, 본인에게는 투표할 수 없습니다.`}
                 </p>
             </div>
-            {eligible.length === 0
-                ? <p className="text-sm text-[var(--color-text-muted)]">출석자가 없습니다. 출결을 먼저 확인해 주세요.</p>
-                : <CandidatePicker people={eligible} value={picked} onChange={setPicked} />}
-            <Button disabled={disabled || picked.size < 2 || openVote.isPending}
-                onClick={() => openVote.mutate({ group_num: group, candidates: [...picked] }, {
-                    onSuccess: () => toast.success(`${groupLabel(group)} 투표를 열었습니다. 기수원에게 알림을 보냈습니다.`),
+            {team && <ScoringHint />}
+            {pool.length === 0
+                ? <p className="text-sm text-[var(--color-text-muted)]">{team ? "이 세션에 팀이 없습니다. 팀을 먼저 만들어 주세요." : "출석자가 없습니다. 출결을 먼저 확인해 주세요."}</p>
+                : <CandidatePicker people={pool} value={picked} onChange={setPicked} unit={team ? "팀" : "명"} />}
+            {team && <MeritFields value={merit} onChange={setMerit} />}
+            <Button disabled={disabled || picked.size < 2 || (team && !meritValid(merit)) || openVote.isPending}
+                onClick={() => openVote.mutate({ group_num: group, candidates: [...picked], ...(team ? { merit } : {}) }, {
+                    onSuccess: () => toast.success(`${team ? "투표" : `${groupLabel(group)} 투표`}를 열었습니다. 기수원에게 알림을 보냈습니다.`),
                     onError: (e) => toast.error(errMsg(e, "투표를 열지 못했습니다")),
                 })}>
                 {openVote.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-                투표 열기 (후보 {picked.size}명)
+                투표 열기 (후보 {picked.size}{team ? "팀" : "명"})
             </Button>
         </div>
     );
 }
 
-function VotePanel({ sessionId, vote, eligible, finalized }: { sessionId: number; vote: SessionVote; eligible: Person[]; finalized: boolean }) {
+function VotePanel({ sessionId, vote, pool, finalized }: { sessionId: number; vote: SessionVote; pool: Person[]; finalized: boolean }) {
     const close = useCloseVote(sessionId);
     const reopen = useReopenVote(sessionId);
     const del = useDeleteVote(sessionId);
@@ -204,7 +257,7 @@ function VotePanel({ sessionId, vote, eligible, finalized }: { sessionId: number
                         <>
                             {vote.round === 1 && (
                                 <Button size="sm" variant="outline" disabled={finalized || busy} onClick={() => setEditing((e) => !e)}>
-                                    <Pencil className="w-3.5 h-3.5 mr-1" />후보 수정
+                                    <Pencil className="w-3.5 h-3.5 mr-1" />{vote.kind === "TEAM" ? "후보·상점 수정" : "후보 수정"}
                                 </Button>
                             )}
                             <Button size="sm" disabled={finalized || busy} onClick={() => {
@@ -243,7 +296,13 @@ function VotePanel({ sessionId, vote, eligible, finalized }: { sessionId: number
 
             <div className="p-4 space-y-4">
                 {editing && vote.is_open && (
-                    <CandidateEditor sessionId={sessionId} vote={vote} eligible={eligible} onDone={() => setEditing(false)} />
+                    <CandidateEditor sessionId={sessionId} vote={vote} pool={pool} onDone={() => setEditing(false)} />
+                )}
+
+                {vote.kind === "TEAM" && (
+                    <p className="text-sm text-[var(--color-text-secondary)]">
+                        1등 팀 전원 상점 — {cats.map((c) => `${VOTE_LABEL[c]}: ${vote.merit[c].reason} +${vote.merit[c].score}`).join(" · ")}
+                    </p>
                 )}
 
                 {staged && (
@@ -253,7 +312,7 @@ function VotePanel({ sessionId, vote, eligible, finalized }: { sessionId: number
                 )}
 
                 <div className={cn("grid gap-3", cats.length > 1 && "md:grid-cols-2")}>
-                    {cats.map((c) => <CategoryBoard key={c} sessionId={sessionId} vote={vote} cat={c} finalized={finalized} />)}
+                        {cats.map((c) => <CategoryBoard key={c} sessionId={sessionId} vote={vote} cat={c} finalized={finalized} />)}
                 </div>
 
                 {vote.is_open && notVoted.length > 0 && (
@@ -314,7 +373,7 @@ function CategoryBoard({ sessionId, vote, cat, finalized }: { sessionId: number;
             <div className="mt-2 space-y-1">
                 {rows.map((r) => (
                     <div key={r.id} className="flex items-center gap-2 text-sm">
-                        <span className={cn("w-16 shrink-0 truncate", winners.has(r.id) && "font-bold")}>
+                        <span className={cn(vote.kind === "TEAM" ? "w-28" : "w-16", "shrink-0 truncate", winners.has(r.id) && "font-bold")}>
                             {r.name}
                         </span>
                         <div className="flex-1 h-4 rounded bg-gray-100 overflow-hidden">
@@ -354,25 +413,29 @@ function CategoryBoard({ sessionId, vote, cat, finalized }: { sessionId: number;
     );
 }
 
-function CandidateEditor({ sessionId, vote, eligible, onDone }: { sessionId: number; vote: SessionVote; eligible: Person[]; onDone: () => void }) {
+function CandidateEditor({ sessionId, vote, pool, onDone }: { sessionId: number; vote: SessionVote; pool: Person[]; onDone: () => void }) {
+    const team = vote.kind === "TEAM";
     const current = vote.candidates.OFF ?? [];
-    // 출석자 + 지금 후보(결석 처리됐어도 후보로 남아 있을 수 있다)
+    // 기본 후보(출석자·팀) + 지금 후보(결석 처리됐어도 후보로 남아 있을 수 있다)
     const people = useMemo(() => {
-        const m = new Map(eligible.map((p) => [p.id, p]));
-        current.forEach((p) => m.set(p.id, p));
+        const m = new Map(pool.map((p) => [p.id, p]));
+        current.forEach((p) => { if (!m.has(p.id)) m.set(p.id, p); });
         return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
-    }, [eligible, current]);
+    }, [pool, current]);
     const [picked, setPicked] = useState(() => new Set(current.map((p) => p.id)));
+    const [merit, setMerit] = useState(vote.merit);
     const update = useUpdateCandidates(sessionId);
     return (
         <div className="rounded-lg border border-dashed border-[var(--color-accent)] p-3 space-y-3">
-            <p className="text-sm text-[var(--color-text-secondary)]">후보에서 빠진 사람에게 간 표는 지워지고, 그 사람들은 다시 골라야 합니다.</p>
-            <CandidatePicker people={people} value={picked} onChange={setPicked} />
+            <p className="text-sm text-[var(--color-text-secondary)]">후보에서 빠진 {team ? "팀" : "사람"}에게 간 표는 지워지고, 그 표를 던진 사람은 다시 골라야 합니다.</p>
+            <CandidatePicker people={people} value={picked} onChange={setPicked} unit={team ? "팀" : "명"} />
+            {team && <MeritFields value={merit} onChange={setMerit} />}
             <div className="flex gap-1.5">
-                <Button size="sm" disabled={picked.size < 2 || update.isPending} onClick={() => update.mutate({ id: vote.id, candidates: [...picked] }, {
-                    onSuccess: () => { toast.success("후보를 바꿨습니다"); onDone(); },
-                    onError: (e) => toast.error(errMsg(e, "후보를 바꾸지 못했습니다")),
-                })}>저장</Button>
+                <Button size="sm" disabled={picked.size < 2 || (team && !meritValid(merit)) || update.isPending}
+                    onClick={() => update.mutate({ id: vote.id, candidates: [...picked], ...(team ? { merit } : {}) }, {
+                        onSuccess: () => { toast.success("후보를 바꿨습니다"); onDone(); },
+                        onError: (e) => toast.error(errMsg(e, "후보를 바꾸지 못했습니다")),
+                    })}>저장</Button>
                 <Button size="sm" variant="ghost" onClick={onDone}>취소</Button>
             </div>
         </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
 import { useSettlementPreview, useFinalizeSession, useRemoveStagedMerit, useLedger, useUpdateLedger, useDeleteLedgerEntry, translateDescription, LEDGER_TYPE_LABELS } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "sonner";
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
+import { errMsg } from "@/hooks/useExcuses";
 import { ExcelExportButton } from "@/components/ExcelExportButton";
 import type { Session, MeritPreviewItem } from "@/hooks/useSessions";
 
@@ -28,7 +29,7 @@ const PENALTY_TYPE_LABEL: Record<string, string> = {
 export default function SettlementTab() {
     const { session } = useOutletContext<{ session: Session }>();
     const navigate = useNavigate();
-    const { data: previewData, isLoading } = useSettlementPreview(session.id);
+    const { data: previewData, isLoading, refetch: refetchPreview } = useSettlementPreview(session.id);
     const { mutate: finalizeSession, isPending: isFinalizing } = useFinalizeSession();
     // Penalty Filters
     const [filterMember, setFilterMember] = useState<string>("all");
@@ -48,6 +49,9 @@ export default function SettlementTab() {
 
     const penalties = useMemo(() => previewData?.penalties || [], [previewData]);
     const merits = useMemo(() => previewData?.merits || [], [previewData]);
+    // 상점 목록이 바뀌면(오프·오피 투표 재오픈 등) 순번 기반 체크 해제가 다른 상점을 가리키므로 초기화
+    const meritSig = previewData?.merit_signature;
+    useEffect(() => { setSkippedMeritIndices(new Set()); }, [meritSig]);
 
     // Unique member list from penalties
     const penaltyMembers = useMemo(() => {
@@ -146,13 +150,14 @@ export default function SettlementTab() {
 
         const skip_merit_indices = Array.from(skippedMeritIndices);
 
-        finalizeSession({ sessionId: session.id, overrides, skip_merit_indices }, {
+        finalizeSession({ sessionId: session.id, overrides, skip_merit_indices, merit_signature: previewData?.merit_signature }, {
             onSuccess: () => {
                 toast.success("세션이 성공적으로 마감되었습니다.");
                 setConfirmOpen(false);
             },
             onError: (err) => {
-                toast.error(`마감 실패: ${err.message}`);
+                toast.error(`마감 실패: ${errMsg(err, err.message)}`);
+                refetchPreview?.();
             }
         });
     };
@@ -440,7 +445,8 @@ function StagedMeritPanel({
     const handleRemoveManual = (meritIdx: number) => {
         const manualIndex = meritIdx - autoCount;
         if (manualIndex < 0) return;
-        removeStagedMerit({ sessionId, index: manualIndex });
+        const m = merits[meritIdx];
+        removeStagedMerit({ sessionId, index: manualIndex, expect: { member_id: m.member_id, reason: m.description } });
     };
 
     return (
