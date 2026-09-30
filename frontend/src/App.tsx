@@ -9,6 +9,7 @@ import { MemberAuthProvider, useMemberAuth, fetchMemberMe } from "@/context/Memb
 import { memberAnnouncementsQuery } from "@/hooks/useMemberAnnouncements";
 import { pendingEvalsQuery } from "@/hooks/useMemberEvaluation";
 import { memberFeedbackBoardsQuery, openFeedbackBoardQuery } from "@/hooks/useLiveFeedback";
+import { memberOpenVotesQuery } from "@/hooks/useSessionVotes";
 import { myLedgerQuery, myAttendanceQuery, mySummaryQuery } from "@/hooks/useMemberLedger";
 import { myExcusesQuery } from "@/hooks/useExcuses";
 import { AuthGuard } from "@/components/AuthGuard";
@@ -59,6 +60,7 @@ const MemberHome = lazyPreload(() => import("@/pages/member/MemberHome"));
 const MemberReports = lazyPreload(() => import("@/pages/member/MemberReports"));
 const MemberLedger = lazyPreload(() => import("@/pages/member/MemberLedger"));
 const MemberAttendance = lazyPreload(() => import("@/pages/member/MemberAttendance"));
+const MemberVote = lazyPreload(() => import("@/pages/member/MemberVote"));
 const SelfEvalForm = lazyPreload(() => import("@/pages/member/SelfEvalForm"));
 const EvalComplete = lazyPreload(() => import("@/pages/member/EvalComplete"));
 const MemberResult = lazyPreload(() => import("@/pages/member/MemberResult"));
@@ -75,7 +77,7 @@ const DevFeedback = lazyPreload(() => import("@/pages/DevFeedback"));
 // 실행까지 해서, 넣어두면 첫 화면 직후 메인 스레드를 잡아먹었다(Lighthouse TBT 80ms → 350ms).
 const MEMBER_PAGES = [
   MemberLayout, MemberHome, MemberAnnouncements, MemberAnnouncementDetail, MemberReports,
-  MemberFeedbackList, MemberFeedbackBoard, MemberLedger, MemberAttendance,
+  MemberFeedbackList, MemberFeedbackBoard, MemberLedger, MemberAttendance, MemberVote,
 ];
 const OPS_PAGES = [
   Dashboard, SessionList, Members, MemberDetail, Ledger, Treasury, Announcements, SessionLayout, PrepTab, OpsTab,
@@ -94,6 +96,7 @@ const MEMBER_ENTRY: [RegExp, { preload: () => Promise<void> }][] = [
   [/^\/member\/feedback/, MemberFeedbackList],
   [/^\/member\/ledger/, MemberLedger],
   [/^\/member\/attendance/, MemberAttendance],
+  [/^\/member\/vote/, MemberVote],
 ];
 if (typeof window !== "undefined") {
   const path = window.location.pathname;
@@ -167,12 +170,13 @@ const queryClient = new QueryClient({
 // 기수 포털 첫 접속: 로그인 확인을 기다리지 않고 지금 화면이 쓸 데이터를 같이 출발시킨다
 // (둘을 줄줄이 보내면 왕복 한 번이 더 든다). 토큰이 틀리면 401 → 로그인 화면으로 가는 건 똑같다.
 const MEMBER_ENTRY_DATA: [RegExp, object[]][] = [
-  [/^\/member\/?$/, [mySummaryQuery, memberAnnouncementsQuery, openFeedbackBoardQuery]],
+  [/^\/member\/?$/, [mySummaryQuery, memberAnnouncementsQuery, openFeedbackBoardQuery, memberOpenVotesQuery]],
   [/^\/member\/announcements\/?$/, [memberAnnouncementsQuery]],
   [/^\/member\/reports/, [pendingEvalsQuery]],
   [/^\/member\/feedback\/?$/, [memberFeedbackBoardsQuery]],
   [/^\/member\/ledger/, [myLedgerQuery, mySummaryQuery]],
   [/^\/member\/attendance/, [myAttendanceQuery, myExcusesQuery]],
+  [/^\/member\/vote/, [memberOpenVotesQuery]],
 ];
 if (typeof window !== "undefined" && window.location.pathname.startsWith("/member") && getMemberToken()) {
   fetchMemberMe().catch(() => {});
@@ -259,6 +263,7 @@ export default function App() {
                     <Route path="feedback" element={<MemberFeedbackList />} />
                     <Route path="ledger" element={<MemberLedger />} />
                     <Route path="attendance" element={<MemberAttendance />} />
+                    <Route path="vote" element={<MemberVote />} />
                   </Route>
                   {/* 전체화면 (탭 없음) */}
                   <Route path="eval/:roundId" element={<SelfEvalForm />} />

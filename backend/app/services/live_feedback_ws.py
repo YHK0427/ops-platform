@@ -34,6 +34,7 @@ class Conn:
 @dataclass
 class ConnectionManager:
     rooms: dict[int, set[Conn]] = field(default_factory=dict)
+    channel: str = CHANNEL  # 다른 기능이 같은 구조를 쓸 때 Redis 채널만 따로 둔다(오프·오피 투표)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _redis: aioredis.Redis | None = None
     _sub_task: asyncio.Task | None = None
@@ -57,7 +58,7 @@ class ConnectionManager:
                 if not room:
                     self.rooms.pop(board_id, None)
 
-    async def broadcast(self, board_id: int, admin_payload: dict, member_payload: dict) -> None:
+    async def broadcast(self, board_id: int, admin_payload: dict | None, member_payload: dict | None) -> None:
         """이벤트를 Redis로 발행 → 모든 워커(자기 자신 포함)가 로컬 연결에 전달."""
         msg = json.dumps({
             "board_id": board_id,
@@ -65,17 +66,19 @@ class ConnectionManager:
             "member": member_payload,
         })
         try:
-            await self._client().publish(CHANNEL, msg)
+            await self._client().publish(self.channel, msg)
         except Exception:
             logger.exception("live_feedback broadcast publish 실패 — 로컬만 전달")
             await self._local_deliver(board_id, admin_payload, member_payload)
 
-    async def _local_deliver(self, board_id: int, admin_payload: dict, member_payload: dict) -> None:
+    async def _local_deliver(self, board_id: int, admin_payload: dict | None, member_payload: dict | None) -> None:
         async with self._lock:
             conns = list(self.rooms.get(board_id, set()))
         dead: list[Conn] = []
         for conn in conns:
             payload = admin_payload if conn.role == "admin" else member_payload
+            if payload is None:  # 이 역할에는 보내지 않는 이벤트
+                continue
             try:
                 await conn.ws.send_json(payload)
             except Exception:
@@ -102,7 +105,7 @@ class ConnectionManager:
         while True:
             try:
                 pubsub = self._client().pubsub()
-                await pubsub.subscribe(CHANNEL)
+                await pubsub.subscribe(self.channel)
                 async for raw in pubsub.listen():
                     if raw.get("type") != "message":
                         continue
@@ -120,3 +123,6 @@ class ConnectionManager:
 
 # 모듈 싱글톤 — WS 핸들러 + REST 변이 + lifespan 구독 시작에서 공유
 manager = ConnectionManager()
+
+# 오프·오피 투표 — 방 = 기수 id. 운영진 화면은 표 하나하나, 기수원은 열림·닫힘만 받는다.
+vote_manager = ConnectionManager(channel="session_vote:events")

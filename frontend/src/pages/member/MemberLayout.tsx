@@ -15,6 +15,7 @@ import { myLedgerQuery, myAttendanceQuery, mySummaryQuery } from "@/hooks/useMem
 import { myExcusesQuery } from "@/hooks/useExcuses";
 import { whenIdle } from "@/lib/lazyPreload";
 import { useHoldSplash } from "@/lib/bootSplash";
+import { memberOpenVotesQuery, useVoteSignals } from "@/hooks/useSessionVotes";
 
 // 하단 탭·홈 카드가 처음 열릴 때 쓰는 데이터 — 한가할 때 미리 받아 탭을 눌러도 로딩이 안 보이게
 const PREFETCH = [
@@ -39,6 +40,8 @@ export default function MemberLayout() {
     useEffect(() => {
         whenIdle(() => { for (const q of PREFETCH) void qc.prefetchQuery(q as Parameters<typeof qc.prefetchQuery>[0]); });
     }, [qc]);
+    // 오프·오피 투표 열림·닫힘·출결 변경을 새로고침 없이 받는다(홈 배너)
+    useVoteSignals("member", () => qc.invalidateQueries({ queryKey: memberOpenVotesQuery.queryKey }));
 
     return (
         <div className="member-page pb-20">

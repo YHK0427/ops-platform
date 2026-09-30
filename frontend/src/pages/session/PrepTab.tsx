@@ -1,8 +1,9 @@
 import { useOutletContext, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AttendanceGrid } from "./AttendanceGrid";
+import { SessionVoteCard } from "@/components/SessionVoteCard";
 import { Button } from "@/components/ui/button";
-import { FileSearch, Loader2, CheckCircle2, XCircle, Download } from "lucide-react";
+import { FileSearch, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { useScanExcuses, useMembers } from "@/hooks";
@@ -93,32 +94,7 @@ export default function PrepTab() {
         <div className="space-y-6 md:space-y-8">
             {/* Action Panel */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {cfg.has_ppt_email !== false && (
-                    <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)] relative">
-                        {/* 비활성 오버레이 — IMAP 연동 미완료 */}
-                        <div className="absolute inset-0 bg-white/80 rounded-xl z-10 flex items-center justify-center backdrop-blur-[1px]">
-                            <span className="text-sm text-[var(--color-text-muted)] bg-gray-50 px-3 py-1.5 rounded-lg border border-[var(--color-border)]">
-                                미구현
-                            </span>
-                        </div>
-                        <div className="mb-4">
-                            <h3 className="font-bold text-lg">PPT 이메일 스캔</h3>
-                            <p className="text-sm text-[var(--color-text-secondary)]">네이버 이메일에서 PPT 제출 확인</p>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                            <div className="flex gap-2">
-                                <Button variant="outline" disabled>
-                                    <FileSearch className="w-4 h-4 mr-2" />
-                                    PPT 이메일 스캔
-                                </Button>
-                                <Button variant="outline" disabled className="text-blue-600/50 border-blue-500/10">
-                                    <Download className="w-4 h-4 mr-2" />
-                                    전체 PPT 다운로드
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                <SessionVoteCard sessionId={session.id} weekNum={session.week_num} />
 
                 <div className="bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)]">
                     <div className="mb-4">

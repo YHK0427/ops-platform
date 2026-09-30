@@ -1,16 +1,20 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { BarChart3, Wallet, ChevronRight, MessageSquareHeart, Megaphone, CalendarCheck } from "lucide-react";
+import { BarChart3, Wallet, ChevronRight, MessageSquareHeart, Megaphone, CalendarCheck, Vote } from "lucide-react";
 import { useMySummary } from "@/hooks/useMemberLedger";
 import { useOpenFeedbackBoard } from "@/hooks/useLiveFeedback";
 import { useUnreadAnnouncements } from "@/hooks/useMemberAnnouncements";
 import { HoldSplash } from "@/lib/bootSplash";
+import { useMemberOpenVotes } from "@/hooks/useSessionVotes";
 
 export default function MemberHome() {
     const navigate = useNavigate();
     const { data: summary, isLoading } = useMySummary();
     const { data: openBoard } = useOpenFeedbackBoard();
     const { unread, unreadCount } = useUnreadAnnouncements();
+    const { data: openVotes } = useMemberOpenVotes();
+    const vote = openVotes?.[0];
+    const voteDone = !!vote && Object.keys(vote.candidates).every((c) => vote.my[c as keyof typeof vote.my]);
 
     const menu = [
         {
@@ -59,6 +63,35 @@ export default function MemberHome() {
         >
             {/* 첫 접속이면 숫자가 '—' 로 비어 보이지 않게 받을 때까지 로고 화면 유지 */}
             {isLoading && <HoldSplash />}
+            {/* 오프·오피 투표 — 열리면 새로고침 없이 맨 위에 뜬다(MemberLayout 실시간 신호) */}
+            {vote && (
+                <motion.button
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => navigate("/member/vote")}
+                    className="w-full flex items-center gap-4 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-fuchsia-50 p-4 shadow-sm text-left"
+                >
+                    <div className="shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center text-white">
+                        <Vote className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                            {!voteDone && (
+                                <span className="relative flex h-2 w-2">
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
+                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-500" />
+                                </span>
+                            )}
+                            <p className="text-sm font-bold text-violet-700">오프·오피 {vote.round > 1 ? "재투표" : "투표"} {voteDone ? "완료" : "진행 중"}</p>
+                        </div>
+                        <p className="text-xs text-violet-500/80 mt-0.5 [word-break:keep-all] truncate">
+                            {voteDone ? "마감 전까지 바꿀 수 있습니다" : "오늘의 프레젠터·PPT에 한 표씩 던져주세요"}
+                        </p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-violet-300 shrink-0" />
+                </motion.button>
+            )}
             {/* 안 읽은 공지 — 있을 때만. 누르면 공지 목록으로 */}
             {unreadCount > 0 && (
                 <motion.button

@@ -1248,3 +1248,49 @@ class ExcuseAttachment(Base):
     content_type = Column(String(100), nullable=False)
     size = Column(Integer, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ── 오프·오피 투표 ───────────────────────────────────────────────────────────────
+# 세션마다 분반별로 기수원이 오프(오늘의 프레젠터)·오피(오늘의 PPT)를 뽑는다. 결과는 운영진만 본다.
+
+VOTE_CATEGORIES = ("OFF", "OPI")
+
+
+class SessionVote(Base):
+    """분반별 투표 한 라운드. round 1 = 본투표, 2 이상 = 동률자 재투표(parent_id = 원 투표)."""
+    __tablename__ = "session_votes"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    group_num = Column(Integer, nullable=True)  # NULL = 분반 없이 전체
+    round = Column(Integer, nullable=False, server_default="1")
+    parent_id = Column(Integer, ForeignKey("session_votes.id", ondelete="CASCADE"), nullable=True, index=True)
+    # 부문별 후보 {"OFF":[member_id...], "OPI":[...]} — 재투표는 동률 난 부문만 키가 있다
+    candidates = Column(JSONB, nullable=False)
+    is_open = Column(Boolean, nullable=False, server_default="true")
+    # 닫을 때 기록 {"OFF":{"winners":[ids],"tie":bool,"resolved":"auto"|"all"|"runoff"|null}, ...}
+    result = Column(JSONB, nullable=True)
+    opened_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    closed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    ballots = relationship("SessionVoteBallot", back_populates="vote", cascade="all, delete-orphan", passive_deletes=True)
+
+
+class SessionVoteBallot(Base):
+    """한 사람의 부문별 한 표 — 마감 전까지 덮어쓴다."""
+    __tablename__ = "session_vote_ballots"
+
+    id = Column(Integer, primary_key=True)
+    vote_id = Column(Integer, ForeignKey("session_votes.id", ondelete="CASCADE"), nullable=False, index=True)
+    voter_member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    category = Column(String(3), nullable=False)
+    candidate_member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("vote_id", "voter_member_id", "category", name="uq_session_vote_ballot"),
+        CheckConstraint("category IN ('OFF','OPI')", name="ck_session_vote_ballot_category"),
+    )
+
+    vote = relationship("SessionVote", back_populates="ballots")
