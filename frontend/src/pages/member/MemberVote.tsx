@@ -1,12 +1,11 @@
-import { useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import { ArrowLeft, Check, CheckCircle2, Mic, Presentation, Vote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { errMsg } from "@/hooks/useExcuses";
-import { useCastBallot, useMemberOpenVotes, voteKeys, VOTE_DESC, VOTE_LABEL, type MemberVote as Ballot, type Person, type VoteCategory } from "@/hooks/useSessionVotes";
+import { useCastBallot, useMemberOpenVotes, VOTE_DESC, VOTE_LABEL, type MemberVote as Ballot, type Person, type VoteCategory } from "@/hooks/useSessionVotes";
 
 const CATS: VoteCategory[] = ["OFF", "OPI"];
 
@@ -39,24 +38,42 @@ function VoteForm({ vote }: { vote: Ballot }) {
     const cast = useCastBallot();
     const cats = CATS.filter((c) => vote.candidates[c]);
     const team = vote.kind === "TEAM";
-    const done = cats.every((c) => vote.my[c]);
 
-    // 저장이 끝나기 전에 다른 부문을 눌러도 무시되지 않게 — 누를 때마다 두 부문의 선택 전체를 순서대로 보낸다.
-    // 마지막 요청이 마지막으로 누른 상태라 요청 순서가 뒤바뀌어 옛 선택이 남는 일도 없다.
-    const qc = useQueryClient();
-    const queue = useRef(Promise.resolve());
-    const pick = (cat: VoteCategory, id: number) => {
-        const next = { ...vote.my, [cat]: vote.my[cat] === id ? undefined : id }; // 같은 걸 다시 누르면 취소
-        const body = Object.fromEntries(cats.map((c) => [c, next[c] ?? null]));
-        // 화면은 누르는 즉시 — 저장은 뒤에서 순서대로
-        qc.setQueryData<Ballot[]>(voteKeys.memberOpen(), (prev) => prev?.map((v) => (v.id === vote.id ? { ...v, my: next } : v)));
-        queue.current = queue.current.then(() => cast.mutateAsync({ id: vote.id, ...body }).then(
-            () => undefined,
-            (e) => { toast.error(errMsg(e, "저장하지 못했습니다")); },
-        ));
-    };
+    // 고르는 건 화면에서만, '투표 제출'을 눌러야 저장된다
+    const saved = vote.my;
+    const valid = (d: Ballot["my"]) => Object.fromEntries(
+        cats.filter((c) => d[c] && vote.candidates[c]!.some((p) => p.id === d[c])).map((c) => [c, d[c]]),
+    ) as Ballot["my"];
+    const [draft, setDraft] = useState<Ballot["my"]>(() => valid(saved));
+    const dirty = cats.some((c) => draft[c] !== saved[c]);
+    // 서버 값이 바뀌면(운영진이 후보를 바꿔 내 표가 지워지는 등) 아직 안 건드린 화면은 따라간다
+    const savedKey = JSON.stringify(saved);
+    useEffect(() => { if (!dirty) setDraft(valid(saved)); }, [savedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    // 후보에서 빠진 사람을 골라둔 채면 걸러낸다
+    const candKey = JSON.stringify(vote.candidates);
+    useEffect(() => { setDraft((d) => valid(d)); }, [candKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const chosen = cats.filter((c) => vote.my[c]).length;
+    const submitted = cats.every((c) => saved[c]);
+    const complete = cats.every((c) => draft[c]);
+    // 제출 안 한 선택이 있으면 창을 닫거나 새로고침할 때 한 번 묻는다
+    useEffect(() => {
+        if (!dirty) return;
+        const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+        window.addEventListener("beforeunload", h);
+        return () => window.removeEventListener("beforeunload", h);
+    }, [dirty]);
+
+    const pick = (cat: VoteCategory, id: number) =>
+        setDraft((d) => ({ ...d, [cat]: d[cat] === id ? undefined : id })); // 같은 걸 다시 누르면 취소
+    const submit = () => cast.mutate(
+        { id: vote.id, ...Object.fromEntries(cats.map((c) => [c, draft[c] ?? null])) },
+        {
+            onSuccess: () => toast.success(submitted ? "다시 제출했습니다" : "투표를 제출했습니다"),
+            onError: (e) => toast.error(errMsg(e, "제출하지 못했습니다. 다시 눌러주세요")),
+        },
+    );
+
+    const chosen = cats.filter((c) => draft[c]).length;
 
     return (
         <section className="space-y-4">
@@ -75,8 +92,8 @@ function VoteForm({ vote }: { vote: Ballot }) {
                 <div className="mt-4 flex items-center gap-2">
                     {cats.map((c) => (
                         <span key={c} className={cn("flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors",
-                            vote.my[c] ? "bg-white text-violet-700" : "bg-white/15 text-white/80")}>
-                            {vote.my[c] ? <Check className="w-3.5 h-3.5" /> : <span className="w-1.5 h-1.5 rounded-full bg-white/60" />}
+                            draft[c] ? "bg-white text-violet-700" : "bg-white/15 text-white/80")}>
+                            {draft[c] ? <Check className="w-3.5 h-3.5" /> : <span className="w-1.5 h-1.5 rounded-full bg-white/60" />}
                             {VOTE_LABEL[c]}
                         </span>
                     ))}
@@ -86,7 +103,7 @@ function VoteForm({ vote }: { vote: Ballot }) {
 
             {cats.map((cat) => {
                 const Icon = cat === "OFF" ? Mic : Presentation;
-                const picked = vote.candidates[cat]!.find((p) => p.id === vote.my[cat]);
+                const picked = vote.candidates[cat]!.find((p) => p.id === draft[cat]);
                 return (
                     <div key={cat} className="rounded-2xl bg-white border border-gray-200 p-4">
                         <div className="flex items-center gap-3 mb-4">
@@ -104,23 +121,35 @@ function VoteForm({ vote }: { vote: Ballot }) {
                         </div>
                         <div className={cn("grid gap-2", team ? "grid-cols-1" : "grid-cols-3")}>
                             {vote.candidates[cat]!.map((p) => (
-                                <Candidate key={p.id} person={p} team={team} on={vote.my[cat] === p.id} onClick={() => pick(cat, p.id)} />
+                                <Candidate key={p.id} person={p} team={team} on={draft[cat] === p.id} onClick={() => pick(cat, p.id)} />
                             ))}
                         </div>
                     </div>
                 );
             })}
 
-            <div className={cn("rounded-2xl px-4 py-3 flex items-center gap-3 transition-colors",
-                done ? "bg-emerald-50 border border-emerald-200" : "bg-gray-50 border border-gray-200")}>
-                {done
-                    ? <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                    : <Vote className="w-5 h-5 text-gray-400 shrink-0" />}
-                <div className="text-sm [word-break:keep-all]">
-                    <p className={cn("font-semibold", done ? "text-emerald-700" : "text-gray-600")}>
-                        {done ? "투표를 마쳤습니다" : `${cats.map((c) => VOTE_LABEL[c]).join("·")}를 모두 골라주세요`}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">누를 때마다 바로 저장됩니다. 마감 전까지 바꿀 수 있고, 결과와 투표 내용은 운영진만 봅니다.</p>
+            <p className="px-1 text-xs text-gray-400 [word-break:keep-all]">
+                마감 전까지 바꿔서 다시 제출할 수 있습니다. 결과와 투표 내용은 운영진만 봅니다.
+            </p>
+
+            {/* 제출 막대 — 하단 탭 바로 위에 붙어 있어 스크롤해도 늘 보인다 */}
+            <div className="sticky bottom-[76px] z-10 pt-2">
+                <div className={cn("rounded-2xl border p-3 shadow-lg backdrop-blur flex items-center gap-3",
+                    !dirty && submitted ? "bg-emerald-50/95 border-emerald-200" : "bg-white/95 border-gray-200")}>
+                    <div className="min-w-0 flex-1 text-sm [word-break:keep-all]">
+                        {!dirty && submitted ? (
+                            <p className="font-semibold text-emerald-700 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 shrink-0" />제출 완료</p>
+                        ) : !complete ? (
+                            <p className="font-semibold text-gray-600">{cats.filter((c) => !draft[c]).map((c) => VOTE_LABEL[c]).join("·")}를 골라주세요</p>
+                        ) : (
+                            <p className="font-semibold text-violet-700">{submitted ? "바꾼 내용은 다시 제출해야 반영됩니다" : "다 골랐습니다. 제출해 주세요"}</p>
+                        )}
+                    </div>
+                    <motion.button whileTap={{ scale: 0.97 }} onClick={submit}
+                        disabled={!complete || !dirty || cast.isPending}
+                        className="shrink-0 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white disabled:bg-gray-200 disabled:text-gray-400 transition-colors">
+                        {cast.isPending ? "제출 중…" : submitted ? "다시 제출" : "투표 제출"}
+                    </motion.button>
                 </div>
             </div>
         </section>

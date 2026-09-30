@@ -110,17 +110,11 @@ export function useMemberOpenVotes() {
 export function useCastBallot() {
     const qc = useQueryClient();
     return useMutation({
-        mutationKey: ["cast-ballot"],
         mutationFn: (b: { id: number } & Partial<Record<VoteCategory, number | null>>) => {
             const { id, ...picks } = b;
             return memberApi.put(`/session-votes/member/${id}/ballot`, picks);
         },
-        // 진행 중인 조회가 방금 누른 선택을 옛 값으로 덮지 않게(선택 표시는 MemberVote 가 누르는 즉시 한다)
-        onMutate: () => qc.cancelQueries({ queryKey: voteKeys.memberOpen() }),
-        // 연달아 누른 저장이 남아 있으면 서버 값으로 덮지 않는다(중간 상태가 잠깐 보이는 깜빡임 방지)
-        onSettled: () => {
-            if (qc.isMutating({ mutationKey: ["cast-ballot"] }) <= 1) qc.invalidateQueries({ queryKey: voteKeys.memberOpen() });
-        },
+        onSettled: () => qc.invalidateQueries({ queryKey: voteKeys.memberOpen() }),
     });
 }
 
