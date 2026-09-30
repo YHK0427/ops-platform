@@ -127,40 +127,28 @@ function VoteForm({ vote }: { vote: Ballot }) {
     );
 }
 
-// 이름 첫 글자 동그라미 색 — 같은 사람은 늘 같은 색
-const TONES = [
-    "bg-sky-100 text-sky-700", "bg-emerald-100 text-emerald-700", "bg-amber-100 text-amber-700",
-    "bg-rose-100 text-rose-700", "bg-teal-100 text-teal-700", "bg-indigo-100 text-indigo-700",
-];
-
 function Candidate({ person, team, on, onClick }: { person: Person; team: boolean; on: boolean; onClick: () => void }) {
-    // 사람은 이름(성 뺀 두 글자), 팀은 팀 이름 첫 글자
-    const mark = team ? person.name.trim().slice(0, 1) : person.name.length > 2 ? person.name.slice(-2) : person.name;
-    const avatar = (
-        <span className={cn("relative rounded-full flex items-center justify-center font-bold shrink-0 transition-shadow",
-            team ? "w-10 h-10 text-sm" : "w-12 h-12 text-sm",
-            on ? "bg-violet-600 text-white ring-4 ring-violet-100" : TONES[person.id % TONES.length])}>
-            {mark}
-            <AnimatePresence>
-                {on && (
-                    <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={{ type: "spring", stiffness: 500, damping: 25 }}
-                        className="absolute -right-1 -bottom-1 w-5 h-5 rounded-full bg-white text-violet-600 flex items-center justify-center shadow">
-                        <Check className="w-3.5 h-3.5" strokeWidth={3} />
-                    </motion.span>
-                )}
-            </AnimatePresence>
-        </span>
+    const mark = (
+        <AnimatePresence>
+            {on && (
+                <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                    className="w-5 h-5 rounded-full bg-violet-600 text-white flex items-center justify-center shrink-0">
+                    <Check className="w-3 h-3" strokeWidth={3} />
+                </motion.span>
+            )}
+        </AnimatePresence>
     );
     return (
-        <motion.button whileTap={{ scale: 0.96 }} onClick={onClick} aria-pressed={on}
-            className={cn("rounded-2xl border-2 transition-colors min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400",
-                team ? "flex items-center gap-3 px-3 py-3 text-left" : "flex flex-col items-center gap-1.5 px-1 pt-3 pb-2.5",
-                on ? "border-violet-500 bg-violet-50" : "border-transparent bg-gray-50 active:bg-gray-100")}>
-            {avatar}
-            <span className="min-w-0 max-w-full">
+        <motion.button whileTap={{ scale: 0.97 }} onClick={onClick} aria-pressed={on}
+            className={cn("rounded-xl border-2 transition-colors min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400",
+                team ? "flex items-center gap-3 px-4 py-3 text-left" : "flex items-center justify-center gap-1.5 px-2 py-3",
+                on ? "border-violet-500 bg-violet-50" : "border-gray-100 bg-gray-50 active:bg-gray-100")}>
+            {!team && mark}
+            <span className={cn("min-w-0", team && "flex-1")}>
                 <span className={cn("block truncate text-sm font-semibold", on ? "text-violet-700" : "text-gray-800")}>{person.name}</span>
                 {person.sub && <span className="block truncate text-xs text-gray-400 mt-0.5">{person.sub}</span>}
             </span>
+            {team && mark}
         </motion.button>
     );
 }
