@@ -252,6 +252,17 @@ async def delete_session(
     """세션 삭제 — 연결된 장부 항목도 효과 역전 후 함께 삭제"""
     session = await _get_session_or_404(session_id, db, cohort_id)
 
+    # 평가 라운드는 FK(NO ACTION)라 세션과 함께 지울 수 없음 — 무엇에 걸렸는지 알려주고 중단
+    from app.models import EvalRound
+    round_titles = (await db.execute(
+        select(EvalRound.title).where(EvalRound.session_id == session_id)
+    )).scalars().all()
+    if round_titles:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"이 세션은 평가 라운드({', '.join(round_titles)})와 연결되어 있어 삭제할 수 없습니다. 평가 관리에서 해당 라운드를 먼저 삭제해 주세요.",
+        )
+
     # 장부 항목 효과 역전 후 삭제
     ledger_result = await db.execute(
         select(Ledger).where(Ledger.session_id == session_id)
@@ -951,8 +962,8 @@ async def _guard_group_session(session: SessionModel):
     cfg = session.config or {}
     if not cfg.get("has_groups"):
         raise HTTPException(status_code=400, detail="이 세션은 분반이 활성화되어 있지 않습니다")
-    if session.status not in ("SETUP", "PREP"):
-        raise HTTPException(status_code=400, detail="분반 수정은 SETUP/PREP 상태에서만 가능합니다")
+    if session.status not in ("SETUP", "PREP", "OPS"):
+        raise HTTPException(status_code=400, detail="분반 수정은 과제 준비 단계까지만 가능합니다")
 
 
 @router.post("/{session_id}/groups/generate")

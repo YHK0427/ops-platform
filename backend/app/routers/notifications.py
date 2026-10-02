@@ -239,35 +239,38 @@ async def _attach_read_counts(db: AsyncSession, anns: list, cohort_id: int) -> N
             AnnouncementRead.user_id,
         ).where(AnnouncementRead.announcement_id.in_(ids))
     )).all()
-    read_by_member: dict[int, int] = {}
-    read_by_staff: dict[int, int] = {}
+    # 분자도 분모와 같은 집합(현재 기수의 활성 기수원/운영진)으로만 센다 — 기수 소속이 없는
+    # 전역 admin, 이탈한 기수원, 비활성 운영진 계정의 열람이 분자에만 섞이지 않게.
+    active_members = set((await db.execute(
+        select(Member.id).where(Member.cohort_id == cohort_id, Member.is_active.is_(True))
+    )).scalars().all())
+    staff = set((await db.execute(
+        select(User.id).where(User.cohort_id == cohort_id, User.is_active.is_(True))
+    )).scalars().all())
+
+    member_readers: dict[int, set[int]] = {}
+    staff_readers: dict[int, set[int]] = {}
     for ann_id, last_read_at, mid_, uid_ in rows:
         if not _read_after_edit(last_read_at, edited_at.get(ann_id)):
             continue
         if mid_ is not None:
-            read_by_member[ann_id] = read_by_member.get(ann_id, 0) + 1
+            member_readers.setdefault(ann_id, set()).add(mid_)
         if uid_ is not None:
-            read_by_staff[ann_id] = read_by_staff.get(ann_id, 0) + 1
-
-    active_members = (await db.execute(
-        select(func.count(Member.id)).where(Member.cohort_id == cohort_id, Member.is_active.is_(True))
-    )).scalar_one()
-    staff = (await db.execute(
-        select(func.count(User.id)).where(User.cohort_id == cohort_id)
-    )).scalar_one()
+            staff_readers.setdefault(ann_id, set()).add(uid_)
 
     for a in anns:
+        m_read = member_readers.get(a.id, set())
+        s_read = staff_readers.get(a.id, set())
         if a.target == "members":
-            total, cnt = active_members, read_by_member.get(a.id, 0)
+            pool_m, pool_s = active_members, set()
         elif a.target == "staff":
-            total, cnt = staff, read_by_staff.get(a.id, 0)
+            pool_m, pool_s = set(), staff
         elif a.target == "select":
-            total, cnt = len(a.target_member_ids or []), read_by_member.get(a.id, 0)
+            pool_m, pool_s = active_members & set(a.target_member_ids or []), set()
         else:  # all — 기수원+운영진 둘 다 대상
-            total = active_members + staff
-            cnt = read_by_member.get(a.id, 0) + read_by_staff.get(a.id, 0)
-        a.read_count = cnt
-        a.read_total = total
+            pool_m, pool_s = active_members, staff
+        a.read_count = len(m_read & pool_m) + len(s_read & pool_s)
+        a.read_total = len(pool_m) + len(pool_s)
 
 
 async def _bump_view(db: AsyncSession, ann_id: int) -> None:

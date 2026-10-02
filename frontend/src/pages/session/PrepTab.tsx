@@ -160,7 +160,7 @@ export default function PrepTab() {
                             팀 수정
                         </Button>
                     )}
-                    {session.type === "INDIVIDUAL" && session.config?.has_groups && ["SETUP", "PREP"].includes(session.status) && (
+                    {session.type === "INDIVIDUAL" && session.config?.has_groups && ["SETUP", "PREP", "OPS"].includes(session.status) && (
                         <Button
                             size="sm"
                             variant="outline"
