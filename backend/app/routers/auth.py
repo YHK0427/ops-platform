@@ -263,7 +263,8 @@ async def login(body: LoginRequest, request: Request, response: Response, db: As
     user = matched[0] if matched else None
 
     if user is None:
-        logger.warning("login_failed user=%s ip=%s reason=not_found_or_wrong_password", body.username, ip)
+        # 사유는 서버 로그에만 나눠 남긴다(응답은 똑같이 '인증 실패') — 아이디 규칙을 몰라서인지 비번인지 알아야 고친다
+        logger.warning("login_failed user=%s ip=%s reason=%s", body.username, ip, "wrong_password" if candidates else "no_such_user")
         await record_auth_event(db, "LOGIN_FAILED", body.username, None, None, f"{body.username} 로그인 실패(아이디/비밀번호 불일치)", request.url.path, ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증 실패")
 
@@ -407,7 +408,7 @@ async def member_login(
     account = matched[0] if matched else None
 
     if account is None:
-        logger.warning("member_login_failed user=%s ip=%s reason=not_found_or_wrong_password", body.username, ip)
+        logger.warning("member_login_failed user=%s ip=%s reason=%s", body.username, ip, "wrong_password" if candidates else "no_such_user")
         # 로그인 폼이 기수 로그인을 먼저 시도하고 실패하면 운영진 로그인으로 넘어가는 구조라,
         # 운영진이 로그인할 때마다 여기서 매번 "실패"가 찍힌다 — candidates가 애초에 없으면
         # (그 아이디로 된 기수 계정 자체가 없음) 그 정상적인 흐름이니 기록하지 않는다.

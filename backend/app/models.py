@@ -1177,6 +1177,8 @@ class AccessLog(Base):
     duration_ms = Column(Integer, nullable=True)
     ip = Column(String(45), nullable=True)             # IPv6 까지
     user_agent = Column(String(300), nullable=True)
+    # 4xx/5xx 사유 — 응답의 detail 이나 예외 메시지. 도커 로그는 배포 때마다 사라지므로 여기 남긴다.
+    detail = Column(String(300), nullable=True)
     # 묶인 횟수. 폴링을 접으면 여기가 올라간다.
     hits = Column(Integer, nullable=False, server_default="1")
     last_seen_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

@@ -75,6 +75,8 @@ export interface AccessLog {
     duration_ms: number | null;
     ip: string | null;
     user_agent: string | null;
+    /** 4xx/5xx 사유 (응답 detail 또는 예외 메시지) */
+    detail?: string | null;
     /** 짧은 시간 안에 같은 요청이 반복되면 한 줄로 묶고 이 값이 올라간다 */
     hits: number;
 }

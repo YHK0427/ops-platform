@@ -5,8 +5,11 @@ from contextlib import asynccontextmanager
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings
 from app.logging_config import setup_logging
@@ -61,9 +64,30 @@ app.add_middleware(
 )
 
 
+def _actor_label(request: Request) -> str:
+    actor = request.scope.get("actor") or {}
+    return actor.get("username") or "anon"
+
+
+# 4xx 의 사유(detail)는 응답으로만 나가고 어디에도 안 남았다 — 오류가 나도 "왜"를 알 수 없었다.
+# scope 에 적어두면 접속 기록 미들웨어와 요청 로그가 같이 남긴다. 응답은 기본 처리 그대로.
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_logged(request: Request, exc: StarletteHTTPException):
+    request.scope["error_detail"] = str(exc.detail)[:300]
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_logged(request: Request, exc: RequestValidationError):
+    request.scope["error_detail"] = "; ".join(
+        f"{'.'.join(str(x) for x in e.get('loc', ()))}: {e.get('msg')}" for e in exc.errors()
+    )[:300]
+    return await request_validation_exception_handler(request, exc)
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled: {request.method} {request.url.path}", exc_info=exc)
+    logger.error(f"Unhandled: {request.method} {request.url.path} by {_actor_label(request)} — {type(exc).__name__}: {exc}", exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -79,8 +103,10 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     duration = time.time() - start
     if duration > 1.0 or response.status_code >= 400:
+        why = request.scope.get("error_detail")
         logger.info(
-            f"{request.method} {request.url.path} → {response.status_code} ({duration:.2f}s)"
+            f"{request.method} {request.url.path} → {response.status_code} ({duration:.2f}s) by {_actor_label(request)}"
+            + (f" — {why}" if why else "")
         )
     return response
 

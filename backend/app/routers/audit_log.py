@@ -166,6 +166,7 @@ class AccessLogOut(BaseModel):
     duration_ms: int | None
     ip: str | None
     user_agent: str | None
+    detail: str | None = None
     hits: int
 
     class Config:

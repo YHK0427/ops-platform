@@ -96,6 +96,8 @@ async def _write(row: dict) -> None:
                     AccessLog.actor_username.is_not_distinct_from(row["actor_username"]),
                     AccessLog.path == row["path"],
                     AccessLog.method == row["method"],
+                    # 상태가 다르면 따로 남긴다 — 예전엔 에러 뒤 성공이 오면 에러가 덮여 사라졌다
+                    AccessLog.status_code.is_not_distinct_from(row["status_code"]),
                     AccessLog.last_seen_at >= since,
                 ).order_by(AccessLog.id.desc()).limit(1)
             )).scalar_one_or_none()
@@ -107,8 +109,8 @@ async def _write(row: dict) -> None:
                     .values(
                         hits=AccessLog.__table__.c.hits + 1,
                         last_seen_at=datetime.now(timezone.utc),
-                        status_code=row["status_code"],
                         duration_ms=row["duration_ms"],
+                        detail=row["detail"],
                     )
                 )
             else:
@@ -120,10 +122,23 @@ async def _write(row: dict) -> None:
 
 async def access_log_middleware(request, call_next):
     start = time.monotonic()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        # 처리 안 된 예외의 500 응답은 이 미들웨어 바깥(ServerErrorMiddleware)에서 만들어진다.
+        # 여기서 잡아 기록하지 않으면 500 은 접속 기록에 영영 안 남는다.
+        if not _should_skip(request.url.path):
+            asyncio.create_task(_write(_row(request, 500, start, f"{type(exc).__name__}: {exc}"[:300])))
+        raise
     path = request.url.path
     if _should_skip(path):
         return response
+    asyncio.create_task(_write(_row(request, response.status_code, start, request.scope.get("error_detail"))))
+    return response
+
+
+def _row(request, status_code: int, start: float, detail: str | None) -> dict:
+    path = request.url.path
 
     # scope 를 먼저 본다 — 미들웨어는 엔드포인트와 다른 태스크라 ContextVar 가 안 보인다
     actor = request.scope.get("actor") or current_actor.get()
@@ -141,18 +156,17 @@ async def access_log_middleware(request, call_next):
         label = f"{username}({role})" if role else username
         cohort = actor.get("cohort_id")
 
-    row = {
+    # 응답은 이미 만들어졌다. 기록은 호출하는 쪽이 따로 돌려서 사용자를 기다리게 하지 않는다.
+    return {
         "actor_kind": kind,
         "actor_username": username,
         "actor_label": label,
         "cohort_id": cohort,
         "method": request.method,
         "path": (_ID_RE.sub("/{id}", path) + _entry_source(request, path))[:200],
-        "status_code": response.status_code,
+        "status_code": status_code,
         "duration_ms": int((time.monotonic() - start) * 1000),
         "ip": _client_ip(request),
         "user_agent": (request.headers.get("user-agent") or "")[:300] or None,
+        "detail": detail if status_code >= 400 else None,
     }
-    # 응답은 이미 만들어졌다. 기록은 따로 돌려서 사용자를 기다리게 하지 않는다.
-    asyncio.create_task(_write(row))
-    return response

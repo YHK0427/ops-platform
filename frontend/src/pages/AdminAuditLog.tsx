@@ -979,6 +979,12 @@ function AccessLogTab({ active }: { active: boolean }) {
                                         <div className="text-[10px] text-[var(--color-text-muted)] font-mono">
                                             {r.method} {r.path}
                                         </div>
+                                        {r.detail && (
+                                            <div className={cn("mt-0.5 text-[11px] [word-break:keep-all]",
+                                                (r.status_code ?? 0) >= 500 ? "text-rose-600" : "text-amber-700")}>
+                                                {r.detail}
+                                            </div>
+                                        )}
                                     </TableCell>
                                     <TableCell>
                                         <Badge variant="outline" className={cn(
