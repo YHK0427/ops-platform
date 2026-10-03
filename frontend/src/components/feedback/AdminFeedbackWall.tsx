@@ -343,6 +343,18 @@ function AddPresenterDialog({ boardId, hasGroups, open, onOpenChange }: {
     );
 }
 
+// 화면 폭에 맞춘 세로줄 수 (tailwind md=768, lg=1024 과 같은 기준)
+function useColumnCount() {
+    const get = () => (window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1);
+    const [n, setN] = useState(get);
+    useEffect(() => {
+        const onResize = () => setN(get());
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, []);
+    return n;
+}
+
 const FIRST_CHUNK = 1;   // 첫 화면은 한 명만 — 누르자마자 뜨게
 const RENDER_CHUNK = 3;  // 이후 한 번에 이어 그릴 발표자 수
 
@@ -408,6 +420,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
         ? [listSelected]
         : presenters.filter((p) => listGroup == null || p.group_num === listGroup || p.group_num == null);
     const loading = !board || !posts;
+    const cols = useColumnCount();
 
     // 카드 250장(DOM 1만 개)을 한 번에 그리면 화면이 몇 초 멈춘다 — 발표자 몇 명씩 나눠 그려서
     // 첫 화면은 바로 뜨고 나머지는 이어 붙는다. 이미 그린 카드는 memo 라 다시 안 그려진다.
@@ -425,6 +438,66 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     const toTop = () => requestAnimationFrame(() => topRef.current?.scrollIntoView({ block: "start" }));
     const pickPresenter = (id: number | null) => { setSelectedId(id); toTop(); };
     const pickGroup = (g: number | null) => { setGroupFilter(g); setSelectedId(null); toTop(); };
+
+    const renderPresenter = (pr: PresenterColumn) => {
+        const list = postsByPresenter.get(pr.presenter_member_id) ?? [];
+        const open = listSelected != null || !collapsed.has(pr.presenter_member_id);
+        return (
+            <div key={pr.presenter_member_id} className={cn("rounded-2xl border border-gray-200 bg-gray-50/50 p-3", !open && "opacity-90")}>
+                <button
+                    onClick={() => listSelected ? pickPresenter(null) : toggleCollapse(pr.presenter_member_id)}
+                    title={listSelected ? "모든 발표자 보기" : undefined}
+                    className={cn("w-full flex items-center justify-between px-1 text-left", open && "mb-2.5")}
+                >
+                    <div className="flex items-center gap-2 min-w-0">
+                        {pr.group_num != null && (
+                            <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-bold shrink-0", groupBadgeClass(pr.group_num))}>
+                                {pr.group_num}분반
+                            </span>
+                        )}
+                        <span className="text-sm font-bold text-gray-900 truncate">{pr.name}</span>
+                        {pr.is_guest && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-600 shrink-0">외부</span>
+                        )}
+                        {pr.presenter_order != null && (
+                            <span className="text-[11px] text-gray-400 shrink-0">#{pr.presenter_order}</span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 text-gray-400">
+                        <span className="text-xs tabular-nums">{list.length}</span>
+                        <span role="button" tabIndex={0} title="발표자에서 빼기"
+                            onClick={(e) => { e.stopPropagation(); removePresenter(pr, list.length); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); removePresenter(pr, list.length); } }}
+                            className="p-1 rounded hover:bg-rose-50 hover:text-rose-500">
+                            <UserMinus className="w-3.5 h-3.5" />
+                        </span>
+                        {listSelected ? (
+                            <span className="inline-flex items-center gap-0.5 pl-1 text-xs font-semibold text-gray-500 hover:text-gray-800">
+                                <X className="w-3.5 h-3.5" />모든 발표자
+                            </span>
+                        ) : (
+                            <ChevronDown className={cn("w-4 h-4 transition-transform", !open && "-rotate-90")} />
+                        )}
+                    </div>
+                </button>
+                {open && (
+                    <>
+                        <div className={cn(listSelected ? "grid gap-2 md:grid-cols-2 xl:grid-cols-3 items-start" : "space-y-2")}>
+                            {list.length === 0 ? (
+                                <p className="text-xs text-gray-400 px-1 py-3 text-center">아직 피드백이 없습니다</p>
+                            ) : (
+                                list.map((post) => <PostCard key={post.id} post={post} categories={categories} actions={actions} />)
+                            )}
+                        </div>
+                        {isOpen && (
+                            <StaffComposer boardId={boardId} presenterId={pr.presenter_member_id}
+                                presenterName={pr.name} categories={categories} />
+                        )}
+                    </>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div>
@@ -501,66 +574,14 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                         })}
                     </div>
                 </div>
-                <div className={cn("grid gap-4 items-start transition-opacity", !listSelected && "md:grid-cols-2 lg:grid-cols-3", rendering && "opacity-50")} aria-busy={rendering}>
-                    {visible.slice(0, shownN).map((pr) => {
-                        const list = postsByPresenter.get(pr.presenter_member_id) ?? [];
-                        const open = listSelected != null || !collapsed.has(pr.presenter_member_id);
-                        return (
-                            <div key={pr.presenter_member_id} className={cn("rounded-2xl border border-gray-200 bg-gray-50/50 p-3", !open && "opacity-90")}>
-                                <button
-                                    onClick={() => listSelected ? pickPresenter(null) : toggleCollapse(pr.presenter_member_id)}
-                                    title={listSelected ? "모든 발표자 보기" : undefined}
-                                    className={cn("w-full flex items-center justify-between px-1 text-left", open && "mb-2.5")}
-                                >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        {pr.group_num != null && (
-                                            <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-bold shrink-0", groupBadgeClass(pr.group_num))}>
-                                                {pr.group_num}분반
-                                            </span>
-                                        )}
-                                        <span className="text-sm font-bold text-gray-900 truncate">{pr.name}</span>
-                                        {pr.is_guest && (
-                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-600 shrink-0">외부</span>
-                                        )}
-                                        {pr.presenter_order != null && (
-                                            <span className="text-[11px] text-gray-400 shrink-0">#{pr.presenter_order}</span>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-1.5 shrink-0 text-gray-400">
-                                        <span className="text-xs tabular-nums">{list.length}</span>
-                                        <span role="button" tabIndex={0} title="발표자에서 빼기"
-                                            onClick={(e) => { e.stopPropagation(); removePresenter(pr, list.length); }}
-                                            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); removePresenter(pr, list.length); } }}
-                                            className="p-1 rounded hover:bg-rose-50 hover:text-rose-500">
-                                            <UserMinus className="w-3.5 h-3.5" />
-                                        </span>
-                                        {listSelected ? (
-                                            <span className="inline-flex items-center gap-0.5 pl-1 text-xs font-semibold text-gray-500 hover:text-gray-800">
-                                                <X className="w-3.5 h-3.5" />모든 발표자
-                                            </span>
-                                        ) : (
-                                            <ChevronDown className={cn("w-4 h-4 transition-transform", !open && "-rotate-90")} />
-                                        )}
-                                    </div>
-                                </button>
-                                {open && (
-                                    <>
-                                        <div className={cn(listSelected ? "grid gap-2 md:grid-cols-2 xl:grid-cols-3 items-start" : "space-y-2")}>
-                                            {list.length === 0 ? (
-                                                <p className="text-xs text-gray-400 px-1 py-3 text-center">아직 피드백이 없습니다</p>
-                                            ) : (
-                                                list.map((post) => <PostCard key={post.id} post={post} categories={categories} actions={actions} />)
-                                            )}
-                                        </div>
-                                        {isOpen && (
-                                            <StaffComposer boardId={boardId} presenterId={pr.presenter_member_id}
-                                                presenterName={pr.name} categories={categories} />
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        );
-                    })}
+                <div className={cn("flex gap-4 items-start transition-opacity", rendering && "opacity-50")} aria-busy={rendering}>
+                    {/* 세로줄마다 따로 쌓는다 — 카드를 접으면 같은 줄 아래 카드가 바로 올라온다(grid 는 옆 카드 높이에 묶여 빈칸이 남았다).
+                        순서는 발표 순서대로 왼쪽→오른쪽: i번째 발표자는 i % 열수 번째 줄 */}
+                    {Array.from({ length: listSelected ? 1 : cols }, (_, c) => (
+                        <div key={c} className="flex-1 min-w-0 flex flex-col gap-4">
+                            {visible.slice(0, shownN).filter((_, i) => i % (listSelected ? 1 : cols) === c).map(renderPresenter)}
+                        </div>
+                    ))}
                 </div>
                 </>
             )}
