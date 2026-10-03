@@ -370,6 +370,14 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
         return map;
     }, [posts]);
 
+    // 발표자가 많으면 카드 더미에서 한 사람을 찾기 어렵다 — 분반·발표자를 골라서 본다
+    const [groupFilter, setGroupFilter] = useState<number | null>(null);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const inGroup = presenters.filter((p) => groupFilter == null || p.group_num === groupFilter || p.group_num == null);
+    const selected = presenters.find((p) => p.presenter_member_id === selectedId) ?? null;
+    const visible = selected ? [selected] : inGroup;
+    const pickGroup = (g: number | null) => { setGroupFilter(g); setSelectedId(null); };
+
     return (
         <div>
             <div className="flex items-center justify-between mb-4">
@@ -399,12 +407,49 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                     발표자가 없습니다. 출석 탭에서 분반을 배정하거나 '발표자 추가'로 넣어주세요.
                 </div>
             ) : (
-                <div className="columns-1 md:columns-2 lg:columns-3 gap-4">
-                    {presenters.map((pr) => {
+                <>
+                <div className="sticky top-0 z-10 -mx-1 px-1 py-2 mb-3 bg-[var(--color-base)]/95 backdrop-blur border-b border-gray-200 space-y-2">
+                    {hasGroups && (
+                        <div className="flex items-center gap-1">
+                            {[null, 1, 2].map((g) => (
+                                <button key={g ?? "all"} type="button" onClick={() => pickGroup(g)}
+                                    className={cn("px-3 py-1 rounded-full text-xs font-bold border transition-colors",
+                                        groupFilter === g ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-400")}>
+                                    {g == null ? "전체" : `${g}분반`}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <div className="flex gap-1.5 overflow-x-auto md:flex-wrap md:overflow-visible pb-0.5">
+                        <button type="button" onClick={() => setSelectedId(null)}
+                            className={cn("shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors",
+                                selectedId == null ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400")}>
+                            발표자 전체 <span className="tabular-nums opacity-80">{inGroup.length}</span>
+                        </button>
+                        {inGroup.map((pr) => {
+                            const n = postsByPresenter.get(pr.presenter_member_id)?.length ?? 0;
+                            const on = selectedId === pr.presenter_member_id;
+                            return (
+                                <button key={pr.presenter_member_id} type="button"
+                                    onClick={() => setSelectedId(on ? null : pr.presenter_member_id)}
+                                    className={cn("shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors",
+                                        on ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-gray-700 border-gray-200 hover:border-gray-400")}>
+                                    {groupFilter == null && pr.group_num != null && !on && (
+                                        <span className={cn("w-1.5 h-1.5 rounded-full", pr.group_num === 1 ? "bg-sky-500" : "bg-violet-500")} />
+                                    )}
+                                    {pr.name}
+                                    <span className={cn("tabular-nums", on ? "opacity-80" : n === 0 ? "text-rose-400" : "text-gray-400")}>{n}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className={cn("grid gap-4 items-start", !selected && "md:grid-cols-2 lg:grid-cols-3")}>
+                    {visible.map((pr) => {
                         const list = postsByPresenter.get(pr.presenter_member_id) ?? [];
-                        const open = !collapsed.has(pr.presenter_member_id);
+                        const open = selected != null || !collapsed.has(pr.presenter_member_id);
                         return (
-                            <div key={pr.presenter_member_id} className={cn("rounded-2xl border border-gray-200 bg-gray-50/50 p-3 mb-4 break-inside-avoid", !open && "opacity-90")}>
+                            <div key={pr.presenter_member_id} className={cn("rounded-2xl border border-gray-200 bg-gray-50/50 p-3", !open && "opacity-90")}>
                                 <button
                                     onClick={() => toggleCollapse(pr.presenter_member_id)}
                                     className={cn("w-full flex items-center justify-between px-1 text-left", open && "mb-2.5")}
@@ -436,7 +481,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                 </button>
                                 {open && (
                                     <>
-                                        <div className="space-y-2">
+                                        <div className={cn(selected ? "grid gap-2 md:grid-cols-2 xl:grid-cols-3 items-start" : "space-y-2")}>
                                             {list.length === 0 ? (
                                                 <p className="text-xs text-gray-400 px-1 py-3 text-center">아직 피드백이 없습니다</p>
                                             ) : (
@@ -453,6 +498,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                         );
                     })}
                 </div>
+                </>
             )}
         </div>
     );
