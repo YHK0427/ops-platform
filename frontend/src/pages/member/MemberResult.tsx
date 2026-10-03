@@ -488,7 +488,7 @@ export default function MemberResult() {
 
                         {/* 푸터 */}
                         <div style={{ textAlign: "center", padding: 0 }}>
-                            <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — 당신의 가능성을 꽃피우기 위해</span>
+                            <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {slogan}</span>
                             <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>UnivPT</span>
                         </div>
                     </div>
@@ -569,7 +569,7 @@ export default function MemberResult() {
 
                         {/* 푸터 */}
                         <div style={{ textAlign: "center", padding: 0, position: "relative", zIndex: 1 }}>
-                            <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — 당신의 가능성을 꽃피우기 위해</span>
+                            <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {slogan}</span>
                             <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>UnivPT</span>
                         </div>
                     </div>
