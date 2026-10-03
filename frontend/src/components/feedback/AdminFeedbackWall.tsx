@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2, ChevronDown, MessageCircle, UserPlus, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,20 +33,31 @@ function groupBadgeClass(g: number | null): string {
     return "bg-gray-100 text-gray-500";
 }
 
-function PostCard({ post, categories, boardId }: { post: FeedbackPost; categories: FeedbackCategory[]; boardId: number }) {
-    const del = useDeletePost();
-    const hide = useHidePost();
-    const react = useStaffToggleReaction(boardId);
-    const addComment = useStaffCreateComment(boardId);
-    const delComment = useStaffDeleteComment(boardId);
+// 카드마다 mutation 훅 5개를 두면 글 250개에 훅 1,250개가 생겨 화면을 열 때마다 수 초가 걸렸다.
+// 벽에서 한 번만 만들고 넘긴다 — mutate 함수는 렌더 사이에 그대로라 memo 된 카드가 다시 안 그려진다.
+type PostActions = {
+    del: (postId: number) => void;
+    hide: (v: { postId: number; isHidden: boolean }) => void;
+    react: (v: { postId: number; emoji: string; active: boolean }) => void;
+    addComment: (v: { postId: number; content: string; is_anonymous: boolean }) => Promise<unknown>;
+    delComment: (commentId: number) => void;
+};
+
+const PostCard = memo(function PostCard({ post, categories, actions }: { post: FeedbackPost; categories: FeedbackCategory[]; actions: PostActions }) {
     const [commentOpen, setCommentOpen] = useState(false);
     const [commentText, setCommentText] = useState("");
     const [commentAnon, setCommentAnon] = useState(false);  // 운영진 댓글은 실명이 기본, 선택하면 익명
+    const [sending, setSending] = useState(false);
     const submitComment = async () => {
         const trimmed = commentText.trim();
-        if (!trimmed) return;
-        await addComment.mutateAsync({ postId: post.id, content: trimmed, is_anonymous: commentAnon });
-        setCommentText("");
+        if (!trimmed || sending) return;
+        setSending(true);
+        try {
+            await actions.addComment({ postId: post.id, content: trimmed, is_anonymous: commentAnon });
+            setCommentText("");
+        } finally {
+            setSending(false);
+        }
     };
     return (
         <div
@@ -72,14 +83,14 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                     <button
-                        onClick={() => hide.mutate({ postId: post.id, isHidden: !post.is_hidden })}
+                        onClick={() => actions.hide({ postId: post.id, isHidden: !post.is_hidden })}
                         className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
                         title={post.is_hidden ? "다시 표시" : "가리기"}
                     >
                         {post.is_hidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                     </button>
                     <button
-                        onClick={() => del.mutate(post.id)}
+                        onClick={() => actions.del(post.id)}
                         className="p-1 rounded hover:bg-rose-50 text-gray-400 hover:text-rose-500"
                         title="삭제"
                     >
@@ -109,7 +120,7 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
                     reactions={post.reactions}
                     myReactions={post.my_reactions}
                     canReact={!post.is_hidden}
-                    onToggle={(emoji, active) => react.mutate({ postId: post.id, emoji, active })}
+                    onToggle={(emoji, active) => actions.react({ postId: post.id, emoji, active })}
                 />
             </div>
 
@@ -135,7 +146,7 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
                                     <p className="text-xs text-gray-700 whitespace-pre-wrap [word-break:keep-all]">{c.content}</p>
                                 </div>
                                 <button
-                                    onClick={() => delComment.mutate(c.id)}
+                                    onClick={() => actions.delComment(c.id)}
                                     className="shrink-0 text-gray-300 hover:text-rose-500 p-0.5"
                                     title="삭제(모더레이션)"
                                 >
@@ -147,7 +158,7 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
                             <input
                                 value={commentText}
                                 onChange={(e) => setCommentText(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !addComment.isPending) submitComment(); }}
+                                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) submitComment(); }}
                                 placeholder={commentAnon ? "익명 댓글..." : "운영진 댓글..."}
                                 maxLength={500}
                                 className="flex-1 min-w-0 rounded-full border border-gray-200 px-2.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
@@ -165,10 +176,10 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
                             </button>
                             <button
                                 onClick={submitComment}
-                                disabled={addComment.isPending || !commentText.trim()}
+                                disabled={sending || !commentText.trim()}
                                 className="shrink-0 p-1 rounded-full bg-[var(--color-accent)] text-white disabled:opacity-40"
                             >
-                                {addComment.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                                {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                             </button>
                         </div>
                     </div>
@@ -176,7 +187,7 @@ function PostCard({ post, categories, boardId }: { post: FeedbackPost; categorie
             </div>
         </div>
     );
-}
+});
 
 function StaffComposer({ boardId, presenterId, presenterName, categories }: {
     boardId: number; presenterId: number; presenterName: string; categories: FeedbackCategory[];
@@ -332,6 +343,9 @@ function AddPresenterDialog({ boardId, hasGroups, open, onOpenChange }: {
     );
 }
 
+const FIRST_CHUNK = 1;   // 첫 화면은 한 명만 — 누르자마자 뜨게
+const RENDER_CHUNK = 3;  // 이후 한 번에 이어 그릴 발표자 수
+
 export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     const { data: board } = useAdminBoard(boardId);
     const { data: posts } = useAdminPosts(boardId);
@@ -370,12 +384,42 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
         return map;
     }, [posts]);
 
+    const del = useDeletePost();
+    const hide = useHidePost();
+    const react = useStaffToggleReaction(boardId);
+    const addComment = useStaffCreateComment(boardId);
+    const delComment = useStaffDeleteComment(boardId);
+    const actions = useMemo<PostActions>(() => ({
+        del: del.mutate, hide: hide.mutate, react: react.mutate,
+        addComment: addComment.mutateAsync, delComment: delComment.mutate,
+    }), [del.mutate, hide.mutate, react.mutate, addComment.mutateAsync, delComment.mutate]);
+
     // 발표자가 많으면 카드 더미에서 한 사람을 찾기 어렵다 — 분반·발표자를 골라서 본다
     const [groupFilter, setGroupFilter] = useState<number | null>(null);
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const inGroup = presenters.filter((p) => groupFilter == null || p.group_num === groupFilter || p.group_num == null);
     const selected = presenters.find((p) => p.presenter_member_id === selectedId) ?? null;
-    const visible = selected ? [selected] : inGroup;
+    // 칩은 누르는 즉시 바뀌고, 카드 목록은 뒤에서 그린다 — 그리는 동안 '불러오는 중'을 보여준다
+    const listGroup = useDeferredValue(groupFilter);
+    const listSelectedId = useDeferredValue(selectedId);
+    const rendering = listGroup !== groupFilter || listSelectedId !== selectedId;
+    const listSelected = presenters.find((p) => p.presenter_member_id === listSelectedId) ?? null;
+    const visible = listSelected
+        ? [listSelected]
+        : presenters.filter((p) => listGroup == null || p.group_num === listGroup || p.group_num == null);
+    const loading = !board || !posts;
+
+    // 카드 250장(DOM 1만 개)을 한 번에 그리면 화면이 몇 초 멈춘다 — 발표자 몇 명씩 나눠 그려서
+    // 첫 화면은 바로 뜨고 나머지는 이어 붙는다. 이미 그린 카드는 memo 라 다시 안 그려진다.
+    const viewKey = `${boardId}:${listGroup}:${listSelectedId}`;
+    const [shown, setShown] = useState({ key: viewKey, n: FIRST_CHUNK });
+    const shownN = shown.key === viewKey ? shown.n : FIRST_CHUNK;
+    const filling = !loading && shownN < visible.length;
+    useEffect(() => {
+        if (!filling) return;
+        const t = setTimeout(() => setShown({ key: viewKey, n: shownN + RENDER_CHUNK }), 0);
+        return () => clearTimeout(t);
+    }, [filling, shownN, viewKey]);
     // 목록 길이가 확 바뀌므로, 스크롤이 내려가 있으면 목록 맨 위로 돌려놓는다
     const topRef = useRef<HTMLDivElement>(null);
     const toTop = () => requestAnimationFrame(() => topRef.current?.scrollIntoView({ block: "start" }));
@@ -406,7 +450,11 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
             </div>
 
             <AddPresenterDialog boardId={boardId} hasGroups={hasGroups} open={addOpen} onOpenChange={setAddOpen} />
-            {presenters.length === 0 ? (
+            {loading ? (
+                <div className="flex items-center justify-center gap-2 py-16 text-sm text-gray-500">
+                    <Loader2 className="w-4 h-4 animate-spin" /> 피드백 불러오는 중…
+                </div>
+            ) : presenters.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
                     발표자가 없습니다. 출석 탭에서 분반을 배정하거나 '발표자 추가'로 넣어주세요.
                 </div>
@@ -423,6 +471,11 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                 </button>
                         ))}
                         <span className={cn("text-[11px] text-gray-400", hasGroups && "ml-2")}>발표자 옆 숫자 = 받은 피드백 수</span>
+                        {(rendering || filling) && (
+                            <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--color-accent)]">
+                                <Loader2 className="w-3 h-3 animate-spin" />불러오는 중…{filling && !rendering && ` (${shownN}/${visible.length}명)`}
+                            </span>
+                        )}
                     </div>
                     <div className="flex gap-1.5 overflow-x-auto md:flex-wrap md:overflow-visible pb-0.5">
                         <button type="button" onClick={() => pickPresenter(null)} aria-pressed={selected == null}
@@ -448,15 +501,15 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                         })}
                     </div>
                 </div>
-                <div className={cn("grid gap-4 items-start", !selected && "md:grid-cols-2 lg:grid-cols-3")}>
-                    {visible.map((pr) => {
+                <div className={cn("grid gap-4 items-start transition-opacity", !listSelected && "md:grid-cols-2 lg:grid-cols-3", rendering && "opacity-50")} aria-busy={rendering}>
+                    {visible.slice(0, shownN).map((pr) => {
                         const list = postsByPresenter.get(pr.presenter_member_id) ?? [];
-                        const open = selected != null || !collapsed.has(pr.presenter_member_id);
+                        const open = listSelected != null || !collapsed.has(pr.presenter_member_id);
                         return (
                             <div key={pr.presenter_member_id} className={cn("rounded-2xl border border-gray-200 bg-gray-50/50 p-3", !open && "opacity-90")}>
                                 <button
-                                    onClick={() => selected ? pickPresenter(null) : toggleCollapse(pr.presenter_member_id)}
-                                    title={selected ? "모든 발표자 보기" : undefined}
+                                    onClick={() => listSelected ? pickPresenter(null) : toggleCollapse(pr.presenter_member_id)}
+                                    title={listSelected ? "모든 발표자 보기" : undefined}
                                     className={cn("w-full flex items-center justify-between px-1 text-left", open && "mb-2.5")}
                                 >
                                     <div className="flex items-center gap-2 min-w-0">
@@ -481,7 +534,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                             className="p-1 rounded hover:bg-rose-50 hover:text-rose-500">
                                             <UserMinus className="w-3.5 h-3.5" />
                                         </span>
-                                        {selected ? (
+                                        {listSelected ? (
                                             <span className="inline-flex items-center gap-0.5 pl-1 text-xs font-semibold text-gray-500 hover:text-gray-800">
                                                 <X className="w-3.5 h-3.5" />모든 발표자
                                             </span>
@@ -492,11 +545,11 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                 </button>
                                 {open && (
                                     <>
-                                        <div className={cn(selected ? "grid gap-2 md:grid-cols-2 xl:grid-cols-3 items-start" : "space-y-2")}>
+                                        <div className={cn(listSelected ? "grid gap-2 md:grid-cols-2 xl:grid-cols-3 items-start" : "space-y-2")}>
                                             {list.length === 0 ? (
                                                 <p className="text-xs text-gray-400 px-1 py-3 text-center">아직 피드백이 없습니다</p>
                                             ) : (
-                                                list.map((post) => <PostCard key={post.id} post={post} categories={categories} boardId={boardId} />)
+                                                list.map((post) => <PostCard key={post.id} post={post} categories={categories} actions={actions} />)
                                             )}
                                         </div>
                                         {isOpen && (
