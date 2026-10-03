@@ -344,8 +344,14 @@ async def task_compress_video(ctx, session_id: int, member_id: int, path: str):
                 pass
 
 
-async def task_naver_login(ctx, username: str, password: str):
-    """네이버 로그인 태스크 (아이디/비번 자동화)"""
+async def task_naver_login(ctx, cred_key: str):
+    """네이버 로그인 태스크 (아이디/비번 자동화).
+    계정은 인자로 받지 않는다 — 인자는 arq 가 로그·작업 기록에 남긴다. 라우터가 넣어둔 일회용 키에서 꺼내고 바로 지운다."""
+    raw = await ctx["redis"].getdel(cred_key)
+    if not raw:
+        return {"status": "failed", "reason": "로그인 정보가 만료됐습니다. 다시 시도해 주세요."}
+    cred = json.loads(raw)
+    username, password = cred["u"], cred["p"]
     logger.info("task_naver_login start")
     try:
         async with AsyncSessionLocal() as db:

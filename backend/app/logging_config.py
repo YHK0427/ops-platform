@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import traceback
 from datetime import datetime, timezone
 
@@ -14,6 +15,20 @@ def audit(self, message, *args, **kwargs):
 
 
 logging.Logger.audit = audit
+
+
+# 로그에 비밀이 그대로 찍히던 자리: 웹소켓 접속 줄의 ?token=<JWT>(uvicorn),
+# 작업 인자 password='...'(arq). 값만 가린다.
+_SECRET_RE = re.compile(r"""(token=|password=['"]?|pwd=['"]?)[^&\s'"]+""")
+
+
+class RedactSecrets(logging.Filter):
+    def filter(self, record):
+        msg = record.getMessage()
+        red = _SECRET_RE.sub(r"\1***", msg)
+        if red != msg:
+            record.msg, record.args = red, ()
+        return True
 
 
 class JSONFormatter(logging.Formatter):
@@ -144,3 +159,10 @@ def setup_logging():
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("arq").setLevel(logging.INFO)
+
+    # uvicorn·arq 는 자기 핸들러를 따로 달아서 루트 핸들러 필터만으론 못 막는다.
+    # 메시지를 만드는 로거에 걸면 어느 핸들러로 나가든 가려진 채로 나간다.
+    redact = RedactSecrets()
+    console.addFilter(redact)
+    for name in ("uvicorn.error", "uvicorn.access", "arq.worker", "arq.jobs"):
+        logging.getLogger(name).addFilter(redact)

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -340,10 +341,10 @@ async def start_naver_login(
     if not pool:
         raise HTTPException(status_code=503, detail="ARQ pool not initialized")
 
-    job = await pool.enqueue_job(
-        "task_naver_login",
-        username=body.username,
-        password=body.password
-    )
+    # 비밀번호를 작업 인자로 넘기면 arq 가 로그에 찍고 Redis 작업 기록에도 남는다.
+    # 5분짜리 일회용 키에 넣고 키 이름만 넘긴다 — 워커가 꺼내는 즉시 지운다.
+    cred_key = f"naver:login_cred:{uuid.uuid4().hex}"
+    await pool.set(cred_key, json.dumps({"u": body.username, "p": body.password}), ex=300)
+    job = await pool.enqueue_job("task_naver_login", cred_key=cred_key)
     logger.info(f"crawler_start type=naver_login")
     return CrawlerTaskResponse(task_id=job.job_id, status="queued")
