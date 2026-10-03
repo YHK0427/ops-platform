@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2, ChevronDown, MessageCircle, UserPlus, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -376,7 +376,11 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     const inGroup = presenters.filter((p) => groupFilter == null || p.group_num === groupFilter || p.group_num == null);
     const selected = presenters.find((p) => p.presenter_member_id === selectedId) ?? null;
     const visible = selected ? [selected] : inGroup;
-    const pickGroup = (g: number | null) => { setGroupFilter(g); setSelectedId(null); };
+    // 목록 길이가 확 바뀌므로, 스크롤이 내려가 있으면 목록 맨 위로 돌려놓는다
+    const topRef = useRef<HTMLDivElement>(null);
+    const toTop = () => requestAnimationFrame(() => topRef.current?.scrollIntoView({ block: "start" }));
+    const pickPresenter = (id: number | null) => { setSelectedId(id); toTop(); };
+    const pickGroup = (g: number | null) => { setGroupFilter(g); setSelectedId(null); toTop(); };
 
     return (
         <div>
@@ -408,30 +412,30 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                 </div>
             ) : (
                 <>
+                <div ref={topRef} className="scroll-mt-2" />
                 <div className="sticky top-0 z-10 -mx-1 px-1 py-2 mb-3 bg-[var(--color-base)]/95 backdrop-blur border-b border-gray-200 space-y-2">
-                    {hasGroups && (
-                        <div className="flex items-center gap-1">
-                            {[null, 1, 2].map((g) => (
-                                <button key={g ?? "all"} type="button" onClick={() => pickGroup(g)}
+                    <div className="flex items-center gap-1">
+                        {hasGroups && [null, 1, 2].map((g) => (
+                                <button key={g ?? "all"} type="button" onClick={() => pickGroup(g)} aria-pressed={groupFilter === g}
                                     className={cn("px-3 py-1 rounded-full text-xs font-bold border transition-colors",
                                         groupFilter === g ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-400")}>
-                                    {g == null ? "전체" : `${g}분반`}
+                                    {g == null ? "모든 분반" : `${g}분반`}
                                 </button>
-                            ))}
-                        </div>
-                    )}
+                        ))}
+                        <span className={cn("text-[11px] text-gray-400", hasGroups && "ml-2")}>발표자 옆 숫자 = 받은 피드백 수</span>
+                    </div>
                     <div className="flex gap-1.5 overflow-x-auto md:flex-wrap md:overflow-visible pb-0.5">
-                        <button type="button" onClick={() => setSelectedId(null)}
+                        <button type="button" onClick={() => pickPresenter(null)} aria-pressed={selected == null}
                             className={cn("shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors",
-                                selectedId == null ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400")}>
-                            발표자 전체 <span className="tabular-nums opacity-80">{inGroup.length}</span>
+                                selected == null ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400")}>
+                            모든 발표자 <span className="tabular-nums opacity-80">{inGroup.length}명</span>
                         </button>
                         {inGroup.map((pr) => {
                             const n = postsByPresenter.get(pr.presenter_member_id)?.length ?? 0;
-                            const on = selectedId === pr.presenter_member_id;
+                            const on = selected?.presenter_member_id === pr.presenter_member_id;
                             return (
-                                <button key={pr.presenter_member_id} type="button"
-                                    onClick={() => setSelectedId(on ? null : pr.presenter_member_id)}
+                                <button key={pr.presenter_member_id} type="button" aria-pressed={on} title={`받은 피드백 ${n}개`}
+                                    onClick={() => pickPresenter(on ? null : pr.presenter_member_id)}
                                     className={cn("shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors",
                                         on ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-gray-700 border-gray-200 hover:border-gray-400")}>
                                     {groupFilter == null && pr.group_num != null && !on && (
@@ -451,7 +455,8 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                         return (
                             <div key={pr.presenter_member_id} className={cn("rounded-2xl border border-gray-200 bg-gray-50/50 p-3", !open && "opacity-90")}>
                                 <button
-                                    onClick={() => toggleCollapse(pr.presenter_member_id)}
+                                    onClick={() => selected ? pickPresenter(null) : toggleCollapse(pr.presenter_member_id)}
+                                    title={selected ? "모든 발표자 보기" : undefined}
                                     className={cn("w-full flex items-center justify-between px-1 text-left", open && "mb-2.5")}
                                 >
                                     <div className="flex items-center gap-2 min-w-0">
@@ -476,7 +481,13 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                             className="p-1 rounded hover:bg-rose-50 hover:text-rose-500">
                                             <UserMinus className="w-3.5 h-3.5" />
                                         </span>
-                                        <ChevronDown className={cn("w-4 h-4 transition-transform", !open && "-rotate-90")} />
+                                        {selected ? (
+                                            <span className="inline-flex items-center gap-0.5 pl-1 text-xs font-semibold text-gray-500 hover:text-gray-800">
+                                                <X className="w-3.5 h-3.5" />모든 발표자
+                                            </span>
+                                        ) : (
+                                            <ChevronDown className={cn("w-4 h-4 transition-transform", !open && "-rotate-90")} />
+                                        )}
                                     </div>
                                 </button>
                                 {open && (
