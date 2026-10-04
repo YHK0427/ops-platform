@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from arq.connections import RedisSettings
 from arq import cron, func
@@ -10,7 +10,7 @@ from sqlalchemy import select, delete
 from app.config import settings
 from app.logging_config import setup_logging
 from app.database import AsyncSessionLocal
-from app.models import Cohort, Member, NaverSession, Session, PushSubscription
+from app.models import Cohort, Member, NaverSession, Session, PushSubscription, User
 from app.services.push import send_webpush
 from app.services.crawler_ppt import scan_ppt
 from app.services.crawler_video import upload_all_videos
@@ -447,6 +447,47 @@ async def task_naver_health_check(ctx):
         raise
 
 
+VIDEO_REMIND_DEPT = "학술부"
+KST = timezone(timedelta(hours=9))
+
+
+async def task_video_upload_reminder(ctx):
+    """세션 다음 날 오전 11시(KST) — 그 기수 학술부에게 영상 업로드 리마인드 푸시.
+    업로드 여부는 따지지 않는다. 했으면 무시하면 되는 알림이다."""
+    yesterday = (datetime.now(KST) - timedelta(days=1)).date()
+    async with AsyncSessionLocal() as db:
+        sessions = (await db.execute(
+            select(Session).where(Session.date == yesterday, Session.status != "FINALIZED")
+        )).scalars().all()
+        targets = []
+        for s in sessions:
+            sub_ids = (await db.execute(
+                select(PushSubscription.id).where(PushSubscription.user_id.in_(
+                    select(User.id).where(
+                        User.cohort_id == s.cohort_id,
+                        User.is_active == True,  # noqa: E712
+                        User.department == VIDEO_REMIND_DEPT,
+                    )
+                ))
+            )).scalars().all()
+            targets.append((s, list(sub_ids)))
+    sent = 0
+    for s, sub_ids in targets:
+        if not sub_ids:
+            logger.info(f"영상 업로드 리마인드 — {s.week_num}주차 {s.title}: 구독한 {VIDEO_REMIND_DEPT} 없음")
+            continue
+        # 제목에 이미 'N주차'가 들어간 세션도 있다 — 두 번 붙이지 않는다
+        label = s.title if f"{s.week_num}주차" in s.title else f"{s.week_num}주차 {s.title}"
+        r = await task_send_push(ctx, payload={
+            "title": "영상 업로드 확인",
+            "body": f"어제 {label} 영상, 아직 업로드 안 했으면 업로드해 주세요",
+            "url": f"/sessions/{s.id}/ops",
+            "tag": f"video-remind-{s.id}",
+        }, subscription_ids=sub_ids)
+        sent += r.get("sent", 0)
+    return {"sessions": len(targets), "sent": sent}
+
+
 async def task_send_push(ctx, payload: dict, subscription_ids: list):
     """웹 푸시 발송 — 구독 id 목록에 payload 전송. 만료(404/410) 구독은 자동 삭제."""
     if not subscription_ids:
@@ -641,7 +682,7 @@ async def task_cleanup_snapshots(ctx):
 
 
 class WorkerSettings:
-    functions = [task_heartbeat, task_infra_snapshot, task_cleanup_access_logs, task_cleanup_snapshots, task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check, task_send_push]
+    functions = [task_heartbeat, task_infra_snapshot, task_cleanup_access_logs, task_cleanup_snapshots, task_scan_ppt, task_scan_homework, task_scan_excuses, func(task_upload_videos, timeout=7200), func(task_r2_pull_to_disk, timeout=900), func(task_compress_video, timeout=1800), task_naver_login, task_naver_health_check, task_send_push, task_video_upload_reminder]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     on_startup = startup
     # 기본값 3600초라 시간당 한 번만 기록돼 감시용으로 못 쓴다. 1분으로 당겨
@@ -651,6 +692,8 @@ class WorkerSettings:
         cron(task_naver_health_check, minute={0, 30}),
         cron(task_heartbeat, minute=set(range(0, 60, 5))),
         cron(task_cleanup_access_logs, hour={4}, minute={30}),
+        # 워커 시계는 UTC — 02:00 UTC = 11:00 KST (세션 다음 날 오전 11시)
+        cron(task_video_upload_reminder, hour={2}, minute={0}),
         cron(task_cleanup_snapshots, hour={4}, minute={35}),
         # 그래프의 해상도가 여기서 정해진다. 1분마다 한 줄.
         cron(task_infra_snapshot, minute=set(range(60)), run_at_startup=True),
