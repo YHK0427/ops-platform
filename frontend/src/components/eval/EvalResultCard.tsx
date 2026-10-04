@@ -8,6 +8,7 @@ import GrowthReportContent, {
 } from "@/components/eval/GrowthReportContent";
 import FinalGrowthReport from "@/components/eval/FinalGrowthReport";
 import { useGrowthReportPdf } from "@/hooks/useGrowthReportPdf";
+import { useInitialReportPdf } from "@/hooks/useInitialReportPdf";
 import { DEFAULT_SLOGAN } from "@/constants/growthReportCover";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -72,6 +73,8 @@ export default function EvalResultCard({
     onToggle,
 }: EvalResultCardProps) {
     const reportPdf = useGrowthReportPdf();
+    // 초기 결과만 있는 카드에도 PDF — 예전엔 기수 화면에서만 받을 수 있었다
+    const initialPdf = useInitialReportPdf();
     const cohortLabel = detail?.cohort_name ? `UnivPT ${detail.cohort_name}` : "UnivPT";
     const slogan = detail?.cohort_slogan || DEFAULT_SLOGAN;
 
@@ -210,12 +213,29 @@ export default function EvalResultCard({
                                 </>
                             ) : (
                                 growthData && (
-                                    <GrowthReportContent
-                                        data={growthData}
-                                        showTitle={false}
-                                        showQuestionDetail
-                                        slogan={slogan}
-                                    />
+                                    <>
+                                        <div className="flex justify-end">
+                                            <button
+                                                onClick={() => initialPdf.generate({ data: growthData, slogan, cohortLabel })}
+                                                disabled={initialPdf.generating}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500 text-white hover:bg-rose-600 transition-colors disabled:opacity-50"
+                                            >
+                                                {initialPdf.generating ? (
+                                                    <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                ) : (
+                                                    <Download className="w-3.5 h-3.5" />
+                                                )}
+                                                {initialPdf.generating ? "생성 중..." : "PDF 다운로드"}
+                                            </button>
+                                        </div>
+                                        <GrowthReportContent
+                                            data={growthData}
+                                            showTitle={false}
+                                            showQuestionDetail
+                                            slogan={slogan}
+                                        />
+                                        {initialPdf.node}
+                                    </>
                                 )
                             )}
                         </div>
