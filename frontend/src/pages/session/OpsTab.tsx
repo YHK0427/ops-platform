@@ -272,6 +272,7 @@ export default function OpsTab() {
                                 sessionId={session.id}
                                 sessionTitle={session.title}
                                 weekNum={session.week_num}
+                                cohortName={session.cohort_name}
                                 presenters={isTeamSession ? teamPresenters : individualPresenters}
                                 absentMembers={absentForIndividual}
                                 hasGroups={hasGroups}

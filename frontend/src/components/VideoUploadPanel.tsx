@@ -36,6 +36,7 @@ interface VideoUploadPanelProps {
     sessionId: number;
     sessionTitle: string;
     weekNum: number;
+    cohortName?: string | null;
     presenters: PresenterSlot[];
     absentMembers?: AbsentMember[];
     hasGroups: boolean;
@@ -63,7 +64,7 @@ const MAX_CONCURRENT_UPLOADS = 3;
 // 초과면 R2 direct upload 시도 (구성된 경우). 실패 시 서버 chunked fallback
 const R2_THRESHOLD = 50 * 1024 * 1024;
 
-export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult, onCancelNaverUpload, isCancellingNaver, showOrderPanel, onToggleOrderPanel, orderPanel }: VideoUploadPanelProps) {
+export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, cohortName, presenters, absentMembers, hasGroups, onNaverUploadStarted, naverProgress, naverStatus, naverResult, onCancelNaverUpload, isCancellingNaver, showOrderPanel, onToggleOrderPanel, orderPanel }: VideoUploadPanelProps) {
     const { user } = useAuth();
     const { data: uploadedVideos, refetch } = useSessionVideos(sessionId);
     const { mutate: deleteVideo, isPending: isDeleting } = useDeleteSessionVideo();
@@ -106,7 +107,9 @@ export function VideoUploadPanel({ sessionId, sessionTitle, weekNum, presenters,
     const [selectedForNaver, setSelectedForNaver] = useState<Set<number>>(new Set());
 
     // 카페 제목 접두어
-    const defaultPrefix = `연합UP ${user?.cohort_name ?? ""} ${weekNum}주차 발표-[${sessionTitle}]-`;
+    // 기수는 로그인한 사람이 아니라 세션의 기수로 — 전체 관리자는 소속 기수가 없어 "연합UP  3주차"가 됐다
+    const cohortLabel = cohortName ?? user?.cohort_name ?? "";
+    const defaultPrefix = `연합UP ${cohortLabel ? `${cohortLabel} ` : ""}${weekNum}주차 발표-[${sessionTitle}]-`;
     const [titlePrefix, setTitlePrefix] = useState(defaultPrefix);
 
     // member_id → uploaded video

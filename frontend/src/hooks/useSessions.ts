@@ -8,6 +8,8 @@ export interface Session {
     title: string; // "1주차 세션", "MT"
     date: string; // YYYY-MM-DD
     week_num: number;
+    /** 세션이 속한 기수 이름 ("34기") — 상세 조회에만 있다 */
+    cohort_name?: string | null;
     type: "INDIVIDUAL" | "TEAM";
     status: "SETUP" | "PREP" | "OPS" | "POST" | "SETTLEMENT" | "FINALIZED";
     description?: string;

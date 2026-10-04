@@ -239,6 +239,9 @@ async def get_session(
     
     if not session:
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
+    from app.models import Cohort
+    cohort = await db.get(Cohort, session.cohort_id)
+    session.cohort_name = cohort.name if cohort else None
     return session
 
 

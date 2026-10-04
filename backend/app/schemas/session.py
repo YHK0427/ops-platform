@@ -52,6 +52,9 @@ class SessionBasicResponse(BaseModel):
 
 
 class SessionResponse(SessionBasicResponse):
+    # 화면의 영상 카페 제목 "연합UP 34기 3주차 발표-..." 에 쓴다. 로그인한 사람의 기수로 만들면
+    # 기수가 없는 전체 관리자에겐 빈칸이 됐다 — 세션이 속한 기수 이름을 내려준다.
+    cohort_name: str | None = None
     teams: list[TeamResponse] = []
     attendances: list[AttendanceResponse] = []
     assignments: list[AssignmentResponse] = []
