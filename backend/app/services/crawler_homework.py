@@ -204,6 +204,7 @@ async def scan_feedback_comments(
     members: list[Member],
     db: AsyncSession,
     deadline_post: Optional[datetime] = None,
+    cohort_name: Optional[str] = None,
 ) -> int:
     """
     영상 게시판에서 week_num 주차 영상들의 댓글을 스캔하여
@@ -214,7 +215,7 @@ async def scan_feedback_comments(
     - effective_targets 내 모든 멤버의 영상에 댓글을 달았으면 PASS, 아니면 MISSING
     - target_member_ids 미설정 시 본인 영상만 체크
     - 결석/공결(ABSENT/EXCUSED) 멤버는 피드백 대상이 없으므로 EXEMPT
-    - 출석자 중 본인 영상이 없는 경우 체크 불가 → PASS 처리
+    - 볼 영상이 없으면 체크 불가 → PENDING(판정 보류). 영상이 올라온 뒤 다시 검사하면 판정된다
     """
     req_session = await get_valid_requests_session(db)
     if req_session is None:
@@ -230,12 +231,15 @@ async def scan_feedback_comments(
             break
         for raw_item in items:
             item = raw_item.get("item", {})
-            if _is_match_week(item.get("subject", ""), week_num):
+            subject = item.get("subject", "")
+            # 주차만 보면 다른 기수의 같은 주차 영상이 섞인다(34기 3주차 검사에 33기 3주차 영상 6개가 걸림).
+            # 업로드 제목에는 항상 기수명이 들어간다: "연합UP 34기 3주차 발표-[...]"
+            if _is_match_week(subject, week_num) and (not cohort_name or cohort_name in subject):
                 video_articles.append(item)
 
     if not video_articles:
-        logger.warning(f"No video articles found for week {week_num}")
-        return 0
+        # 여기서 끝내면 예전 검사가 남긴 잘못된 판정이 그대로 남는다 — 아래에서 전원 보류/면제로 다시 적는다
+        logger.warning(f"No video articles found for week {week_num} ({cohort_name or '기수 미지정'})")
 
     logger.info(f"Found {len(video_articles)} video articles for week {week_num}")
 
@@ -357,11 +361,14 @@ async def scan_feedback_comments(
 
         feedback_detail = []
         if not targets_with_videos:
+            # 볼 영상이 없으면 댓글을 달았는지 알 수 없다 — 통과로 치면 영상이 안 올라간 주에 전원이
+            # '제출 완료'가 된다. 판정을 보류(PENDING)하고, 영상이 올라온 뒤 다시 검사하면 판정된다.
             logger.warning(
                 f"Member {member.id}: no video articles for any effective target "
-                f"({effective_targets}) — marking PASS"
+                f"({effective_targets}) — keeping PENDING"
             )
-            status = "PASS"
+            await upsert_assignment(db, session_id, member.id, "FEEDBACK", "PENDING")
+            continue
         else:
             all_covered = True
             for target_id in targets_with_videos:

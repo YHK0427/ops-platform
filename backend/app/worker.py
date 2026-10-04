@@ -10,7 +10,7 @@ from sqlalchemy import select, delete
 from app.config import settings
 from app.logging_config import setup_logging
 from app.database import AsyncSessionLocal
-from app.models import Member, NaverSession, Session, PushSubscription
+from app.models import Cohort, Member, NaverSession, Session, PushSubscription
 from app.services.push import send_webpush
 from app.services.crawler_ppt import scan_ppt
 from app.services.crawler_video import upload_all_videos
@@ -88,7 +88,9 @@ async def task_scan_homework(ctx, session_id: int):
             # FEEDBACK scan (댓글 방식)
             fb_count = 0
             if cfg.get("has_feedback", True):
-                fb_count = await scan_feedback_comments(session.id, session.week_num, members, db, deadline_post=deadline_post)
+                cohort = await db.get(Cohort, session.cohort_id)
+                fb_count = await scan_feedback_comments(session.id, session.week_num, members, db, deadline_post=deadline_post,
+                                                        cohort_name=cohort.name if cohort else None)
 
             result = {"status": "complete", "homework_count": hw_count, "feedback_count": fb_count}
         logger.log(25, f"✅ 과제 스캔 완료 — {label} (과제 {hw_count}건, 피드백 {fb_count}건)")

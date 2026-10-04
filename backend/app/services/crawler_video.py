@@ -124,7 +124,11 @@ async def _get_naver_storage_state(db: AsyncSession) -> dict:
     session = result.scalar_one_or_none()
     if not session:
         raise ValueError("유효한 네이버 세션이 없습니다.")
-    return session.storage_json
+    # 쿠키에 적힌 만료일이 지나면 브라우저(Playwright)는 쿠키를 버리고 로그인 페이지로 튕긴다.
+    # 네이버 서버 쪽 로그인은 그보다 오래 살아 있어서(세션 점검은 requests 라 만료일을 안 보고 '정상'),
+    # 업로드만 '세션 만료'로 실패했다(2026-09-09 만료 쿠키). 진짜 유효한지는 서버가 판단하게 만료일을 지운다.
+    storage = session.storage_json or {}
+    return {**storage, "cookies": [{**c, "expires": -1} for c in storage.get("cookies", [])]}
 
 
 async def _upload_single(page, video_path: str, cafe_title: str) -> bool:
@@ -200,6 +204,9 @@ async def upload_all_videos(
     cohort_label = cohort.name if cohort else "기수 미상"
 
     storage = await _get_naver_storage_state(db)
+    # DB 는 여기까지만 읽는다. 트랜잭션을 연 채 업로드(수십 분)를 돌면 Postgres 가
+    # idle_in_transaction_session_timeout(5분)으로 연결을 끊고, 끝에서 정리하다 작업 전체가 실패로 찍혔다.
+    await db.commit()
 
     if not videos:
         logger.warning(f"No videos provided for session {session_id}")
