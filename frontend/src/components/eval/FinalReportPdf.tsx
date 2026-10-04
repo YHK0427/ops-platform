@@ -23,7 +23,7 @@ import {
     getLowestQuestionInDomain,
 } from "@/constants/evalQuestions";
 import type { RoundScores } from "@/components/eval/FinalGrowthReport";
-import { COVER_PARAGRAPHS, COVER_SIGNATURE, DEFAULT_SLOGAN, coverClosing } from "@/constants/growthReportCover";
+import { COVER_PARAGRAPHS, COVER_SIGNATURE, DEFAULT_SLOGAN, coverClosing, sloganBanner } from "@/constants/growthReportCover";
 
 interface Props {
     memberName: string;
@@ -145,7 +145,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 </div>
 
                 <div style={{ marginTop: "auto", textAlign: "center", padding: "16px 0 24px" }}>
-                    <span style={{ fontSize: 13, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {sloganText}</span>
+                    <span style={{ fontSize: 13, color: "#f472b6", fontWeight: 500 }}>{sloganBanner(sloganText)}</span>
                     <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>1 / 3 · UnivPT</span>
                 </div>
             </div>
@@ -325,7 +325,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 </div>
 
                 <div style={{ textAlign: "center", marginTop: 8 }}>
-                    <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {sloganText}</span>
+                    <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>{sloganBanner(sloganText)}</span>
                     <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>2 / 3 · UnivPT</span>
                 </div>
             </div>
@@ -411,7 +411,7 @@ export default function FinalReportPdf({ memberName, final, initial, growthRefle
                 )}
 
                 <div style={{ textAlign: "center", paddingTop: 12 }}>
-                    <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {sloganText}</span>
+                    <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>{sloganBanner(sloganText)}</span>
                     <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>3 / 3 · UnivPT</span>
                 </div>
             </div>

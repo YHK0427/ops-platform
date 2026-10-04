@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Lock, Download } from "lucide-react";
 import FinalGrowthReport from "@/components/eval/FinalGrowthReport";
 import { useGrowthReportPdf } from "@/hooks/useGrowthReportPdf";
-import { COVER_PARAGRAPHS, COVER_SIGNATURE, DEFAULT_SLOGAN, coverClosing } from "@/constants/growthReportCover";
+import { COVER_PARAGRAPHS, COVER_SIGNATURE, DEFAULT_SLOGAN, coverClosing, sloganBanner } from "@/constants/growthReportCover";
 import GrowthReportContent, {
     DOMAINS,
     DOMAIN_LABELS,
@@ -281,6 +281,7 @@ export default function MemberResult() {
                         showTitle
                         roundLabel={data.round_type === "FINAL" ? "후기 분석지" : "초기 분석지"}
                         cohortLabel={cohortLabel}
+                        slogan={slogan}
                     />
                 )}
             </motion.main>
@@ -488,7 +489,7 @@ export default function MemberResult() {
 
                         {/* 푸터 */}
                         <div style={{ textAlign: "center", padding: 0 }}>
-                            <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {slogan}</span>
+                            <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>{sloganBanner(slogan)}</span>
                             <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>UnivPT</span>
                         </div>
                     </div>
@@ -569,7 +570,7 @@ export default function MemberResult() {
 
                         {/* 푸터 */}
                         <div style={{ textAlign: "center", padding: 0, position: "relative", zIndex: 1 }}>
-                            <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>Bloom UP — {slogan}</span>
+                            <span style={{ fontSize: 12, color: "#f472b6", fontWeight: 500 }}>{sloganBanner(slogan)}</span>
                             <span style={{ fontSize: 10, color: "#d1d5db", marginLeft: 10 }}>UnivPT</span>
                         </div>
                     </div>

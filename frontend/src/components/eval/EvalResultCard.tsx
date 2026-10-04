@@ -157,13 +157,6 @@ export default function EvalResultCard({
                         className="overflow-hidden"
                     >
                         <div className="px-5 pb-6 pt-4 border-t border-[var(--color-border-subtle)] space-y-5">
-                            {/* 기수원 리포트 표지·PDF 와 같은 기수 슬로건 — 운영진 화면에서만 빠져 있었다 */}
-                            {detail && (
-                                <div className="text-center">
-                                    <p className="text-[11px] font-semibold tracking-wider text-rose-400">{cohortLabel} 성장 리포트</p>
-                                    <p className="mt-1 text-sm font-bold text-rose-600 [word-break:keep-all]">{slogan}</p>
-                                </div>
-                            )}
                             {detail?.growth_reflection && detail.growth_reflection.trim() && (
                                 <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-5">
                                     <div className="flex items-center gap-2 mb-3">
@@ -221,6 +214,7 @@ export default function EvalResultCard({
                                         data={growthData}
                                         showTitle={false}
                                         showQuestionDetail
+                                        slogan={slogan}
                                     />
                                 )
                             )}

@@ -1,3 +1,4 @@
+import { sloganBanner } from "@/constants/growthReportCover";
 import { useMemo } from "react";
 import { motion } from "framer-motion";
 import {
@@ -40,6 +41,8 @@ export interface GrowthReportContentProps {
     roundLabel?: string;
     /** 표지 상단 라벨 — 예: "UnivPT 33기". 없으면 "UnivPT"만 표시 */
     cohortLabel?: string;
+    /** 맨 아래 벚꽃 배너의 기수 슬로건. 없으면 기본 문구 */
+    slogan?: string;
 }
 
 // ── Constants ───────────────────────────────────────────────────────────
@@ -298,6 +301,7 @@ export default function GrowthReportContent({
     showQuestionDetail = false,
     roundLabel = "초기 분석지",
     cohortLabel,
+    slogan,
 }: GrowthReportContentProps) {
     const combinedScores = useMemo(() => {
         if (!data?.combined_scores_by_domain) return { PLANNING: 0, DESIGN: 0, SPEECH: 0 };
@@ -894,7 +898,7 @@ export default function GrowthReportContent({
                 </svg>
 
                 <p className="text-center text-sm font-medium text-rose-400/80 relative">
-                    Bloom UP — 당신의 가능성을 꽃피우기 위해
+                    {sloganBanner(slogan)}
                 </p>
                 <p className="text-center text-[10px] text-gray-300 mt-1 relative">
                     UnivPT

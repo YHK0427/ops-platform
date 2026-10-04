@@ -4,6 +4,15 @@
  * 이모지도 슬로건 문구 자체에 포함된다(별도 프리픽스로 붙이지 않음). */
 export const DEFAULT_SLOGAN = "🌸 당신의 가능성을 꽃피우기 위해";
 
+/** 리포트 맨 아래 벚꽃 배너·PDF 하단 문구. "Bloom UP — ..." 이 줄 전체가 기본 슬로건이고,
+ * 기수 슬로건이 있으면 줄을 통째로 그 슬로건으로 바꾼다(앞에 "Bloom UP —" 를 붙이지 않는다). */
+export const DEFAULT_BANNER = "Bloom UP — 당신의 가능성을 꽃피우기 위해";
+
+export function sloganBanner(slogan?: string | null): string {
+    // 호출부가 기본값(DEFAULT_SLOGAN)으로 채워서 넘기기도 해서 그 경우도 '슬로건 없음'으로 본다
+    return slogan && slogan !== DEFAULT_SLOGAN ? slogan : DEFAULT_BANNER;
+}
+
 export interface CoverParagraph {
     text: string;
     /** 강조 문단(굵게) 여부 */
