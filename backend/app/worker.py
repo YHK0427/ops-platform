@@ -452,7 +452,7 @@ KST = timezone(timedelta(hours=9))
 
 
 async def task_video_upload_reminder(ctx):
-    """세션 다음 날 오전 11시(KST) — 그 기수 학술부에게 영상 업로드 리마인드 푸시.
+    """세션 다음 날 오후 11시(KST) — 그 기수 학술부에게 영상 업로드 리마인드 푸시.
     업로드 여부는 따지지 않는다. 했으면 무시하면 되는 알림이다."""
     yesterday = (datetime.now(KST) - timedelta(days=1)).date()
     async with AsyncSessionLocal() as db:
@@ -692,8 +692,8 @@ class WorkerSettings:
         cron(task_naver_health_check, minute={0, 30}),
         cron(task_heartbeat, minute=set(range(0, 60, 5))),
         cron(task_cleanup_access_logs, hour={4}, minute={30}),
-        # 워커 시계는 UTC — 02:00 UTC = 11:00 KST (세션 다음 날 오전 11시)
-        cron(task_video_upload_reminder, hour={2}, minute={0}),
+        # 워커 시계는 UTC — 14:00 UTC = 23:00 KST (세션 다음 날 오후 11시)
+        cron(task_video_upload_reminder, hour={14}, minute={0}),
         cron(task_cleanup_snapshots, hour={4}, minute={35}),
         # 그래프의 해상도가 여기서 정해진다. 1분마다 한 줄.
         cron(task_infra_snapshot, minute=set(range(60)), run_at_startup=True),
