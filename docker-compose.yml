@@ -33,18 +33,32 @@ services:
       args:
         VITE_API_BASE: ""           # 같은 origin → "" (nginx가 /api/* 프록시)
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:80"        # 호스트의 localhost:3000만 바인딩
-                                   # 외부 직접 접근 차단 → Cloudflare Tunnel이 유일한 진입점
+    # 호스트 포트는 caddy 가 잡는다(무중단 배포) — frontend 는 frontend-net 안에서만
     depends_on:
       backend:
         condition: service_healthy
     networks:
       - frontend-net
 
-  # ── TIER 2: Application ──────────────────────────
-  backend:
+  # 무중단 배포 앞단. cloudflared 터널이 보는 localhost:3000 은 여기.
+  # frontend 를 다시 띄우는 동안 요청을 붙잡았다가 새 컨테이너로 넘긴다.
+  caddy:
     logging: *default-logging
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"        # 호스트의 localhost:3000만 바인딩
+                                   # 외부 직접 접근 차단 → Cloudflare Tunnel이 유일한 진입점
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - frontend-net
+
+  # ── TIER 2: Application ──────────────────────────
+  backend: &backend
+    logging: *default-logging
+    # 종료 신호 후 처리 중인 요청을 끝낼 시간 (기본 10초 → 무중단 배포 때 긴 요청이 잘리지 않게)
+    stop_grace_period: 30s
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -76,6 +90,15 @@ services:
     networks:
       - frontend-net               # frontend와 통신
       - backend-net                # db/redis와 통신
+
+  # 무중단 배포용 두 번째 백엔드 — 배포 때 backend 와 하나씩 교체해서 항상 하나는 응답한다.
+  # 'backend' 별칭을 같이 써서 nginx 가 이름 하나로 둘 다 찾는다(살아 있는 쪽으로 보냄).
+  backend-b:
+    <<: *backend
+    networks:
+      frontend-net:
+        aliases: [backend]
+      backend-net: {}
 
   worker:
     logging: *default-logging

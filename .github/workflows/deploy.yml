@@ -58,18 +58,8 @@ jobs:
       - name: Deploy
         run: |
           ssh deploy-server << 'SCRIPT'
+            # 무중단 배포 — 백엔드 2개를 하나씩 교체, 프론트 재시작은 caddy 가 붙잡는다 (scripts/deploy.sh 참고)
             cd /home/ubuntu/ops-deploy
             git pull origin main
-
-            # 캐시 활용 빌드 (변경 레이어만 재빌드)
-            docker compose build
-
-            # 빌드 성공한 경우에만 서비스 교체
-            docker compose down
-            docker compose up -d
-            docker compose exec -T backend alembic upgrade head
-
-            # 이전 빌드 잔여물 정리 (현재 사용 중인 것만 보존)
-            docker image prune -f
-            docker builder prune -f --keep-storage=2GB
+            PULL=0 bash scripts/deploy.sh
           SCRIPT

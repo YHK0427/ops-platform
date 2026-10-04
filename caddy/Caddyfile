@@ -1,0 +1,26 @@
+# 무중단 배포용 앞단 프록시.
+# cloudflared 터널 → localhost:3000(여기) → 프론트 nginx → 백엔드(2개).
+# 프론트 nginx 를 다시 띄우는 몇 초 동안 요청을 끊지 않고 붙잡았다가 새 컨테이너로 넘긴다.
+{
+	auto_https off
+}
+
+:80 {
+	reverse_proxy {
+		# 'frontend' 를 요청마다 다시 찾는다 — 재생성된 컨테이너는 IP 가 바뀐다
+		dynamic a frontend 80 {
+			refresh 1s
+		}
+		# 붙지 못하면 최대 30초 동안 0.25초 간격으로 다시 시도 (nginx 재시작은 1~2초)
+		lb_try_duration 30s
+		lb_try_interval 250ms
+		# 실시간 피드백·투표 웹소켓, 긴 응답을 버퍼링 없이 바로 흘린다
+		flush_interval -1
+		transport http {
+			dial_timeout 2s
+			# nginx 와 연결을 재사용하지 않는다 — 꺼지는 nginx 가 닫는 재사용 연결에 POST 가 실리면
+			# 다시 보낼 수 없어 502 가 났다. 매번 새로 붙으면 꺼진 쪽엔 붙지 못해 안전하게 재시도된다.
+			keepalive off
+		}
+	}
+}
