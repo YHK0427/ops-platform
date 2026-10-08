@@ -16,6 +16,8 @@ interface Board {
     id: number;
     name: string;
     data: Record<string, unknown>;
+    session_id: number | null;
+    session_label: string | null;
     created_at: string;
     updated_at: string | null;
 }
@@ -69,8 +71,11 @@ export default function TeamBuilding() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="font-bold text-[var(--color-text-primary)] truncate">{b.name}</div>
-                                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5 flex items-center gap-1.5 flex-wrap">
                                         수정 {new Date(b.updated_at ?? b.created_at).toLocaleDateString("ko-KR")}
+                                        {b.session_id
+                                            ? <span className="px-1.5 rounded font-bold bg-[var(--color-accent-dim)] text-[var(--color-accent)]">🔗 {b.session_label ?? "세션"} 연결됨</span>
+                                            : <span className="px-1.5 rounded font-bold bg-amber-50 text-amber-700">세션 없음</span>}
                                     </p>
                                 </div>
                                 <Button

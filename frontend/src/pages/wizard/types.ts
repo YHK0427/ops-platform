@@ -6,6 +6,7 @@ export interface WizardState {
     date: string;
     type: SessionType;
     teams: Record<string, number[]>; // team_id -> member_ids
+    board_id?: number | null; // 팀빌딩 보드에서 불러온 경우 — 세션 생성 후 보드와 연결
     groups: Record<string, number[]>; // "1분반" -> member_ids, "2분반" -> member_ids
     staff_groups: Record<string, number[]>; // "1" -> user_ids, "2" -> user_ids
 

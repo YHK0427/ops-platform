@@ -207,7 +207,9 @@ class TeamBuildingBoard(Base):
     id = Column(Integer, primary_key=True)
     cohort_id = Column(Integer, ForeignKey("cohorts.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
-    # {selected_session_ids:[...], num_teams:int, assignment:{memberId: teamIndex|"pool"}, consider:{...}}
+    # 이 보드로 만든(또는 수동 연결한) 세션. 연결되면 다른 보드의 겹침 기준에선 세션으로 대체.
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True)
+    # {selected_session_ids:[...], selected_board_ids:[...], num_teams:int, assignment:{"m12"|"u3": teamIndex|"pool"}, ...}
     data = Column(JSONB, nullable=False, server_default=text("'{}'"))
     # 누가 만들었는지 — 감사 로그와 별개로 보드 자체에 남겨 목록에서 바로 보이게 한다
     created_by = Column(String(100), nullable=True)       # 표기용 "이름(아이디)"

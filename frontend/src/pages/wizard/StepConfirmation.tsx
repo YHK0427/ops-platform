@@ -49,6 +49,12 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                 if (teamsList.length > 0) {
                     await api.patch(`/sessions/${sessionId}/teams`, { teams: teamsList });
                 }
+
+                // 팀빌딩 보드에서 불러왔으면 보드↔세션 연결 (실패해도 세션 생성은 유지)
+                if (state.board_id) {
+                    await api.put(`/team-building/boards/${state.board_id}`, { session_id: sessionId })
+                        .catch(() => toast.warning("팀빌딩 보드 연결 실패 — 보드 화면에서 세션을 직접 연결해주세요"));
+                }
             }
 
             // 3. Assign Groups (if INDIVIDUAL + has_groups)

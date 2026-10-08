@@ -296,6 +296,15 @@ async def delete_session(
     for th in th_result.scalars().all():
         await db.delete(th)
 
+    # 연결된 팀빌딩 보드: 연결은 FK(SET NULL)로 풀리지만, 세션에서 고친 마지막 팀 구성은 보드에 남긴다
+    from app.models import TeamBuildingBoard
+    from app.routers.team_building import _synced_data
+    for board in (await db.execute(
+        select(TeamBuildingBoard).where(TeamBuildingBoard.session_id == session_id)
+    )).scalars().all():
+        board.data = await _synced_data(board, db)
+        board.session_id = None
+
     await db.delete(session)
     await db.commit()
     logger.audit(f"🗑️ 세션 삭제 — {session.week_num}주차 {session.title}")
