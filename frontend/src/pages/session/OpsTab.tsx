@@ -78,6 +78,15 @@ export default function OpsTab() {
         );
     }, [session.attendances]);
 
+    // 공결 멤버 ID — 피드백 면제 (결석자는 2개 작성)
+    const excusedMemberIds = useMemo(() => {
+        return new Set(
+            (session.attendances ?? [])
+                .filter((a) => a.status === "EXCUSED")
+                .map((a) => a.member_id)
+        );
+    }, [session.attendances]);
+
     // 분반 맵 (has_groups일 때만 사용)
     const memberGroupMap = useMemo(() => {
         if (!session.config?.has_groups) return undefined;
@@ -375,6 +384,7 @@ export default function OpsTab() {
                                                 memberGroupMap={memberGroupMap}
                                                 disabled={isSettingTarget}
                                                 isAbsent={isAbsent}
+                                                isExcused={writerId != null && excusedMemberIds.has(writerId)}
                                                 highlightTargetId={hoveredPresenterId}
                                                 onSetTargets={(targetIds) => {
                                                     if (writerId == null) return;
@@ -462,6 +472,7 @@ interface FeedbackTargetRowProps {
     memberGroupMap?: Map<number, number | null>;
     disabled: boolean;
     isAbsent?: boolean;
+    isExcused?: boolean;
     highlightTargetId?: number | null;
     onSetTargets: (targetIds: number[]) => void;
 }
@@ -487,6 +498,7 @@ function FeedbackTargetRow({
     memberGroupMap,
     disabled,
     isAbsent,
+    isExcused,
     highlightTargetId,
     onSetTargets,
 }: FeedbackTargetRowProps) {
@@ -523,7 +535,7 @@ function FeedbackTargetRow({
                     {isAbsent && (
                         <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-500 border border-rose-500/20">
                             <UserMinus className="w-2.5 h-2.5" />
-                            결석 · 2개
+                            {isExcused ? "공결 · 면제" : "결석 · 2개"}
                         </span>
                     )}
                 </div>

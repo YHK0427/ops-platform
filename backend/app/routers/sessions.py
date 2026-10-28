@@ -1208,6 +1208,7 @@ async def feedback_random_assign(
     attendances = att_result.scalars().all()
 
     absent_ids = {a.member_id for a in attendances if a.status in ("ABSENT", "EXCUSED")}
+    excused_ids = {a.member_id for a in attendances if a.status == "EXCUSED"}
     member_group_map = {a.member_id: a.group_num for a in attendances}
     session_has_groups = bool((session.config or {}).get("has_groups"))
 
@@ -1239,7 +1240,11 @@ async def feedback_random_assign(
     for assignment in shuffled_assignments:
         writer_id = assignment.member_id
         is_absent = writer_id in absent_ids
-        extra_count = body.extra_count_absent if is_absent else body.extra_count_normal
+        # 공결자는 피드백 면제(크롤러 EXEMPT) → 대상 배정 안 함
+        if writer_id in excused_ids:
+            extra_count = 0
+        else:
+            extra_count = body.extra_count_absent if is_absent else body.extra_count_normal
 
         # 본인 제외 발표자 중 가장 적게 배정된 순으로
         candidates = [pid for pid in presenter_ids if pid != writer_id]

@@ -214,7 +214,7 @@ async def scan_feedback_comments(
     - effective_targets = {본인} ∪ {target_member_ids} (본인 영상은 기본 포함)
     - effective_targets 내 모든 멤버의 영상에 댓글을 달았으면 PASS, 아니면 MISSING
     - target_member_ids 미설정 시 본인 영상만 체크
-    - 결석/공결(ABSENT/EXCUSED) 멤버는 피드백 대상이 없으므로 EXEMPT
+    - 공결(EXCUSED) 멤버만 EXEMPT. 결석(ABSENT)자는 과제 준비 탭에서 배정된 대상(보통 2명)을 검사
     - 볼 영상이 없으면 체크 불가 → PENDING(판정 보류). 영상이 올라온 뒤 다시 검사하면 판정된다
     """
     req_session = await get_valid_requests_session(db)
@@ -333,20 +333,21 @@ async def scan_feedback_comments(
     # 4. 멤버 이름 맵 (raw_data에 이름 저장용)
     member_name_map = {m.id: m.name for m in members}
 
-    # 4-1. 결석/공결(ABSENT/EXCUSED) 멤버 → FEEDBACK 면제(EXEMPT)
-    #      결석자는 발표 영상이 없어 피드백 대상이 없으므로 면제. (REVIEW EXEMPT 정책과 동일)
-    absent_stmt = select(Attendance.member_id).where(
+    # 4-1. 공결(EXCUSED) 멤버 → FEEDBACK 면제(EXEMPT)
+    #      결석(ABSENT)자는 면제 아님 — 본인 영상이 없을 뿐, 과제 준비 탭에서 배정된
+    #      대상(랜덤 배정 시 2명) 영상에 피드백을 달아야 하므로 아래 일반 로직으로 검사한다.
+    excused_stmt = select(Attendance.member_id).where(
         Attendance.session_id == session_id,
-        Attendance.status.in_(("ABSENT", "EXCUSED")),
+        Attendance.status == "EXCUSED",
     )
-    absent_result = await db.execute(absent_stmt)
-    absent_excused_ids = {row[0] for row in absent_result.all()}
+    excused_result = await db.execute(excused_stmt)
+    excused_ids = {row[0] for row in excused_result.all()}
 
     # 5. 각 멤버별 FEEDBACK 상태 업데이트
     count = 0
     for member in members:
-        # 결석/공결자: 피드백 의무 없음 → EXEMPT ("영상 없음 → PASS" 폴백보다 우선 적용)
-        if member.id in absent_excused_ids:
+        # 공결자: 피드백 의무 없음 → EXEMPT
+        if member.id in excused_ids:
             await upsert_assignment(db, session_id, member.id, "FEEDBACK", "EXEMPT")
             count += 1
             continue
