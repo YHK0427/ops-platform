@@ -3,13 +3,19 @@
     docker compose exec -T -e PYTHONPATH=/app backend python scripts/check_team_building_link.py
 """
 import asyncio
+import os
+import shutil
 from datetime import date
+
+from fastapi import HTTPException
 
 from sqlalchemy import select
 
 import app.logging_config  # noqa: F401 — logger.audit 등록 (세션 삭제 경로가 씀)
 from app.database import AsyncSessionLocal
 from app.models import Assignment, Member, Session as SessionModel, Team, TeamBuildingBoard, TeamMember, User
+from app.routers.sessions import VIDEO_DIR, confirm_teams
+from app.schemas.team import TeamCreate, TeamCreateRequest, TeamMemberCreate
 from app.routers.team_building import (
     BoardCreate, BoardUpdate, _board_teams, _team_slots, create_board, delete_board, get_board, get_data, list_boards,
     update_board,
@@ -84,13 +90,14 @@ async def main():
             tmp = SessionModel(cohort_id=cid, week_num=99, title="__check sync", date=date(2026, 12, 31), type="TEAM", status="PREP")
             db.add(tmp)
             await db.commit()
+            sid = tmp.id  # rollback/expire_all 뒤에도 쓰려고 (async 에서 만료 속성 접근은 lazy load 에러)
 
             async def members_by_slot():
-                teams = (await db.execute(select(Team).where(Team.session_id == tmp.id))).scalars().all()
+                teams = (await db.execute(select(Team).where(Team.session_id == sid))).scalars().all()
                 slots = _team_slots(list(teams))
                 out = {}
                 for tid, mid in (await db.execute(
-                    select(TeamMember.team_id, TeamMember.member_id).join(Team).where(Team.session_id == tmp.id)
+                    select(TeamMember.team_id, TeamMember.member_id).join(Team).where(Team.session_id == sid)
                 )).all():
                     out.setdefault(slots[tid], set()).add(mid)
                 return out, {slots[t.id]: t.id for t in teams}
@@ -99,13 +106,13 @@ async def main():
                 return {"num_teams": 3, "assignment": {f"m{m}": s for m, s in zip(mids, slots)}}
 
             # 6) PREP 연결 보드에서 배치 → 세션 팀 생성 + 팀/개인 과제 생성
-            await update_board(a.id, BoardUpdate(session_id=tmp.id), {}, cid, db)
+            await update_board(a.id, BoardUpdate(session_id=sid), {}, cid, db)
             await update_board(a.id, BoardUpdate(data=board([1, 1, 1, 2, 2, 2])), {}, cid, db)
             got, team_ids = await members_by_slot()
             assert got == {1: set(mids[:3]), 2: set(mids[3:])}, got
-            ppt = (await db.execute(select(Assignment).where(Assignment.session_id == tmp.id, Assignment.type == "PPT_EMAIL"))).scalars().all()
+            ppt = (await db.execute(select(Assignment).where(Assignment.session_id == sid, Assignment.type == "PPT_EMAIL"))).scalars().all()
             assert len(ppt) == 2
-            assert len((await db.execute(select(Assignment.id).where(Assignment.session_id == tmp.id, Assignment.member_id.isnot(None)))).all()) == 6 * 3
+            assert len((await db.execute(select(Assignment.id).where(Assignment.session_id == sid, Assignment.member_id.isnot(None)))).all()) == 6 * 3
 
             # 7) 한 명만 옮기면 팀 행·제출된 팀 과제 유지
             p1 = next(x for x in ppt if x.team_id == team_ids[1])
@@ -146,14 +153,71 @@ async def main():
             got, team_ids3 = await members_by_slot()
             assert mids[4] in got[3] and mids[3] in got[1], got
 
-            # 10) OPS 이후 → 보드 변경이 세션에 안 감
+            # 10a) 과제 준비(OPS)에서도 팀 수정 가능 — 보드·팀 수정 화면 둘 다, 팀 행·제출 과제·발표 순서 유지
             tmp.status = "OPS"
+            await db.commit()
+            got, tids = await members_by_slot()
+            bd = (await get_board(a.id, {}, cid, db)).data
+            asg = dict(bd["assignment"]); asg[f"m{mids[3]}"] = 2
+            await update_board(a.id, BoardUpdate(data={**bd, "assignment": asg}), {}, cid, db)
+            got2, tids2 = await members_by_slot()
+            assert mids[3] in got2[2] and tids2 == tids, (got2, tids2)
+
+            p1_id = p1.id
+            team1 = await db.get(Team, tids[1]); team1.presenter_order = 2
+            await db.commit()
+            names = {t.id: t.name for t in (await db.execute(select(Team).where(Team.session_id == sid))).scalars().all()}
+            n_personal = len((await db.execute(select(Assignment.id).where(Assignment.session_id == sid, Assignment.member_id.isnot(None)))).all())
+
+            def req(rows):
+                return TeamCreateRequest(teams=[TeamCreate(name=n, members=[TeamMemberCreate(member_id=m) for m in ms]) for n, ms in rows])
+
+            # 이름 변경 + mids[3] 다시 1팀으로
+            await confirm_teams(sid, req([("리슨업", got[1]), (names[tids[2]], got2[2] - {mids[3]}), (names[tids[3]], got[3])]), db, {}, cid)
+            db.expire_all()
+            rows = {t.id: t for t in (await db.execute(select(Team).where(Team.session_id == sid))).scalars().all()}
+            assert set(rows) == set(tids.values()), rows
+            assert rows[tids[1]].name == "리슨업" and rows[tids[1]].presenter_order == 2
+            assert (await db.get(Assignment, p1_id)).status == "PASS"
+            assert len((await db.execute(select(Assignment.id).where(Assignment.session_id == sid, Assignment.member_id.isnot(None)))).all()) == n_personal
+            assert (await db.get(SessionModel, sid)).status == "OPS"
+
+            # 영상이 붙은 사람(팀 첫 멤버)은 다른 팀으로 못 옮김 — 팀 수정·보드 둘 다
+            vdir = os.path.join(VIDEO_DIR, f"session_{sid}")
+            os.makedirs(vdir, exist_ok=True)
+            open(os.path.join(vdir, f"{mids[5]}_team.mp4"), "wb").close()
+            try:
+                await confirm_teams(sid, req([("리슨업", got[1] - {mids[5]}), (names[tids[2]], (got2[2] - {mids[3]}) | {mids[5]}), (names[tids[3]], got[3])]), db, {}, cid)
+                raise AssertionError("영상 앵커 이동이 막히지 않음")
+            except HTTPException as e:
+                assert e.status_code == 400
+            await db.rollback()
+            bd = (await get_board(a.id, {}, cid, db)).data
+            asg = dict(bd["assignment"]); asg[f"m{mids[5]}"] = 2
+            try:
+                await update_board(a.id, BoardUpdate(data={**bd, "assignment": asg}), {}, cid, db)
+                raise AssertionError("보드에서 영상 앵커 이동이 막히지 않음")
+            except HTTPException as e:
+                assert e.status_code == 400
+            await db.rollback()
+            got3, _ = await members_by_slot()
+            assert mids[5] in got3[1], got3
+            shutil.rmtree(vdir)
+
+            # 이름 원복(이후 단계는 "N조" 슬롯 기준)
+            await confirm_teams(sid, req([(names[tids[1]], got[1]), (names[tids[2]], got2[2] - {mids[3]}), (names[tids[3]], got[3])]), db, {}, cid)
+            db.expire_all()
+            assert set((await members_by_slot())[1].values()) == set(tids.values())
+
+            # 10) 과제 검사(POST) 이후 → 보드 변경이 세션에 안 감
+            tmp = await db.get(SessionModel, sid)
+            tmp.status = "POST"
             await db.commit()
             before, _ = await members_by_slot()
             await update_board(a.id, BoardUpdate(data=board([1, 1, 1, 1, 1, 1])), {}, cid, db)
             after, _ = await members_by_slot()
             assert before == after
-            assert (await get_board(a.id, {}, cid, db)).session_status == "OPS"
+            assert (await get_board(a.id, {}, cid, db)).session_status == "POST"
 
             # 11) 연결 해제 → 마지막 세션 팀 구성이 보드에 남음 (방금 보낸 [1]*6 아님)
             await update_board(a.id, BoardUpdate(session_id=None), {}, cid, db)
@@ -162,11 +226,11 @@ async def main():
 
             # 12) 세션 삭제 → 연결 해제 + 세션 쪽 마지막 팀 구성이 보드에 남음
             from app.routers.sessions import delete_session
-            await update_board(a.id, BoardUpdate(session_id=tmp.id), {}, cid, db)
+            await update_board(a.id, BoardUpdate(session_id=sid), {}, cid, db)
             await db.execute(TeamMember.__table__.update().where(
                 TeamMember.team_id == team_ids3[1], TeamMember.member_id == mids[5]).values(team_id=team_ids3[3]))
             await db.commit()
-            await delete_session(tmp.id, db, {}, cid)
+            await delete_session(sid, db, {}, cid)
             db.expire_all()
             row = await db.get(TeamBuildingBoard, a.id)
             assert row.session_id is None and row.data["assignment"][f"m{mids[5]}"] == 3, row.data
@@ -176,6 +240,7 @@ async def main():
                 await delete_board(bid, {}, cid, db)
             t = (await db.execute(select(SessionModel).where(SessionModel.cohort_id == cid, SessionModel.week_num == 99))).scalars().first()
             if t:
+                shutil.rmtree(os.path.join(VIDEO_DIR, f"session_{t.id}"), ignore_errors=True)
                 await db.execute(Assignment.__table__.delete().where(Assignment.session_id == t.id))
                 await db.execute(Team.__table__.delete().where(Team.session_id == t.id))
                 await db.delete(t)

@@ -150,7 +150,7 @@ export default function PrepTab() {
             <section>
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold text-lg">출석 체크</h3>
-                    {session.type === "TEAM" && session.status === "PREP" && (
+                    {session.type === "TEAM" && ["PREP", "OPS"].includes(session.status) && (
                         <Button
                             size="sm"
                             variant="outline"

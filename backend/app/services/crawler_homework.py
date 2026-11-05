@@ -416,7 +416,8 @@ def _match_ppt_owners(
         if m.name and m.name in title:
             owners.add(m.id)
     for team_name, team in team_map.items():
-        if team_name and team_name in title:
+        # 앞에 숫자가 붙은 건 다른 팀 — 팀이 10개를 넘으면 "1조"가 "11조" 글에도 걸렸다
+        if team_name and re.search(rf"(?<!\d){re.escape(team_name)}", title):
             owners.update(team_member_ids.get(team.id, []))
     return owners
 

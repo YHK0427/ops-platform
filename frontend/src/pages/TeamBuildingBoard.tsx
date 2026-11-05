@@ -31,7 +31,7 @@ export default function TeamBuildingBoard() {
     return <BoardEditor key={`${boardId}-${ver}`} boardId={boardId!} onReload={() => setVer((v) => v + 1)} />;
 }
 
-const EDITABLE = ["SETUP", "PREP"]; // 세션 팀 수정 가능 단계 (백엔드 TEAM_EDITABLE 과 동일)
+const EDITABLE = ["SETUP", "PREP", "OPS"]; // 세션 팀 수정 가능 단계 (백엔드 TEAM_EDITABLE 과 동일)
 
 function BoardEditor({ boardId, onReload }: { boardId: string; onReload: () => void }) {
     const navigate = useNavigate();
@@ -130,6 +130,16 @@ function BoardEditor({ boardId, onReload }: { boardId: string; onReload: () => v
         } catch { toast.error("연결 실패"); }
     };
     const locked = linkedSession != null && linkedStatus != null && !EDITABLE.includes(linkedStatus);
+    const commitNumTeams = (el: HTMLInputElement) => {
+        const n = Math.max(2, Math.min(20, Math.round(Number(el.value)) || numTeams));
+        if (n === numTeams) { el.value = String(numTeams); return; }
+        const dropped = Object.values(assignment).filter((s) => typeof s === "number" && s > n).length;
+        if (dropped && !confirm(`팀 수를 ${n}개로 줄이면 ${n + 1}조 이후 ${dropped}명이 미배정으로 빠져요${linkedSession ? " (연결된 세션 팀에도 반영)" : ""}. 줄일까요?`)) {
+            el.value = String(numTeams);
+            return;
+        }
+        setNumTeams(n);
+    };
 
     const roster: Participant[] = useMemo(() => [
         ...members.map((m) => ({ key: `m${m.id}`, id: m.id, name: m.name, staff: false })),
@@ -170,7 +180,13 @@ function BoardEditor({ boardId, onReload }: { boardId: string; onReload: () => v
                         return data.session_status;
                     });
                 }
-            }).catch(() => {});
+            }).catch((e) => {
+                // 서버가 거절(예: 영상 붙은 사람 이동)하면 화면만 바뀐 채 남지 않게 서버 상태로 다시 연다
+                if (e?.response?.status === 400) {
+                    toast.error(e.response.data?.detail ?? "저장 실패 — 보드를 다시 불러와요");
+                    qc.invalidateQueries({ queryKey: ["tb-board", boardId] }).then(onReload);
+                }
+            });
         };
         pendingRef.current = put;
         if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -492,7 +508,12 @@ function BoardEditor({ boardId, onReload }: { boardId: string; onReload: () => v
                         <Button size="sm" variant="outline" onClick={resetPool} disabled={locked}><RotateCcw className="w-4 h-4 mr-1" /> 전부 풀로</Button>
                         <Button size="sm" variant="outline" onClick={copyResult}><ClipboardCopy className="w-4 h-4 mr-1" /> 결과 복사</Button>
                         <div className="flex items-center gap-2 ml-2"><span className="text-sm text-[var(--color-text-secondary)]">팀 수</span>
-                            <input type="number" min={2} max={12} value={numTeams} disabled={locked} onChange={(e) => setNumTeams(Math.max(2, Math.min(12, Number(e.target.value) || 2)))} className="w-16 px-2 py-1.5 rounded-lg border border-[var(--color-border)] text-sm text-center" /></div>
+                            {/* 키 입력마다 반영하면 "6"→"10" 고치는 중간값(빈칸·"1")이 2로 잘려 3조 이상이 전부 풀로 빠지고,
+                                그게 자동저장으로 연결된 세션 팀까지 지웠다. 다 입력하고 나서(blur/Enter)만 반영한다. */}
+                            <input key={numTeams} type="number" min={2} max={20} defaultValue={numTeams} disabled={locked}
+                                onBlur={(e) => commitNumTeams(e.currentTarget)}
+                                onKeyDown={(e) => { if (e.key === "Enter") commitNumTeams(e.currentTarget); }}
+                                className="w-16 px-2 py-1.5 rounded-lg border border-[var(--color-border)] text-sm text-center" /></div>
                     </div>
 
                     <section>

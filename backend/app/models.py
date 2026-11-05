@@ -163,7 +163,8 @@ class Team(Base):
 
     # Relationships
     session = relationship("Session", back_populates="teams")
-    members = relationship("TeamMember", back_populates="team", cascade="all, delete-orphan")
+    # id 순 고정 — 팀 영상은 첫 멤버 id 로 저장되므로 순서가 흔들리면 영상이 엉뚱한 슬롯에 붙는다
+    members = relationship("TeamMember", back_populates="team", cascade="all, delete-orphan", order_by="TeamMember.id")
     assignments = relationship("Assignment", back_populates="team")
 
 

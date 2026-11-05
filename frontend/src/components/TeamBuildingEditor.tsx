@@ -159,6 +159,7 @@ function DroppableColumn({
                     <input
                         className="font-bold text-sm bg-transparent border-b border-[var(--color-accent)] outline-none text-[var(--color-text-primary)] w-full mr-2"
                         value={editValue}
+                        maxLength={50}
                         onChange={(e) => setEditValue(e.target.value)}
                         onBlur={handleSubmitRename}
                         onKeyDown={(e) => {

@@ -857,6 +857,38 @@ async def generate_teams(
     return response
 
 
+def video_member_ids(session_id: int) -> set[int]:
+    """영상 파일(업로드 중 .partial/.tmp 포함)이 붙어 있는 member_id. 팀 세션 영상은 팀 첫 멤버 id 로 저장된다."""
+    d = os.path.join(VIDEO_DIR, f"session_{session_id}")
+    if not os.path.isdir(d):
+        return set()
+    return {int(f.split("_", 1)[0]) for f in os.listdir(d) if "_" in f and f.split("_", 1)[0].isdigit()}
+
+
+def video_anchor_blocked(video_mids: set[int], old_team_of: dict[int, int], new_team_of: dict[int, int | None]) -> list[int]:
+    """영상이 붙은 기수가 원래 팀(행)을 떠나면 영상이 엉뚱한 팀에 붙거나 사라진다 → 막을 대상."""
+    return [mid for mid in video_mids if mid in old_team_of and new_team_of.get(mid) != old_team_of[mid]]
+
+
+def _match_teams(existing: list, incoming: list) -> dict:
+    """재편집 저장 시 들어온 팀(index) → 기존 팀 행. 멤버가 많이 겹치는 쌍부터(동점이면 같은 이름),
+    겹치는 사람이 없으면 같은 이름. 이름을 바꾸거나(맞바꿔도) 사람을 옮겨도 팀 행(id)이 유지된다. 짝이 없으면 새 팀."""
+    old = {t.id: {tm.member_id for tm in t.members} for t in existing}
+    pairs = sorted(
+        ((len({m.member_id for m in td.members} & old[t.id]), t.name == td.name, i, t.id)
+         for i, td in enumerate(incoming) for t in existing),
+        key=lambda p: (-p[0], not p[1], p[2], p[3]),
+    )
+    by_id = {t.id: t for t in existing}
+    out: dict = {}
+    used: set[int] = set()
+    for overlap, same_name, i, tid in pairs:
+        if (overlap or same_name) and i not in out and tid not in used:
+            out[i] = by_id[tid]
+            used.add(tid)
+    return out
+
+
 @router.patch("/{session_id}/teams", status_code=status.HTTP_204_NO_CONTENT)
 async def confirm_teams(
     session_id: int,
@@ -865,62 +897,102 @@ async def confirm_teams(
     _: dict = Depends(require_staff),
     cohort_id: int = Depends(get_current_cohort_id),
 ):
-    """팀 확정 (DB 저장) + Assignments 자동 생성 + PREP 전환"""
+    """팀 확정 (DB 저장) + Assignments 자동 생성 + PREP 전환.
+    PREP/OPS 재편집은 팀 행을 지우지 않고 고친다 — 팀 과제(PPT 이메일 제출)·발표 순서·평가 연결 보존."""
     session = await _get_session_or_404(session_id, db, cohort_id)
-    if session.status not in ("SETUP", "PREP"):
-        raise HTTPException(status_code=400, detail="SETUP 또는 PREP 상태에서만 팀 수정 가능")
+    if session.status not in ("SETUP", "PREP", "OPS"):
+        raise HTTPException(status_code=400, detail="팀 수정은 과제 준비 단계까지만 가능합니다")
 
-    is_reconfirm = session.status == "PREP"
+    is_reconfirm = session.status in ("PREP", "OPS")
     if session.type == "INDIVIDUAL":
         raise HTTPException(status_code=400, detail="INDIVIDUAL 세션에는 팀빌딩 불가")
 
     # 주의: 출결 레코드는 삭제하지 않음
     from sqlalchemy import delete, select as sa_select
     from app.audit_hook import record_manual_event
-    if is_reconfirm:
-        # PREP 재편집: PPT 과제(팀 단위)만 삭제, 개인 과제는 유지
-        result = await db.execute(
-            delete(Assignment).where(
-                Assignment.session_id == session_id,
-                Assignment.team_id.isnot(None),
-            )
-        )
-    else:
-        # SETUP 최초 확정: 모든 과제 삭제
-        result = await db.execute(delete(Assignment).where(Assignment.session_id == session_id))
-    if result.rowcount:
-        await record_manual_event(db, "DELETE", "assignments", f"{result.rowcount}건 삭제(과제배정 · 팀 재확정)", row_id=str(session_id))
 
-    # 기존 팀 삭제 (cascade로 team_members도 삭제됨)
-    result = await db.execute(delete(Team).where(Team.session_id == session_id))
-    if result.rowcount:
-        await record_manual_event(db, "DELETE", "teams", f"{result.rowcount}건 삭제(팀 · 재확정)", row_id=str(session_id))
-    
-    # 3. 새 팀 생성
-    for team_data in body.teams:
-        team = Team(
-            session_id=session_id,
-            name=team_data.name,
-        )
-        db.add(team)
-        await db.flush()  # team.id 확보
+    incoming_ids = [m.member_id for t in body.teams for m in t.members]
+    if len(incoming_ids) != len(set(incoming_ids)):
+        raise HTTPException(status_code=400, detail="한 사람이 두 팀에 들어가 있어요")
+    if len({t.name for t in body.teams}) != len(body.teams) or any(not t.name.strip() for t in body.teams):
+        raise HTTPException(status_code=400, detail="팀 이름이 비었거나 겹쳐요")
+    if incoming_ids:
+        ok = set((await db.execute(sa_select(Member.id).where(
+            Member.id.in_(incoming_ids), Member.cohort_id == cohort_id))).scalars().all())
+        if ok != set(incoming_ids):
+            raise HTTPException(status_code=400, detail="이 기수 멤버가 아닌 사람이 섞여 있어요")
 
-        for tm in team_data.members:
-            db.add(TeamMember(
-                team_id=team.id,
-                member_id=tm.member_id,
-            ))
-            
-        # 팀별 PPT_EMAIL 과제 1개 생성
+    def _add_ppt_email(team_id: int):
         if session.config.get("has_ppt_email", True):
-            ppt_email = Assignment(
-                session_id=session_id,
-                team_id=team.id,
-                member_id=None, # 팀 과제
-                type="PPT_EMAIL",
-                status="PENDING",
-            )
-            db.add(ppt_email)
+            db.add(Assignment(session_id=session_id, team_id=team_id, member_id=None, type="PPT_EMAIL", status="PENDING"))
+
+    if is_reconfirm:
+        existing = list((await db.execute(
+            sa_select(Team).where(Team.session_id == session_id).options(selectinload(Team.members))
+        )).scalars().all())
+        matched = _match_teams(existing, body.teams)
+        old_team_of = {tm.member_id: t.id for t in existing for tm in t.members}
+        new_team_of = {m.member_id: (matched[i].id if i in matched else None)
+                       for i, td in enumerate(body.teams) for m in td.members}
+        blocked = video_anchor_blocked(video_member_ids(session_id), old_team_of, new_team_of)
+        if blocked:
+            names = (await db.execute(sa_select(Member.name).where(Member.id.in_(blocked)))).scalars().all()
+            raise HTTPException(status_code=400, detail=(
+                f"{', '.join(names)} — 팀 영상이 이 사람 이름으로 올라가 있어 다른 팀으로 옮길 수 없어요. "
+                "옮기려면 과제 준비 탭에서 그 팀 영상을 먼저 지워주세요. (팀 이름 변경·다른 사람 이동은 가능)"))
+        keep_ids = {t.id for t in matched.values()}
+        gone = [t.id for t in existing if t.id not in keep_ids]
+        # 팀 과제 제출 기록이 있는 팀은 비어도 남긴다(멤버만 비움) — 보드 동기화와 같은 규칙
+        if gone:
+            submitted = set((await db.execute(sa_select(Assignment.team_id).where(
+                Assignment.team_id.in_(gone), Assignment.status != "PENDING"))).scalars().all())
+            for t in existing:
+                if t.id in submitted:
+                    for tm in list(t.members):
+                        await db.delete(tm)
+            gone = [tid for tid in gone if tid not in submitted]
+        if gone:
+            result = await db.execute(delete(Assignment).where(Assignment.team_id.in_(gone)))
+            if result.rowcount:
+                await record_manual_event(db, "DELETE", "assignments", f"{result.rowcount}건 삭제(팀 과제 · 팀 삭제)", row_id=str(session_id))
+            result = await db.execute(delete(Team).where(Team.id.in_(gone)))
+            await record_manual_event(db, "DELETE", "teams", f"{result.rowcount}건 삭제(팀 수정)", row_id=str(session_id))
+        # 한 사람이 두 팀에 잠깐 겹치지 않게: 빠지는 멤버를 먼저 지우고 나서 넣는다
+        for idx, team in matched.items():
+            want = {m.member_id for m in body.teams[idx].members}
+            for tm in list(team.members):
+                if tm.member_id not in want:
+                    await db.delete(tm)
+        await db.flush()
+        for idx, team_data in enumerate(body.teams):
+            team = matched.get(idx)
+            if team is None:
+                team = Team(session_id=session_id, name=team_data.name)
+                db.add(team)
+                await db.flush()
+                _add_ppt_email(team.id)
+                have = set()
+            else:
+                team.name = team_data.name
+                have = {tm.member_id for tm in team.members}
+            for tm in team_data.members:
+                if tm.member_id not in have:
+                    db.add(TeamMember(team_id=team.id, member_id=tm.member_id))
+    else:
+        # SETUP 최초 확정: 모든 과제·팀 새로 만든다
+        result = await db.execute(delete(Assignment).where(Assignment.session_id == session_id))
+        if result.rowcount:
+            await record_manual_event(db, "DELETE", "assignments", f"{result.rowcount}건 삭제(과제배정 · 팀 확정)", row_id=str(session_id))
+        result = await db.execute(delete(Team).where(Team.session_id == session_id))
+        if result.rowcount:
+            await record_manual_event(db, "DELETE", "teams", f"{result.rowcount}건 삭제(팀 · 확정)", row_id=str(session_id))
+        for team_data in body.teams:
+            team = Team(session_id=session_id, name=team_data.name)
+            db.add(team)
+            await db.flush()  # team.id 확보
+            for tm in team_data.members:
+                db.add(TeamMember(team_id=team.id, member_id=tm.member_id))
+            _add_ppt_email(team.id)
 
     # 4. 개인별 Assignments 생성 (REVIEW, FEEDBACK, HOMEWORK)
     # 활성 멤버 전체? 아니면 팀에 속한 멤버만? -> 팀빌딩은 전원 참여가 원칙.

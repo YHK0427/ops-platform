@@ -13,6 +13,7 @@ export default function TeamEditPage() {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { data: allMembers, isLoading: membersLoading } = useMembers();
+    const backTo = `/sessions/${session.id}/prep`;
 
     const { mutate: saveTeams, isPending } = useMutation({
         mutationFn: async (teams: Record<string, number[]>) => {
@@ -27,10 +28,10 @@ export default function TeamEditPage() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: sessionsKeys.detail(session.id) });
             toast.success("팀 구성이 저장되었습니다.");
-            navigate(`/sessions/${session.id}/prep`);
+            navigate(backTo);
         },
-        onError: () => {
-            toast.error("팀 저장 실패");
+        onError: (e: any) => {
+            toast.error(e?.response?.data?.detail ?? "팀 저장 실패");
         },
     });
 
@@ -65,7 +66,7 @@ export default function TeamEditPage() {
                     members={allMembers ?? []}
                     initialTeams={initialTeams}
                     onSave={saveTeams}
-                    onCancel={() => navigate(`/sessions/${session.id}/prep`)}
+                    onCancel={() => navigate(backTo)}
                     isSaving={isPending}
                     saveLabel="팀 저장"
                     cancelLabel="← 돌아가기"

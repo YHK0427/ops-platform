@@ -7,7 +7,7 @@
 - 보드는 세션과 연결 가능(session_id). 세션 미생성 보드도 다른 보드의 겹침 기준으로 선택 가능,
   세션에 연결된 보드는 세션으로 대체(중복 방지).
 - 연결된 보드의 기수 배치는 세션 팀이 기준(읽을 때 세션 팀으로 맞춤). 세션이 팀 수정 가능 단계
-  (SETUP/PREP)면 보드에서 옮긴 것이 세션 팀에 바로 반영되고, 그 이후 단계면 보드는 읽기 전용.
+  (SETUP/PREP/OPS)면 보드에서 옮긴 것이 세션 팀에 바로 반영되고, 그 이후 단계면 보드는 읽기 전용.
 """
 import logging
 import re
@@ -28,7 +28,7 @@ from app.models import (
 )
 
 # 세션 팀을 고칠 수 있는 단계 — sessions.confirm_teams 와 같은 기준
-TEAM_EDITABLE = ("SETUP", "PREP")
+TEAM_EDITABLE = ("SETUP", "PREP", "OPS")
 
 logger = logging.getLogger("team_building")
 
@@ -100,7 +100,7 @@ class BoardResponse(BaseModel):
     created_by: str | None = None
     session_id: int | None = None
     session_label: str | None = None
-    session_status: str | None = None  # SETUP/PREP 이면 보드↔세션 양방향, 그 이후면 보드 읽기 전용
+    session_status: str | None = None  # SETUP/PREP/OPS 이면 보드↔세션 양방향, 그 이후면 보드 읽기 전용
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -117,17 +117,19 @@ def _session_label(week_num: int, title: str) -> str:
     return title if title.lstrip().startswith(f"{week_num}주차") else f"{week_num}주차 {title}"
 
 
-_NUM = re.compile(r"\d+")
+# "3조", "3 조", "3조 리슨업" 만 번호로 본다. 아무 숫자나 쓰면 "리슨업 2025" 같은 이름이 2025번 팀이 돼
+# 보드가 2025칸을 그리고, 팀 수 밖 번호라 그 팀원이 미배정으로 보인다.
+_NUM = re.compile(r"^\s*(\d{1,2})\s*조")
 
 
 def _team_slots(teams: list[Team]) -> dict[int, int]:
-    """세션 팀 id → 보드 팀 번호. 이름의 숫자("3조")를 우선 쓰고, 없거나 겹치면 남는 번호를 순서대로."""
+    """세션 팀 id → 보드 팀 번호. 이름의 "N조"를 우선 쓰고, 없거나 겹치면 남는 번호를 순서대로."""
     ordered = sorted(teams, key=lambda t: t.id)
     slots: dict[int, int] = {}
     for t in ordered:
-        m = _NUM.search(t.name or "")
-        if m and int(m.group()) not in slots.values():
-            slots[t.id] = int(m.group())
+        m = _NUM.match(t.name or "")
+        if m and int(m.group(1)) >= 1 and int(m.group(1)) not in slots.values():
+            slots[t.id] = int(m.group(1))
     nxt = 1
     for t in ordered:
         if t.id not in slots:
@@ -184,7 +186,7 @@ def _member_slots(data: dict) -> dict[int, int | None]:
 
 
 async def _push_to_session(sess: SessionModel, data: dict, prev: dict, db: AsyncSession) -> bool:
-    """보드에서 *직전 저장 대비 옮긴 기수만* 세션 팀에 반영 (SETUP/PREP 전용). 반환: 변경 여부.
+    """보드에서 *직전 저장 대비 옮긴 기수만* 세션 팀에 반영 (SETUP/PREP/OPS 전용). 반환: 변경 여부.
 
     - 전체 덮어쓰기를 하지 않는 이유: 보드를 열어둔 사이 세션에서 고친 팀을, 보드에서 다른 사람
       한 명 옮겼다고 되돌려 버리면 안 된다. 보드 명단에 없는 기수(비활성)도 건드리지 않는다.
@@ -204,13 +206,26 @@ async def _push_to_session(sess: SessionModel, data: dict, prev: dict, db: Async
     slot_team = {slot: tid for tid, slot in _team_slots(teams).items()}
     changed = False
 
+    # 팀 영상이 붙은 기수(팀 첫 멤버)가 팀을 떠나면 영상이 엉뚱한 팀에 붙는다 — 세션 팀 수정과 같은 규칙으로 막는다
+    from app.routers.sessions import video_anchor_blocked, video_member_ids
+    blocked = video_anchor_blocked(
+        video_member_ids(sess.id), member_team,
+        {mid: (slot_team.get(slot) if slot is not None else None) for mid, slot in moved.items()}
+        | {mid: tid for mid, tid in member_team.items() if mid not in moved},
+    )
+    if blocked:
+        names = (await db.execute(select(Member.name).where(Member.id.in_(blocked)))).scalars().all()
+        raise HTTPException(status_code=400, detail=(
+            f"{', '.join(names)} — 팀 영상이 이 사람 이름으로 올라가 있어 다른 팀으로 옮길 수 없어요. "
+            "옮기려면 과제 준비 탭에서 그 팀 영상을 먼저 지워주세요."))
+
     # 새 팀 번호 → 팀 생성 (+ 팀 PPT 이메일 과제)
     for slot in sorted({s for s in moved.values() if s is not None} - set(slot_team)):
         team = Team(session_id=sess.id, name=f"{slot}조")
         db.add(team)
         await db.flush()
         slot_team[slot] = team.id
-        if sess.status == "PREP" and (sess.config or {}).get("has_ppt_email", True):
+        if sess.status != "SETUP" and (sess.config or {}).get("has_ppt_email", True):
             db.add(Assignment(session_id=sess.id, team_id=team.id, member_id=None, type="PPT_EMAIL", status="PENDING"))
         changed = True
 
@@ -233,7 +248,7 @@ async def _push_to_session(sess: SessionModel, data: dict, prev: dict, db: Async
             changed = True
 
     # 새로 들어온 기수 개인 과제 (confirm_teams PREP 재편집과 동일 규칙: 없는 것만 생성)
-    if added and sess.status == "PREP":
+    if added and sess.status != "SETUP":
         cfg = sess.config or {}
         existing = {(r[0], r[1]) for r in (await db.execute(
             select(Assignment.member_id, Assignment.type).where(
