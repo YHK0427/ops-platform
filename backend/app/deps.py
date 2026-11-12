@@ -228,6 +228,25 @@ async def get_current_member(
     except JWTError:
         raise credentials_exception
 
+    # 운영진의 '기수 화면 보기' 토큰(preview_by=운영진 아이디) — 읽기 전용.
+    # 보는 것 말고는 전부 막고, 조회만 해도 남는 기록(공지 읽음·조회수·패치노트 확인 등)은 커밋 대신 버린다.
+    preview_by = payload.get("preview_by")
+    if preview_by:
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="기수 화면 미리보기는 읽기 전용이에요")
+        # 연 운영진이 그사이 비활성·강등되면 남은 시간이 있어도 끊는다
+        from app.models import User
+        uid = payload.get("preview_uid")
+        opener = (await db.execute(select(User.is_active, User.role).where(User.id == uid))).first() if uid else None
+        if not opener or not opener[0] or opener[1] not in ("admin", "manager"):
+            raise credentials_exception
+        # 이 요청의 세션(핸들러도 같은 세션을 받는다)의 commit 을 flush 로 바꾼다 — 같은 요청 안에선 평소처럼
+        # 보이지만 확정되지 않고, 요청 끝에 get_db 가 세션을 닫을 때 통째로 롤백된다.
+        # (rollback 으로 바꾸면 객체가 만료돼 이어지는 읽기가 비동기 lazy-load 로 터진다)
+        async def _preview_commit() -> None:
+            await db.flush()
+        db.commit = _preview_commit  # type: ignore[method-assign]
+
     # DB에서 계정 활성 상태 + 소속 기수 확인 (cohort_id는 DB 권위 — 구 토큰도 안전)
     from app.models import GenerationAccount, Member
     result = await db.execute(
@@ -243,6 +262,8 @@ async def get_current_member(
         raise credentials_exception
 
     actor = {"member_id": member_id, "username": username, "cohort_id": row[1]}
+    if preview_by:
+        actor["preview_by"] = preview_by
     set_actor(actor, request.url.path, request.scope)
     return actor
 

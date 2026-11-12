@@ -69,7 +69,7 @@ export function MemberAddSheet() {
                 <SheetHeader>
                     <SheetTitle className="text-[var(--color-text-primary)]">새 멤버 추가</SheetTitle>
                     <SheetDescription>
-                        새로운 멤버를 추가합니다. 초기 디파짓은 0원으로 시작합니다.
+                        새로운 멤버를 추가합니다. 디파짓은 20,000원으로 시작합니다.
                     </SheetDescription>
                 </SheetHeader>
 

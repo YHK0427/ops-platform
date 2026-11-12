@@ -47,7 +47,7 @@ export function CohortGate({ children }: { children: React.ReactNode }) {
                 <Layers className="w-6 h-6 text-[var(--color-accent)]" />
                 <h1 className="text-xl font-bold">관리할 기수를 선택하세요</h1>
             </div>
-            <p className="text-sm text-[var(--color-text-secondary)]">전체 관리자는 기수 공간을 골라 들어갑니다. 언제든 사이드바에서 전환할 수 있어요.</p>
+            <p className="text-sm text-[var(--color-text-secondary)]">전체 관리자는 기수 공간을 골라 들어갑니다. 다른 기수로 바꾸려면 사이드바 → 기수 공간 관리에서 '보기'를 누르세요.</p>
             {cohorts == null ? (
                 <Loader2 className="w-6 h-6 animate-spin" />
             ) : (

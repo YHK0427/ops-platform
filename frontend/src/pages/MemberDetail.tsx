@@ -11,8 +11,11 @@ import {
     Pencil,
     Trash2,
     CheckCircle2,
-    AlertCircle
+    AlertCircle,
+    Eye
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { openMemberPreview } from "@/lib/memberPreview";
 import { useMember, useLedger, useDeactivateMember, useReactivateMember, useGraduateMember, useCreateTransaction, useUpdateLedger, useDeleteLedgerEntry, useToggleMilestonePaid, LEDGER_TYPE_LABELS, translateDescription } from "@/hooks";
 import type { LedgerEntry } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
@@ -70,6 +73,8 @@ export default function MemberDetail() {
     const [rechargeAmount, setRechargeAmount] = useState("");
 
     const { data: member, isLoading: isLoadingMember } = useMember(memberId);
+    const { user } = useAuth();
+    const canPreview = user?.role === "admin" || user?.role === "manager"; // 기수 화면 보기 — viewer 제외
     const lowDep = usePenaltyRules()?.low_deposit ?? -Infinity; // 디파짓 부족 기준 (기수 규칙)
     const { data: ledger, isLoading: isLoadingLedger } = useLedger({ member_id: memberId });
     const deactivateMutation = useDeactivateMember();
@@ -107,6 +112,12 @@ export default function MemberDetail() {
                         <Button variant="outline" size="sm" onClick={() => navigate("/members")}>
                             <ArrowLeft className="w-4 h-4 mr-2" /> 뒤로
                         </Button>
+                        {canPreview && member.is_active && (
+                            <Button variant="outline" size="sm" onClick={() => openMemberPreview(member.id)}
+                                title="이 기수원이 보는 포털 화면을 새 탭에서 읽기 전용으로 봐요 (30분)">
+                                <Eye className="w-4 h-4 mr-2" /> 기수 화면 보기
+                            </Button>
+                        )}
                         <Button variant="outline" size="sm" onClick={() => setIsEditOpen(true)}>
                             <Pencil className="w-4 h-4 mr-2" /> 수정
                         </Button>

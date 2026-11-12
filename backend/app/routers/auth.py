@@ -561,6 +561,9 @@ async def member_logout(request: Request, response: Response, token: str = Depen
     """멤버 토큰 폐기 (블랙리스트 등록)"""
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        if payload.get("preview_by"):
+            # '기수 화면 보기' 토큰 — 그 기수원이 로그아웃한 걸로 기록되거나 쿠키가 지워지면 안 된다
+            raise HTTPException(status_code=403, detail="기수 화면 미리보기는 읽기 전용이에요")
         exp = payload.get("exp", 0)
         ttl = max(int(exp - datetime.now(timezone.utc).timestamp()), 0)
         if ttl > 0:

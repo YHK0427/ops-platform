@@ -26,7 +26,6 @@ export function StepConfirmation({ state, onBack }: StepProps) {
                     has_review: state.has_review,
                     has_feedback: state.has_feedback,
                     has_groups: state.has_groups,
-                    is_holiday: state.is_holiday,
                     deadline_ppt_email: state.deadline_ppt_email || null,
                     deadline_ppt_email_late: state.deadline_ppt_email_late || null,
                     deadline_post: state.deadline_post || null,

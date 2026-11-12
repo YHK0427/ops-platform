@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Trash2, Loader2, Megaphone, ImagePlus } from "lucide-react";
+import { Trash2, Loader2, Megaphone, ImagePlus, ChevronDown } from "lucide-react";
 import api from "@/lib/api";
 import { PatchNoteBody, imageLine } from "@/components/PatchNoteBody";
 import { toast } from "sonner";
@@ -22,6 +22,7 @@ export function PatchNoteWriter({ open, onOpenChange }: { open: boolean; onOpenC
     const { mutate: create, isPending } = useCreatePatchNote();
     const { mutate: remove } = useDeletePatchNote();
     const [uploading, setUploading] = useState(false);
+    const [openNote, setOpenNote] = useState<number | null>(null); // 지난 패치노트 펼쳐 보기
     const bodyRef = useRef<HTMLTextAreaElement>(null);
 
     // 커서 위치에 이미지 줄 삽입 (앞뒤 줄바꿈 보정)
@@ -134,11 +135,17 @@ export function PatchNoteWriter({ open, onOpenChange }: { open: boolean; onOpenC
                     </div>
                 </div>
 
-                <div className="border-t border-[var(--color-border)] pt-3 max-h-[35vh] overflow-y-auto space-y-2">
+                <div className="border-t border-[var(--color-border)] pt-3 max-h-[45vh] overflow-y-auto space-y-2">
+                    <div className="text-[11px] font-bold text-[var(--color-text-muted)]">지난 패치노트 — 누르면 내용이 펼쳐져요</div>
                     {(notes ?? []).length === 0 ? (
                         <div className="text-sm text-[var(--color-text-muted)]">발행한 패치노트가 없습니다.</div>
                     ) : (notes ?? []).map((n) => (
-                        <div key={n.id} className="flex items-start gap-2 rounded-lg border border-[var(--color-border)] p-2">
+                        <div key={n.id} className="rounded-lg border border-[var(--color-border)]">
+                        <div className="flex items-start gap-2 p-2">
+                            <button type="button" aria-expanded={openNote === n.id}
+                                onClick={() => setOpenNote(openNote === n.id ? null : n.id)}
+                                className="min-w-0 flex-1 flex items-start gap-1.5 text-left">
+                            <ChevronDown className={`w-4 h-4 mt-0.5 shrink-0 text-[var(--color-text-muted)] transition-transform ${openNote === n.id ? "rotate-180" : ""}`} />
                             <div className="min-w-0 flex-1">
                                 <div className="text-sm font-bold truncate">
                                     <span className="text-[11px] font-normal text-[var(--color-text-muted)] mr-1.5">
@@ -150,6 +157,7 @@ export function PatchNoteWriter({ open, onOpenChange }: { open: boolean; onOpenC
                                     {new Date(n.published_at).toLocaleString("ko-KR")}
                                 </div>
                             </div>
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => { if (confirm("이 패치노트를 삭제할까요?")) remove(n.id); }}
@@ -157,6 +165,12 @@ export function PatchNoteWriter({ open, onOpenChange }: { open: boolean; onOpenC
                             >
                                 <Trash2 className="w-3.5 h-3.5" />
                             </button>
+                        </div>
+                        {openNote === n.id && (
+                            <div className="border-t border-[var(--color-border)] px-3 py-3 text-sm text-[var(--color-text-secondary)]">
+                                <PatchNoteBody body={n.body} />
+                            </div>
+                        )}
                         </div>
                     ))}
                 </div>

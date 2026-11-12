@@ -93,6 +93,7 @@ async def _write(row: dict) -> None:
             since = datetime.now(timezone.utc) - _DEDUPE_WINDOW
             existing = (await db.execute(
                 select(AccessLog.id).where(
+                    AccessLog.actor_kind == row["actor_kind"],
                     AccessLog.actor_username.is_not_distinct_from(row["actor_username"]),
                     AccessLog.path == row["path"],
                     AccessLog.method == row["method"],
@@ -145,9 +146,11 @@ def _row(request, status_code: int, start: float, detail: str | None) -> dict:
     if actor is None:
         kind, username, label, cohort = "anon", None, None, None
     elif actor.get("member_id") is not None:
-        kind = "member"
+        # 운영진이 '기수 화면 보기'로 본 것은 따로(preview) — 그 기수원이 들어온 걸로 세지 않게.
+        # kind 가 다르면 같은 경로 60초 묶음(dedupe)·사용자별 집계에서도 기수원 본인 접속과 섞이지 않는다.
+        kind = "preview" if actor.get("preview_by") else "member"
         username = actor.get("username")
-        label = f"{username}(기수원)"
+        label = f"{username}(미리보기: {actor['preview_by']})" if actor.get("preview_by") else f"{username}(기수원)"
         cohort = actor.get("cohort_id")
     else:
         kind = "staff"

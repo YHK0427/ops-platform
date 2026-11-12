@@ -141,15 +141,6 @@ export function StepBasic({ state, onChange, onNext }: StepProps) {
                                 <span className="text-sm">분반 나누기 (2개 그룹)</span>
                             </label>
                             )}
-                            <label className="flex items-center space-x-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="rounded border-[var(--color-border)] bg-white text-red-500 focus:ring-red-500"
-                                    checked={state.is_holiday}
-                                    onChange={(e) => onChange({ is_holiday: e.target.checked })}
-                                />
-                                <span className="text-sm text-red-500">휴일 (벌점 면제)</span>
-                            </label>
                         </div>
                     </div>
 

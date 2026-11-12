@@ -216,6 +216,36 @@ async def create_member(
     return member
 
 
+PREVIEW_MINUTES = 30
+
+
+@router.post("/{member_id}/preview-token")
+async def member_preview_token(
+    member_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_staff),  # admin·manager 만 (viewer X)
+    cohort_id: int = Depends(get_current_cohort_id),
+):
+    """'기수 화면 보기' — 그 기수원 포털을 읽기 전용으로 여는 30분짜리 토큰.
+    토큰에 preview_by(연 운영진)를 넣어 get_current_member 가 쓰기를 막고, 열람은 감사 로그에 남긴다."""
+    from datetime import timedelta
+    from jose import jwt
+    from app.config import settings
+    member = await _get_member_or_404(member_id, db, cohort_id)
+    account = (await db.execute(
+        select(GenerationAccount).where(GenerationAccount.member_id == member.id)
+    )).scalar_one_or_none()
+    if not member.is_active or account is None or not account.is_active:
+        raise HTTPException(status_code=400, detail="포털 계정이 없거나 비활성인 기수원이에요")
+    exp = datetime.now(timezone.utc) + timedelta(minutes=PREVIEW_MINUTES)
+    token = jwt.encode({
+        "sub": account.username, "member_id": member.id, "account_type": "generation",
+        "cohort_id": member.cohort_id, "preview_by": user["username"], "preview_uid": user.get("id"), "exp": exp,
+    }, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    logger.audit(f"👀 기수 화면 보기 — {member.name} by {user['username']} ({PREVIEW_MINUTES}분, 읽기 전용)")
+    return {"token": token, "expires_at": exp.isoformat(), "member_name": member.name}
+
+
 @router.get("/{member_id}", response_model=MemberResponse)
 async def get_member(
     member_id: int,

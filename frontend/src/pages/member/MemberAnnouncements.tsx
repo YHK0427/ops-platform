@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import memberApi from "@/lib/memberApi";
+import memberApi, { isMemberPreview } from "@/lib/memberApi";
 import PushToggle from "@/components/PushToggle";
 import AnnouncementReactions from "@/components/AnnouncementReactions";
 import { Megaphone, ChevronRight, Search, FolderOpen } from "lucide-react";
@@ -68,11 +68,11 @@ export default function MemberAnnouncements() {
                         : <Megaphone className="w-5 h-5 text-rose-500" />}
                     {kind === "resource" ? "자료실" : "공지사항"}
                 </h2>
-                <PushToggle
+                {!isMemberPreview() && <PushToggle
                     http={memberApi}
                     endpoints={{ subscribePath: "/notifications/subscribe" }}
                     tone="rose"
-                />
+                />}
             </div>
 
             <div className="flex rounded-xl bg-gray-100 p-1 mb-3">

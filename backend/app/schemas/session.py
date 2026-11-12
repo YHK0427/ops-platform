@@ -14,7 +14,6 @@ class SessionConfig(BaseModel):
     has_review: bool = True
     has_feedback: bool = True
     has_groups: bool = False                         # 분반 (2개 그룹) — INDIVIDUAL 세션 전용
-    is_holiday: bool = False
     deadline_ppt_email: Optional[str] = None       # ISO datetime
     deadline_ppt_email_late: Optional[str] = None  # ISO datetime (late submission)
     deadline_post: Optional[str] = None             # ISO datetime

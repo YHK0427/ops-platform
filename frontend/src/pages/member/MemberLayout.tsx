@@ -5,7 +5,7 @@ import { useMemberAuth } from "@/context/MemberAuthContext";
 import { motion } from "framer-motion";
 import { LogOut, Home, BarChart3, Wallet, KeyRound, MessageSquareHeart, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
-import memberApi from "@/lib/memberApi";
+import memberApi, { isMemberPreview } from "@/lib/memberApi";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
 import { PatchNoteModal } from "@/components/PatchNoteModal";
 import { useUnreadAnnouncements, memberAnnouncementsQuery } from "@/hooks/useMemberAnnouncements";
@@ -54,7 +54,8 @@ export default function MemberLayout() {
                             안녕하세요, {member?.name}님
                         </h1>
                     </div>
-                    <div className="flex items-center gap-1">
+                    {/* 미리보기 탭에선 비밀번호·로그아웃 숨김 — 로그아웃은 이 브라우저(운영진)의 푸시 구독까지 지운다 */}
+                    {!isMemberPreview() && <div className="flex items-center gap-1">
                         <button
                             onClick={() => setShowPw(true)}
                             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
@@ -70,7 +71,7 @@ export default function MemberLayout() {
                             <LogOut className="w-3.5 h-3.5" />
                             로그아웃
                         </motion.button>
-                    </div>
+                    </div>}
                 </div>
             </header>
 
@@ -83,7 +84,7 @@ export default function MemberLayout() {
                 />
             )}
 
-            <PatchNoteModal side="member" />
+            {!isMemberPreview() && <PatchNoteModal side="member" />}
 
             <Suspense fallback={<PageLoading />}>
                 {/* 화면 전환: 사라지는 애니메이션은 없이(다음 화면을 늦추지 않게) 들어올 때만 살짝 */}

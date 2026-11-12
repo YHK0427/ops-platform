@@ -2,6 +2,7 @@ import { Suspense, useEffect, useState } from "react";
 import { lazyPreload, preloadAll, whenIdle } from "@/lib/lazyPreload";
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { PatchNoteModal } from "@/components/PatchNoteModal";
+import { MemberPreviewBar, MemberPreviewBoot } from "@/components/MemberPreview";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
@@ -244,12 +245,15 @@ export default function App() {
                   가드 안에 들어가면 외부 심사위원이 로그인 화면으로 튕긴다. */}
               <Route path="/s/:publicToken" element={<PublicScoringForm />} />
               <Route path="/s/:publicToken/feedback" element={<PublicScoringForm feedbackOnly />} />
+              {/* 운영진 '기수 화면 보기' 새 탭 — 토큰을 받아 이 탭에만 저장하고 /member 로 */}
+              <Route path="/member-preview" element={<MemberPreviewBoot />} />
 
               {/* ── 기수 포털 ──────────────────────────── */}
               <Route
                 path="/member"
                 element={
                   <MemberAuthProvider>
+                    <MemberPreviewBar />
                     <Outlet />
                   </MemberAuthProvider>
                 }

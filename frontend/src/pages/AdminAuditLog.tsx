@@ -802,7 +802,7 @@ function InfraStatusTab({ active }: { active: boolean }) {
 // 로그인은 한 번만 찍히고 기수원 토큰은 사실상 만료가 없어서, 이게 없으면
 // "요즘 누가 쓰고 있나"에 답할 방법이 없었다.
 
-const KIND_LABEL_KO: Record<string, string> = { staff: "운영진", member: "기수원", anon: "비로그인" };
+const KIND_LABEL_KO: Record<string, string> = { staff: "운영진", member: "기수원", anon: "비로그인", preview: "기수 화면 보기" };
 
 /** API 경로를 사람이 읽는 화면 이름으로. 모르는 건 경로 그대로 보여준다. */
 function screenName(path: string): string {
@@ -920,6 +920,7 @@ function AccessLogTab({ active }: { active: boolean }) {
                         <SelectItem value="staff">운영진</SelectItem>
                         <SelectItem value="member">기수원</SelectItem>
                         <SelectItem value="anon">비로그인</SelectItem>
+                        <SelectItem value="preview">기수 화면 보기</SelectItem>
                     </SelectContent>
                 </Select>
                 <Select value={String(days)} onValueChange={(v) => { setDays(Number(v)); setPage(0); }}>

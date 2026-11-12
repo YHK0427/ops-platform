@@ -5,7 +5,7 @@ import {
     useEffect,
     useState,
 } from "react";
-import memberApi, { setMemberToken, getMemberToken } from "@/lib/memberApi";
+import memberApi, { setMemberToken, getMemberToken, isMemberPreview } from "@/lib/memberApi";
 import { unsubscribePush, resyncPushSubscription } from "@/lib/push";
 
 export interface MemberUser {
@@ -56,7 +56,8 @@ export function MemberAuthProvider({ children }: { children: React.ReactNode }) 
             .then((data) => {
                 setMember(data);
                 // 앱 열 때 자동 재구독 — 권한 허용 상태면 끊긴/갱신된 구독 자가복구
-                void resyncPushSubscription(memberApi, { subscribePath: "/notifications/subscribe" });
+                // 미리보기 탭(운영진 브라우저)에서는 푸시 구독을 건드리지 않는다
+                if (!isMemberPreview()) void resyncPushSubscription(memberApi, { subscribePath: "/notifications/subscribe" });
             })
             .catch((err) => {
                 if (err?.response?.status === 401) setMemberToken(null);

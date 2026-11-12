@@ -22,11 +22,15 @@ import {
     Wrench,
     History,
     Scale,
+    LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
+
+/** 노션 사용설명서 (화면별 안내) — 운영진 전원이 볼 수 있게 사이드바 아래에 둔다 */
+const MANUAL_URL = "https://www.notion.so/3dfb434359168153bc9dfec48ee10923";
 
 // 서버 내부(로그·컨테이너·접속기록) 메뉴는 개발자 본인만 봐야 한다.
 // 서버가 이미 require_developer 로 막고 있으니, 여기는 "안 보이게"만 하면 된다.
@@ -330,6 +334,15 @@ export function Sidebar() {
             <div className="px-3 py-4 border-t border-[var(--color-border-subtle)] space-y-1">
                 {user && (
                     <>
+                        <a
+                            href={MANUAL_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)] transition-colors"
+                        >
+                            <LifeBuoy className="w-4 h-4" />
+                            사용설명서
+                        </a>
                         <button
                             onClick={() => setShowPw(true)}
                             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-hover)] transition-colors"

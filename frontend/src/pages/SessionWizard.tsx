@@ -24,7 +24,6 @@ export default function SessionWizard() {
         has_review: true,
         has_feedback: true,
         has_groups: false,
-        is_holiday: false,
         deadline_ppt_email: defaults.pptEmail,
         deadline_ppt_email_late: defaults.pptEmailLate,
         deadline_post: defaults.post,

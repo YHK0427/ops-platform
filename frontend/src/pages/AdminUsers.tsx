@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Shield, Plus, Pencil, ShieldCheck, ShieldOff, Loader2, RotateCcw, Trash2, Users, UserCog, Check, X, KeyRound } from "lucide-react";
-import { useAdminUsers, useCreateAdminUser, useUpdateAdminUser, useDeleteAdminUser, useBulkCreateGeneration, useBulkDeleteGeneration, useBulkResetGenPassword, useCreateGenAccount, useUpdateGenAccount, useDeleteGenAccount, useGenAccounts, adminUserKeys, useMembers } from "@/hooks";
+import { useAdminUsers, useCreateAdminUser, useUpdateAdminUser, useDeleteAdminUser, useBulkCreateGeneration, useBulkDeleteGeneration, useBulkResetGenPassword, useCreateGenAccount, useUpdateGenAccount, useResetGenPassword, useDeleteGenAccount, useGenAccounts, adminUserKeys, useMembers } from "@/hooks";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -428,6 +428,7 @@ function GenerationTab() {
     const { mutate: deleteAccount } = useDeleteGenAccount();
     const { mutate: bulkResetPw, isPending: isResettingPw } = useBulkResetGenPassword();
     const updateAccount = useUpdateGenAccount();
+    const resetPassword = useResetGenPassword();
     const createAccount = useCreateGenAccount();
     const [bulkPassword, setBulkPassword] = useState("univpt33");
     const [resetPwOpen, setResetPwOpen] = useState(false);
@@ -634,28 +635,29 @@ function GenerationTab() {
                     <DialogHeader>
                         <DialogTitle>비밀번호 변경</DialogTitle>
                         <DialogDescription>
-                            새 비밀번호를 입력하세요. 비워두면 기본값(univpt33)으로 설정됩니다.
+                            새 비밀번호를 입력하세요. 비워두면 이 기수 기본값(univpt + 기수 번호, 예: univpt34)으로 초기화됩니다.
                         </DialogDescription>
                     </DialogHeader>
                     <Input
                         type="password"
-                        placeholder="비워두면 univpt33"
+                        placeholder="비워두면 기수 기본 비밀번호"
                         value={editPwValue}
                         onChange={(e) => setEditPwValue(e.target.value)}
                     />
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setEditPwAccountId(null)}>취소</Button>
                         <Button
-                            disabled={editPwValue.length > 0 && editPwValue.length < 4 || updateAccount.isPending}
+                            disabled={editPwValue.length > 0 && editPwValue.length < 4 || updateAccount.isPending || resetPassword.isPending}
                             onClick={() => {
                                 if (editPwAccountId == null) return;
-                                const pw = editPwValue.trim() || "univpt33";
-                                updateAccount.mutate({ id: editPwAccountId, password: pw }, {
-                                    onSuccess: () => setEditPwAccountId(null),
-                                });
+                                const pw = editPwValue.trim();
+                                const done = { onSuccess: () => setEditPwAccountId(null) };
+                                // 비우면 서버가 그 기수 기본값(univpt{기수번호})으로 — 예전엔 univpt33 이 박혀 있었다
+                                if (pw) updateAccount.mutate({ id: editPwAccountId, password: pw }, done);
+                                else resetPassword.mutate(editPwAccountId, done);
                             }}
                         >
-                            {updateAccount.isPending ? "변경 중..." : "변경"}
+                            {updateAccount.isPending || resetPassword.isPending ? "변경 중..." : "변경"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

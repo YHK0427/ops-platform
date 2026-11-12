@@ -111,7 +111,7 @@ async def create_session(
             raise HTTPException(status_code=400, detail=f"week_num {body.week_num}은 이미 존재합니다")
 
         config_data = body.config.model_dump() if body.config else {
-            "has_ppt_email": True, "has_ppt": True, "has_review": True, "has_feedback": True, "is_holiday": False
+            "has_ppt_email": True, "has_ppt": True, "has_review": True, "has_feedback": True
         }
 
         session = SessionModel(
@@ -451,19 +451,19 @@ async def update_session_status(
                 )
                 .values(status="EXEMPT")
             )
-            # FEEDBACK: ABSENT + EXCUSED → EXEMPT (결석자는 피드백 작성 불가)
+
+        if excused_ids:
+            # FEEDBACK: 공결만 면제 — 결석자도 배정된 피드백은 써야 한다(과제 스캔과 같은 기준)
             await db.execute(
                 update(Assignment)
                 .where(
                     Assignment.session_id == session_id,
                     Assignment.status == "PENDING",
                     Assignment.type == "FEEDBACK",
-                    Assignment.member_id.in_(absent_ids),
+                    Assignment.member_id.in_(excused_ids),
                 )
                 .values(status="EXEMPT")
             )
-
-        if excused_ids:
             # PPT_EMAIL (INDIVIDUAL): EXCUSED만 → EXEMPT (ABSENT은 제출 의무)
             await db.execute(
                 update(Assignment)

@@ -65,7 +65,7 @@ export interface AccessLog {
     id: number;
     created_at: string;
     last_seen_at: string | null;
-    actor_kind: "staff" | "member" | "anon";
+    actor_kind: "staff" | "member" | "anon" | "preview";
     actor_username: string | null;
     actor_label: string | null;
     cohort_id: number | null;

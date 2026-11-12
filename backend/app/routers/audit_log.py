@@ -205,7 +205,7 @@ async def list_access_logs(
     cq = select(func.count(AccessLog.id))
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     conds = [AccessLog.last_seen_at >= cutoff]
-    if actor_kind in ("staff", "member", "anon"):
+    if actor_kind in ("staff", "member", "anon", "preview"):
         conds.append(AccessLog.actor_kind == actor_kind)
     if actor_username:
         conds.append(AccessLog.actor_username == actor_username)
@@ -279,7 +279,7 @@ async def access_daily_counts(
             func.count(func.distinct(AccessLog.actor_username)),
             func.sum(AccessLog.hits),
         )
-        .where(AccessLog.created_at >= cutoff)
+        .where(AccessLog.created_at >= cutoff, AccessLog.actor_kind != "preview")  # 기수 화면 보기는 사용자 수에서 뺀다
         .group_by(cast(AccessLog.created_at, Date))
         .order_by(cast(AccessLog.created_at, Date))
     )).all()
