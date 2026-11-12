@@ -18,6 +18,11 @@ _WATCHED = ("status", "group_num")
 _tasks: set[asyncio.Task] = set()
 
 
+def mark_roster_changed(db, session_id: int) -> None:
+    """ORM 이벤트에 안 잡히는 변경(팀 수정·발표 순서 같은 일괄 UPDATE/DELETE)을 커밋 때 알리도록 표시."""
+    db.sync_session.info.setdefault(_KEY, set()).add(session_id)
+
+
 @event.listens_for(Session, "after_flush")
 def _collect(session, flush_context) -> None:
     ids = session.info.setdefault(_KEY, set())

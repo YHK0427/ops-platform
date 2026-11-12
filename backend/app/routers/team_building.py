@@ -22,9 +22,10 @@ from sqlalchemy.orm import aliased
 from fastapi import HTTPException, status
 
 from app.audit_context import get_actor_label, get_actor_username
+from app.roster_hook import mark_roster_changed
 from app.deps import get_current_cohort_id, get_db, require_staff
 from app.models import (
-    Assignment, Member, Session as SessionModel, Team, TeamBuildingBoard, TeamMember, User,
+    Assignment, LiveFeedbackPost, Member, Session as SessionModel, Team, TeamBuildingBoard, TeamMember, User,
 )
 
 # 세션 팀을 고칠 수 있는 단계 — sessions.confirm_teams 와 같은 기준
@@ -270,12 +271,17 @@ async def _push_to_session(sess: SessionModel, data: dict, prev: dict, db: Async
         statuses = set((await db.execute(
             select(Assignment.status).where(Assignment.team_id == t.id)
         )).scalars().all())
-        if statuses <= {"PENDING"}:
+        # 실시간 피드백(팀 전체 보드)에 받은 글이 있으면 남긴다 — 지우면 글이 같이 사라진다
+        has_feedback = (await db.execute(
+            select(LiveFeedbackPost.id).where(LiveFeedbackPost.presenter_team_id == t.id).limit(1)
+        )).first()
+        if statuses <= {"PENDING"} and not has_feedback:
             await db.execute(delete(Assignment).where(Assignment.team_id == t.id))
             await db.execute(delete(Team).where(Team.id == t.id))
             changed = True
 
     if changed:
+        mark_roster_changed(db, sess.id)
         logger.info("board_synced_to_session session=%s moved=%d", sess.id, len(moved))
     return changed
 

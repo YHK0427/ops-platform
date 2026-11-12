@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Filter, AlertTriangle, AlertOctagon } from "lucide-react";
 import { useMembers, useTreasury } from "@/hooks";
+import { useAttendanceStreaks } from "@/hooks/useMembers";
+import { usePenaltyRules } from "@/hooks/usePenaltyRules";
 import { penaltyRisk } from "@/lib/penaltyRisk";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -29,6 +31,11 @@ export default function Members() {
     // In a real app with pagination, we'd pass showInactive to API
     const { data: members, isLoading } = useMembers(!showInactive);
     const { data: treasuryData } = useTreasury();
+    const { data: streaks } = useAttendanceStreaks();
+    const rules = usePenaltyRules();
+    const lowDep = rules?.low_deposit ?? -Infinity; // 규칙 불러오기 전엔 충전요망 표시 안 함
+    const fineLabel = `${(rules?.milestone_fine ?? 0).toLocaleString()}원`;
+    const streakOf = (id: number) => streaks?.members[String(id)];
 
     // member_id → milestone_unpaid
     const unpaidMap = new Map<number, number>();
@@ -38,15 +45,15 @@ export default function Members() {
         }
     });
 
-    const lowDepositCount = members?.filter(m => m.is_active && (m.current_deposit || 0) < 10000).length || 0;
+    const lowDepositCount = members?.filter(m => m.is_active && (m.current_deposit || 0) < lowDep).length || 0;
     const unpaidMilestoneCount = (treasuryData?.by_member ?? []).filter((m: any) => (m.milestone_unpaid || 0) > 0).length;
-    const penaltyDangerCount = members?.filter(m => m.is_active && penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "danger").length || 0;
+    const penaltyDangerCount = members?.filter(m => m.is_active && penaltyRisk(m.total_minus_score || 0, m.net_score || 0, rules)?.level === "danger").length || 0;
 
     const filteredMembers = members?.filter((m) => {
         if (riskOnly) {
-            const risk = penaltyRisk(m.total_minus_score || 0, m.net_score || 0);
+            const risk = penaltyRisk(m.total_minus_score || 0, m.net_score || 0, rules);
             const hasUnpaid = (unpaidMap.get(m.id) ?? 0) > 0;
-            const lowDeposit = m.is_active && (m.current_deposit || 0) < 10000;
+            const lowDeposit = m.is_active && (m.current_deposit || 0) < lowDep;
             if (!risk && !hasUnpaid && !lowDeposit) return false;
         }
         if (!search) return true;
@@ -141,7 +148,7 @@ export default function Members() {
                                 </TableRow>
                             ) : (
                                 filteredMembers?.map((member, index) => {
-                                    const rowRisk = penaltyRisk(member.total_minus_score || 0, member.net_score || 0);
+                                    const rowRisk = penaltyRisk(member.total_minus_score || 0, member.net_score || 0, rules);
                                     return (
                                     <TableRow
                                         key={member.id}
@@ -155,6 +162,7 @@ export default function Members() {
                                             <div className="flex flex-col">
                                                 <span className="font-medium text-[var(--color-text-primary)] flex items-center gap-2">
                                                     {member.name}
+                                                    <StreakBadge s={streakOf(member.id)} />
                                                     {!member.is_active && <StatusBadge status={member.deactivation_reason ?? "ABSENT"} className="px-1.5 py-0 text-[10px]" />}
                                                 </span>
                                                 <span className="text-xs text-[var(--color-text-muted)]">{member.email}</span>
@@ -169,9 +177,9 @@ export default function Members() {
                                                 ))}
                                             </div>
                                         </TableCell>
-                                        <TableCell className={`text-right text-sm ${(member.current_deposit || 0) < 10000 ? "text-rose-500" : "text-[var(--color-text-secondary)]"}`}>
+                                        <TableCell className={`text-right text-sm ${(member.current_deposit || 0) < lowDep ? "text-rose-500" : "text-[var(--color-text-secondary)]"}`}>
                                             <div className="flex items-center justify-end gap-1.5">
-                                                {member.is_active && (member.current_deposit || 0) < 10000 && (
+                                                {member.is_active && (member.current_deposit || 0) < lowDep && (
                                                     <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-500 border border-rose-500/20">
                                                         충전요망
                                                     </span>
@@ -196,11 +204,11 @@ export default function Members() {
                                         </TableCell>
                                         <TableCell className="text-right text-sm">
                                             {(() => {
-                                                const risk = penaltyRisk(member.total_minus_score || 0, member.net_score || 0);
+                                                const risk = penaltyRisk(member.total_minus_score || 0, member.net_score || 0, rules);
                                                 return (
                                                     <div className="flex items-center justify-end gap-1.5">
                                                         {risk?.level === "danger" && (
-                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 5,000원 추가 벌금 (${risk.distance}점 남음)`}>
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 ${fineLabel} 추가 벌금 (${risk.distance}점 남음)`}>
                                                                 <AlertOctagon className="w-3 h-3" />
                                                                 벌금임박
                                                             </span>
@@ -234,10 +242,10 @@ export default function Members() {
                         <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">데이터가 없습니다.</div>
                     ) : (
                         filteredMembers?.map((member, index) => {
-                            const lowDeposit = member.is_active && (member.current_deposit || 0) < 10000;
+                            const lowDeposit = member.is_active && (member.current_deposit || 0) < lowDep;
                             const unpaid = unpaidMap.get(member.id) ?? 0;
                             const net = member.net_score || 0;
-                            const risk = penaltyRisk(member.total_minus_score || 0, member.net_score || 0);
+                            const risk = penaltyRisk(member.total_minus_score || 0, member.net_score || 0, rules);
                             return (
                                 <div
                                     key={member.id}
@@ -252,8 +260,9 @@ export default function Members() {
                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                 <span className="text-xs text-[var(--color-text-muted)]">#{index + 1}</span>
                                                 <span className="font-medium text-sm text-[var(--color-text-primary)] truncate">{member.name}</span>
+                                                <StreakBadge s={streakOf(member.id)} />
                                                 {risk?.level === "danger" && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 5,000원 추가 벌금 (${risk.distance}점 남음)`}>
+                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30" title={`누적벌점 ${risk.nextThreshold}점 도달 시 ${fineLabel} 추가 벌금 (${risk.distance}점 남음)`}>
                                                         <AlertOctagon className="w-2.5 h-2.5" />
                                                         벌금임박
                                                     </span>
@@ -308,5 +317,21 @@ export default function Members() {
                 </div>
             </div>
         </div>
+    );
+}
+
+/** 연속 출석 배지 — 0회면 안 보임. 다음 상점까지 1회 남으면 강조. */
+function StreakBadge({ s }: { s?: { run: number; to_next: number } }) {
+    if (!s || s.run === 0) return null;
+    const close = s.to_next === 1;
+    return (
+        <span
+            title={`연속 출석 ${s.run}회 · 연속출석 상점까지 ${s.to_next}회 (마감된 세션 기준)`}
+            className={`px-1.5 py-0 rounded text-[10px] font-semibold whitespace-nowrap border ${
+                close ? "bg-amber-500/15 text-amber-700 border-amber-500/30" : "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+            }`}
+        >
+            연속 {s.run}회
+        </span>
     );
 }

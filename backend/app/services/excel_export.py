@@ -16,6 +16,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.penalty_rules import DEFAULT_RULES, get_rules
 from app.models import Assignment, Attendance, Cohort, Ledger, Member, Session, TeamMember
 
 # ── 상수 ──────────────────────────────────────────────────────────────
@@ -78,26 +79,13 @@ MERIT_CATEGORIES: list[tuple[str, str]] = [
     ("오프/오피\n(1)", "오프/오피 선정"),
     ("번개 주최 후 완료\n(2)", "번개 주최 완료"),
     ("리슨업/BP\n베스트\n협력상\n(1)", "베스트 협력상"),
-    ("4회 연속\n지각/결석 X\n(2)", "4주 연속 출석 달성"),
+    ("4회 연속\n지각/결석 X\n(2)", "연속 출석 달성"),  # 헤더는 기수 규칙(횟수·점수)으로 덮어씀
     ("번개 참여\n2회\n(1)", "번개 참석"),
     ("정보성\n자료 공유\n(1)", "정보성 자료 공유"),
 ]
 
-# 출석별 디파짓 차감 금액 (penalty_engine과 동일)
-ATTENDANCE_DEPOSIT: dict[tuple[str, str | None], int] = {
-    ("LATE_UNDER10", "PRE"): 2000,
-    ("LATE_UNDER10", "POST"): 3000,
-    ("LATE_UNDER10", None): 4000,
-    ("LATE_OVER10", "PRE"): 2000,
-    ("LATE_OVER10", "POST"): 3000,
-    ("LATE_OVER10", None): 4000,
-    ("EARLY_LEAVE", "PRE"): 2000,
-    ("EARLY_LEAVE", "POST"): 3000,
-    ("EARLY_LEAVE", None): 4000,
-    ("ABSENT", "PRE"): 4000,
-    ("ABSENT", "POST"): 6000,
-    ("ABSENT", None): 8000,
-}
+# 출결 벌금 장부 설명의 앞부분 (penalty_engine.ATT_STATUS_LABEL) — 디파짓 시트에서 출결 금액을 장부 실제 금액으로 나눌 때 씀
+_ATT_FINE_PREFIXES = ("지각(10분 미만)", "지각(10분 이상)", "조퇴", "결석")
 
 
 # ── 데이터 컨테이너 ──────────────────────────────────────────────────
@@ -111,6 +99,7 @@ class ExportData:
     team_ppt_map: dict[int, dict[int, str]]                  # session_id → member_id → status (TEAM PPT)
     ledger_by_session: dict[int, dict[int, list[Any]]]       # member_id → session_id → [Ledger]
     ledger_no_session: dict[int, list[Any]] = field(default_factory=dict)
+    rules: Any = None  # 기수 벌점 규칙 (PenaltyRules)
 
 
 # ── 데이터 수집 ──────────────────────────────────────────────────────
@@ -193,6 +182,7 @@ async def gather_export_data(db: AsyncSession, cohort_id: int) -> ExportData:
         team_ppt_map=dict(team_ppt_map),
         ledger_by_session=dict(ledger_by_session),
         ledger_no_session=dict(ledger_no_session),
+        rules=await get_rules(db, cohort_id),
     )
 
 
@@ -344,7 +334,11 @@ def _build_penalty_sheet(ws, data: ExportData, generation: int) -> list[str]:
     unmatched_descriptions: set[str] = set()
 
     # 상점 카테고리 헤더
-    merit_headers = ["상점"] + [cat[0] for cat in MERIT_CATEGORIES]
+    rules = data.rules or DEFAULT_RULES
+    merit_headers = ["상점"] + [
+        f"{rules.streak_count}회 연속\n지각/결석 X\n({rules.streak_score})" if pat == "연속 출석 달성" else head
+        for head, pat in MERIT_CATEGORIES
+    ]
     # 누적 컬럼: 상점 뒤에 빈 칸 두고 누적벌점, 누적상점, 상벌점총점
     gap = len(merit_headers)
     summary_r8 = [""] * gap + ["누적 벌점", "누적 상점", "상벌점\n총점"]
@@ -656,9 +650,9 @@ def _build_summary_sheet(ws, data: ExportData, sessions: list, members: list):
 
             if att_text and total_deposit:
                 # 출석 관련 금액
-                att_deposit = ATTENDANCE_DEPOSIT.get(
-                    (att.status, att.excuse_type if att.excuse_type else None), 0
-                ) if att else 0
+                # 장부에 실제로 기록된 출결 벌금 (규칙이 바뀌어도 그 주 금액 그대로)
+                att_deposit = sum(abs(e.amount_krw) for e in entries
+                                  if e.type == "FINE" and e.amount_krw < 0 and (e.description or "").startswith(_ATT_FINE_PREFIXES))
                 cell_text = f"{att_text} {att_deposit:,}" if att_deposit else att_text
                 # PPT 벌금이 별도로 있으면 추가
                 other_deposit = total_deposit - att_deposit

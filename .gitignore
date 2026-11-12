@@ -1,6 +1,7 @@
 # 환경 변수 (절대 커밋 금지)
 .env
-docker-compose.override.yml   # 개발 전용 override
+# 개발 전용 override
+docker-compose.override.yml
 
 # 데이터 볼륨
 pg_data/

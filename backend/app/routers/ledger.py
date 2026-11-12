@@ -167,7 +167,8 @@ async def give_penalty(
 
     # 3. Milestone check
     from app.services.penalty_engine import check_milestone_fines
-    milestones = check_milestone_fines(before_minus, member.total_minus_score)
+    from app.services.penalty_rules import get_rules
+    milestones = check_milestone_fines(before_minus, member.total_minus_score, await get_rules(db, member.cohort_id))
     for ms in milestones:
         db.add(Ledger(
             member_id=req.member_id,
@@ -231,7 +232,8 @@ async def create_transaction(
     # Milestone check for negative score changes
     if req.score_delta < 0:
         from app.services.penalty_engine import check_milestone_fines
-        milestones = check_milestone_fines(before_minus, member.total_minus_score)
+        from app.services.penalty_rules import get_rules
+        milestones = check_milestone_fines(before_minus, member.total_minus_score, await get_rules(db, member.cohort_id))
         for ms in milestones:
             db.add(Ledger(
                 member_id=req.member_id,

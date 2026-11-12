@@ -70,7 +70,7 @@ export default function LiveFeedbackPresent() {
                                 <SelectContent>
                                     {presenters.map((p) => (
                                         <SelectItem key={p.presenter_member_id} value={String(p.presenter_member_id)}>
-                                            {p.group_num != null ? `${p.group_num}분반 · ` : ""}{p.name}
+                                            {p.group_num != null ? `${p.group_num}분반 · ` : ""}{p.team_name ? `${p.team_name} · ` : ""}{p.name}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -100,7 +100,9 @@ export default function LiveFeedbackPresent() {
                     <div className="shrink-0 px-8 pt-6 pb-3">
                         <div className="flex items-baseline gap-3">
                             {current.group_num != null && <span className="text-lg font-bold text-rose-400">{current.group_num}분반</span>}
+                            {current.team_name && <span className="text-lg font-bold text-rose-400">{current.team_name}</span>}
                             <h1 className="text-4xl font-extrabold">{current.name}</h1>
+                            {current.member_names && <span className="text-lg text-gray-400">{current.member_names.join(", ")}</span>}
                             <span className="text-lg text-gray-500">{list.length}개 피드백</span>
                         </div>
                     </div>

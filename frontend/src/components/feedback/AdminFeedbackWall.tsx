@@ -1,4 +1,4 @@
-import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2, EyeOff, Eye, Wifi, WifiOff, Plus, Send, X, Loader2, ChevronDown, MessageCircle, UserPlus, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -189,8 +189,8 @@ const PostCard = memo(function PostCard({ post, categories, actions }: { post: F
     );
 });
 
-function StaffComposer({ boardId, presenterId, presenterName, categories }: {
-    boardId: number; presenterId: number; presenterName: string; categories: FeedbackCategory[];
+function StaffComposer({ boardId, presenterId, presenterName, isTeam, categories }: {
+    boardId: number; presenterId: number; presenterName: string; isTeam?: boolean; categories: FeedbackCategory[];
 }) {
     const [open, setOpen] = useState(false);
     const [draft, setDraft] = useState<Record<string, string>>({});
@@ -220,7 +220,7 @@ function StaffComposer({ boardId, presenterId, presenterName, categories }: {
     return (
         <div className="mt-2 rounded-xl border border-[var(--color-accent)]/40 bg-white p-2.5 space-y-2">
             <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-gray-500 truncate">{presenterName} 님에게</span>
+                <span className="text-[11px] font-bold text-gray-500 truncate">{presenterName}{isTeam ? "에게" : " 님에게"}</span>
                 <button onClick={() => setOpen(false)} className="text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
             </div>
             {categories.map((c) => {
@@ -250,7 +250,7 @@ function StaffComposer({ boardId, presenterId, presenterName, categories }: {
 
 
 const STATUS_LABEL: Record<string, string> = {
-    PENDING: "미처리", PRESENT: "출석", LATE_UNDER10: "지각", LATE_OVER10: "지각", EARLY_LEAVE: "조퇴", ABSENT: "결석", EXCUSED: "공결",
+    TEAM: "팀", PENDING: "미처리", PRESENT: "출석", LATE_UNDER10: "지각", LATE_OVER10: "지각", EARLY_LEAVE: "조퇴", ABSENT: "결석", EXCUSED: "공결",
 };
 
 function errText(e: any, fallback: string) {
@@ -367,6 +367,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
     const categories: FeedbackCategory[] = board?.categories ?? [];
     const isOpen = board?.is_open ?? false;
     const hasGroups = presenters.some((p) => p.group_num != null);
+    const byTeam = presenters.some((p) => p.team_name);
     const [addOpen, setAddOpen] = useState(false);
     const remove = useRemovePresenter(boardId);
     const removePresenter = (pr: PresenterColumn, count: number) => {
@@ -455,7 +456,13 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                 {pr.group_num}분반
                             </span>
                         )}
+                        {pr.team_name && (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold shrink-0 bg-gray-900 text-white">{pr.team_name}</span>
+                        )}
                         <span className="text-sm font-bold text-gray-900 truncate">{pr.name}</span>
+                        {pr.member_names && (
+                            <span className="text-[11px] text-gray-400 truncate">{pr.member_names.join(", ")}</span>
+                        )}
                         {pr.is_guest && (
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-600 shrink-0">외부</span>
                         )}
@@ -491,7 +498,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                         </div>
                         {isOpen && (
                             <StaffComposer boardId={boardId} presenterId={pr.presenter_member_id}
-                                presenterName={pr.name} categories={categories} />
+                                presenterName={pr.name} isTeam={pr.is_team} categories={categories} />
                         )}
                     </>
                 )}
@@ -556,11 +563,18 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                 selected == null ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400")}>
                             모든 발표자 <span className="tabular-nums opacity-80">{inGroup.length}명</span>
                         </button>
-                        {inGroup.map((pr) => {
+                        {inGroup.map((pr, i) => {
                             const n = postsByPresenter.get(pr.presenter_member_id)?.length ?? 0;
                             const on = selected?.presenter_member_id === pr.presenter_member_id;
+                            // 팀 세션 · 팀원 개인 보드: 팀이 바뀌는 자리에 팀 이름(서버가 팀 단위로 정렬해 보냄)
+                            const label = byTeam && (pr.team_name ?? (pr.is_guest ? "외부" : "팀 없음"));
+                            const prevLabel = i > 0 && byTeam && (inGroup[i - 1].team_name ?? (inGroup[i - 1].is_guest ? "외부" : "팀 없음"));
                             return (
-                                <button key={pr.presenter_member_id} type="button" aria-pressed={on} title={`받은 피드백 ${n}개`}
+                                <Fragment key={pr.presenter_member_id}>
+                                {label && label !== prevLabel && (
+                                    <span className={cn("shrink-0 self-center text-[11px] font-bold text-gray-400", i > 0 && "md:ml-2")}>{label}</span>
+                                )}
+                                <button type="button" aria-pressed={on} title={`받은 피드백 ${n}개`}
                                     onClick={() => pickPresenter(on ? null : pr.presenter_member_id)}
                                     className={cn("shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors",
                                         on ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-gray-700 border-gray-200 hover:border-gray-400")}>
@@ -570,6 +584,7 @@ export function AdminFeedbackWall({ boardId }: { boardId: number }) {
                                     {pr.name}
                                     <span className={cn("tabular-nums", on ? "opacity-80" : n === 0 ? "text-rose-400" : "text-gray-400")}>{n}</span>
                                 </button>
+                                </Fragment>
                             );
                         })}
                     </div>

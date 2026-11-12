@@ -11,8 +11,9 @@ from sqlalchemy.orm import selectinload
 
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.models import Ledger, Member, Session, Team, TeamHistory
+from app.models import Attendance, Ledger, Member, Session, Team, TeamHistory, TeamMember
 from app.services.penalty_engine import PenaltyEngine, check_milestone_fines
+from app.services.penalty_rules import get_rules, rules_signature
 from app.services.streak_checker import check_attendance_streaks
 
 
@@ -20,8 +21,31 @@ class SessionAlreadyFinalizedError(Exception):
     pass
 
 
+class RulesChangedError(Exception):
+    """정산 화면을 연 뒤 벌점 규칙이 바뀌었다 — 화면에서 본 금액과 다르게 마감된다."""
+
+
 class MeritListChangedError(Exception):
     """정산 화면이 본 상점 목록과 지금 목록이 다르다 — 순서 기반 skip_merit_indices 가 엉뚱한 상점을 빼게 된다."""
+
+
+async def unprocessed_attendance(db: AsyncSession, session: Session) -> list[str]:
+    """출결이 '미처리'(PENDING)인 활성 멤버 이름. 이대로 마감하면 벌점은 0(출석 취급)인데
+    연속 출석은 끊겨서 상점이 빠진다 — 마감 전에 출석/결석을 정하게 한다.
+    출석 탭에 안 나와 고칠 수 없는 사람은 막지 않는다 — 영영 마감 못 하게 되므로:
+    - 출결 행이 아예 없는 멤버(세션 뒤에 들어온 사람)
+    - 팀이 있는 세션에서 어느 팀에도 없는 멤버(출석 탭이 팀 명단으로만 그려진다)"""
+    q = (
+        select(Member.name)
+        .join(Attendance, (Attendance.member_id == Member.id) & (Attendance.session_id == session.id))
+        .where(Member.cohort_id == session.cohort_id, Member.is_active == True,  # noqa: E712
+               Attendance.status == "PENDING")
+        .order_by(Member.name)
+    )
+    if (await db.execute(select(Team.id).where(Team.session_id == session.id).limit(1))).first():
+        q = q.where(Member.id.in_(
+            select(TeamMember.member_id).join(Team, Team.id == TeamMember.team_id).where(Team.session_id == session.id)))
+    return list((await db.execute(q)).scalars().all())
 
 
 def merit_signature(merits: list[dict]) -> str:
@@ -35,6 +59,7 @@ async def finalize_session(
     overrides: Optional[list[dict[str, Any]]] = None,
     skip_merit_indices: Optional[list[int]] = None,
     expected_merit_signature: Optional[str] = None,
+    expected_rules_signature: Optional[str] = None,
 ):
     """
     세션 마감 처리 (Finalize)
@@ -64,7 +89,10 @@ async def finalize_session(
         for o in overrides:
             override_map[o["member_id"]] = set(o.get("skip_types", []))
 
-    engine = PenaltyEngine(session, db)
+    rules = await get_rules(db, session.cohort_id)
+    if expected_rules_signature is not None and rules_signature(rules) != expected_rules_signature:
+        raise RulesChangedError("정산 화면을 연 뒤 벌점 규칙이 바뀌었습니다. 새로고침해 금액을 다시 확인한 뒤 마감해주세요.")
+    engine = PenaltyEngine(session, db, rules)
     penalties = await engine.calculate_all()
 
     # 트랜잭션 내에서 처리
@@ -98,7 +126,7 @@ async def finalize_session(
         p.member.net_score = p.member.total_plus_score + p.member.total_minus_score
             
         # ③ 마일스톤 체크 (Milestone Check) - Update 후 비교
-        milestones = check_milestone_fines(before_minus, p.member.total_minus_score)
+        milestones = check_milestone_fines(before_minus, p.member.total_minus_score, rules)
         for ms in milestones:
             db.add(Ledger(
                 member_id=member_id,
@@ -129,7 +157,7 @@ async def finalize_session(
     skip_merits = set(skip_merit_indices or [])
 
     # 1) Auto merits (streak)
-    streak_result = await check_attendance_streaks(db, session_id)
+    streak_result = await check_attendance_streaks(db, session_id, rules)
     auto_merits = streak_result["merit_items"]  # [{member_id, member_name, score_delta, description}]
 
     # 2) Manual staged merits

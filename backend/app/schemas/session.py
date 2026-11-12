@@ -81,6 +81,8 @@ class SettlementPreviewResponse(BaseModel):
     penalties: list[PenaltyItemResponse]
     merits: list[MeritItemResponse] = []
     merit_signature: str = ""
+    rules_signature: str = ""  # 이 미리보기를 계산한 벌점 규칙
+    unprocessed_attendance: list[str] = []  # 출결 미처리(PENDING) 활성 멤버 — 있으면 마감 불가
 
 class StagedMeritCreate(BaseModel):
     member_ids: list[int]
@@ -95,6 +97,7 @@ class SessionFinalizeRequest(BaseModel):
     overrides: list[SessionFinalizeOverride] = []
     skip_merit_indices: list[int] = []
     merit_signature: str | None = None  # 정산 미리보기의 merit_signature — 다르면 409
+    rules_signature: str | None = None  # 정산 미리보기의 rules_signature — 그사이 벌점 규칙이 바뀌었으면 409
 
 class SessionFinalizeResponse(BaseModel):
     status: str

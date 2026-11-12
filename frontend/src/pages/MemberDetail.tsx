@@ -18,6 +18,7 @@ import type { LedgerEntry } from "@/hooks";
 import { PageHeader } from "@/components/PageHeader";
 import { renderSafeHangul } from "@/components/SafeText";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
+import { usePenaltyRules } from "@/hooks/usePenaltyRules";
 import { MemberEditSheet } from "@/components/MemberEditSheet";
 import { GrantMeritDialog } from "@/components/GrantMeritDialog";
 import { GivePenaltyDialog } from "@/components/GivePenaltyDialog";
@@ -69,6 +70,7 @@ export default function MemberDetail() {
     const [rechargeAmount, setRechargeAmount] = useState("");
 
     const { data: member, isLoading: isLoadingMember } = useMember(memberId);
+    const lowDep = usePenaltyRules()?.low_deposit ?? -Infinity; // 디파짓 부족 기준 (기수 규칙)
     const { data: ledger, isLoading: isLoadingLedger } = useLedger({ member_id: memberId });
     const deactivateMutation = useDeactivateMember();
     const reactivateMutation = useReactivateMember();
@@ -205,7 +207,7 @@ export default function MemberDetail() {
                     const unpaidMilestoneTotal = unpaidEntries.reduce(
                         (sum: number, e: LedgerEntry) => sum + Math.abs(e.amount_krw), 0
                     );
-                    const needsDeposit = (member.current_deposit || 0) < 10000 && member.is_active;
+                    const needsDeposit = (member.current_deposit || 0) < lowDep && member.is_active;
                     const depositShortfall = needsDeposit ? 20000 - (member.current_deposit || 0) : 0;
                     const totalReceivable = depositShortfall + unpaidMilestoneTotal;
 
@@ -267,7 +269,7 @@ export default function MemberDetail() {
                 {/* Top Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     {/* Deposit Card */}
-                    <div className={`rounded-xl border bg-[var(--color-surface)] p-4 md:p-6 flex flex-col justify-between ${(member.current_deposit || 0) < 10000 ? "border-rose-500/40" : "border-[var(--color-border)]"}`}>
+                    <div className={`rounded-xl border bg-[var(--color-surface)] p-4 md:p-6 flex flex-col justify-between ${(member.current_deposit || 0) < lowDep ? "border-rose-500/40" : "border-[var(--color-border)]"}`}>
                         <div className="flex items-start justify-between mb-4">
                             <div className="flex items-center gap-3 text-[var(--color-text-secondary)]">
                                 <CreditCard className="w-5 h-5" />
@@ -276,11 +278,11 @@ export default function MemberDetail() {
                             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsDepositOpen(true)}>관리</Button>
                         </div>
                         <div>
-                            <span className={`text-2xl md:text-3xl font-bold ${(member.current_deposit || 0) < 10000 ? "text-rose-500" : "text-[var(--color-text-primary)]"}`}>
+                            <span className={`text-2xl md:text-3xl font-bold ${(member.current_deposit || 0) < lowDep ? "text-rose-500" : "text-[var(--color-text-primary)]"}`}>
                                 ₩{(member.current_deposit || 0).toLocaleString()}
                             </span>
                         </div>
-                        {(member.current_deposit || 0) < 10000 && member.is_active && (
+                        {(member.current_deposit || 0) < lowDep && member.is_active && (
                             <div className="mt-4 pt-4 border-t border-rose-500/20">
                                 <div className="flex items-center gap-2 mb-3">
                                     <span className="text-xs font-semibold text-rose-500 uppercase tracking-wider">충전 요망</span>

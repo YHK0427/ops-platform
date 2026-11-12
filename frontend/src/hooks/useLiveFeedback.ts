@@ -22,6 +22,8 @@ export interface FeedbackBoardListItem {
     session_id: number;
     session_title: string | null;
     session_week_num: number | null;
+    session_type?: "INDIVIDUAL" | "TEAM" | null;
+    target_mode?: TargetMode;
     title: string;
     is_open: boolean;
     early_leave_member_ids: number[];
@@ -37,7 +39,14 @@ export interface PresenterColumn {
     group_num: number | null; // 분반 미사용 개인 세션이면 null
     presenter_order?: number; // 운영진(reveal_order)에서만 포함 — 멤버에겐 비노출
     is_guest?: boolean; // 외부 발표자(번호는 음수)
+    is_team?: boolean; // 팀 전체 보드의 팀(번호 = team_id)
+    member_names?: string[]; // 팀 전체 보드 — 팀원 이름
+    team_id?: number | null; // 팀 세션 · 팀원 개인 보드 — 소속 팀
+    team_name?: string | null;
+    is_own?: boolean; // 멤버뷰: 나 또는 내 팀(작성 불가, '받은 피드백')
 }
+
+export type TargetMode = "MEMBER" | "TEAM";
 
 export interface FeedbackBoardDetail {
     id: number;
@@ -45,6 +54,8 @@ export interface FeedbackBoardDetail {
     session_id?: number;
     session_title: string | null;
     session_week_num: number | null;
+    session_type?: "INDIVIDUAL" | "TEAM" | null;
+    target_mode?: TargetMode;
     is_open: boolean;
     created_at?: string | null;
     closed_at?: string | null;
@@ -199,6 +210,7 @@ export function useCreateBoard() {
         mutationFn: async (body: {
             session_id: number;
             title: string;
+            target_mode?: TargetMode;
             early_leave_member_ids?: number[];
             categories: FeedbackCategory[];
         }) => {

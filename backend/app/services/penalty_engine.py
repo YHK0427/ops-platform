@@ -6,54 +6,26 @@ from sqlalchemy.orm import joinedload
 
 from app.models import Assignment, Attendance, Member, Session
 
-# ------------------------------------------------------------------
-# Penalty Matrix (Spec B-2 그대로 구현)
-# ------------------------------------------------------------------
-# (status, excuse_type) -> (score_delta, deposit_delta)
-ATTENDANCE_MATRIX = {
-    # 지각 (10분 미만)
-    ("LATE_UNDER10", "PRE"):  (-1, -2000),
-    ("LATE_UNDER10", "POST"): (-1, -3000),
-    ("LATE_UNDER10", None):   (-1, -4000),
-    # 지각 (10분 이상)
-    ("LATE_OVER10",  "PRE"):  (-2, -2000),
-    ("LATE_OVER10",  "POST"): (-2, -3000),
-    ("LATE_OVER10",  None):   (-2, -4000),
-    # 조퇴
-    ("EARLY_LEAVE",  "PRE"):  (-2, -2000),
-    ("EARLY_LEAVE",  "POST"): (-2, -3000),
-    ("EARLY_LEAVE",  None):   (-2, -4000),
-    # 결석
-    ("ABSENT",       "PRE"):  (-4, -4000),
-    ("ABSENT",       "POST"): (-4, -6000),
-    ("ABSENT",       None):   (-4, -8000),
-    # 면제 / 출석
-    ("EXCUSED",      None):   (0,  0),
-    ("PRESENT",      None):   (0,  0),
-}
+from app.services.penalty_rules import DEFAULT_RULES, PenaltyRules, get_rules
 
+# 벌점 숫자는 기수별 규칙(services/penalty_rules.py)에서 온다. 여기선 차감(-) 부호만 붙인다.
 _RECOGNIZABLE = {"LATE_UNDER10", "LATE_OVER10", "EARLY_LEAVE"}
 
 
-def attendance_penalty(status: str, excuse_type: str | None, is_recognized: bool = False) -> tuple[int, int]:
-    """출결 벌점 (점수, 디파짓). 인정사유가 승인된 지각·조퇴는 출결은 그대로 두고 벌점만 면제."""
+def attendance_penalty(status: str, excuse_type: str | None, is_recognized: bool = False,
+                       rules: PenaltyRules = DEFAULT_RULES) -> tuple[int, int]:
+    """출결 벌점 (점수, 디파짓). 인정사유가 승인된 지각·조퇴는 출결은 그대로 두고 벌점만 면제.
+    출석·공결·미처리(PENDING)는 0."""
     if is_recognized and status in _RECOGNIZABLE:
         return (0, 0)
-    key = (status, excuse_type or None)
-    if key in ATTENDANCE_MATRIX:
-        return ATTENDANCE_MATRIX[key]
-    if status in ("EXCUSED", "PRESENT"):
-        return (0, 0)
-    return ATTENDANCE_MATRIX.get((status, None), (0, 0))
+    pair = rules.attendance(status, excuse_type)
+    return (-pair.score, -pair.deposit) if pair else (0, 0)
 
 
-PPT_EMAIL_MATRIX = {
-    "PASS":    (0, 0),
-    "LATE":    (-1, -1000),
-    "MISSING": (-2, -3000),
-}
+def ppt_email_penalty(status: str, rules: PenaltyRules = DEFAULT_RULES) -> tuple[int, int]:
+    pair = {"LATE": rules.ppt_email_late, "MISSING": rules.ppt_email_missing}.get(status)
+    return (-pair.score, -pair.deposit) if pair else (0, 0)
 
-HOMEWORK_PENALTY = (-1, -1000)   # 셋 중 하나라도 MISSING이면 동일하게 적용
 
 # --- Korean labels ---
 ATT_STATUS_LABEL = {
@@ -93,13 +65,16 @@ class PenaltyItem:
 
 
 class PenaltyEngine:
-    def __init__(self, session: Session, db: AsyncSession):
+    def __init__(self, session: Session, db: AsyncSession, rules: PenaltyRules | None = None):
         self.session = session
         self.db = db
+        self.rules = rules
 
     async def calculate_all(self) -> list[PenaltyItem]:
         """세션의 모든 멤버에 대해 페널티 계산"""
         penalties = []
+        if self.rules is None:
+            self.rules = await get_rules(self.db, self.session.cohort_id)
 
         # 활성 멤버 조회 — 세션이 속한 기수의 멤버만 (타 기수 멤버 정산 방지)
         stmt = select(Member).where(
@@ -157,7 +132,7 @@ class PenaltyEngine:
             # --- 페널티 계산 ---
 
             # [출결]
-            score_d, dep_d = attendance_penalty(att_status, excuse_type, bool(att and att.is_recognized))
+            score_d, dep_d = attendance_penalty(att_status, excuse_type, bool(att and att.is_recognized), self.rules)
 
             if score_d != 0 or dep_d != 0:
                 penalties.append(PenaltyItem(
@@ -171,7 +146,7 @@ class PenaltyEngine:
             # [PPT_EMAIL] (이메일 제출 - EXCUSED만 면제)
             ppt_email = assignments.get("PPT_EMAIL")
             if ppt_email and not is_excused:
-                s_d, d_d = PPT_EMAIL_MATRIX.get(ppt_email.status, (0, 0))
+                s_d, d_d = ppt_email_penalty(ppt_email.status, self.rules)
                 if s_d != 0 or d_d != 0:
                     penalties.append(PenaltyItem(
                         type="PPT_EMAIL",
@@ -214,8 +189,8 @@ class PenaltyEngine:
                 penalties.append(PenaltyItem(
                     type="HOMEWORK",
                     member=member,
-                    score_delta=HOMEWORK_PENALTY[0],
-                    deposit_delta=HOMEWORK_PENALTY[1],
+                    score_delta=-self.rules.homework_missing.score,
+                    deposit_delta=-self.rules.homework_missing.deposit,
                     description=f"미제출: {', '.join(ASSIGN_TYPE_LABEL.get(t, t) for t in missing_types)}"
                 ))
 
@@ -233,7 +208,7 @@ class PenaltyEngine:
             for team_id, ppt_a in team_ppts.items():
                 if ppt_a.status in ("PASS", "EXEMPT"):
                     continue
-                s_d, d_d = PPT_EMAIL_MATRIX.get(ppt_a.status, (0, 0))
+                s_d, d_d = ppt_email_penalty(ppt_a.status, self.rules)
                 if s_d == 0 and d_d == 0:
                     continue
                 tm_stmt = select(TeamMember.member_id).where(TeamMember.team_id == team_id)
@@ -256,38 +231,24 @@ class PenaltyEngine:
 
         return penalties
 
-    def check_milestone_after_update(self, before: int, after: int) -> PenaltyItem | None:
-        """
-        Finalize 시점에 호출. 점수 업데이트 전/후 비교하여 마일스톤 돌파 여부 체크.
-        누적 벌점이 -10, -20, -30... 아래로 떨어질 때마다 벌금 5000원.
-        before > threshold >= after
-        """
-        thresholds = [-10, -20, -30, -40, -50] # 충분히 많이
-        for th in thresholds:
-            if before > th >= after:
-                return PenaltyItem(
-                    type="MILESTONE_FINE",
-                    member=None, # 호출자가 member 주입
-                    score_delta=0,
-                    deposit_delta=-5000,
-                    description=f"누적벌점 {th}점 도달 추가 벌금"
-                )
-        return None
 
-
-def check_milestone_fines(before_minus: int, after_minus: int) -> list[dict]:
+def check_milestone_fines(before_minus: int, after_minus: int, rules: PenaltyRules = DEFAULT_RULES) -> list[dict]:
     """
     순벌점(total_minus_score) 변동 시 마일스톤 벌금 체크.
-    -10, -20, -30... 돌파할 때마다 5,000원 벌금.
+    규칙의 N점(milestone_every)마다 — -N, -2N, ... 을 새로 넘을 때마다 milestone_fine 원 벌금.
     Returns list of milestone dicts: [{"threshold": -10, "deposit_delta": -5000, "description": "..."}]
     """
     results = []
-    thresholds = [-10, -20, -30, -40, -50]
-    for th in thresholds:
-        if before_minus > th >= after_minus:
+    every, fine = rules.milestone_every, rules.milestone_fine
+    if fine <= 0:
+        return results
+    th = -every
+    while th >= after_minus:
+        if before_minus > th:
             results.append({
                 "threshold": th,
-                "deposit_delta": -5000,
+                "deposit_delta": -fine,
                 "description": f"누적벌점 {abs(th)}점 도달 벌금",
             })
+        th -= every
     return results

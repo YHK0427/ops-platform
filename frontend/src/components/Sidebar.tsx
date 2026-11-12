@@ -21,6 +21,7 @@ import {
     Gavel,
     Wrench,
     History,
+    Scale,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -43,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
     { label: "멤버", to: "/members", icon: Users },
     { label: "장부(기수시점)", to: "/ledger", icon: BookOpen },
     { label: "금고(총무부시점)", to: "/treasury", icon: PiggyBank },
+    { label: "벌점 규칙", to: "/penalty-rules", icon: Scale },
 ];
 
 export function Sidebar() {

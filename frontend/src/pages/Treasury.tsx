@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useTreasury, useToggleMilestonePaid, useCreateTransaction, useCreateTreasuryExpense, useDeleteTreasuryExpense } from "@/hooks";
 import { useMembers } from "@/hooks";
+import { usePenaltyRules } from "@/hooks/usePenaltyRules";
 import { Loader2, Check, Plus, Trash2, MinusCircle } from "lucide-react";
 
 type Tab = "session" | "member" | "unpaid" | "expense" | "all";
@@ -50,6 +51,13 @@ export default function Treasury() {
         { key: "expense", label: `지출${data?.expenses?.length ? ` (${data.expenses.length})` : ""}` },
         { key: "all", label: "전체 내역" },
     ];
+
+    const rules = usePenaltyRules();
+    // 누적벌점 벌금 추가 — 금액 기본값은 기수 규칙
+    const openAddFine = () => {
+        setNewFine((f) => ({ ...f, amount: String(rules?.milestone_fine ?? f.amount) }));
+        setShowAddDialog(true);
+    };
 
     const handleAddFine = () => {
         if (!newFine.member_id || !newFine.amount) return;
@@ -169,7 +177,7 @@ export default function Treasury() {
                                 지출 기록
                             </button>
                             <button
-                                onClick={() => setShowAddDialog(true)}
+                                onClick={openAddFine}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-amber-600 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20"
                             >
                                 <Plus className="w-3.5 h-3.5" />
@@ -201,7 +209,7 @@ export default function Treasury() {
                                     지출 기록
                                 </button>
                                 <button
-                                    onClick={() => setShowAddDialog(true)}
+                                    onClick={openAddFine}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors text-amber-600 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20"
                                 >
                                     <Plus className="w-3.5 h-3.5" />

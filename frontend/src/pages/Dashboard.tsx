@@ -19,7 +19,9 @@ import { renderSafeHangul } from "@/components/SafeText";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentSession, useMembers, useNaverSessionStatus, useSessionStats, useImportNaverSession, useNaverLogin, useCrawlerTask, useTreasury, crawlerKeys } from "@/hooks";
 import type { SessionStats } from "@/hooks/useSessions";
-import { penaltyRisk } from "@/lib/penaltyRisk";
+import { penaltyRisk, riskWindow } from "@/lib/penaltyRisk";
+import { evictionLevel } from "@/lib/penaltyRules";
+import { usePenaltyRules } from "@/hooks/usePenaltyRules";
 import { toast } from "sonner";
 import { ExcuseInbox } from "@/components/ExcuseInbox";
 import { useAuth } from "@/context/AuthContext";
@@ -271,23 +273,20 @@ export default function Dashboard() {
     const { data: stats } = useSessionStats(session?.id || 0);
 
     // 1. Identify Risks
-    // Low Deposit: < 10,000 KRW
+    // 디파짓 부족: 기수 규칙(low_deposit) 미만
     const { data: treasuryData } = useTreasury();
+    const rules = usePenaltyRules();
     const unpaidMilestoneByMember = (treasuryData?.by_member ?? [])
         .filter((m: any) => (m.milestone_unpaid || 0) > 0)
         .map((m: any) => ({ member_id: m.member_id, name: m.name, unpaid: m.milestone_unpaid as number }));
 
-    const lowDepositMembers = sortedMembers?.filter((m) => (m.current_deposit || 0) < 10000) || [];
+    const lowDepositMembers = rules ? sortedMembers?.filter((m) => (m.current_deposit || 0) < rules.low_deposit) || [] : [];
 
     // 벌점 위험도 (누적벌점 5천원 부과 임박)
-    const penaltyDangerMembers = sortedMembers?.filter(m => penaltyRisk(m.total_minus_score || 0, m.net_score || 0)?.level === "danger") || [];
-    // 퇴출 위험: 순점수 -13점 이하 (즉시 조치)
-    // 퇴출 경고: -7 ~ -12 (퇴출 임박)
-    const evictionMembers = sortedMembers?.filter((m) => (m.net_score || 0) <= -13) || [];
-    const evictionWarnMembers = sortedMembers?.filter((m) => {
-        const net = m.net_score || 0;
-        return net <= -7 && net > -13;
-    }) || [];
+    const penaltyDangerMembers = sortedMembers?.filter(m => penaltyRisk(m.total_minus_score || 0, m.net_score || 0, rules)?.level === "danger") || [];
+    // 퇴출 위험 / 경고 — 기수 벌점 규칙(퇴출 기준·경고 시작)
+    const evictionMembers = sortedMembers?.filter((m) => evictionLevel(m.net_score || 0, rules) === "evict") || [];
+    const evictionWarnMembers = sortedMembers?.filter((m) => evictionLevel(m.net_score || 0, rules) === "warn") || [];
 
     const totalRiskCount = penaltyDangerMembers.length + lowDepositMembers.length + unpaidMilestoneByMember.length + evictionMembers.length + evictionWarnMembers.length;
 
@@ -419,7 +418,7 @@ export default function Dashboard() {
                                 members={evictionMembers}
                                 tone="danger"
                                 icon={UserX}
-                                hint="순점수 -13점 이하"
+                                hint={rules ? `순점수 -${rules.eviction_limit + 1}점 이하` : ""}
                                 onMemberClick={(id) => navigate(`/members/${id}`)}
                             />
                             <RiskCard
@@ -428,7 +427,7 @@ export default function Dashboard() {
                                 members={evictionWarnMembers}
                                 tone="warning"
                                 icon={UserX}
-                                hint="순점수 -7 ~ -12점 (퇴출 임박)"
+                                hint={rules ? `순점수 -${rules.warn_from} ~ -${rules.eviction_limit}점 (퇴출 임박)` : ""}
                                 onMemberClick={(id) => navigate(`/members/${id}`)}
                             />
                             <RiskCard
@@ -437,7 +436,7 @@ export default function Dashboard() {
                                 members={penaltyDangerMembers}
                                 tone="danger"
                                 icon={AlertOctagon}
-                                hint="누적벌점 5천원 부과까지 3점 이내"
+                                hint={rules ? `누적벌점 ${rules.milestone_fine.toLocaleString()}원 부과까지 ${riskWindow(rules.milestone_every)}점 이내` : ""}
                                 onMemberClick={(id) => navigate(`/members/${id}`)}
                             />
                             <RiskCard
@@ -446,7 +445,7 @@ export default function Dashboard() {
                                 members={lowDepositMembers}
                                 tone="warning"
                                 icon={Wallet}
-                                hint="잔액 10,000원 미만"
+                                hint={rules ? `잔액 ${rules.low_deposit.toLocaleString()}원 미만` : ""}
                                 onMemberClick={(id) => navigate(`/members/${id}`)}
                             />
                             <RiskCard

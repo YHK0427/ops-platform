@@ -48,6 +48,7 @@ export default function SettlementTab() {
     const [skippedMeritIndices, setSkippedMeritIndices] = useState<Set<number>>(new Set());
 
     const penalties = useMemo(() => previewData?.penalties || [], [previewData]);
+    const unprocessed = previewData?.unprocessed_attendance ?? [];
     const merits = useMemo(() => previewData?.merits || [], [previewData]);
     // 상점 목록이 바뀌면(오프·오피 투표 재오픈 등) 순번 기반 체크 해제가 다른 상점을 가리키므로 초기화
     const meritSig = previewData?.merit_signature;
@@ -150,7 +151,7 @@ export default function SettlementTab() {
 
         const skip_merit_indices = Array.from(skippedMeritIndices);
 
-        finalizeSession({ sessionId: session.id, overrides, skip_merit_indices, merit_signature: previewData?.merit_signature }, {
+        finalizeSession({ sessionId: session.id, overrides, skip_merit_indices, merit_signature: previewData?.merit_signature, rules_signature: previewData?.rules_signature }, {
             onSuccess: () => {
                 toast.success("세션이 성공적으로 마감되었습니다.");
                 setConfirmOpen(false);
@@ -186,12 +187,29 @@ export default function SettlementTab() {
                 </div>
                 <Button
                     onClick={() => { setMeritConfirmed(false); setConfirmOpen(true); }}
-                    disabled={isFinalizing}
+                    disabled={isFinalizing || unprocessed.length > 0}
                     className="bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-100 transition-all hover:scale-105 self-start md:self-auto"
                 >
                     {isFinalizing ? "마감 처리 중..." : "세션 마감"}
                 </Button>
             </div>
+
+            {unprocessed.length > 0 && (
+                <div className="rounded-xl border border-rose-300 bg-rose-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-rose-800">출결 미처리 {unprocessed.length}명 — 처리해야 마감할 수 있어요</p>
+                        <p className="text-xs text-rose-700 mt-1 break-keep">
+                            {unprocessed.join(", ")}
+                        </p>
+                        <p className="text-xs text-rose-600/80 mt-1 break-keep">미처리로 마감하면 벌점은 없지만 연속 출석이 끊겨 상점이 빠집니다.</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="shrink-0 self-start sm:self-auto border-rose-300 text-rose-700 hover:bg-rose-100"
+                        onClick={() => navigate(`/sessions/${session.id}/prep`)}>
+                        출석 탭으로
+                    </Button>
+                </div>
+            )}
 
             <Dialog open={confirmOpen} onOpenChange={(o) => { if (!o) setConfirmOpen(false); }}>
                 <DialogContent className="sm:max-w-[440px]">

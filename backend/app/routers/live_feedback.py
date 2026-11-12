@@ -9,6 +9,7 @@ import logging
 import random
 import re
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import (
     APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status,
@@ -33,6 +34,8 @@ from app.models import (
     LiveFeedbackReaction,
     Member,
     Session,
+    Team,
+    TeamMember,
     User,
 )
 from app.services.live_feedback_ws import manager
@@ -112,6 +115,8 @@ class CategoryIn(BaseModel):
 class BoardCreateRequest(BaseModel):
     session_id: int
     title: str = Field(min_length=1, max_length=100)
+    # 팀 세션: TEAM=팀 전체에 / MEMBER=팀원 한 명씩. 개인 세션은 MEMBER 만.
+    target_mode: Literal["MEMBER", "TEAM"] = "MEMBER"
     early_leave_member_ids: list[int] | None = None
     categories: list[CategoryIn] | None = None
 
@@ -203,23 +208,67 @@ async def _valid_early_leave_ids(db: AsyncSession, session_id: int, requested: l
     return [m for m in dict.fromkeys(requested) if m in cand]
 
 
+def _natural(name: str) -> list:
+    """'2조' < '10조' 처럼 숫자는 숫자로 비교하는 정렬 키."""
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name or "")]
+
+
+async def _session_teams(db: AsyncSession, session_id: int) -> list[Team]:
+    return list((await db.execute(
+        select(Team).where(Team.session_id == session_id)
+        .options(selectinload(Team.members).selectinload(TeamMember.member))
+    )).scalars().all())
+
+
 async def _presenter_columns(
     db: AsyncSession, board: LiveFeedbackBoard, reveal_order: bool,
-    restrict_group: int | None = None,
+    restrict_group: int | None = None, viewer_member_id: int | None = None,
 ) -> list[dict]:
     """보드의 발표자 목록 — 매번 새로 계산한다.
+    target_mode=TEAM 이면 팀이 발표자(번호 = team_id, 멤버 있는 팀만, removed_member_ids 에 든 팀 제외).
+    팀 세션의 MEMBER 모드는 사람 단위 그대로 + 소속 팀(team_id/team_name)을 붙여 팀별로 정렬한다.
+    viewer_member_id 를 주면 is_own(내 발표 = 나 또는 내 팀) 표시 — 본인에겐 못 쓴다.
     1) 출결에서 결석/공결만 빼고(지각·조퇴 포함) 2) 운영진이 뺀 사람(removed_member_ids) 제외
     3) 운영진이 넣은 기수원(added_presenters) 추가 4) 외부 발표자(guests, 번호는 -id) 추가.
     분반(group_num)이 있으면 분반별, 없으면 전체를 단일 그룹으로.
     restrict_group이 주어지면 해당 분반만(멤버는 자기 분반끼리만 피드백). 분반 없는 외부 발표자는 모든 분반에 보인다.
     reveal_order=False(멤버용)이면 presenter_order 제외 + 이름 가나다순(발표 순서 비노출)."""
+    session = await db.get(Session, board.session_id)
+    is_team_session = session is not None and session.type == "TEAM"
+    teams = await _session_teams(db, board.session_id) if is_team_session else []
+    guests = (await db.execute(
+        select(LiveFeedbackGuest).where(LiveFeedbackGuest.board_id == board.id)
+    )).scalars().all()
+    removed = set(board.removed_member_ids or [])
+
+    if board.target_mode == "TEAM":
+        # 팀원이 다 빠진 팀은 명단에서 숨기지만, 이미 받은 글이 있으면 운영진 화면엔 남긴다(글이 안 보이게 되지 않게)
+        posted = set((await db.execute(
+            select(LiveFeedbackPost.presenter_team_id).where(
+                LiveFeedbackPost.board_id == board.id, LiveFeedbackPost.presenter_team_id.is_not(None))
+        )).scalars().all()) if reveal_order else set()
+        items = [{"presenter_member_id": t.id, "group_num": None, "presenter_order": t.presenter_order,
+                  "name": t.name, "is_guest": False, "is_team": True,
+                  "member_names": [tm.member.name for tm in t.members if tm.member],
+                  "is_own": viewer_member_id is not None and any(tm.member_id == viewer_member_id for tm in t.members)}
+                 for t in teams if (t.members or t.id in posted) and t.id not in removed]
+        items += [{"presenter_member_id": -g.id, "group_num": None, "presenter_order": None,
+                   "name": g.name, "is_guest": True, "is_own": False} for g in guests]
+        if reveal_order:
+            items.sort(key=lambda x: (x["presenter_order"] if x["presenter_order"] is not None else 9999, _natural(x["name"])))
+        else:
+            # 기수원: 팀 이름순 — 발표 순서를 짐작할 수 없게
+            items.sort(key=lambda x: (x["is_guest"], _natural(x["name"])))
+            for it in items:
+                it.pop("presenter_order", None)
+        return items
+
     rows = (await db.execute(
         select(Attendance.member_id, Attendance.group_num, Attendance.presenter_order, Attendance.status, Member.name)
         .join(Member, Member.id == Attendance.member_id)
         .where(Attendance.session_id == board.session_id)
     )).all()
     by_id = {mid: (gn, po, name) for mid, gn, po, _st, name in rows}
-    removed = set(board.removed_member_ids or [])
     base = {mid: (gn, po, name) for mid, gn, po, st, name in rows
             if _attended(st, mid, set()) and mid not in removed}
     for a in board.added_presenters or []:
@@ -227,9 +276,6 @@ async def _presenter_columns(
         if mid in by_id and mid not in removed:
             gn, po, name = by_id[mid]
             base[mid] = (a.get("group_num") if a.get("group_num") is not None else gn, po, name)
-    guests = (await db.execute(
-        select(LiveFeedbackGuest).where(LiveFeedbackGuest.board_id == board.id)
-    )).scalars().all()
     has_groups = any(gn is not None for gn, _, _ in base.values()) or any(g.group_num is not None for g in guests)
 
     items = []
@@ -243,6 +289,29 @@ async def _presenter_columns(
                       "presenter_order": None, "name": g.name, "is_guest": True})
     if restrict_group is not None and has_groups:
         items = [it for it in items if it["group_num"] == restrict_group or (it["is_guest"] and it["group_num"] is None)]
+    for it in items:
+        it["is_own"] = viewer_member_id is not None and it["presenter_member_id"] == viewer_member_id
+
+    if is_team_session:
+        # 팀 세션 MEMBER 모드: 팀별로 묶는다(운영진=팀 발표 순서, 기수원=팀 이름순). 팀 없는 사람·외부는 뒤로
+        team_of = {tm.member_id: t for t in teams for tm in t.members}
+        for it in items:
+            t = team_of.get(it["presenter_member_id"])
+            it["team_id"] = t.id if t else None
+            it["team_name"] = t.name if t else None
+
+        def team_sort(x):
+            # 팀(운영진=팀 발표 순서, 기수원=팀 이름순 — 발표 순서 비노출) → 팀 없는 사람 → 외부 발표자, 안에서는 이름순
+            t = team_of.get(x["presenter_member_id"])
+            if t is None:
+                return (2 if x["is_guest"] else 1, 0, [], x["name"])
+            order = (t.presenter_order if t.presenter_order is not None else 9999) if reveal_order else 0
+            return (0, order, _natural(t.name), x["name"])
+        items.sort(key=team_sort)
+        if not reveal_order:
+            for it in items:
+                it.pop("presenter_order", None)
+        return items
 
     if reveal_order:
         items.sort(key=lambda x: (
@@ -258,21 +327,28 @@ async def _presenter_columns(
 
 
 def _presenter_key(post: LiveFeedbackPost) -> int:
-    """글의 발표자 번호 — 기수원 member_id / 외부 발표자 -guest_id (관계 로딩 불필요)."""
-    return -post.presenter_guest_id if post.presenter_guest_id is not None else post.presenter_member_id
+    """글의 발표자 번호 — 기수원 member_id / 팀 team_id(TEAM 보드) / 외부 발표자 -guest_id (관계 로딩 불필요)."""
+    if post.presenter_guest_id is not None:
+        return -post.presenter_guest_id
+    if post.presenter_team_id is not None:
+        return post.presenter_team_id
+    return post.presenter_member_id
 
 
 def _presenter_of(post: LiveFeedbackPost) -> tuple[int, str | None]:
     """발표자 번호와 이름 (presenter / presenter_guest 가 미리 로딩돼 있어야 함)."""
     if post.presenter_guest_id is not None:
         return _presenter_key(post), (post.presenter_guest.name if post.presenter_guest else None)
+    if post.presenter_team_id is not None:
+        return _presenter_key(post), (post.presenter_team.name if post.presenter_team else None)
     return _presenter_key(post), (post.presenter.name if post.presenter else None)
 
 
-def _presenter_fields(key: int) -> dict:
-    """API 발표자 번호 → 글 컬럼."""
-    return {"presenter_guest_id": -key, "presenter_member_id": None} if key < 0 \
-        else {"presenter_member_id": key, "presenter_guest_id": None}
+def _presenter_fields(key: int, board: LiveFeedbackBoard) -> dict:
+    """API 발표자 번호 → 글 컬럼. 양수는 TEAM 보드면 팀, 아니면 기수원."""
+    if key < 0:
+        return {"presenter_guest_id": -key}
+    return {"presenter_team_id": key} if board.target_mode == "TEAM" else {"presenter_member_id": key}
 
 
 async def _get_or_create_alias(
@@ -455,6 +531,7 @@ async def _load_post_full(db: AsyncSession, post_id: int) -> LiveFeedbackPost | 
             selectinload(LiveFeedbackPost.author_user),
             selectinload(LiveFeedbackPost.presenter),
             selectinload(LiveFeedbackPost.presenter_guest),
+            selectinload(LiveFeedbackPost.presenter_team),
             selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author),
             selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author_user),
         )
@@ -478,8 +555,10 @@ async def create_board(
     # 기수 격리: 세션이 현재 기수 소속인지 검증
     if session.cohort_id != cohort_id:
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
-    if session.type != "INDIVIDUAL":
-        raise HTTPException(status_code=400, detail="개인(분반) 세션에서만 사용할 수 있습니다")
+    if session.type not in ("INDIVIDUAL", "TEAM"):
+        raise HTTPException(status_code=400, detail="개인·팀 세션에서만 사용할 수 있습니다")
+    if body.target_mode == "TEAM" and session.type != "TEAM":
+        raise HTTPException(status_code=400, detail="팀 전체 피드백은 팀 세션에서만 고를 수 있습니다")
 
     existing = await db.execute(
         select(LiveFeedbackBoard).where(LiveFeedbackBoard.session_id == body.session_id)
@@ -488,7 +567,7 @@ async def create_board(
         raise HTTPException(status_code=409, detail="이 세션에는 이미 피드백 보드가 있습니다")
 
     board = LiveFeedbackBoard(
-        session_id=body.session_id, title=body.title,
+        session_id=body.session_id, title=body.title, target_mode=body.target_mode,
         early_leave_member_ids=await _valid_early_leave_ids(db, body.session_id, body.early_leave_member_ids),
         categories=_validate_categories(body.categories),
     )
@@ -501,6 +580,8 @@ async def create_board(
         "session_id": board.session_id,
         "title": board.title,
         "is_open": board.is_open,
+        "target_mode": board.target_mode,
+        "session_type": session.type,
         "early_leave_member_ids": board.early_leave_member_ids,
         "categories": board.categories,
         "post_count": 0,
@@ -549,18 +630,20 @@ async def list_boards(
 
     session_ids = [b.session_id for b in boards]
     sess_q = await db.execute(
-        select(Session.id, Session.title, Session.week_num).where(Session.id.in_(session_ids))
+        select(Session.id, Session.title, Session.week_num, Session.type).where(Session.id.in_(session_ids))
     )
-    sess_map = {sid: (title, wk) for sid, title, wk in sess_q.all()}
+    sess_map = {sid: (title, wk, typ) for sid, title, wk, typ in sess_q.all()}
 
     out = []
     for b in boards:
-        title, wk = sess_map.get(b.session_id, (None, None))
+        title, wk, typ = sess_map.get(b.session_id, (None, None, None))
         out.append({
             "id": b.id,
             "session_id": b.session_id,
             "session_title": title,
             "session_week_num": wk,
+            "session_type": typ,
+            "target_mode": b.target_mode,
             "title": b.title,
             "is_open": b.is_open,
             "early_leave_member_ids": b.early_leave_member_ids,
@@ -587,6 +670,8 @@ async def get_board_admin(
         "session_id": board.session_id,
         "session_title": session.title if session else None,
         "session_week_num": session.week_num if session else None,
+        "session_type": session.type if session else None,
+        "target_mode": board.target_mode,
         "title": board.title,
         "is_open": board.is_open,
         "early_leave_member_ids": board.early_leave_member_ids,
@@ -657,6 +742,10 @@ async def presenter_candidates(
     """명단에 없는 세션 인원(결석자·뺀 사람 포함) — '발표자 추가' 목록용."""
     board = await _get_board_or_404(db, board_id, cohort_id)
     current = {p["presenter_member_id"] for p in await _presenter_columns(db, board, reveal_order=True)}
+    if board.target_mode == "TEAM":
+        # 팀 보드: 명단에서 뺀 팀(멤버 있는 팀)이 후보 — member_id 자리에 team_id
+        return [{"member_id": t.id, "name": t.name, "group_num": None, "status": "TEAM"}
+                for t in await _session_teams(db, board.session_id) if t.members and t.id not in current]
     rows = (await db.execute(
         select(Attendance.member_id, Attendance.group_num, Attendance.status, Member.name)
         .join(Member, Member.id == Attendance.member_id)
@@ -677,7 +766,12 @@ async def add_presenter(
 ):
     """발표자 추가 — 기수원(member_id) 또는 외부 발표자(name). 결석자도 넣을 수 있다."""
     board = await _get_board_or_404(db, board_id, cohort_id)
-    if body.member_id is not None:
+    if body.member_id is not None and board.target_mode == "TEAM":
+        team = await db.get(Team, body.member_id)  # 팀 보드에선 member_id 자리에 team_id
+        if team is None or team.session_id != board.session_id:
+            raise HTTPException(status_code=404, detail="이 세션의 팀이 아닙니다")
+        board.removed_member_ids = [m for m in (board.removed_member_ids or []) if m != body.member_id]
+    elif body.member_id is not None:
         in_session = (await db.execute(select(Attendance.id).where(
             Attendance.session_id == board.session_id, Attendance.member_id == body.member_id,
         ))).first()
@@ -759,6 +853,7 @@ async def list_posts_admin(
             selectinload(LiveFeedbackPost.author_user),
             selectinload(LiveFeedbackPost.presenter),
             selectinload(LiveFeedbackPost.presenter_guest),
+            selectinload(LiveFeedbackPost.presenter_team),
             selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author),
             selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author_user),
         )
@@ -895,10 +990,12 @@ async def member_get_board(
     my_group = await _member_group(db, board.session_id, member["member_id"])
     # 분반이 나뉘면 같은 분반끼리만 (발표 순서 비노출), 결석·공결만 제외
     presenters = await _presenter_columns(db, board, reveal_order=False,
-        restrict_group=my_group)
+        restrict_group=my_group, viewer_member_id=member["member_id"])
     return {
         "id": board.id,
         "title": board.title,
+        "target_mode": board.target_mode,
+        "session_type": session.type if session else None,
         "session_title": session.title if session else None,
         "session_week_num": session.week_num if session else None,
         "is_open": board.is_open,
@@ -936,6 +1033,7 @@ async def member_list_posts(
             selectinload(LiveFeedbackPost.author_user),
             selectinload(LiveFeedbackPost.presenter),
             selectinload(LiveFeedbackPost.presenter_guest),
+            selectinload(LiveFeedbackPost.presenter_team),
             selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author),
             selectinload(LiveFeedbackPost.comments).selectinload(LiveFeedbackComment.author_user),
         )
@@ -978,15 +1076,18 @@ async def member_create_post(
     # 같은 분반 스코프 + 출석 검증
     my_group = await _member_group(db, board.session_id, member["member_id"])
     scoped = await _presenter_columns(db, board, reveal_order=False,
-        restrict_group=my_group)
-    if body.presenter_member_id not in {c["presenter_member_id"] for c in scoped}:
+        restrict_group=my_group, viewer_member_id=member["member_id"])
+    target = next((c for c in scoped if c["presenter_member_id"] == body.presenter_member_id), None)
+    if target is None:
         raise HTTPException(status_code=400, detail="피드백할 수 없는 대상입니다")
+    if target["is_own"]:
+        raise HTTPException(status_code=400, detail="내 발표(내 팀)에는 피드백을 남길 수 없습니다")
 
     author_id = member["member_id"]
     post = LiveFeedbackPost(
         board_id=board_id,
         author_member_id=author_id,
-        **_presenter_fields(body.presenter_member_id),
+        **_presenter_fields(body.presenter_member_id, board),
         contents=contents,
         is_anonymous=body.is_anonymous,
     )
@@ -1046,7 +1147,7 @@ async def staff_create_post(
     post = LiveFeedbackPost(
         board_id=board_id,
         author_user_id=uid,
-        **_presenter_fields(body.presenter_member_id),
+        **_presenter_fields(body.presenter_member_id, board),
         contents=contents,
         is_anonymous=body.is_anonymous,
     )

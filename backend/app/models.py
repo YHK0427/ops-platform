@@ -18,6 +18,8 @@ class Cohort(Base):
     name = Column(String(50), nullable=False)              # "33기"
     # 발표 성장 리포트 표지 슬로건(기수별). NULL이면 프론트 기본 문구("당신의 가능성을 꽃피우기 위해")로 대체.
     slogan = Column(String(200), nullable=True)
+    # 벌점·상점 규칙(services/penalty_rules.py). NULL·빠진 키 = 기본값.
+    penalty_rules = Column(JSONB(none_as_null=True), nullable=True)
     is_current = Column(Boolean, server_default="false", nullable=False)  # 신규 계정 시딩·기본값 기준
     is_active = Column(Boolean, server_default="true", nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
@@ -466,7 +468,7 @@ class EvalResponse(Base):
 # 주의: 기존 Assignment.type='FEEDBACK'(세션 후 네이버 카페 댓글 과제)와 완전히 별개.
 
 class LiveFeedbackBoard(Base):
-    """세션별 실시간 피드백 보드 (개인/분반 세션 전용). EvalRound 라이프사이클 미러링."""
+    """세션별 실시간 피드백 보드 (개인/분반·팀 세션). EvalRound 라이프사이클 미러링."""
     __tablename__ = "live_feedback_boards"
 
     id = Column(Integer, primary_key=True)
@@ -478,7 +480,10 @@ class LiveFeedbackBoard(Base):
     # 운영진이 손으로 조정한 발표자 명단 — 출결로 계산한 명단에서 빼고/더한다.
     # 결석자라도 넣을 수 있고 출석자라도 뺄 수 있다. [{member_id, group_num}]
     added_presenters = Column(JSONB, nullable=False, server_default=text("'[]'"))
+    # target_mode=TEAM 이면 여기 든 번호는 team_id 다(발표자 번호 = 팀 id).
     removed_member_ids = Column(ARRAY(Integer), server_default=text("'{}'"), nullable=False)
+    # 피드백 대상: MEMBER=사람마다(개인 세션은 항상), TEAM=팀 전체(팀 세션에서만). 만들 때 정하고 안 바꾼다.
+    target_mode = Column(String(6), nullable=False, server_default="MEMBER")
     # 보드별 피드백 카테고리 [{key,label,color}] — 기본 칭찬/발전
     categories = Column(
         JSONB,
@@ -490,6 +495,10 @@ class LiveFeedbackBoard(Base):
     )
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     closed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("target_mode IN ('MEMBER', 'TEAM')", name="ck_live_feedback_board_target_mode"),
+    )
 
     session = relationship("Session")
     posts = relationship("LiveFeedbackPost", back_populates="board", cascade="all, delete-orphan")
@@ -523,6 +532,8 @@ class LiveFeedbackPost(Base):
     # 발표자: 기수원(presenter_member_id) 또는 외부 발표자(presenter_guest_id) 중 하나
     presenter_member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
     presenter_guest_id = Column(Integer, ForeignKey("live_feedback_guests.id", ondelete="CASCADE"), nullable=True, index=True)
+    # 팀 전체 대상(target_mode=TEAM). 팀이 지워지면 그 팀에 달린 글도 같이 지워진다.
+    presenter_team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True)
     # 카테고리별 내용 {categoryKey: text} — 최소 1개 필수 (보드 categories 키 기준)
     contents = Column(JSONB, nullable=False)
     is_anonymous = Column(Boolean, default=True, server_default="true", nullable=False)
@@ -531,7 +542,8 @@ class LiveFeedbackPost(Base):
 
     __table_args__ = (
         CheckConstraint("contents <> '{}'::jsonb", name="ck_live_feedback_post_has_content"),
-        CheckConstraint("(presenter_member_id IS NULL) <> (presenter_guest_id IS NULL)", name="ck_live_feedback_post_one_presenter"),
+        CheckConstraint("num_nonnulls(presenter_member_id, presenter_guest_id, presenter_team_id) = 1",
+                        name="ck_live_feedback_post_one_presenter"),
     )
 
     board = relationship("LiveFeedbackBoard", back_populates="posts")
@@ -539,6 +551,7 @@ class LiveFeedbackPost(Base):
     author_user = relationship("User", foreign_keys=[author_user_id])
     presenter = relationship("Member", foreign_keys=[presenter_member_id])
     presenter_guest = relationship("LiveFeedbackGuest")
+    presenter_team = relationship("Team")
     reactions = relationship("LiveFeedbackReaction", back_populates="post", cascade="all, delete-orphan")
     comments = relationship(
         "LiveFeedbackComment", back_populates="post", cascade="all, delete-orphan",

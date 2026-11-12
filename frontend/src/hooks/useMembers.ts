@@ -54,6 +54,20 @@ export function useMembers(activeOnly = true) {
     });
 }
 
+export interface AttendanceStreaks {
+    streak_count: number;
+    members: Record<string, { run: number; granted: number; to_next: number }>;
+}
+
+/** 멤버별 지금 연속 출석 횟수 (마감된 세션 기준) */
+export function useAttendanceStreaks() {
+    return useQuery({
+        queryKey: [...membersKeys.all, "attendance-streaks"],
+        queryFn: async () => (await api.get<AttendanceStreaks>("/members/attendance-streaks")).data,
+        staleTime: 60_000,
+    });
+}
+
 export function useMember(id: number) {
     return useQuery({
         queryKey: membersKeys.detail(id),

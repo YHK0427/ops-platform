@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -11,6 +11,8 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 import { useGivePenalty, useCreateTransaction, useMembers, useSessions } from "@/hooks";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+import { usePenaltyRules } from "@/hooks/usePenaltyRules";
+import { buildPenaltyPresets } from "@/lib/penaltyRules";
 
 // ── 모드 ────────────────────────────────────────────────────────────
 
@@ -25,31 +27,6 @@ interface Preset {
     reason: string;
 }
 
-const PENALTY_PRESETS: Preset[] = [
-    // 출결 — 지각 (10분 미만)
-    { label: "10분미만 지각 (사전)", score: 1, deposit: 2000, reason: "지각(10분 미만) (사전)" },
-    { label: "10분미만 지각 (사후)", score: 1, deposit: 3000, reason: "지각(10분 미만) (사후)" },
-    { label: "10분미만 지각 (사유서X)", score: 1, deposit: 4000, reason: "지각(10분 미만) (사유서없음)" },
-    // 출결 — 지각 (10분 이상)
-    { label: "10분이상 지각 (사전)", score: 2, deposit: 2000, reason: "지각(10분 이상) (사전)" },
-    { label: "10분이상 지각 (사후)", score: 2, deposit: 3000, reason: "지각(10분 이상) (사후)" },
-    { label: "10분이상 지각 (사유서X)", score: 2, deposit: 4000, reason: "지각(10분 이상) (사유서없음)" },
-    // 출결 — 조퇴
-    { label: "조퇴 (사전)", score: 2, deposit: 2000, reason: "조퇴 (사전)" },
-    { label: "조퇴 (사후)", score: 2, deposit: 3000, reason: "조퇴 (사후)" },
-    { label: "조퇴 (사유서X)", score: 2, deposit: 4000, reason: "조퇴 (사유서없음)" },
-    // 출결 — 결석
-    { label: "결석 (사전)", score: 4, deposit: 4000, reason: "결석 (사전)" },
-    { label: "결석 (사후)", score: 4, deposit: 6000, reason: "결석 (사후)" },
-    { label: "결석 (사유서X)", score: 4, deposit: 8000, reason: "결석 (사유서없음)" },
-    // PPT 이메일
-    { label: "PPT이메일 지연제출", score: 1, deposit: 1000, reason: "PPT이메일 지연제출" },
-    { label: "PPT이메일 미제출", score: 2, deposit: 3000, reason: "PPT이메일 미제출" },
-    // 과제/리뷰/피드백
-    { label: "과제 미제출", score: 1, deposit: 1000, reason: "미제출: 과제" },
-    // 기타
-    { label: "무임승차 (주요세션)", score: 5, deposit: 0, reason: "주요세션 무임승차" },
-];
 
 // ── 수동 거래 유형 ──────────────────────────────────────────────────
 
@@ -68,6 +45,12 @@ interface BulkPenaltyDialogProps {
 export function BulkPenaltyDialog({ trigger }: BulkPenaltyDialogProps) {
     const [open, setOpen] = useState(false);
     const [mode, setMode] = useState<Mode>("preset");
+    const rules = usePenaltyRules();
+    // 프리셋은 기수 벌점 규칙에서 — 정산과 같은 금액
+    const PENALTY_PRESETS: Preset[] = useMemo(
+        () => (rules ? buildPenaltyPresets(rules) : []).map(({ desc, ...p }) => ({ ...p, reason: desc })),
+        [rules],
+    );
 
     // 공통
     const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
@@ -218,7 +201,7 @@ export function BulkPenaltyDialog({ trigger }: BulkPenaltyDialogProps) {
                                         >
                                             <div className="font-medium leading-tight">{p.label}</div>
                                             <div className="text-[10px] opacity-60 mt-0.5">
-                                                -{p.score}점{p.deposit > 0 ? ` / -${p.deposit.toLocaleString()}원` : ""}
+                                                {[p.score > 0 && `-${p.score}점`, p.deposit > 0 && `-${p.deposit.toLocaleString()}원`].filter(Boolean).join(" / ")}
                                             </div>
                                         </button>
                                     ))}
@@ -352,7 +335,7 @@ export function BulkPenaltyDialog({ trigger }: BulkPenaltyDialogProps) {
                     <Button
                         onClick={handleSubmit}
                         disabled={processing || selectedMembers.length === 0 || !reason ||
-                            (mode === "preset" && score <= 0) ||
+                            (mode === "preset" && score <= 0 && deposit <= 0) ||
                             (mode === "manual" && manualAmount === 0 && manualScore === 0)}
                         className={mode === "preset" ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"}
                     >

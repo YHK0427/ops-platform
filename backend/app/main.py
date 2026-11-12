@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings
 from app.logging_config import setup_logging
-from app.routers import assignments, auth, cohorts, crawler, evaluation, generation, live_feedback, members, sessions, ledger, scoring, team_building, notifications, dev_feedback, audit_log, infra_status, patch_notes, share, excuses, session_votes
+from app.routers import assignments, auth, cohorts, crawler, evaluation, generation, live_feedback, members, sessions, ledger, scoring, team_building, notifications, dev_feedback, audit_log, infra_status, patch_notes, share, excuses, session_votes, penalty_rules
 import app.audit_hook  # noqa: F401 — import 시 SQLAlchemy Session에 after_flush 훅 등록
 import app.roster_hook  # noqa: F401 — 출결 명단 변경 → 실시간 피드백 보드 알림
 
@@ -123,6 +123,7 @@ app.include_router(cohorts.router, prefix="/api/v1")
 app.include_router(team_building.router, prefix="/api/v1")
 app.include_router(evaluation.router, prefix="/api/v1")
 app.include_router(live_feedback.router, prefix="/api/v1")
+app.include_router(penalty_rules.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(scoring.router, prefix="/api/v1")
 app.include_router(dev_feedback.router, prefix="/api/v1")

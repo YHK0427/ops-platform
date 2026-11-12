@@ -170,6 +170,10 @@ interface SettlementPreviewResponse {
     penalties: SettlementPenalty[];
     merits: MeritPreviewItem[];
     merit_signature?: string;
+    /** 이 미리보기를 계산한 벌점 규칙 서명 — 마감 때 다르면 409 */
+    rules_signature?: string;
+    /** 출결 미처리(PENDING) 활성 멤버 이름 — 있으면 서버가 마감을 막는다 */
+    unprocessed_attendance?: string[];
 }
 
 export interface SessionStats {
@@ -217,13 +221,14 @@ export function useSettlementPreview(sessionId: number) {
 export function useFinalizeSession() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ sessionId, overrides, skip_merit_indices = [], merit_signature }: { sessionId: number; overrides: any[]; skip_merit_indices?: number[]; merit_signature?: string }) => {
-            const { data } = await api.post(`/sessions/${sessionId}/finalize`, { overrides, skip_merit_indices, merit_signature });
+        mutationFn: async ({ sessionId, overrides, skip_merit_indices = [], merit_signature, rules_signature }: { sessionId: number; overrides: any[]; skip_merit_indices?: number[]; merit_signature?: string; rules_signature?: string }) => {
+            const { data } = await api.post(`/sessions/${sessionId}/finalize`, { overrides, skip_merit_indices, merit_signature, rules_signature });
             return data;
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: sessionsKeys.details() });
             queryClient.invalidateQueries({ queryKey: sessionsKeys.lists() });
+            queryClient.invalidateQueries({ queryKey: ["members", "attendance-streaks"] }); // 연속 출석 배지
             toast.success("세션이 마감되었습니다.");
         },
     });

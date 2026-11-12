@@ -1,4 +1,5 @@
 import axios from "axios";
+import { isMemberPortalPath } from "@/lib/utils";
 
 const MEMBER_TOKEN_KEY = "member_access_token";
 
@@ -37,7 +38,7 @@ memberApi.interceptors.response.use(
     (error) => {
         if (error.response?.status === 401) {
             setMemberToken(null);
-            if (window.location.pathname.startsWith("/member")) {
+            if (isMemberPortalPath(window.location.pathname)) {
                 window.location.href = "/login";
             }
         }

@@ -5,6 +5,7 @@ import { PatchNoteModal } from "@/components/PatchNoteModal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
+import { isMemberPortalPath } from "@/lib/utils";
 import { MemberAuthProvider, useMemberAuth, fetchMemberMe } from "@/context/MemberAuthContext";
 import { memberAnnouncementsQuery } from "@/hooks/useMemberAnnouncements";
 import { pendingEvalsQuery } from "@/hooks/useMemberEvaluation";
@@ -39,6 +40,7 @@ const AdminUsers = lazyPreload(() => import("@/pages/AdminUsers"));
 const AdminCohorts = lazyPreload(() => import("@/pages/AdminCohorts"));
 const AdminAuditLog = lazyPreload(() => import("@/pages/AdminAuditLog"));
 const Treasury = lazyPreload(() => import("@/pages/Treasury"));
+const PenaltyRules = lazyPreload(() => import("@/pages/PenaltyRules"));
 
 // ── Lazy-loaded evaluation pages (ops) ─────────────────────────────────
 const TeamBuilding = lazyPreload(() => import("@/pages/TeamBuilding"));
@@ -100,7 +102,7 @@ const MEMBER_ENTRY: [RegExp, { preload: () => Promise<void> }][] = [
 ];
 if (typeof window !== "undefined") {
   const path = window.location.pathname;
-  if (path.startsWith("/member")) {
+  if (isMemberPortalPath(path)) {
     const entry = MEMBER_ENTRY.find(([re]) => re.test(path))?.[1];
     preloadAll(entry ? [MemberLayout, entry] : [MemberLayout]);
   } else if (path !== "/login" && !path.startsWith("/s/") && getToken()) {
@@ -178,7 +180,7 @@ const MEMBER_ENTRY_DATA: [RegExp, object[]][] = [
   [/^\/member\/attendance/, [myAttendanceQuery, myExcusesQuery]],
   [/^\/member\/vote/, [memberOpenVotesQuery]],
 ];
-if (typeof window !== "undefined" && window.location.pathname.startsWith("/member") && getMemberToken()) {
+if (typeof window !== "undefined" && isMemberPortalPath(window.location.pathname) && getMemberToken()) {
   fetchMemberMe().catch(() => {});
   const path = window.location.pathname;
   for (const q of MEMBER_ENTRY_DATA.find(([re]) => re.test(path))?.[1] ?? []) {
@@ -292,6 +294,7 @@ export default function App() {
                   </Route>
                   <Route path="/ledger" element={<Ledger />} />
                   <Route path="/treasury" element={<Treasury />} />
+                  <Route path="/penalty-rules" element={<PenaltyRules />} />
                   <Route path="/admin/users" element={<AdminUsers />} />
                   <Route path="/admin/cohorts" element={<AdminCohorts />} />
                   <Route path="/admin/audit-log" element={<AdminAuditLog />} />

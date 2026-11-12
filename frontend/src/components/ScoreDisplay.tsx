@@ -1,4 +1,6 @@
 import { cn } from "@/lib/utils";
+import { usePenaltyRules } from "@/hooks/usePenaltyRules";
+import { evictionLevel } from "@/lib/penaltyRules";
 
 interface ScoreDisplayProps {
     totalPlus: number;
@@ -7,17 +9,16 @@ interface ScoreDisplayProps {
     className?: string;
 }
 
-const EVICTION_THRESHOLD = -13;
-const WARNING_THRESHOLD = -7;
-
 export function ScoreDisplay({
     totalPlus,
     totalMinus,
     netScore,
     className,
 }: ScoreDisplayProps) {
-    const isEviction = netScore <= EVICTION_THRESHOLD;
-    const isWarning = netScore <= WARNING_THRESHOLD && !isEviction;
+    // 퇴출 기준·경고 시작은 기수 벌점 규칙
+    const level = evictionLevel(netScore, usePenaltyRules());
+    const isEviction = level === "evict";
+    const isWarning = level === "warn";
 
     return (
         <div className={cn("flex items-center gap-3", className)}>

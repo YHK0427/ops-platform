@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -14,6 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useGivePenalty, useSessions } from "@/hooks";
+import { usePenaltyRules } from "@/hooks/usePenaltyRules";
+import { buildPenaltyPresets } from "@/lib/penaltyRules";
 
 interface Preset {
     label: string;
@@ -22,32 +24,6 @@ interface Preset {
     desc: string;
 }
 
-const PRESETS: Preset[] = [
-    // 출결 — 지각 (10분 미만)
-    { label: "10분미만 지각 (사전)", score: 1, deposit: 2000, desc: "지각(10분 미만) (사전)" },
-    { label: "10분미만 지각 (사후)", score: 1, deposit: 3000, desc: "지각(10분 미만) (사후)" },
-    { label: "10분미만 지각 (사유서X)", score: 1, deposit: 4000, desc: "지각(10분 미만) (사유서없음)" },
-    // 출결 — 지각 (10분 이상)
-    { label: "10분이상 지각 (사전)", score: 2, deposit: 2000, desc: "지각(10분 이상) (사전)" },
-    { label: "10분이상 지각 (사후)", score: 2, deposit: 3000, desc: "지각(10분 이상) (사후)" },
-    { label: "10분이상 지각 (사유서X)", score: 2, deposit: 4000, desc: "지각(10분 이상) (사유서없음)" },
-    // 출결 — 조퇴
-    { label: "조퇴 (사전)", score: 2, deposit: 2000, desc: "조퇴 (사전)" },
-    { label: "조퇴 (사후)", score: 2, deposit: 3000, desc: "조퇴 (사후)" },
-    { label: "조퇴 (사유서X)", score: 2, deposit: 4000, desc: "조퇴 (사유서없음)" },
-    // 출결 — 결석
-    { label: "결석 (사전)", score: 4, deposit: 4000, desc: "결석 (사전)" },
-    { label: "결석 (사후)", score: 4, deposit: 6000, desc: "결석 (사후)" },
-    { label: "결석 (사유서X)", score: 4, deposit: 8000, desc: "결석 (사유서없음)" },
-    // PPT 이메일
-    { label: "PPT이메일 지연제출", score: 1, deposit: 1000, desc: "PPT이메일 지연제출" },
-    { label: "PPT이메일 미제출", score: 2, deposit: 3000, desc: "PPT이메일 미제출" },
-    // 과제/리뷰/피드백
-    { label: "과제 미제출", score: 1, deposit: 1000, desc: "미제출: 과제" },
-    // 기타
-    { label: "무임승차 (주요세션)", score: 5, deposit: 0, desc: "주요세션 무임승차" },
-    { label: "직접 입력", score: 0, deposit: 0, desc: "" },
-];
 
 interface GivePenaltyDialogProps {
     memberId: number;
@@ -64,11 +40,17 @@ export function GivePenaltyDialog({ memberId, memberName, trigger }: GivePenalty
     const [sessionId, setSessionId] = useState<number | undefined>(undefined);
     const { mutate: givePenalty, isPending } = useGivePenalty();
     const { data: sessions } = useSessions();
+    const rules = usePenaltyRules();
+    // 프리셋은 기수 벌점 규칙에서 — 정산과 같은 금액. 마지막은 직접 입력.
+    const PRESETS: Preset[] = useMemo(
+        () => [...(rules ? buildPenaltyPresets(rules) : []), { label: "직접 입력", score: 0, deposit: 0, desc: "" }],
+        [rules],
+    );
 
     const selectPreset = (idx: number) => {
         const p = PRESETS[idx];
         setPreset(idx);
-        if (p.score !== 0) setScore(p.score);
+        if (idx !== PRESETS.length - 1) setScore(p.score); // 규칙상 0점(차감만)인 항목도 그대로
         setDeposit(p.deposit);
         if (p.desc) setDesc(p.desc);
     };
@@ -76,7 +58,7 @@ export function GivePenaltyDialog({ memberId, memberName, trigger }: GivePenalty
     const isCustom = preset === PRESETS.length - 1;
 
     const handleSubmit = () => {
-        if (score <= 0 || !desc) return;
+        if ((score <= 0 && deposit <= 0) || !desc) return;
         // 양수 입력 → 음수로 변환해서 전송
         givePenalty(
             {
@@ -113,7 +95,7 @@ export function GivePenaltyDialog({ memberId, memberName, trigger }: GivePenalty
                 <DialogHeader>
                     <DialogTitle>벌점 부여 — {memberName}</DialogTitle>
                     <DialogDescription>
-                        수동 벌점을 부여합니다. 누적벌점 10점 단위 도달 시 벌금이 자동 부과됩니다.
+                        수동 벌점을 부여합니다. 누적벌점 {rules?.milestone_every ?? 10}점 단위 도달 시 벌금 {(rules?.milestone_fine ?? 5000).toLocaleString()}원이 자동 부과됩니다.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4 overflow-y-auto min-h-0 flex-1">
@@ -201,12 +183,14 @@ export function GivePenaltyDialog({ memberId, memberName, trigger }: GivePenalty
                     </div>
 
                     {/* Preview */}
-                    {score > 0 && (
+                    {(score > 0 || deposit > 0) && (
                         <div className="rounded-lg bg-rose-500/5 border border-rose-500/20 px-4 py-3 text-sm space-y-1">
-                            <div className="flex justify-between">
-                                <span className="text-[var(--color-text-muted)]">벌점</span>
-                                <span className="text-rose-500 font-medium">-{score}점</span>
-                            </div>
+                            {score > 0 && (
+                                <div className="flex justify-between">
+                                    <span className="text-[var(--color-text-muted)]">벌점</span>
+                                    <span className="text-rose-500 font-medium">-{score}점</span>
+                                </div>
+                            )}
                             {deposit > 0 && (
                                 <div className="flex justify-between">
                                     <span className="text-[var(--color-text-muted)]">디파짓 차감</span>
@@ -219,7 +203,7 @@ export function GivePenaltyDialog({ memberId, memberName, trigger }: GivePenalty
                 <DialogFooter>
                     <Button
                         onClick={handleSubmit}
-                        disabled={isPending || score <= 0 || !desc}
+                        disabled={isPending || (score <= 0 && deposit <= 0) || !desc}
                         className="bg-rose-600 hover:bg-rose-700"
                     >
                         {isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}

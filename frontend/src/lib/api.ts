@@ -1,4 +1,5 @@
 import axios from "axios";
+import { isMemberPortalPath } from "@/lib/utils";
 
 const TOKEN_KEY = "ops_access_token";
 const REMEMBER_KEY = "ops_remember";
@@ -94,7 +95,7 @@ api.interceptors.response.use(
     (error) => {
         if (error.response?.status === 401) {
             // /member 경로에서는 리다이렉트 방지 (멤버 포털은 토큰 미사용)
-            const isMemberPath = window.location.pathname.startsWith("/member");
+            const isMemberPath = isMemberPortalPath(window.location.pathname);
             if (!isMemberPath) {
                 setToken(null);
                 window.location.href = "/login";

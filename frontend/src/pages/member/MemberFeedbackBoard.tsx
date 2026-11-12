@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useMemberAuth } from "@/context/MemberAuthContext";
@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
     useMemberBoard, useMemberPosts, useCreatePost, useToggleReaction, useUpdatePost,
     useCreateComment, useDeleteComment,
-    type FeedbackPost, type FeedbackCategory,
+    type FeedbackPost, type FeedbackCategory, type PresenterColumn,
 } from "@/hooks/useLiveFeedback";
 import { useLiveFeedbackSocket } from "@/hooks/useLiveFeedbackSocket";
 import { colorClasses, formatFeedbackTime } from "@/lib/feedbackColors";
@@ -44,17 +44,23 @@ export default function MemberFeedbackBoard() {
     const categories: FeedbackCategory[] = board?.categories ?? [];
     const isOpen = board?.is_open ?? false;
     const myId = member?.member_id;
+    // 나 또는 내 팀(팀 전체 보드) — 서버가 is_own 으로 알려준다
+    const isOwn = (p: PresenterColumn) => p.is_own ?? p.presenter_member_id === myId;
+    // 팀 세션 · 팀원 개인 보드: 명단을 팀별로 묶어 보여준다(서버가 팀 단위로 정렬해 보냄 — 발표 순서 아님)
+    const byTeam = presenters.some((p) => p.team_name);
+    const groupLabel = (p: PresenterColumn) => p.team_name ?? (p.is_guest ? "외부 발표자" : "팀 없음");
+    const groupStart = (i: number) => byTeam && (i === 0 || groupLabel(presenters[i - 1]) !== groupLabel(presenters[i]));
 
     // 진입 시 기본으로 자기 섹션(본인 컬럼)을 열어줌. 본인이 없으면 첫 발표자.
     useEffect(() => {
         if (presenterId == null && presenters.length > 0) {
-            const own = presenters.find((p) => p.presenter_member_id === myId);
+            const own = presenters.find(isOwn);
             setPresenterId(own ? own.presenter_member_id : presenters[0].presenter_member_id);
         }
-    }, [presenters, presenterId, myId]);
+    }, [presenters, presenterId, myId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const selected = presenters.find((p) => p.presenter_member_id === presenterId) ?? null;
-    const isOwnSection = selected != null && selected.presenter_member_id === myId;
+    const isOwnSection = selected != null && isOwn(selected);
 
     // 글 개수(발표자별) — 사이드바 카운트용
     const countByPresenter = useMemo(() => {
@@ -122,15 +128,20 @@ export default function MemberFeedbackBoard() {
                 {/* 모바일: 가로 스크롤 발표자 칩 */}
                 <div className="lg:hidden border-t border-gray-100 px-3 py-2 overflow-x-auto">
                     <div className="flex gap-2 w-max">
-                        {presenters.map((pr) => (
+                        {presenters.map((pr, i) => (
+                            <Fragment key={pr.presenter_member_id}>
+                            {groupStart(i) && (
+                                <span className={cn("self-center text-[11px] font-bold text-gray-400 whitespace-nowrap", i > 0 && "ml-2")}>{groupLabel(pr)}</span>
+                            )}
                             <PresenterChip
-                                key={pr.presenter_member_id}
                                 name={pr.name}
-                                isOwn={pr.presenter_member_id === myId}
+                                isOwn={isOwn(pr)}
+                                ownLabel={pr.is_team ? "우리 팀" : "나"}
                                 active={presenterId === pr.presenter_member_id}
                                 count={countByPresenter.get(pr.presenter_member_id) ?? 0}
                                 onClick={() => setPresenterId(pr.presenter_member_id)}
                             />
+                            </Fragment>
                         ))}
                     </div>
                 </div>
@@ -141,13 +152,16 @@ export default function MemberFeedbackBoard() {
                 <aside className="hidden lg:flex lg:flex-col lg:w-72 shrink-0 border-r border-gray-200 bg-white overflow-y-auto">
                     <p className="px-4 pt-4 pb-2 text-xs font-semibold text-gray-400">발표자</p>
                     <nav className="px-2 pb-4 space-y-0.5">
-                        {presenters.map((pr) => {
+                        {presenters.map((pr, i) => {
                             const active = presenterId === pr.presenter_member_id;
-                            const own = pr.presenter_member_id === myId;
+                            const own = isOwn(pr);
                             const cnt = countByPresenter.get(pr.presenter_member_id) ?? 0;
                             return (
+                                <Fragment key={pr.presenter_member_id}>
+                                {groupStart(i) && (
+                                    <p className={cn("px-3 pb-1 text-[11px] font-bold text-gray-400", i > 0 ? "pt-3" : "pt-1")}>{groupLabel(pr)}</p>
+                                )}
                                 <button
-                                    key={pr.presenter_member_id}
                                     onClick={() => setPresenterId(pr.presenter_member_id)}
                                     className={cn(
                                         "w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
@@ -158,13 +172,14 @@ export default function MemberFeedbackBoard() {
                                         <span className="truncate">{pr.name}</span>
                                         {pr.is_guest && <span className="shrink-0 px-1 rounded text-[9px] font-bold bg-amber-50 text-amber-600">외부</span>}
                                         {own && (
-                                            <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0", active ? "bg-white/25 text-white" : "bg-rose-50 text-rose-600")}>나</span>
+                                            <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0", active ? "bg-white/25 text-white" : "bg-rose-50 text-rose-600")}>{pr.is_team ? "우리 팀" : "나"}</span>
                                         )}
                                     </span>
                                     {cnt > 0 && (
                                         <span className={cn("text-[11px] tabular-nums shrink-0", active ? "text-white/80" : "text-gray-400")}>{cnt}</span>
                                     )}
                                 </button>
+                                </Fragment>
                             );
                         })}
                         {presenters.length === 0 && (
@@ -186,8 +201,10 @@ export default function MemberFeedbackBoard() {
                             <>
                                 <div className="mb-4">
                                     <h2 className="text-xl font-extrabold text-gray-900">
-                                        {isOwnSection ? "내가 받은 피드백" : `${selected.name} 님에게`}
+                                        {isOwnSection ? (selected.is_team ? "우리 팀이 받은 피드백" : "내가 받은 피드백")
+                                            : selected.is_team ? `${selected.name}에게` : `${selected.name} 님에게`}
                                     </h2>
+                                    {selected.member_names && <p className="text-sm text-gray-500 mt-0.5">{selected.member_names.join(", ")}</p>}
                                     <p className="text-xs text-gray-400 mt-0.5">
                                         {isOwnSection ? "다른 발표자를 선택하면 피드백을 남길 수 있어요" : "원하는 항목에 익명으로 피드백을 남겨보세요"}
                                     </p>
@@ -273,8 +290,8 @@ export default function MemberFeedbackBoard() {
     );
 }
 
-function PresenterChip({ name, isOwn, active, count, onClick }: {
-    name: string; isOwn: boolean; active: boolean; count: number; onClick: () => void;
+function PresenterChip({ name, isOwn, ownLabel = "나", active, count, onClick }: {
+    name: string; isOwn: boolean; ownLabel?: string; active: boolean; count: number; onClick: () => void;
 }) {
     return (
         <button
@@ -285,7 +302,7 @@ function PresenterChip({ name, isOwn, active, count, onClick }: {
             )}
         >
             {name}
-            {isOwn && <span className={cn("ml-1 text-[10px] font-bold", active ? "text-white/80" : "text-rose-500")}>나</span>}
+            {isOwn && <span className={cn("ml-1 text-[10px] font-bold", active ? "text-white/80" : "text-rose-500")}>{ownLabel}</span>}
             {count > 0 && <span className={cn("ml-1 text-[11px] tabular-nums", active ? "text-white/80" : "text-gray-400")}>{count}</span>}
         </button>
     );

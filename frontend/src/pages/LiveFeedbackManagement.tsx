@@ -23,7 +23,7 @@ import {
 import { useSessions } from "@/hooks/useSessions";
 import {
     useFeedbackBoards, useCreateBoard, useUpdateBoard, useDeleteBoard,
-    type FeedbackBoardListItem, type FeedbackCategory,
+    type FeedbackBoardListItem, type FeedbackCategory, type TargetMode,
 } from "@/hooks/useLiveFeedback";
 import { AdminFeedbackWall } from "@/components/feedback/AdminFeedbackWall";
 import { CATEGORY_PRESETS, DEFAULT_CATEGORIES, COLOR_OPTIONS, colorClasses } from "@/lib/feedbackColors";
@@ -84,7 +84,7 @@ export default function LiveFeedbackManagement() {
                                 <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
                                     <MessageSquareHeart className="w-10 h-10 text-gray-300 mx-auto mb-3" />
                                     <p className="text-sm text-gray-500">아직 생성된 피드백 보드가 없습니다.</p>
-                                    <p className="text-xs text-gray-400 mt-1">개인(분반) 세션을 골라 보드를 만들어 보세요.</p>
+                                    <p className="text-xs text-gray-400 mt-1">개인(분반)·팀 세션을 골라 보드를 만들어 보세요.</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -102,8 +102,13 @@ export default function LiveFeedbackManagement() {
                                                     {b.is_open ? "진행 중" : b.closed_at ? "마감" : "대기 중"}
                                                 </span>
                                             </div>
-                                            {/* 카테고리 미리보기 */}
+                                            {/* 카테고리 미리보기 (팀 세션이면 피드백 대상도) */}
                                             <div className="flex flex-wrap gap-1 mb-2.5">
+                                                {b.session_type === "TEAM" && (
+                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-900 text-white">
+                                                        {b.target_mode === "TEAM" ? "팀 전체에게" : "팀원 개인에게"}
+                                                    </span>
+                                                )}
                                                 {(b.categories ?? []).map((c) => {
                                                     const cc = colorClasses(c.color);
                                                     return <span key={c.key} className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold", cc.chip)}>{c.label}</span>;
@@ -191,7 +196,7 @@ export default function LiveFeedbackManagement() {
 function HelpPanel() {
     const [open, setOpen] = useState(false);
     const steps = [
-        { icon: Plus, title: "1. 보드 만들기", body: "우측 상단 [새 보드] → 개인(분반) 세션을 고르고 제목을 입력하세요. 한 세션에 보드 1개입니다." },
+        { icon: Plus, title: "1. 보드 만들기", body: "우측 상단 [새 보드] → 개인(분반)·팀 세션을 고르고 제목을 입력하세요. 팀 세션이면 '팀 전체에게' / '팀원 개인에게' 중 피드백 대상을 고릅니다(만든 뒤엔 못 바꿈). 한 세션에 보드 1개입니다." },
         { icon: Tag, title: "2. 카테고리 정하기", body: "기수가 작성할 항목입니다. 기본은 칭찬·발전이고, 프리셋(질문·총평·인상깊은 점 등)이나 [직접 추가]로 자유롭게 구성·색 지정할 수 있어요. 만든 뒤에도 카드의 연필(수정)에서 변경 가능합니다." },
         { icon: Users, title: "3. 발표자 = 출석자", body: "결석·공결자만 자동 제외됩니다. 지각·조퇴한 사람도 발표자 목록에 들어갑니다. 발표 순서는 기수에게 보이지 않습니다." },
         { icon: LockOpen, title: "4. 열기 / 마감", body: "[열기]를 누르면 상태가 '진행 중'이 되고, 그때부터 기수 화면(홈·피드백 탭)에 보드가 떠서 작성할 수 있습니다. [마감하기]를 누르면 기수는 더 이상 작성할 수 없고 읽기만 됩니다. (※ 공개/비공개가 아니라 '작성 받기'를 여닫는 것)" },
@@ -336,6 +341,7 @@ function BoardDialog({
     const [sessionId, setSessionId] = useState<string>("");
     const [title, setTitle] = useState("");
     const [cats, setCats] = useState<FeedbackCategory[]>(DEFAULT_CATEGORIES);
+    const [targetMode, setTargetMode] = useState<TargetMode>("TEAM");
 
     // 다이얼로그 열릴 때 초기화/프리필
     useEffect(() => {
@@ -345,11 +351,12 @@ function BoardDialog({
             setTitle(editBoard.title);
             setCats(editBoard.categories?.length ? editBoard.categories : DEFAULT_CATEGORIES);
         } else {
-            setSessionId(""); setTitle(""); setCats(DEFAULT_CATEGORIES);
+            setSessionId(""); setTitle(""); setCats(DEFAULT_CATEGORIES); setTargetMode("TEAM");
         }
     }, [open, editBoard]);
 
-    const individualSessions = useMemo(() => (sessions ?? []).filter((s) => s.type === "INDIVIDUAL"), [sessions]);
+    const boardSessions = useMemo(() => (sessions ?? []).filter((s) => s.type === "INDIVIDUAL" || s.type === "TEAM"), [sessions]);
+    const isTeamSession = (sessions ?? []).find((s) => String(s.id) === sessionId)?.type === "TEAM";
 
     const catsValid = cats.length > 0 && cats.every((c) => c.label.trim());
     const canSubmit = !!sessionId && !!title.trim() && catsValid;
@@ -363,6 +370,7 @@ function BoardDialog({
         } else {
             const board = await create.mutateAsync({
                 session_id: Number(sessionId), title: title.trim(), categories: payloadCats,
+                target_mode: isTeamSession ? targetMode : "MEMBER",
             });
             onOpenChange(false);
             if (board?.id) onCreated(board.id);
@@ -376,21 +384,44 @@ function BoardDialog({
             <DialogContent className="max-h-[88vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{isEdit ? "피드백 보드 수정" : "새 피드백 보드"}</DialogTitle>
-                    <DialogDescription>개인(분반) 세션의 실시간 피드백 보드를 설정합니다.</DialogDescription>
+                    <DialogDescription>개인(분반)·팀 세션의 실시간 피드백 보드를 설정합니다.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-2">
                     <div className="space-y-1.5">
-                        <Label>세션 (개인/분반)</Label>
+                        <Label>세션 (개인/분반 · 팀)</Label>
                         <Select value={sessionId} onValueChange={setSessionId} disabled={isEdit}>
                             <SelectTrigger><SelectValue placeholder="세션을 선택하세요" /></SelectTrigger>
                             <SelectContent>
-                                {individualSessions.map((s) => (
-                                    <SelectItem key={s.id} value={String(s.id)}>{s.week_num}주차 · {s.title}</SelectItem>
+                                {boardSessions.map((s) => (
+                                    <SelectItem key={s.id} value={String(s.id)}>{s.week_num}주차 · {s.title}{s.type === "TEAM" ? " (팀)" : ""}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
-                        {!isEdit && individualSessions.length === 0 && <p className="text-xs text-amber-600">개인(분반) 세션이 없습니다.</p>}
+                        {!isEdit && boardSessions.length === 0 && <p className="text-xs text-amber-600">개인(분반)·팀 세션이 없습니다.</p>}
                     </div>
+                    {isTeamSession && (
+                        <div className="space-y-1.5">
+                            <Label>피드백 대상</Label>
+                            {isEdit ? (
+                                <p className="text-sm text-gray-600">{editBoard?.target_mode === "TEAM" ? "팀 전체에게" : "팀원 개인에게"} <span className="text-xs text-gray-400">(만든 뒤엔 바꿀 수 없음)</span></p>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-2">
+                                    {([
+                                        ["TEAM", "팀 전체에게", "팀마다 피드백 한 곳 — 팀원 모두가 같이 봅니다"],
+                                        ["MEMBER", "팀원 개인에게", "팀원 한 명씩 따로 받습니다 (팀별로 묶어 표시)"],
+                                    ] as const).map(([v, label, desc]) => (
+                                        <button key={v} type="button" onClick={() => setTargetMode(v)} aria-pressed={targetMode === v}
+                                            className={cn("rounded-lg border p-2.5 text-left transition-colors",
+                                                targetMode === v ? "border-[var(--color-accent)] bg-[var(--color-accent-dim)]" : "border-gray-200 hover:border-gray-300")}>
+                                            <p className="text-sm font-bold text-gray-900">{label}</p>
+                                            <p className="text-[11px] text-gray-500 mt-0.5 [word-break:keep-all]">{desc}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            <p className="text-[11px] text-gray-400">어느 쪽이든 기수원은 자기 자신(팀 전체면 자기 팀)에겐 못 씁니다.</p>
+                        </div>
+                    )}
                     <div className="space-y-1.5">
                         <Label>제목</Label>
                         <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 3주차 발표 피드백" maxLength={100} />

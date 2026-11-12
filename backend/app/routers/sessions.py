@@ -14,11 +14,13 @@ from sqlalchemy import bindparam, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.roster_hook import mark_roster_changed
 from app.deps import get_current_cohort_id, get_current_user, get_db, require_staff
 from app.models import (
     Assignment,
     Attendance,
     Ledger,
+    LiveFeedbackPost,
     Member,
     Session as SessionModel,
     Team,
@@ -946,6 +948,9 @@ async def confirm_teams(
         if gone:
             submitted = set((await db.execute(sa_select(Assignment.team_id).where(
                 Assignment.team_id.in_(gone), Assignment.status != "PENDING"))).scalars().all())
+            # 실시간 피드백(팀 전체 보드)에 받은 글이 있는 팀도 남긴다 — 지우면 글이 같이 사라진다
+            submitted |= set((await db.execute(sa_select(LiveFeedbackPost.presenter_team_id).where(
+                LiveFeedbackPost.presenter_team_id.in_(gone)))).scalars().all())
             for t in existing:
                 if t.id in submitted:
                     for tm in list(t.members):
@@ -980,6 +985,9 @@ async def confirm_teams(
                     db.add(TeamMember(team_id=team.id, member_id=tm.member_id))
     else:
         # SETUP 최초 확정: 모든 과제·팀 새로 만든다
+        if (await db.execute(sa_select(LiveFeedbackPost.id).join(Team, Team.id == LiveFeedbackPost.presenter_team_id)
+                             .where(Team.session_id == session_id).limit(1))).first():
+            raise HTTPException(status_code=400, detail="이 세션 팀들이 받은 실시간 피드백 글이 있어 팀을 새로 만들 수 없어요")
         result = await db.execute(delete(Assignment).where(Assignment.session_id == session_id))
         if result.rowcount:
             await record_manual_event(db, "DELETE", "assignments", f"{result.rowcount}건 삭제(과제배정 · 팀 확정)", row_id=str(session_id))
@@ -1033,6 +1041,7 @@ async def confirm_teams(
         # SETUP에서만 상태 전환
         session.status = "PREP"
 
+    mark_roster_changed(db, session_id)
     await db.commit()
     logger.audit(f"teams_confirmed session={session_id} teams={len(body.teams)} members={len(all_assigned_member_ids)}")
 
@@ -1360,7 +1369,9 @@ async def get_settlement_preview(
     from app.services.penalty_engine import PenaltyEngine
     from app.services.streak_checker import check_attendance_streaks
 
-    engine = PenaltyEngine(session, db)
+    from app.services.penalty_rules import get_rules, rules_signature
+    rules = await get_rules(db, session.cohort_id)
+    engine = PenaltyEngine(session, db, rules)
     penalties = await engine.calculate_all()
 
     response_items = []
@@ -1375,7 +1386,7 @@ async def get_settlement_preview(
         })
 
     # 스트릭 merit 항목 조회
-    streak_result = await check_attendance_streaks(db, session_id)
+    streak_result = await check_attendance_streaks(db, session_id, rules)
     merits: list[dict] = []
     for item in streak_result["merit_items"]:
         merits.append({
@@ -1404,12 +1415,14 @@ async def get_settlement_preview(
                 "source": "manual",
             })
 
-    from app.services.finalize import merit_signature
+    from app.services.finalize import merit_signature, unprocessed_attendance
     return SettlementPreviewResponse(
         session_id=session.id,
         penalties=response_items,
         merits=merits,
         merit_signature=merit_signature(merits),
+        unprocessed_attendance=await unprocessed_attendance(db, session),
+        rules_signature=rules_signature(rules),
     )
 
 
@@ -1494,7 +1507,7 @@ async def finalize_session_api(
     cohort_id: int = Depends(get_current_cohort_id),
 ):
     """세션 마감 (Finalize) - 페널티 확정 및 정산 처리"""
-    from app.services.finalize import finalize_session, SessionAlreadyFinalizedError, MeritListChangedError
+    from app.services.finalize import finalize_session, SessionAlreadyFinalizedError, MeritListChangedError, RulesChangedError
 
     # 기수 격리: 다른 기수의 세션을 마감하지 못하도록 사전 검증
     await _get_session_or_404(session_id, db, cohort_id)
@@ -1505,12 +1518,18 @@ async def finalize_session_api(
     blocker = await finalize_blocker(db, session_id)
     if blocker:
         raise HTTPException(status_code=409, detail=blocker)
+    from app.services.finalize import unprocessed_attendance
+    pending = await unprocessed_attendance(db, await db.get(SessionModel, session_id))
+    if pending:
+        raise HTTPException(status_code=409, detail=(
+            f"출결 미처리 {len(pending)}명({', '.join(pending[:5])}{' 외' if len(pending) > 5 else ''}) — "
+            "출석 탭에서 출석/결석을 먼저 정해주세요. 미처리로 마감하면 연속 출석 상점이 빠집니다."))
 
     # Pydantic 모델 -> Dict 변환
     overrides_dict = [o.model_dump() for o in body.overrides]
     
     try:
-        await finalize_session(session_id, db, overrides_dict, body.skip_merit_indices, body.merit_signature)
+        await finalize_session(session_id, db, overrides_dict, body.skip_merit_indices, body.merit_signature, body.rules_signature)
         await db.commit() # 트랜잭션 확정
         # 세션 정보 조회 — 라벨 구성 + finalized_at
         updated_session = await db.get(SessionModel, session_id)
@@ -1524,7 +1543,7 @@ async def finalize_session_api(
         
     except SessionAlreadyFinalizedError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except MeritListChangedError as e:
+    except (MeritListChangedError, RulesChangedError) as e:
         await db.rollback()
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
@@ -1687,6 +1706,7 @@ async def update_presenter_order(
             stmt,
             [{"_member_id": item["member_id"], "_presenter_order": item["presenter_order"]} for item in body],
         )
+    mark_roster_changed(db, session_id)
     await db.commit()
     return {"status": "ok", "updated": len(body)}
 
@@ -1712,6 +1732,7 @@ async def update_team_order(
             stmt,
             [{"_team_id": item["team_id"], "_presenter_order": item["presenter_order"]} for item in body],
         )
+    mark_roster_changed(db, session_id)
     await db.commit()
     return {"status": "ok", "updated": len(body)}
 

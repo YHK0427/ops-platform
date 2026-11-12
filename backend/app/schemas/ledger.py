@@ -1,7 +1,7 @@
 from enum import Enum
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 class LedgerType(str, Enum):
     FINE = "FINE"
@@ -61,10 +61,17 @@ class LedgerUpdate(BaseModel):
 
 class PenaltyRequest(BaseModel):
     member_id: int
-    score_delta: int = Field(lt=0, description="벌점 (음수)")
-    deposit_delta: int = Field(default=0, description="디파짓 차감 (0이면 없음)")
+    score_delta: int = Field(le=0, description="벌점 (음수, 차감만 하는 규칙이면 0)")
+    deposit_delta: int = Field(default=0, le=0, description="디파짓 차감 (0이면 없음)")
     description: str
     session_id: Optional[int] = None
+
+    @model_validator(mode="after")
+    def _not_empty(self):
+        # 벌점 규칙에서 점수 0·차감만 있는 항목도 만들 수 있다 — 둘 다 0이면 의미 없는 기록
+        if self.score_delta == 0 and self.deposit_delta == 0:
+            raise ValueError("벌점이나 디파짓 차감 중 하나는 있어야 합니다")
+        return self
 
 class TreasuryExpenseCreate(BaseModel):
     amount_krw: int = Field(gt=0, description="지출 금액 (양수)")

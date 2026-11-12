@@ -175,6 +175,25 @@ async def list_members(
     return result.scalars().all()
 
 
+@router.get("/attendance-streaks")
+async def attendance_streaks(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_user),
+    cohort_id: int = Depends(get_current_cohort_id),
+):
+    """활성 멤버별 지금 연속 출석 횟수 + 그 연속에서 받은 상점 수 + 다음 상점까지 남은 출석 횟수 (마감된 세션 기준).
+    다음 상점은 (받은 수+1)×N 회째 출석 때 — 정산의 check_attendance_streaks 와 같은 계산. 이미 넘었으면 다음 출석 때(1)."""
+    from app.services.penalty_rules import get_rules
+    from app.services.streak_checker import current_streak_state
+    every = (await get_rules(db, cohort_id)).streak_count
+    state = await current_streak_state(db, cohort_id)
+    return {
+        "streak_count": every,
+        "members": {str(mid): {"run": run, "granted": g, "to_next": max(1, (g + 1) * every - run)}
+                    for mid, (run, g) in state.items()},
+    }
+
+
 @router.post("", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
 async def create_member(
     body: MemberCreate,

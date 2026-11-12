@@ -2,12 +2,58 @@ from sqlalchemy import select, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Session, Attendance, Member, Ledger
 
-STREAK_REASON_PREFIX = "4주 연속 출석 달성"
-STREAK_COUNT = 4
-STREAK_SCORE = 2
+from app.services.penalty_rules import PenaltyRules, get_rules
+
+# 상점 설명: "{N}주 연속 출석 달성 (주차들)". 이미 준 상점은 이 문구로 찾는다(N이 바뀌어도 잡히게 N 앞은 안 봄).
+STREAK_REASON_MARK = "연속 출석 달성"
 
 
-async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
+def _present_run(session_ids_newest_first: list[int], member_att: dict[int, str]) -> list[int]:
+    """최신 세션부터 거꾸로 이어지는 출석(PRESENT) 세션들 — 다른 상태(미처리 포함)나 기록 없음에서 끊긴다."""
+    run: list[int] = []
+    for sid in session_ids_newest_first:
+        if member_att.get(sid) != "PRESENT":
+            break
+        run.append(sid)
+    return run
+
+
+async def current_streaks(db: AsyncSession, cohort_id: int) -> dict[int, int]:
+    """기수 활성 멤버별 지금 연속 출석 횟수 (마감된 세션 기준)."""
+    return {mid: run for mid, (run, _) in (await current_streak_state(db, cohort_id)).items()}
+
+
+async def current_streak_state(db: AsyncSession, cohort_id: int) -> dict[int, tuple[int, int]]:
+    """기수 활성 멤버별 (지금 연속 출석 횟수, 그 연속 안에서 이미 받은 연속출석 상점 수). 멤버 탭 표시용.
+    받은 수는 check_attendance_streaks 와 같은 기준(문구 + 지금 연속 구간의 세션)으로 센다."""
+    session_ids = list((await db.execute(
+        select(Session.id).where(Session.cohort_id == cohort_id, Session.status == "FINALIZED")
+        .order_by(desc(Session.date), desc(Session.week_num))
+    )).scalars().all())
+    member_ids = (await db.execute(
+        select(Member.id).where(Member.is_active == True, Member.cohort_id == cohort_id)  # noqa: E712
+    )).scalars().all()
+    att_map: dict[int, dict[int, str]] = {}
+    if session_ids:
+        for mid, sid, st in (await db.execute(
+            select(Attendance.member_id, Attendance.session_id, Attendance.status)
+            .where(Attendance.session_id.in_(session_ids))
+        )).all():
+            att_map.setdefault(mid, {})[sid] = st
+    grants: dict[int, list[int | None]] = {}
+    for mid, sid in (await db.execute(
+        select(Ledger.member_id, Ledger.session_id).join(Member, Member.id == Ledger.member_id)
+        .where(Member.cohort_id == cohort_id, Ledger.type == "MERIT", Ledger.description.contains(STREAK_REASON_MARK))
+    )).all():
+        grants.setdefault(mid, []).append(sid)
+    out: dict[int, tuple[int, int]] = {}
+    for mid in member_ids:
+        run = set(_present_run(session_ids, att_map.get(mid, {})))
+        out[mid] = (len(run), sum(1 for sid in grants.get(mid, []) if sid in run))
+    return out
+
+
+async def check_attendance_streaks(db: AsyncSession, current_session_id: int, rules: PenaltyRules | None = None):
     """
     해당 세션 기준으로 4회 연속 출석(PRESENT) 달성 멤버별 개별 merit 항목 반환.
 
@@ -26,6 +72,11 @@ async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
     if not cur_session:
         return {"merit_items": [], "session_id": current_session_id}
     cohort_id = cur_session.cohort_id
+    if rules is None:
+        rules = await get_rules(db, cohort_id)
+    STREAK_COUNT, STREAK_SCORE = rules.streak_count, rules.streak_score
+    if STREAK_SCORE <= 0:
+        return {"merit_items": [], "session_id": current_session_id}
 
     # 1. 현재 세션 포함 + FINALIZED 세션을 날짜 역순으로 조회 (id + week_num) — 같은 기수만
     stmt_sessions = (
@@ -69,7 +120,7 @@ async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
         .where(
             Member.cohort_id == cohort_id,
             Ledger.type == "MERIT",
-            Ledger.description.startswith(STREAK_REASON_PREFIX),
+            Ledger.description.contains(STREAK_REASON_MARK),
         )
     )
     result = await db.execute(stmt_grants)
@@ -83,18 +134,9 @@ async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
     # 5. 스트릭 판정 → 개별 merit 항목 생성
     merit_items = []
     for member in members:
-        member_att = att_map.get(member.id, {})
-        present_count = 0
-        run_sessions: list[int] = []  # oldest-first로 재정렬할 PRESENT 세션들
-
         # 최신순으로 연속 출석 카운팅 (PRESENT만 카운트, 나머지로 중단)
-        for sid in session_ids:
-            status = member_att.get(sid)
-            if status == "PRESENT":
-                present_count += 1
-                run_sessions.append(sid)
-            else:
-                break
+        run_sessions = _present_run(session_ids, att_map.get(member.id, {}))  # 최신순
+        present_count = len(run_sessions)
 
         possible_streaks = present_count // STREAK_COUNT
 
@@ -125,7 +167,7 @@ async def check_attendance_streaks(db: AsyncSession, current_session_id: int):
                 "member_id": member.id,
                 "member_name": member.name,
                 "score_delta": STREAK_SCORE,
-                "description": f"{STREAK_REASON_PREFIX} ({weeks_str})",
+                "description": f"{STREAK_COUNT}주 {STREAK_REASON_MARK} ({weeks_str})",
             })
 
     return {"merit_items": merit_items, "session_id": current_session_id}
