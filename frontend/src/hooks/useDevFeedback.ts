@@ -9,6 +9,7 @@ export interface DevFeedbackReplyEntry {
     is_developer?: boolean;
     reply: string;
     created_at: string;
+    images?: { id: number }[];
 }
 
 export interface DevFeedbackEntry {
@@ -17,6 +18,7 @@ export interface DevFeedbackEntry {
     reporter_display_name: string;
     message: string;
     created_at: string;
+    images?: { id: number }[];
     replies: DevFeedbackReplyEntry[];
 }
 
@@ -35,11 +37,34 @@ export function useDevFeedbackList() {
     });
 }
 
+/** 글 저장 뒤 이미지를 한 장씩 올린다. 실패한 장 수를 돌려준다(글은 이미 저장됨). */
+async function uploadImages(feedbackId: number, files: File[], replyId?: number): Promise<number> {
+    let failed = 0;
+    for (const f of files) {
+        const form = new FormData();
+        form.append("file", f);
+        try {
+            await api.post(`/dev-feedback/${feedbackId}/images`, form, {
+                params: replyId != null ? { reply_id: replyId } : undefined,
+                headers: { "Content-Type": undefined },
+            });
+        } catch {
+            failed += 1;
+        }
+    }
+    return failed;
+}
+
+function warnFailed(failed: number) {
+    if (failed > 0) toast.error(`글은 저장됐지만 이미지 ${failed}장을 못 올렸어요 (10MB 이하 png/jpg/webp/gif만 가능)`);
+}
+
 export function useSendDevFeedback() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async (message: string) => {
+        mutationFn: async ({ message, files = [] }: { message: string; files?: File[] }) => {
             const { data } = await api.post<DevFeedbackEntry>("/dev-feedback", { message });
+            warnFailed(await uploadImages(data.id, files));
             return data;
         },
         onSuccess: () => {
@@ -55,8 +80,13 @@ export function useSendDevFeedback() {
 export function useReplyDevFeedback() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, reply }: { id: number; reply: string }) => {
+        mutationFn: async ({ id, reply, files = [] }: { id: number; reply: string; files?: File[] }) => {
             const { data } = await api.post<DevFeedbackEntry>(`/dev-feedback/${id}/reply`, { reply });
+            if (files.length) {
+                // 방금 쓴 답글 = 가장 큰 id
+                const mine = Math.max(...data.replies.map((r) => r.id));
+                warnFailed(await uploadImages(id, files, mine));
+            }
             return data;
         },
         onSuccess: () => {

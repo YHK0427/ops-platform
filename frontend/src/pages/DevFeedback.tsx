@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { toast } from "sonner";
+import api from "@/lib/api";
+import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Wrench, Send, Loader2, MessageSquareWarning, CornerDownRight, Megaphone } from "lucide-react";
+import { Wrench, Send, Loader2, MessageSquareWarning, CornerDownRight, Megaphone, ImagePlus, X } from "lucide-react";
 import { useDevFeedbackList, useSendDevFeedback, useReplyDevFeedback, type DevFeedbackEntry } from "@/hooks";
 import { renderSafeHangul } from "@/components/SafeText";
 import { useAuth } from "@/context/AuthContext";
@@ -10,15 +14,103 @@ import { cn } from "@/lib/utils";
 import { PatchNoteWriter } from "@/components/PatchNoteWriter";
 
 const DEVELOPER_USERNAME = "adminyhk";
+const MAX_IMAGES = 5;
+const MAX_BYTES = 10 * 1024 * 1024;
+
+/** 글 하나에 붙일 이미지 — 캡처 후 Ctrl+V 붙여넣기 또는 파일 선택. 전송은 글 저장 뒤 훅이 한다. */
+function useImageDraft() {
+    const [files, setFiles] = useState<File[]>([]);
+    const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+    useEffect(() => () => previews.forEach(URL.revokeObjectURL), [previews]);
+
+    const add = (list: File[]) => {
+        const imgs = list.filter((f) => f.type.startsWith("image/"));
+        if (!imgs.length) return false;
+        if (imgs.some((f) => f.size > MAX_BYTES)) toast.error("10MB 넘는 이미지는 뺐어요");
+        const ok = imgs.filter((f) => f.size <= MAX_BYTES);
+        if (files.length + ok.length > MAX_IMAGES) toast.error(`이미지는 ${MAX_IMAGES}장까지 붙일 수 있어요`);
+        setFiles((prev) => [...prev, ...ok].slice(0, MAX_IMAGES));
+        return true;
+    };
+    // 클립보드에 이미지가 있으면 그걸 붙이고, 글자만 있으면 평소처럼 붙여넣기
+    const onPaste = (e: React.ClipboardEvent) => {
+        if (add(Array.from(e.clipboardData.files))) e.preventDefault();
+    };
+    const remove = (i: number) => setFiles((prev) => prev.filter((_, j) => j !== i));
+    return { files, previews, add, onPaste, remove, clear: () => setFiles([]) };
+}
+
+function ImageDraftRow({ draft }: { draft: ReturnType<typeof useImageDraft> }) {
+    return (
+        <div className="flex flex-wrap items-center gap-2">
+            {draft.previews.map((src, i) => (
+                <div key={src} className="relative w-16 h-16 shrink-0">
+                    <img src={src} alt={`첨부 ${i + 1}`} className="w-full h-full rounded-lg object-cover border border-[var(--color-border)]" />
+                    <button
+                        type="button"
+                        onClick={() => draft.remove(i)}
+                        aria-label="이미지 빼기"
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gray-900/80 text-white flex items-center justify-center"
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                </div>
+            ))}
+            {draft.files.length < MAX_IMAGES && (
+                <label className="inline-flex items-center gap-1 text-xs text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text-secondary)]">
+                    <ImagePlus className="w-4 h-4" />
+                    이미지 추가 <span className="hidden md:inline">(캡처 후 Ctrl+V로 붙여넣기도 돼요)</span>
+                    <input type="file" accept="image/*" multiple className="hidden"
+                        onChange={(e) => { draft.add(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
+                </label>
+            )}
+        </div>
+    );
+}
+
+function FeedbackImage({ id, onOpen }: { id: number; onOpen: (url: string) => void }) {
+    const url = useBlobUrl(api, `/dev-feedback/images/${id}`);
+    return (
+        <button
+            type="button"
+            onClick={() => url && onOpen(url)}
+            className="w-20 h-20 shrink-0 rounded-lg overflow-hidden border border-[var(--color-border)] bg-gray-100"
+        >
+            {url && <img src={url} alt="첨부 이미지" className="w-full h-full object-cover" />}
+        </button>
+    );
+}
+
+function FeedbackImages({ images }: { images?: { id: number }[] }) {
+    const [viewing, setViewing] = useState<string | null>(null);
+    if (!images?.length) return null;
+    return (
+        <>
+            <div className="flex flex-wrap gap-2 mt-1.5">
+                {images.map((im) => <FeedbackImage key={im.id} id={im.id} onOpen={setViewing} />)}
+            </div>
+            {viewing && createPortal(
+                <div className="fixed inset-0 z-[100] bg-black/85 flex items-center justify-center p-4" onClick={() => setViewing(null)}>
+                    <img src={viewing} alt="첨부 이미지" className="max-w-full max-h-full object-contain" />
+                    <button type="button" aria-label="닫기" className="absolute top-4 right-4 text-white">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>,
+                document.body,
+            )}
+        </>
+    );
+}
 
 function ReplyBox({ entry }: { entry: DevFeedbackEntry }) {
     const [text, setText] = useState("");
+    const draft = useImageDraft();
     const { mutate: reply, isPending } = useReplyDevFeedback();
 
     const submit = () => {
         const trimmed = text.trim();
         if (!trimmed) return;
-        reply({ id: entry.id, reply: trimmed }, { onSuccess: () => setText("") });
+        reply({ id: entry.id, reply: trimmed, files: draft.files }, { onSuccess: () => { setText(""); draft.clear(); } });
     };
 
     return (
@@ -26,13 +118,15 @@ function ReplyBox({ entry }: { entry: DevFeedbackEntry }) {
             <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
+                onPaste={draft.onPaste}
                 placeholder="이어서 쓰기... (요청자·운영진·개발자 모두 가능)"
                 rows={2}
                 maxLength={2000}
                 className="w-full px-2.5 py-1.5 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-text-primary)] text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
             />
-            <div className="flex justify-end">
-                <Button size="sm" onClick={submit} disabled={isPending || !text.trim()}>
+            <div className="flex items-start justify-between gap-2">
+                <ImageDraftRow draft={draft} />
+                <Button size="sm" className="shrink-0" onClick={submit} disabled={isPending || !text.trim()}>
                     {isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
                     {entry.replies.length > 0 ? "이어서 쓰기" : "글 남기기"}
                 </Button>
@@ -51,6 +145,7 @@ function relTime(iso: string) {
 
 export default function DevFeedback() {
     const [message, setMessage] = useState("");
+    const draft = useImageDraft();
     const [writerOpen, setWriterOpen] = useState(false);
     const { user } = useAuth();
     const isDeveloper = user?.username === DEVELOPER_USERNAME;
@@ -61,7 +156,7 @@ export default function DevFeedback() {
         e.preventDefault();
         const trimmed = message.trim();
         if (!trimmed) return;
-        send(trimmed, { onSuccess: () => setMessage("") });
+        send({ message: trimmed, files: draft.files }, { onSuccess: () => { setMessage(""); draft.clear(); } });
     };
 
     return (
@@ -93,14 +188,16 @@ export default function DevFeedback() {
                             <textarea
                                 value={message}
                                 onChange={(e) => setMessage(e.target.value)}
+                                onPaste={draft.onPaste}
                                 placeholder="예: 출석 탭에서 버튼 누르면 튕겨요 / 이런 기능 있었으면 좋겠어요..."
                                 rows={4}
                                 maxLength={2000}
                                 required
                                 className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-text-primary)] text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
                             />
-                            <div className="flex justify-end">
-                                <Button type="submit" disabled={isPending || !message.trim()}>
+                            <div className="flex items-start justify-between gap-2">
+                                <ImageDraftRow draft={draft} />
+                                <Button type="submit" className="shrink-0" disabled={isPending || !message.trim()}>
                                     {isPending ? (
                                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                                     ) : (
@@ -136,6 +233,7 @@ export default function DevFeedback() {
                                     <p className="text-sm text-[var(--color-text-primary)] whitespace-pre-wrap [word-break:keep-all]">
                                         {renderSafeHangul(e.message)}
                                     </p>
+                                    <FeedbackImages images={e.images} />
                                     {e.replies.map((r) => {
                                         const mine = !!user && r.author_username === user.username;
                                         return (
@@ -162,6 +260,7 @@ export default function DevFeedback() {
                                                         <p className="text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap [word-break:keep-all]">
                                                             {renderSafeHangul(r.reply)}
                                                         </p>
+                                                        <FeedbackImages images={r.images} />
                                                     </div>
                                                 </div>
                                                 <p className="text-[10px] text-[var(--color-text-muted)] pl-5">{relTime(r.created_at)}</p>

@@ -1,9 +1,12 @@
 import logging
+import os
+import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -11,7 +14,8 @@ from app.deps import (
     DEVELOPER_USERNAME, get_current_cohort_id, get_db, require_staff,
     resolve_current_user_row,
 )
-from app.models import DevFeedback, DevFeedbackReply, PushSubscription, User
+from app.models import DevFeedback, DevFeedbackImage, DevFeedbackReply, PushSubscription, User
+from app.services.portal_excuse import sniff_type
 
 logger = logging.getLogger("dev_feedback")
 
@@ -24,6 +28,17 @@ router = APIRouter(prefix="/dev-feedback", tags=["dev-feedback"])
 async def _is_developer(db: AsyncSession, user: dict) -> bool:
     row = await resolve_current_user_row(db, user)
     return bool(row and row.cohort_id is None and row.username == DEVELOPER_USERNAME)
+
+
+# 첨부 이미지 — 사유서 증빙과 같은 규칙(형식은 바이트로 판별, 비공개 저장)
+_IMG_DIR = "/app/files/uploads/devfb"
+_IMG_MAX_BYTES = 10 * 1024 * 1024
+_IMG_MAX_COUNT = 5  # 글(요청 본문 또는 답글) 하나당
+_IMG_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+
+
+class DevFeedbackImageOut(BaseModel):
+    id: int
 
 
 class DevFeedbackCreate(BaseModel):
@@ -41,6 +56,7 @@ class DevFeedbackReplyOut(BaseModel):
     is_developer: bool = False
     reply: str
     created_at: object
+    images: list[DevFeedbackImageOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -51,6 +67,7 @@ class DevFeedbackResponse(BaseModel):
     reporter_display_name: str
     message: str
     created_at: object
+    images: list[DevFeedbackImageOut] = []
     replies: list[DevFeedbackReplyOut] = []
 
     model_config = {"from_attributes": True}
@@ -107,9 +124,23 @@ async def create_dev_feedback(
     )
 
 
+async def _images_by_owner(db: AsyncSession, feedback_ids: list[int]) -> dict[tuple[int, int | None], list[DevFeedbackImageOut]]:
+    """(feedback_id, reply_id) → 이미지 목록. reply_id None = 요청 본문."""
+    if not feedback_ids:
+        return {}
+    rows = (await db.execute(
+        select(DevFeedbackImage).where(DevFeedbackImage.feedback_id.in_(feedback_ids)).order_by(DevFeedbackImage.id)
+    )).scalars().all()
+    out: dict[tuple[int, int | None], list[DevFeedbackImageOut]] = {}
+    for im in rows:
+        out.setdefault((im.feedback_id, im.reply_id), []).append(DevFeedbackImageOut(id=im.id))
+    return out
+
+
 async def _replies_by_feedback_id(db: AsyncSession, feedback_ids: list[int]) -> dict[int, list[DevFeedbackReplyOut]]:
     if not feedback_ids:
         return {}
+    images = await _images_by_owner(db, feedback_ids)
     rows = (await db.execute(
         select(DevFeedbackReply)
         .where(DevFeedbackReply.feedback_id.in_(feedback_ids))
@@ -125,6 +156,7 @@ async def _replies_by_feedback_id(db: AsyncSession, feedback_ids: list[int]) -> 
             is_developer=(r.author_username == DEVELOPER_USERNAME),
             reply=r.reply,
             created_at=r.created_at,
+            images=images.get((r.feedback_id, r.id), []),
         ))
     return grouped
 
@@ -141,12 +173,15 @@ async def list_dev_feedback(
         query = query.where(DevFeedback.cohort_id == cohort_id).limit(50)
     entries = (await db.execute(query)).scalars().all()
 
-    replies_by_id = await _replies_by_feedback_id(db, [e.id for e in entries])
+    ids = [e.id for e in entries]
+    replies_by_id = await _replies_by_feedback_id(db, ids)
+    images = await _images_by_owner(db, ids)
     return [
         DevFeedbackResponse(
             id=e.id, reporter_username=e.reporter_username,
             reporter_display_name=e.reporter_display_name,
             message=e.message, created_at=e.created_at,
+            images=images.get((e.id, None), []),
             replies=replies_by_id.get(e.id, []),
         )
         for e in entries
@@ -224,8 +259,85 @@ async def reply_dev_feedback(
     await _notify_thread(request, db, entry, user["username"], label, text)
 
     replies = (await _replies_by_feedback_id(db, [feedback_id])).get(feedback_id, [])
+    images = await _images_by_owner(db, [feedback_id])
     return DevFeedbackResponse(
         id=entry.id, reporter_username=entry.reporter_username,
         reporter_display_name=entry.reporter_display_name,
-        message=entry.message, created_at=entry.created_at, replies=replies,
+        message=entry.message, created_at=entry.created_at,
+        images=images.get((feedback_id, None), []), replies=replies,
     )
+
+
+async def _readable_entry(db: AsyncSession, user: dict, cohort_id: int, feedback_id: int) -> DevFeedback:
+    """읽기 범위와 같은 규칙 — 개발자는 전 기수, 나머지는 본인 기수 요청만."""
+    entry = await db.get(DevFeedback, feedback_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다")
+    if entry.cohort_id != cohort_id and not await _is_developer(db, user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="다른 기수의 요청입니다")
+    return entry
+
+
+@router.post("/{feedback_id}/images", response_model=DevFeedbackImageOut, status_code=201)
+async def upload_dev_feedback_image(
+    feedback_id: int,
+    file: UploadFile = File(...),
+    reply_id: int | None = Query(None),
+    user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """요청 본문(reply_id 없음) 또는 답글에 이미지 첨부 — 그 글을 쓴 본인만."""
+    entry = await _readable_entry(db, user, cohort_id, feedback_id)
+    if reply_id is None:
+        if entry.reporter_username != user["username"]:
+            raise HTTPException(status_code=403, detail="본인이 쓴 글에만 이미지를 붙일 수 있어요")
+    else:
+        rep = await db.get(DevFeedbackReply, reply_id)
+        if rep is None or rep.feedback_id != feedback_id:
+            raise HTTPException(status_code=404, detail="글을 찾을 수 없습니다")
+        if rep.author_username != user["username"]:
+            raise HTTPException(status_code=403, detail="본인이 쓴 글에만 이미지를 붙일 수 있어요")
+    owner = (DevFeedbackImage.reply_id == reply_id) if reply_id is not None else DevFeedbackImage.reply_id.is_(None)
+    count = (await db.execute(
+        select(func.count()).select_from(DevFeedbackImage)
+        .where(DevFeedbackImage.feedback_id == feedback_id, owner)
+    )).scalar_one()
+    if count >= _IMG_MAX_COUNT:
+        raise HTTPException(status_code=422, detail=f"이미지는 글 하나에 {_IMG_MAX_COUNT}장까지 올릴 수 있어요")
+    data = await file.read(_IMG_MAX_BYTES + 1)
+    if len(data) > _IMG_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="이미지는 10MB 이하만 가능해요")
+    ctype = sniff_type(data)
+    if ctype is None:
+        raise HTTPException(status_code=400, detail="이미지 파일(png/jpg/webp/gif)만 올릴 수 있어요")
+    os.makedirs(_IMG_DIR, exist_ok=True)
+    stored = uuid.uuid4().hex + _IMG_EXT[ctype]
+    with open(os.path.join(_IMG_DIR, stored), "wb") as f:
+        f.write(data)
+    img = DevFeedbackImage(feedback_id=feedback_id, reply_id=reply_id, uploader_username=user["username"],
+                           stored_name=stored, content_type=ctype, size=len(data))
+    db.add(img)
+    await db.commit()
+    return DevFeedbackImageOut(id=img.id)
+
+
+@router.get("/images/{image_id}")
+async def get_dev_feedback_image(
+    image_id: int,
+    user: dict = Depends(require_staff),
+    cohort_id: int = Depends(get_current_cohort_id),
+    db: AsyncSession = Depends(get_db),
+):
+    img = await db.get(DevFeedbackImage, image_id)
+    if img is None:
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다")
+    await _readable_entry(db, user, cohort_id, img.feedback_id)
+    path = os.path.join(_IMG_DIR, img.stored_name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다")
+    return FileResponse(path, media_type=img.content_type, headers={
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+    })

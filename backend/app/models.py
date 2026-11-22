@@ -1153,6 +1153,21 @@ class DevFeedbackReply(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
 
+class DevFeedbackImage(Base):
+    """개발자 소통창구 첨부 이미지(스크린샷). reply_id가 없으면 요청 본문, 있으면 그 답글에 붙는다.
+    파일은 공개 경로가 아닌 /app/files/uploads/devfb 에 둔다 — 같은 기수 운영진·개발자만 열람."""
+    __tablename__ = "dev_feedback_images"
+
+    id = Column(Integer, primary_key=True)
+    feedback_id = Column(Integer, ForeignKey("dev_feedback.id", ondelete="CASCADE"), nullable=False, index=True)
+    reply_id = Column(Integer, ForeignKey("dev_feedback_replies.id", ondelete="CASCADE"), nullable=True)
+    uploader_username = Column(String(50), nullable=False)
+    stored_name = Column(String(64), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    size = Column(Integer, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+
 class PatchNote(Base):
     """업데이트 패치노트. 접속했을 때 '내가 마지막으로 확인한 시점' 이후에 올라온 게
     있으면 모달로 띄운다. 운영진 사이트와 기수 포털은 보는 내용이 달라 audience 로 나눈다.

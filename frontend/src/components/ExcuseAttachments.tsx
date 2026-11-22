@@ -1,30 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import api from "@/lib/api";
 import memberApi from "@/lib/memberApi";
 import type { Excuse, ExcuseAttachment } from "@/hooks/useExcuses";
-
-// 증빙자료는 인증이 필요한 경로라 <img src> 로 직접 못 건다 — blob 으로 받아 object URL 로 띄운다.
-function useBlobUrl(path: string, owner: "member" | "staff") {
-    const [url, setUrl] = useState<string | null>(null);
-    useEffect(() => {
-        let revoked = false;
-        let objectUrl: string | null = null;
-        (owner === "member" ? memberApi : api).get(path, { responseType: "blob" })
-            .then(({ data }) => {
-                if (revoked) return;
-                objectUrl = URL.createObjectURL(data);
-                setUrl(objectUrl);
-            })
-            .catch(() => {});
-        return () => {
-            revoked = true;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-        };
-    }, [path, owner]);
-    return url;
-}
+import { useBlobUrl } from "@/hooks/useBlobUrl";
 
 function Thumb({ excuseId, att, owner, onOpen, onRemove }: {
     excuseId: number; att: ExcuseAttachment; owner: "member" | "staff";
@@ -33,7 +13,7 @@ function Thumb({ excuseId, att, owner, onOpen, onRemove }: {
     const path = owner === "member"
         ? `/portal/excuses/${excuseId}/attachments/${att.id}`
         : `/excuses/${excuseId}/attachments/${att.id}`;
-    const url = useBlobUrl(path, owner);
+    const url = useBlobUrl(owner === "member" ? memberApi : api, path);
     return (
         <div className="relative w-16 h-16 shrink-0">
             <button
