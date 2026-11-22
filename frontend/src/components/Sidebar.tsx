@@ -325,7 +325,7 @@ export function Sidebar() {
                         }
                     >
                         <Wrench className="w-4 h-4" />
-                        개발자 호출
+                        버그 제보·기능 요청
                     </NavLink>
                 </div>
             )}

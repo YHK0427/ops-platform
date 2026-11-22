@@ -39,7 +39,7 @@ _TABLE_LABELS_KO = {
     "scoring_parts": "심사부", "scoring_targets": "심사대상", "scoring_roster": "심사명단",
     "scoring_participants": "심사참가자", "scoring_scores": "심사점수", "scoring_ranks": "심사순위",
     "scoring_comments": "심사총평", "scoring_deduction_rules": "감점규정", "scoring_deductions": "감점적용",
-    "dev_feedback": "개발자요청", "dev_feedback_images": "개발자요청이미지",
+    "dev_feedback": "버그기능요청", "dev_feedback_images": "버그기능요청이미지",
     "auth_events": "로그인기록",
     "client_events": "클라이언트이벤트",
 }

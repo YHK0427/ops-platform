@@ -119,7 +119,7 @@ function ReplyBox({ entry }: { entry: DevFeedbackEntry }) {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onPaste={draft.onPaste}
-                placeholder="이어서 쓰기... (요청자·운영진·개발자 모두 가능)"
+                placeholder="이어서 쓰기... (요청자·운영진·🐸 모두 가능)"
                 rows={2}
                 maxLength={2000}
                 className="w-full px-2.5 py-1.5 rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-text-primary)] text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
@@ -162,8 +162,8 @@ export default function DevFeedback() {
     return (
         <div className="flex flex-col h-full">
             <PageHeader
-                title="개발자 호출"
-                subtitle="버그든 뭐든 대충 적어두면 개발자가 기분 내키면 고쳐줌."
+                title="버그 제보 · 기능 요청"
+                subtitle="버그든 새 기능이든 대충 적어두면 🐸가 기분 내키면 고쳐줌."
                 actions={isDeveloper ? (
                     <Button variant="outline" onClick={() => setWriterOpen(true)}>
                         <Megaphone className="w-4 h-4 mr-2" />
@@ -177,7 +177,7 @@ export default function DevFeedback() {
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
                             <Wrench className="w-4 h-4 text-[var(--color-accent)]" />
-                            수정 요청 / 건의사항
+                            버그 제보 / 신기능 요청
                         </CardTitle>
                         <CardDescription>
                             그냥 대충 요청해도 됩니다.
@@ -252,7 +252,7 @@ export default function DevFeedback() {
                                                     )} />
                                                     <div className="min-w-0">
                                                         <span className={cn(
-                                                            "text-[11px] font-bold",
+                                                            r.is_developer ? "text-base leading-none" : "text-[11px] font-bold",  // 🐸는 이모지라 11px면 안 보인다
                                                             r.is_developer ? "text-[var(--color-accent)]" : mine ? "text-sky-600" : "text-gray-500",
                                                         )}>
                                                             {r.author_display_name || r.author_username}{mine && !r.is_developer ? " (나)" : ""}

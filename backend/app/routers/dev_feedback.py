@@ -21,6 +21,9 @@ logger = logging.getLogger("dev_feedback")
 
 router = APIRouter(prefix="/dev-feedback", tags=["dev-feedback"])
 
+# 스레드에서 개발자 글에 붙는 표시명 — 예전 행에 저장된 "개발자"도 읽을 때 이걸로 바꿔 보여준다
+DEVELOPER_LABEL = "🐸"
+
 # 개발자 판별은 deps.DEVELOPER_USERNAME / require_developer 로 일원화했다.
 # 같은 규칙이 여러 파일에 복사돼 있으면 한 곳만 고치고 나머지를 놓친다.
 
@@ -151,8 +154,9 @@ async def _replies_by_feedback_id(db: AsyncSession, feedback_ids: list[int]) -> 
         grouped[r.feedback_id].append(DevFeedbackReplyOut(
             id=r.id,
             author_username=r.author_username,
-            # 과거 행은 표시명이 없다 — 그때는 개발자만 썼으므로 그렇게 보여준다
-            author_display_name=r.author_display_name or ("개발자" if r.author_username == DEVELOPER_USERNAME else r.author_username),
+            # 개발자 글은 저장된 이름과 상관없이 🐸 — 과거 행은 표시명이 없거나 "개발자"로 저장돼 있다
+            author_display_name=(DEVELOPER_LABEL if r.author_username == DEVELOPER_USERNAME
+                                 else r.author_display_name or r.author_username),
             is_developer=(r.author_username == DEVELOPER_USERNAME),
             reply=r.reply,
             created_at=r.created_at,
@@ -215,7 +219,7 @@ async def _notify_thread(
     pool = getattr(request.app.state, "arq_pool", None)
     if pool:
         await pool.enqueue_job("task_send_push", payload={
-            "title": "개발자 요청에 새 글",
+            "title": "버그·기능 요청에 새 글",
             "body": f"{author_label}: {text[:60]}",
             "url": "/dev-feedback",
             "tag": f"devfb-{entry.id}",
@@ -242,7 +246,7 @@ async def reply_dev_feedback(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="다른 기수의 요청입니다")
 
     urow = await resolve_current_user_row(db, user)
-    label = "개발자" if is_dev else (urow.display_name if urow else user["username"])
+    label = DEVELOPER_LABEL if is_dev else (urow.display_name if urow else user["username"])
     text = body.reply.strip()
 
     reply_row = DevFeedbackReply(

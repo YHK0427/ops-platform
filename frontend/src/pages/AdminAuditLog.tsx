@@ -825,7 +825,7 @@ function screenName(path: string): string {
         [/^\/evaluation|^\/eval/, "성장리포트"],
         [/^\/assignments/, "과제"],
         [/^\/crawler/, "크롤러"],
-        [/^\/dev-feedback/, "개발자 요청"],
+        [/^\/dev-feedback/, "버그·기능 요청"],
         [/^\/patch-notes/, "패치노트"],
         [/^\/audit-logs\/access/, "접속 기록"],
         [/^\/audit-logs/, "활동 로그"],
