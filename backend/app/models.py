@@ -772,6 +772,8 @@ class ScoringRound(Base):
     exclude_own_team = Column(Boolean, default=False, server_default="false", nullable=False)
     # 청중(RANK 모드) 전용 — 켜면 팀별 피드백을 모두 채워야 제출된다. 심사위원 총평엔 적용 안 함.
     require_feedback = Column(Boolean, default=False, server_default="false", nullable=False)
+    # RANK 모드 + 부가 있을 때 — 켜면 청중이 부마다 따로 등수를 고르고, 청중 점수도 부 안에서 배분한다.
+    rank_per_part = Column(Boolean, default=False, server_default="false", nullable=False)
 
     # 청중 소그룹 라벨. 집계에는 영향을 주지 않고 제출현황·결과를 그룹별로 나눠 보기 위한
     # 분류일 뿐이다. 빈 배열이면 그룹을 묻지 않는다. (운영자가 자유롭게 편집 — 아래는 기본값)
@@ -1036,7 +1038,8 @@ class ScoringScore(Base):
 
 
 class ScoringRank(Base):
-    """참관위원 등수 선택 (observer_mode='RANK') — 제출자당 등수 1개, 팀 1개."""
+    """참관위원 등수 선택 (observer_mode='RANK') — 팀당 등수 1개.
+    등수 중복 검사는 앱에서 한다 — rank_per_part면 같은 등수가 부마다 하나씩 있을 수 있어서."""
     __tablename__ = "scoring_ranks"
 
     id = Column(Integer, primary_key=True)
@@ -1045,7 +1048,6 @@ class ScoringRank(Base):
     rank = Column(Integer, nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("participant_id", "rank", name="uq_scoring_rank_slot"),
         UniqueConstraint("participant_id", "target_id", name="uq_scoring_rank_target"),
         CheckConstraint("rank >= 1", name="ck_scoring_rank_positive"),
     )

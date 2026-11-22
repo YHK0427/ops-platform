@@ -95,6 +95,8 @@ export interface ScoringRound {
     exclude_own_team: boolean;
     /** 청중(RANK 모드) 전용 — 켜면 팀별 피드백을 모두 채워야 제출된다. 심사위원 총평엔 적용 안 함. */
     require_feedback: boolean;
+    /** 청중(RANK 모드)+부 있을 때 — 켜면 부마다 따로 등수를 고르고 청중 점수도 부 안에서 배분 */
+    rank_per_part: boolean;
     /** 청중 소그룹 라벨 (기수/운영진/청중 …). 분류·표시용 — 집계엔 영향 없음. */
     observer_groups: string[];
     areas: Area[];
@@ -176,6 +178,9 @@ export interface TargetResult {
     total: number;
     disqualified: boolean;
     rank: number;
+    part_id?: number | null;
+    /** 부별 순위 라운드에서만 — 그 부 안에서의 순위 */
+    part_rank?: number | null;
     judge_count: number;
     observer_count: number;
     criterion_avg: Record<number, number>;

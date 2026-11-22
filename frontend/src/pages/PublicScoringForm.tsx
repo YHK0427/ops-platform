@@ -29,6 +29,7 @@ interface PublicRound {
     observer_mode: ObserverMode;
     rank_slots: number[];
     require_feedback: boolean;
+    rank_per_part?: boolean;
     observer_groups: string[];
     areas: PubArea[];
     criteria: PubCriterion[];  // 미분류 기준
@@ -225,10 +226,11 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
         }
     };
 
-    // 부(파트) 페이징 — 청중 피드백 폼에서만, 지금 청중이 고른 부의 팀만 보여준다.
-    // 심사위원 폼·순위 폼은 항상 전체 팀(부와 무관).
-    const partPaging = feedbackOnly && !!round && round.parts.length > 0;
-    const visibleTargets = round && feedbackOnly
+    // 부(파트) 페이징 — 심사위원·청중 채점·청중 피드백 모두, 지금 고른 부의 팀만 보여준다.
+    // 예외: 청중 순위(RANK) 폼 — 부별 순위가 꺼져 있으면 등수를 라운드 전체에서 고르므로 전체 팀.
+    const rankForm = !feedbackOnly && role === "OBSERVER" && round?.observer_mode === "RANK" && !round?.rank_per_part;
+    const partPaging = !!round && round.parts.length > 0 && !rankForm;
+    const visibleTargets = round && partPaging
         ? round.targets.filter((t) => selectedPartId == null || t.part_id === selectedPartId)
         : (round?.targets ?? []);
 
@@ -557,6 +559,8 @@ export default function PublicScoringForm({ feedbackOnly = false }: { feedbackOn
 
             <main className="max-w-2xl mx-auto px-4 py-5">
                 <ScoreSheet
+                    // 부를 바꾸면 다시 마운트 — 펼칠 팀·영역 입력 방식을 새 부의 팀 기준으로 다시 잡는다
+                    key={partPaging ? `part-${selectedPartId}` : "all"}
                     role={role}
                     observerMode={round.observer_mode}
                     rankSlots={round.rank_slots}

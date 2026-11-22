@@ -405,3 +405,33 @@ def test_deduction_empty_input_is_zero():
     assert compute_deduction("TIME", {"deadline": "2026-07-18T00:00:00"}, {}) == (0.0, False)
     assert compute_deduction("DURATION", {"target_seconds": 300, "unit_seconds": 30, "unit_points": 1.5}, {}) == (0.0, False)
     assert compute_deduction("FLAG", {"points": 1}, {}) == (0.0, False)
+
+
+def test_rank_per_part_distributes_and_ranks_within_each_part():
+    """부별 순위 — 부마다 청중 총점을 따로 나눠 갖고, part_rank는 부 안에서만 매긴다."""
+    o = _obs(101)
+    # 1부: 팀10·20, 2부: 팀30·40. 부마다 1·2위를 따로 고름 (같은 등수가 부마다 하나씩)
+    ranks = [
+        RankLite(participant_id=o.id, target_id=10, rank=1),
+        RankLite(participant_id=o.id, target_id=20, rank=2),
+        RankLite(participant_id=o.id, target_id=40, rank=1),
+        RankLite(participant_id=o.id, target_id=30, rank=2),
+    ]
+    res = compute_results(
+        judge_weight=80, observer_weight=20, observer_mode="RANK", rank_points=RANK_POINTS,
+        criteria=CRITERIA, target_ids=[10, 20, 30, 40], participants=[o], scores=[], ranks=ranks,
+        target_parts={10: 1, 20: 1, 30: 2, 40: 2},
+    )
+    by_id = {r.target_id: r for r in res}
+    # 부마다 2 : 1.3 → 20 × 2/3.3, 20 × 1.3/3.3
+    assert abs(by_id[10].observer_points - 12.12) < 0.01
+    assert abs(by_id[40].observer_points - 12.12) < 0.01
+    assert abs(by_id[20].observer_points - 7.88) < 0.01
+    assert [by_id[t].part_rank for t in (10, 20, 30, 40)] == [1, 2, 2, 1]
+
+    # 부별 순위가 아니면 part_rank 없음
+    flat = compute_results(
+        judge_weight=80, observer_weight=20, observer_mode="RANK", rank_points=RANK_POINTS,
+        criteria=CRITERIA, target_ids=[10, 20, 30, 40], participants=[o], scores=[], ranks=ranks,
+    )
+    assert all(r.part_rank is None for r in flat)

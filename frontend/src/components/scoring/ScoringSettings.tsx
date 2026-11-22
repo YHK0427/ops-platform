@@ -218,6 +218,7 @@ function WeightPanel({
     const [rankPts, setRankPts] = useState(round.rank_points);
     const [excludeOwn, setExcludeOwn] = useState(round.exclude_own_team);
     const [requireFeedback, setRequireFeedback] = useState(round.require_feedback);
+    const [rankPerPart, setRankPerPart] = useState(round.rank_per_part);
     const [newGroup, setNewGroup] = useState("");
 
     const draft = {
@@ -227,6 +228,7 @@ function WeightPanel({
         rank_points: rankPts,
         exclude_own_team: excludeOwn,
         require_feedback: requireFeedback,
+        rank_per_part: rankPerPart,
         observer_groups: groups,
     };
     const serverDraft = {
@@ -236,6 +238,7 @@ function WeightPanel({
         rank_points: round.rank_points,
         exclude_own_team: round.exclude_own_team,
         require_feedback: round.require_feedback,
+        rank_per_part: round.rank_per_part,
         observer_groups: round.observer_groups ?? [],
     };
 
@@ -260,6 +263,7 @@ function WeightPanel({
         setRankPts(round.rank_points);
         setExcludeOwn(round.exclude_own_team);
         setRequireFeedback(round.require_feedback);
+        setRankPerPart(round.rank_per_part);
         setGroups(round.observer_groups ?? []);
         acceptServer(serverDraft);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -502,6 +506,16 @@ function WeightPanel({
                     <span className="text-sm text-[var(--color-text-primary)]">청중 피드백 필수</span>
                     <span className="text-xs text-[var(--color-text-muted)]">
                         (켜면 청중 피드백 링크에서 모든 팀에 한마디씩 남겨야 제출됨 — 심사위원 총평엔 적용 안 됨)
+                    </span>
+                </label>
+            )}
+
+            {mode === "RANK" && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox checked={rankPerPart} onCheckedChange={(v) => setRankPerPart(!!v)} />
+                    <span className="text-sm text-[var(--color-text-primary)]">부별로 순위 따로 받기</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">
+                        (부가 있을 때만 — 청중이 부마다 {rankPts.map((p) => p.rank).join("·")}위를 고르고, 결과도 부별 순위로 나옴)
                     </span>
                 </label>
             )}

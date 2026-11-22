@@ -1252,6 +1252,7 @@ function ProxySubmitDialog({
                                 blockedTargetIds={blocked}
                                 value={sheet}
                                 onChange={setSheet}
+                                rankParts={round.rank_per_part ? round.parts : undefined}
                             />
                         )}
                     </div>

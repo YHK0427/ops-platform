@@ -174,6 +174,7 @@ class RoundUpdate(BaseModel):
     rank_points: list[RankPoint] | None = None
     exclude_own_team: bool | None = None
     require_feedback: bool | None = None
+    rank_per_part: bool | None = None
     observer_groups: list[str] | None = None
     active_part_id: int | None = None
     rank_form_notice: str | None = None
@@ -201,6 +202,7 @@ class RoundOut(BaseModel):
     rank_points: list[RankPoint]
     exclude_own_team: bool
     require_feedback: bool
+    rank_per_part: bool = False
     observer_groups: list[str] = []
     areas: list[AreaOut] = []
     criteria: list[CriterionOut] = []  # 미분류(평면) 기준만
@@ -355,10 +357,11 @@ class PublicRound(BaseModel):
     observer_mode: str
     rank_slots: list[int]  # RANK 모드에서 선택해야 할 등수 목록 [1,2,3]
     require_feedback: bool = False  # 청중(RANK) 전용 — 켜지면 팀별 피드백을 모두 채워야 제출된다
+    rank_per_part: bool = False  # 청중(RANK) 전용 — 켜지면 부마다 따로 등수를 고른다
     observer_groups: list[str] = []  # 비어 있으면 청중에게 그룹을 묻지 않는다
     areas: list[PublicArea] = []
     criteria: list[PublicCriterion] = []  # 미분류 기준
-    # 항상 전체 목록 그대로 반환 — 부(part) 필터링은 프론트에서 role별로 한다(청중만 필터).
+    # 항상 전체 목록 그대로 반환 — 부(part) 필터링은 프론트에서 한다(부별 순위가 꺼진 청중 순위 폼만 전체).
     targets: list[PublicTarget]
     parts: list[PublicPart] = []  # 청중 피드백 폼의 부 페이저(탭) 렌더링용
     active_part_id: int | None = None  # 폼이 처음 열릴 때 기본으로 선택할 부 — 이후엔 청중이 직접 페이징 가능
@@ -400,6 +403,8 @@ class TargetResultOut(BaseModel):
     total: float                  # 감점 후 최종
     disqualified: bool = False
     rank: int
+    part_id: int | None = None
+    part_rank: int | None = None  # 부별 순위 라운드에서만 — 그 부 안에서의 순위
     judge_count: int
     observer_count: int
     criterion_avg: dict[int, float]
@@ -561,6 +566,11 @@ def _blocked_targets(rnd: ScoringRound, member_id: int | None, group_label: str 
     return list(blocked)
 
 
+def _rank_per_part(rnd: ScoringRound) -> bool:
+    """부별 순위가 실제로 적용되는지 — 토글이 켜져 있고 RANK 모드에 부가 있을 때만."""
+    return bool(rnd.rank_per_part) and rnd.observer_mode == "RANK" and len(rnd.parts) > 0
+
+
 def _rank_slots(rnd: ScoringRound) -> list[int]:
     return sorted(int(rp["rank"]) for rp in (rnd.rank_points or []))
 
@@ -601,6 +611,7 @@ async def _round_out(db: AsyncSession, rnd: ScoringRound) -> RoundOut:
         rank_points=[RankPoint(**rp) for rp in (rnd.rank_points or [])],
         exclude_own_team=rnd.exclude_own_team,
         require_feedback=rnd.require_feedback,
+        rank_per_part=rnd.rank_per_part,
         observer_groups=list(rnd.observer_groups or []),
         areas=[
             AreaOut(
@@ -716,7 +727,10 @@ async def _save_submission(
         if r.target_id in blocked:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "본인 소속 팀은 선택할 수 없습니다")
     slots = set(_rank_slots(rnd))
-    if len({r.rank for r in body.ranks}) != len(body.ranks):
+    # 부별 순위면 등수는 부 안에서만 겹치면 안 된다 (1부 1위, 2부 1위는 가능)
+    part_of = {t.id: t.part_id for t in rnd.targets} if _rank_per_part(rnd) else {}
+    rank_keys = [(part_of.get(r.target_id), r.rank) for r in body.ranks]
+    if len(set(rank_keys)) != len(rank_keys):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "같은 등수를 두 번 선택할 수 없습니다")
     if len({r.target_id for r in body.ranks}) != len(body.ranks):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "같은 팀을 여러 등수에 선택할 수 없습니다")
@@ -1704,6 +1718,7 @@ async def get_results(
                           criterion_id=s.criterion_id, area_id=s.area_id, score=float(s.score))
                 for s in scores],
         ranks=[RankLite(participant_id=r.participant_id, target_id=r.target_id, rank=r.rank) for r in ranks],
+        target_parts={t.id: t.part_id for t in targets} if _rank_per_part(rnd) else None,
         deductions=deduction_by_target,
         disqualified=disqualified,
         multi_club=rnd.multi_club_mode,
@@ -1714,6 +1729,7 @@ async def get_results(
     )
 
     name_by_id = {t.id: _tname(t) for t in targets}
+    part_by_target = {t.id: t.part_id for t in targets}
     pname = {p.id: p.entered_name for p in submitted}
     prole = {p.id: p.role for p in submitted}
 
@@ -1737,6 +1753,8 @@ async def get_results(
             total=r.total,
             disqualified=r.disqualified,
             rank=r.rank,
+            part_id=part_by_target.get(r.target_id),
+            part_rank=r.part_rank,
             judge_count=r.judge_count,
             observer_count=r.observer_count,
             criterion_avg=r.criterion_avg,
@@ -1857,6 +1875,7 @@ async def public_get_round(
         observer_mode=rnd.observer_mode,
         rank_slots=_rank_slots(rnd),
         require_feedback=rnd.require_feedback,
+        rank_per_part=rnd.rank_per_part,
         observer_groups=list(rnd.observer_groups or []),
         areas=[
             PublicArea(

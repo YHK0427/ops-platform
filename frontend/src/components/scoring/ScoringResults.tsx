@@ -278,6 +278,29 @@ function Stat({ label, value, subtle }: { label: string; value: string; subtle?:
 // ── 순위 테이블 ──────────────────────────────────────────────────────────────
 
 function RankTable({ data, round }: { data: Results; round: ScoringRound }) {
+    // 부별 순위 라운드 — 부마다 표를 따로 그리고 그 부 안의 순위(part_rank)를 보여준다
+    if (data.results.some((r) => r.part_rank != null)) {
+        const groups = [
+            ...round.parts.map((p) => ({ key: p.id, label: p.label, rows: data.results.filter((r) => r.part_id === p.id) })),
+            { key: -1, label: "부 미배정", rows: data.results.filter((r) => r.part_id == null) },
+        ].filter((g) => g.rows.length > 0);
+        return (
+            <div className="space-y-4">
+                {groups.map((g) => (
+                    <RankTableSection
+                        key={g.key} data={data} round={round} title={`${g.label} 순위`}
+                        rows={g.rows.map((r) => ({ ...r, rank: r.part_rank ?? 0 }))}
+                    />
+                ))}
+            </div>
+        );
+    }
+    return <RankTableSection data={data} round={round} title="순위" rows={data.results} />;
+}
+
+function RankTableSection({ data, round, title, rows }: {
+    data: Results; round: ScoringRound; title: string; rows: Results["results"];
+}) {
     const hasDed = data.has_deductions;
     // 점수 컬럼 = 영역별 평균(area_avg) + 미분류 기준(criterion_avg)
     const cols: { label: string; max: number; get: (r: Results["results"][number]) => number }[] = [
@@ -291,7 +314,7 @@ function RankTable({ data, round }: { data: Results; round: ScoringRound }) {
     return (
         <section className="rounded-xl border border-[var(--color-border-subtle)] bg-white overflow-hidden">
             <div className="px-5 py-3 border-b border-[var(--color-border-subtle)]">
-                <h2 className="font-bold text-[var(--color-text-primary)]">순위</h2>
+                <h2 className="font-bold text-[var(--color-text-primary)]">{title}</h2>
                 <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
                     심사위원 {round.judge_weight}점 + 청중 {round.observer_weight}점 = {" "}
                     {Number(round.judge_weight) + Number(round.observer_weight)}점 만점
@@ -318,7 +341,7 @@ function RankTable({ data, round }: { data: Results; round: ScoringRound }) {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {data.results.map((r) => (
+                        {rows.map((r) => (
                             <TableRow key={r.target_id} className={cn(
                                 r.disqualified ? "bg-rose-50/50" : r.rank === 1 ? "bg-amber-50/60" : undefined,
                             )}>

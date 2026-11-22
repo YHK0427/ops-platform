@@ -87,6 +87,7 @@ class TargetResult:
     audience_award_score: float | None = None      # 청중상 점수(감점 전) = internal*w1 + external*w2
     audience_award_total: float | None = None      # 감점 반영 후
     audience_award_rank: int = 0                   # 청중상 전용 순위 (실격 팀은 0)
+    part_rank: int | None = None                   # 부별 순위(target_parts 지정 시) — 그 부 안에서의 순위
 
 
 def _mean(values: list[float]) -> float:
@@ -105,6 +106,7 @@ def compute_results(
     participants: list[ParticipantLite],
     scores: list[ScoreLite],
     ranks: list[RankLite],
+    target_parts: dict[int, int | None] | None = None,
     deductions: dict[int, float] | None = None,
     disqualified: set[int] | None = None,
     multi_club: bool = False,
@@ -114,6 +116,9 @@ def compute_results(
     external_audience_weight: float = 50.0,
 ) -> list[TargetResult]:
     """제출 완료된 participants만 넘길 것.
+
+    target_parts(팀→부) 지정 = 부별 순위 라운드. 청중 RANK 배분을 부 안에서 따로 하고
+    (부마다 그 부 팀들이 청중 총점을 나눠 가짐), 부 안에서의 순위(part_rank)도 매긴다.
 
     반환: total 내림차순 정렬. 실격 팀은 맨 뒤·rank=0. 동점은 공동 순위.
 
@@ -183,20 +188,22 @@ def compute_results(
         pts_by_rank = {int(rp["rank"]): float(rp["points"]) for rp in rank_points}
         observer_ids = {o.id for o in observers}
         raw: dict[int, float] = {tid: 0.0 for tid in target_ids}
-        awarded_total = 0.0
+        # 배분 단위 — 부별 순위면 부마다, 아니면 라운드 전체 하나(None)
+        def pool(tid: int) -> int | None:
+            return target_parts.get(tid) if target_parts else None
+        awarded_total: dict[int | None, float] = {}
         for rk in ranks:
             if rk.participant_id not in observer_ids or rk.target_id not in raw:
                 continue
             pts = pts_by_rank.get(rk.rank, 0.0)
             raw[rk.target_id] += pts
-            awarded_total += pts
+            awarded_total[pool(rk.target_id)] = awarded_total.get(pool(rk.target_id), 0.0) + pts
             r = results[rk.target_id]
             r.rank_votes[rk.rank] = r.rank_votes.get(rk.rank, 0) + 1
             r.observer_count += 1
         for tid in target_ids:
-            results[tid].observer_points = (
-                raw[tid] / awarded_total * observer_weight if awarded_total > 0 else 0.0
-            )
+            tot = awarded_total.get(pool(tid), 0.0)
+            results[tid].observer_points = raw[tid] / tot * observer_weight if tot > 0 else 0.0
 
         # ── 다동아리 모드: 동아리별 정규화 청중 점수 (종합순위 재정의 + 청중상 별도 계산) ──
         if multi_club:
@@ -319,6 +326,17 @@ def compute_results(
             r.rank = i + 1
     for r in dq:
         r.rank = 0  # 실격 — 순위 없음
+
+    # 부별 순위 — 이미 total 내림차순인 live를 부마다 다시 번호 매김 (동점 공동 순위)
+    if target_parts:
+        prev: dict[int | None, TargetResult] = {}
+        count: dict[int | None, int] = {}
+        for r in live:
+            k = target_parts.get(r.target_id)
+            count[k] = count.get(k, 0) + 1
+            p = prev.get(k)
+            r.part_rank = p.part_rank if p and p.total == r.total else count[k]
+            prev[k] = r
 
     # 청중상 전용 순위 — 종합 순위(위)와 독립적으로 audience_award_total 기준 재정렬
     if multi_club:

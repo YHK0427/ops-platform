@@ -34,12 +34,13 @@ export interface SheetTarget {
     id: number;
     name: string;
     members?: string[];
+    part_id?: number | null;
 }
 
 export interface SheetValue {
     scores: Record<string, number>;   // "c:t:cid" | "a:t:aid" → 점수
     comments: Record<string, string>; // "t:cid" | "t:overall" → 내용
-    ranks: Record<number, number>;    // 등수 → targetId
+    ranks: Record<number, number>;    // targetId → 등수 (부별 순위면 같은 등수가 부마다 하나씩)
 }
 
 export function rankLabel(ranks: number[]): string {
@@ -62,7 +63,7 @@ export function toSheetValue(
         if (s.criterion_id != null) v.scores[csk(s.target_id, s.criterion_id)] = s.score;
         else if (s.area_id != null) v.scores[ask(s.target_id, s.area_id)] = s.score;
     }
-    for (const r of ranks) v.ranks[r.rank] = r.target_id;
+    for (const r of ranks) v.ranks[r.target_id] = r.rank;
     for (const c of comments) v.comments[ck(c.target_id, c.criterion_id ?? null)] = c.body;
     return v;
 }
@@ -77,8 +78,8 @@ export function fromSheetValue(v: SheetValue): {
             : { target_id: Number(t), criterion_id: Number(id), score };
     });
     const ranks: RankEntry[] = Object.entries(v.ranks)
-        .filter(([, targetId]) => !!targetId)
-        .map(([rank, targetId]) => ({ rank: Number(rank), target_id: targetId }));
+        .filter(([, rank]) => !!rank)
+        .map(([targetId, rank]) => ({ rank, target_id: Number(targetId) }));
     const comments: CommentEntry[] = Object.entries(v.comments)
         .filter(([, body]) => body.trim())
         .map(([key, body]) => {
@@ -102,11 +103,13 @@ interface Props {
     requireFeedback?: boolean;
     /** 청중(RANK 모드) 화면 분할용 — 순위/피드백 중 이 화면에서 보여줄 구간. 기본은 둘 다(운영진 대리입력용). */
     sections?: ("rank" | "feedback")[];
+    /** 부별 순위 라운드의 운영진 대리입력용 — 주면 등수 선택을 부마다 따로 보여준다 */
+    rankParts?: { id: number; label: string }[];
 }
 
 export function ScoreSheet({
     role, observerMode, rankSlots, areas, criteria, targets, blockedTargetIds, value, onChange,
-    requireFeedback = false, sections = ["rank", "feedback"],
+    requireFeedback = false, sections = ["rank", "feedback"], rankParts,
 }: Props) {
     // 청중 + RANK 모드 → 점수 입력 대신 등수 선택
     const rankMode = role === "OBSERVER" && observerMode === "RANK";
@@ -153,13 +156,13 @@ export function ScoreSheet({
     const setComment = (t: number, c: number | null, body: string) =>
         onChange({ ...value, comments: { ...value.comments, [ck(t, c)]: body } });
 
-    const setRank = (rank: number, targetId: number | null) => {
+    // 등수 슬롯은 한 묶음(scope) 팀 안에서만 유일 — 부별 순위면 다른 부의 같은 등수는 그대로 둔다
+    const pickedFor = (scope: SheetTarget[], rank: number) => scope.find((t) => value.ranks[t.id] === rank)?.id;
+    const setRank = (scope: SheetTarget[], rank: number, targetId: number | null) => {
         const next = { ...value.ranks };
-        for (const [r, t] of Object.entries(next)) {
-            if (targetId && t === targetId && Number(r) !== rank) delete next[Number(r)];
-        }
-        if (targetId) next[rank] = targetId;
-        else delete next[rank];
+        const prev = pickedFor(scope, rank);
+        if (prev != null) delete next[prev];
+        if (targetId) next[targetId] = rank;  // 이 팀이 다른 등수에 있었으면 덮어써서 옮겨진다
         onChange({ ...value, ranks: next });
     };
 
@@ -179,6 +182,9 @@ export function ScoreSheet({
     if (rankMode) {
         const showRank = sections.includes("rank");
         const showFeedback = sections.includes("feedback");
+        const rankGroups = rankParts?.length
+            ? rankParts.map((p) => ({ key: p.id, label: p.label, ts: targets.filter((t) => t.part_id === p.id) }))
+            : [{ key: 0, label: null as string | null, ts: targets }];
         return (
             <div className="space-y-5">
                 {showRank && (
@@ -192,7 +198,11 @@ export function ScoreSheet({
                         <p className="text-xs text-[var(--color-text-muted)] mb-4">
                             가장 좋았던 팀부터 순서대로 골라주세요. 한 팀은 한 등수에만 선택할 수 있습니다.
                         </p>
-                        <div className="space-y-3">
+                        {rankGroups.map((g) => (
+                        <div key={g.key} className="space-y-3 [&+&]:mt-5">
+                            {g.label && (
+                                <p className="text-sm font-bold text-[var(--color-text-secondary)]">{g.label}</p>
+                            )}
                             {rankSlots.map((rank) => (
                                 <div key={rank} className="flex items-center gap-3">
                                     <span className="w-12 shrink-0 text-sm font-bold text-[var(--color-text-primary)]">
@@ -200,11 +210,11 @@ export function ScoreSheet({
                                     </span>
                                     <select
                                         className="flex-1 h-10 px-3 rounded-lg border border-[var(--color-border-subtle)] bg-white text-sm"
-                                        value={value.ranks[rank] ?? ""}
-                                        onChange={(e) => setRank(rank, e.target.value ? Number(e.target.value) : null)}
+                                        value={pickedFor(g.ts, rank) ?? ""}
+                                        onChange={(e) => setRank(g.ts, rank, e.target.value ? Number(e.target.value) : null)}
                                     >
                                         <option value="">— 선택 —</option>
-                                        {targets.map((t) => (
+                                        {g.ts.map((t) => (
                                             <option key={t.id} value={t.id} disabled={blocked.has(t.id)}>
                                                 {t.name}
                                                 {t.members?.length ? ` — ${t.members.join(", ")}` : ""}
@@ -215,6 +225,7 @@ export function ScoreSheet({
                                 </div>
                             ))}
                         </div>
+                        ))}
                     </div>
                 )}
                 {showFeedback && (
