@@ -85,6 +85,11 @@ async def generate_scoring_excel(db: AsyncSession, rnd: ScoringRound) -> io.Byte
             disqualified.add(d.target_id)
         deduction_by_target[d.target_id] = deduction_by_target.get(d.target_id, 0.0) + float(d.points)
 
+    # 부별 순위 라운드 — 결과 시트를 부별 순위로 (화면 결과 탭과 같은 조건)
+    per_part = bool(rnd.rank_per_part) and rnd.observer_mode == "RANK" and len(rnd.parts) > 0
+    part_order = {p.id: i for i, p in enumerate(sorted(rnd.parts, key=lambda p: p.order_num))}
+    part_label = {p.id: p.label for p in rnd.parts}
+
     computed = compute_results(
         judge_weight=float(rnd.judge_weight),
         observer_weight=float(rnd.observer_weight),
@@ -97,13 +102,21 @@ async def generate_scoring_excel(db: AsyncSession, rnd: ScoringRound) -> io.Byte
             for a in areas
         ],
         target_ids=[t.id for t in targets],
-        participants=[ParticipantLite(id=p.id, role=p.role, name=p.entered_name) for p in submitted],
+        participants=[ParticipantLite(id=p.id, role=p.role, name=p.entered_name, group_label=p.group_label)
+                      for p in submitted],
         scores=[ScoreLite(participant_id=s.participant_id, target_id=s.target_id,
                           criterion_id=s.criterion_id, area_id=s.area_id, score=float(s.score))
                 for s in scores],
         ranks=[RankLite(participant_id=r.participant_id, target_id=r.target_id, rank=r.rank) for r in ranks],
+        target_parts={t.id: t.part_id for t in targets} if per_part else None,
         deductions=deduction_by_target,
         disqualified=disqualified,
+        # 화면(결과 탭)과 같은 숫자가 나오도록 다동아리 설정도 그대로 넘긴다
+        multi_club=rnd.multi_club_mode,
+        group_blocked_targets=rnd.group_blocked_targets or {},
+        external_group_labels=rnd.external_group_labels or [],
+        internal_audience_weight=float(rnd.internal_audience_weight),
+        external_audience_weight=float(rnd.external_audience_weight),
     )
 
     # 결과/심사위원별 시트의 점수 컬럼 = 영역별 평균 + 미분류 기준별 평균
@@ -143,7 +156,7 @@ async def generate_scoring_excel(db: AsyncSession, rnd: ScoringRound) -> io.Byte
     )
 
     has_ded = bool(rnd.deduction_rules)
-    head = ["순위", "팀", "심사위원", "참관위원"]
+    head = (["부", "부별 순위"] if per_part else ["순위"]) + ["팀", "심사위원", "참관위원"]
     if has_ded:
         head += ["감점전", "감점", "최종"]
     else:
@@ -154,9 +167,19 @@ async def generate_scoring_excel(db: AsyncSession, rnd: ScoringRound) -> io.Byte
     hrow = ws.max_row
     _style_header(ws, hrow, len(head))
 
-    for r in computed:
-        rank_cell = "실격" if r.disqualified else r.rank
-        row = [rank_cell, tname.get(r.target_id, "?"), r.judge_points, r.observer_points]
+    part_of = {t.id: t.part_id for t in targets}
+    rows = computed
+    if per_part:
+        # 부 순서 → 부 안 순위 순 (부 미배정은 맨 뒤, 실격은 각 부 맨 뒤)
+        rows = sorted(computed, key=lambda r: (
+            part_order.get(part_of.get(r.target_id), 999), r.part_rank or 999,
+        ))
+    name_col = 3 if per_part else 2
+    for r in rows:
+        shown_rank = r.part_rank if per_part else r.rank
+        rank_cell = "실격" if r.disqualified else shown_rank
+        lead = [part_label.get(part_of.get(r.target_id), "미배정"), rank_cell] if per_part else [rank_cell]
+        row = lead + [tname.get(r.target_id, "?"), r.judge_points, r.observer_points]
         if has_ded:
             row += [r.pre_deduction, r.deduction, r.total]
         else:
@@ -166,13 +189,13 @@ async def generate_scoring_excel(db: AsyncSession, rnd: ScoringRound) -> io.Byte
         for c in range(1, len(head) + 1):
             cell = ws.cell(row=ws.max_row, column=c)
             cell.border = BORDER
-            if c != 2:
+            if c != name_col:
                 cell.alignment = CENTER
             if r.disqualified:
                 cell.fill = DQ_FILL
-            elif r.rank == 1:
+            elif shown_rank == 1:
                 cell.fill = WINNER_FILL
-    _autosize(ws, [6, 22, 11, 11] + ([9, 8, 9] if has_ded else [9]) + [12] * len(score_cols))
+    _autosize(ws, ([10, 9] if per_part else [6]) + [22, 11, 11] + ([9, 8, 9] if has_ded else [9]) + [12] * len(score_cols))
 
     # ── 2. 심사위원별 (매트릭스) ──
     ws2 = wb.create_sheet("심사위원별")
@@ -275,7 +298,7 @@ async def generate_scoring_excel(db: AsyncSession, rnd: ScoringRound) -> io.Byte
     ws4.append(head4)
     _style_header(ws4, 1, len(head4))
     # 팀 순위 순으로 정렬해 읽기 좋게
-    order = {r.target_id: r.rank for r in computed}
+    order = {r.target_id: i for i, r in enumerate(rows)}  # 결과 시트와 같은 순서
     for c in sorted(comments, key=lambda x: (order.get(x.target_id, 999), x.criterion_id or 0)):
         ws4.append([
             tname.get(c.target_id, "?"),
