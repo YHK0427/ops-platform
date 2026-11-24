@@ -22,7 +22,7 @@ logger = logging.getLogger("dev_feedback")
 router = APIRouter(prefix="/dev-feedback", tags=["dev-feedback"])
 
 # 스레드에서 개발자 글에 붙는 표시명 — 예전 행에 저장된 "개발자"도 읽을 때 이걸로 바꿔 보여준다
-DEVELOPER_LABEL = "🐸"
+DEVELOPER_LABEL = "💢"
 
 # 개발자 판별은 deps.DEVELOPER_USERNAME / require_developer 로 일원화했다.
 # 같은 규칙이 여러 파일에 복사돼 있으면 한 곳만 고치고 나머지를 놓친다.
@@ -154,7 +154,7 @@ async def _replies_by_feedback_id(db: AsyncSession, feedback_ids: list[int]) -> 
         grouped[r.feedback_id].append(DevFeedbackReplyOut(
             id=r.id,
             author_username=r.author_username,
-            # 개발자 글은 저장된 이름과 상관없이 🐸 — 과거 행은 표시명이 없거나 "개발자"로 저장돼 있다
+            # 개발자 글은 저장된 이름과 상관없이 💢 — 과거 행은 표시명이 없거나 "개발자"로 저장돼 있다
             author_display_name=(DEVELOPER_LABEL if r.author_username == DEVELOPER_USERNAME
                                  else r.author_display_name or r.author_username),
             is_developer=(r.author_username == DEVELOPER_USERNAME),
