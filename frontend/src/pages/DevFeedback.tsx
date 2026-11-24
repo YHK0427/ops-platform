@@ -179,9 +179,6 @@ export default function DevFeedback() {
                             <Wrench className="w-4 h-4 text-[var(--color-accent)]" />
                             버그 제보 / 신기능 요청
                         </CardTitle>
-                        <CardDescription>
-                            그냥 대충 요청해도 됩니다.
-                        </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={handleSubmit} className="space-y-3">
